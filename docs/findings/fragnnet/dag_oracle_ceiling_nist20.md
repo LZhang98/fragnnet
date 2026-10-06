@@ -1,8 +1,7 @@
 # DAG Oracle Ceiling on NIST20 (2026-07-08)
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-28
->
-> Baseline d3 DAG ceiling = 0.937 cos_hun on NIST20 test. Model-free upper bound.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Baseline d3 DAG ceiling = 0.937 cos_hun (0.959 instrument tolerance) on NIST20 test; model-free upper bound. The ~0.20 model gap is ranking/calibration, not coverage.
 
 ## TL;DR
 
@@ -74,7 +73,7 @@ scored per spectrum:
 
 Ring-merge and d4 are tied on ceiling; ring-merge gets there without d4's combinatorial
 blowup risk (a 1.3M-node outlier was observed at depth 4 on a 3,000-mol sample — see
-`[[project_bond_breakability_mask_plan]]`). SMARTS prepass barely moves anything
+[bond breakability mask plan](../../plans/fragnnet/bond_breakability_mask_plan.md)). SMARTS prepass barely moves anything
 (+0.0006), consistent with `[[feedback_prepass_rule_id]]`.
 
 ### Provisional GLACIER coverage comparison
@@ -165,7 +164,7 @@ By instrument / mode:
 **QTOF's low fixed-tolerance ceiling (0.615) is mostly a measurement-tolerance artifact, not
 a fragment-coverage problem.** Under QTOF's proper 20 ppm/750 Da tolerance the ceiling jumps
 to 0.982 — matching FT. This means the CID/QTOF gap noted in memory
-(`[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]`, actual QTOF cos_hun ~0.616 in the NIST23
+([alvhehe2 vs pqx7ywc9 comparison](../smarts_usage_audit_2026_09_23.md), actual QTOF cos_hun ~0.616 in the NIST23
 per-CE setup) is very unlikely to close via better fragment/DAG modeling — it's a
 loss-tolerance-configuration lever (confirm `inst_type_loss_tol` is actually wired into the
 training loss, not just eval) or true measurement-precision noise, not "left on the table."
@@ -222,7 +221,7 @@ accounted for, matching how production eval already scores it.
 ## Real actual-vs-oracle gap: alvhehe2 & pqx7ywc9 model runs
 
 `output/inference_eval/{alvhehe2,pqx7ywc9}/predictions_test.hdf5` are real trained-model
-inference outputs (see `[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]` in memory) on
+inference outputs (see [alvhehe2 vs pqx7ywc9 comparison](../smarts_usage_audit_2026_09_23.md) in memory) on
 **exactly this NIST20 test split** — verified identical `spec_id` sets to
 `data/split/nist20_ma_mi_inchikey/test_ids.csv` (96,128 spectra each) — and each already
 stores a real per-spectrum `cos_hun_inst_tol`. Joining that to the baseline DAG's
@@ -370,7 +369,7 @@ unweighted aggregate. Weighting by error mass: d4's extra recovery here (~+0.008
 + −0.0095 × 24,735 ≈ −256 units), so **on pure error-mass-weighted ceiling quality, d4 slightly
 edges out ring-merge** — the opposite of what the unweighted averages suggested. Ring-merge's
 real advantage is *tractability* (avoiding d4's combinatorial-blowup outlier risk,
-`[[project_bond_breakability_mask_plan]]`), not ceiling quality — these are two separate axes
+[bond breakability mask plan](../../plans/fragnnet/bond_breakability_mask_plan.md)), not ceiling quality — these are two separate axes
 that the earlier "ring-merge ties d4, so prefer it" framing had conflated. If blowup risk can be
 managed/filtered, d4 may be the better ceiling target specifically because of its edge in this
 one dominant bucket.
@@ -429,7 +428,7 @@ within FT-HCD ∩ [M+H]⁺, alvhehe2 unless noted:
 
 **1. Shared across independently different model configs, not per-model noise.** 71-77%
 overlap between alvhehe2's and pqx7ywc9's near-zero-failure spec_ids (two runs with different
-DAG/feature setups — prepass-DAG vs no-prepass, see `[[project_alvhehe2_vs_pqx7ywc9_run_comparison]]`).
+DAG/feature setups — prepass-DAG vs no-prepass, see [alvhehe2 vs pqx7ywc9 comparison](../smarts_usage_audit_2026_09_23.md)).
 Whatever drives this is structural, not architecture-specific noise.
 
 **2. Partially molecule-level, not purely spectrum-level.** Mean within-molecule std of actual
@@ -663,3 +662,29 @@ python scripts/eval/dag_oracle_scores.py \
     --split test --n_jobs 10 --no_cmf \
     --out_fp <output_path>.csv
 ```
+
+## Gap decomposition and overfit ladder (from local memory, verified 2026-10-06)
+
+Scripts in the current tree: `scripts/eval/dag_oracle_decomposition.py`, `intensity_error_diagnostic.py`, `sharpen_sweep.py`.
+Measured 2026-07-12 on baseline `4ews8j6f` (plain softmax, NIST20 test, 96,128 spectra / 5,173 mols); not re-run.
+
+- **Coverage vs intensity:** actual `cos_hun_inst_tol` 0.7506, oracle 0.9591, gap 0.2494, split 16.4% coverage / 83.6%
+  intensity (perfect intensities on the current DAG would gain +0.2085). Of the worst spectra (cos < 0.3, 8.9% =
+  8,528), 86.1% are DAG-reachable. Coverage share is largest for FT-HCD (17.4%) and `[M+H]+`/`[M+Na]+` (~19/18%),
+  smallest for CID (~9%) and `[M+Cl]-` (3.4%). Only 1 of 96,128 spectra exceeds its oracle.
+- **The model is too flat, but not fixably so:** predicted minus true entropy +0.604 nats (2.267 vs 1.663), 84.4% of
+  spectra too flat (77.9% after dropping peaks under 1% of base), 42.8% miss the base peak, Spearman on matched peaks
+  0.613. A global temperature `p^gamma` is optimal at gamma = 1 in every stratum; the per-spectrum oracle gamma caps at
+  +0.0351. The flatness is justified hedging entangled with rank error; recovering the remaining ~+0.175 needs
+  different peaks to be large, not a post-hoc transform.
+- **Rank error degrades with CE:** FT/HCD Spearman 0.701 -> 0.554 and base-peak hit 0.735 -> 0.403 from NCE 0-20 to 100+;
+  QTOF base-hit 0.756 -> 0.431 from ACE 0-10 to 40-60 eV, although the model already has global CE conditioning.
+- **Overfit ladder (unmerged `nist20_ma_mi_inchikey`, FraGNNet):** `a6s5it2m` (all dropout 0, wd 0, 456 epochs) val cos
+  0.533 (best val loss -1.6757 at epoch 67 regressing +0.4367), train 0.8952 = 97.1% of its train oracle 0.9221 while
+  val is 56.8% of its val oracle 0.9292; `jnokddr9` (mlp 0.3 / frag 0.1 / mol 0.1, wd 0.01) 0.709; `s3iimtqi` (mlp 0.2 /
+  frag 0.1 / mol 0.2, wd 0.01) **0.740** (best unmerged FraGNNet, `_sf` subformula; `target_rel_ints_thresh` None vs 0 on
+  `jnokddr9`, so 0.709 is the matched comparator). Regularization alone is worth about +0.21 cosine. Coverage is not
+  the unmerged ceiling (oracle 0.9292 on val, flat for 456 epochs). FraGNNet logs no recall/precision/wrecall, only
+  `*_opt_cos_sim`, so FraGNNet-vs-MASSter wrecall cannot be compared. For MASSter, merged vs unmerged wrecall drops only
+  ~0.02 (0.938 -> 0.915) but wprecision drops 0.11-0.14 (0.957/0.936 -> 0.812/0.831/0.850), because a merged target
+  is the union over ~12.4 CE spectra: merged cosine is partly a denser-target artifact.

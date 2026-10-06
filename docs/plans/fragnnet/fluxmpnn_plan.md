@@ -1,8 +1,7 @@
 # FluxMPNN — FraGNNet-CFM: a directional neural flow model over the fragmentation DAG
 
-> **Status:** PARTLY DEAD — READ BEFORE REVIVING &nbsp;·&nbsp; **Updated:** 2026-07-22
->
-> Stage 0 headroom gate GREEN, but conserved DAG flow trained null-to-harmful and the unsupervised competition line is DEAD (learned beta collapsed to a bond-type lookup: explains 72% of itself, 18% of real branching). Superseded in practice by `sibling_ranking_target_plan.md`.
+> **Status:** STOPPED · **Updated:** 2026-10-06
+> Stage 0 headroom gate was GREEN, but conserved DAG flow trained null-to-harmful and the unsupervised competition line is dead (learned beta collapsed to a bond-type lookup: explains 72% of itself, 18% of real branching). Read before reviving; superseded in practice by `sibling_ranking_target_plan.md`.
 
 ## One-line thesis
 
@@ -221,7 +220,7 @@ Replace the flat P(n) with a flow:
    flux is observed), so `P(n) = F_sink(n)` sums to 1 over nodes (a valid distribution, since every
    leaf is explicitly forced to halt) and the current pooled OOS gate stays on top exactly as today.
    Rationale: `α_sink` is a CE-free knob on the **halt/extent** axis, which
-   [[project_ce_extent_allocation_null]] proved has no residual headroom; and the per-node escape
+   [CE-extent null](../../findings/fragnnet/ce_extent_headroom_finding.md) proved has no residual headroom; and the per-node escape
    split is **under-identified** (the observed spectrum only constrains the *aggregate* off-peak mass,
    never *which* node leaked), so a rich escape model just regularises to a global constant with extra
    machinery. Spend all capacity on `β`.
@@ -250,7 +249,7 @@ All in log-space, differentiable, trained with the existing spectrum loss.
   and keep it low-capacity — and wire it *into* the existing OOS slot, never as a second normalizer
   on top (that double-counts).
 - **Scope discipline**: Stage 3 is a real re-architecture; Stages 0–2 must each pay their way first.
-  Supersedes the top-K transformer competition head (`project_frag_competition`).
+  Supersedes the top-K transformer competition head (`src/fragnnet/model/fragment_competition.py`; history in [successor lines](false_peak_loss_plan.md#successor-output-head-lines-all-null-from-local-memory-verified-2026-10-06)).
 
 ## Success metric
 
@@ -311,7 +310,58 @@ survives only as a way to borrow strength into the tail — a much smaller predi
 global arbitrariness", and not currently ranked above the marginal-level work in
 `docs/plans/fragnnet/sibling_ranking_target_plan.md`.
 
-**Open reference test.** The same decomposition on observed `q_obs` gives the ceiling: how much of REAL
-branching variance bond environment explains at all. If real branching also saturates near 0.72 at
-radius 1, β was about as good as bond chemistry allows and the tying line closes entirely. Shares all
-its machinery with the sibling-ranking target builder.
+**Open reference test.** *(ANSWERED 2026-07-22; see "Stage 3 trained verdict" below and
+`fragment_bond_set_representation.md` §6.3: observed ICC r2 0.1331 raw / 0.1817 noise-corrected, so
+β was over-determined, not arbitrary.)* The same decomposition on observed `q_obs` gives the ceiling:
+how much of REAL branching variance bond environment explains at all.
+
+## Stage 3 trained verdict and ceilings (from local memory, verified 2026-10-06)
+
+Code, configs and the diagnostic scripts live only on branch `research/flux_mpnn` (`fluxmpnn_flow_mode`
+`residual|replace`, `fluxmpnn_halt_bias_init: -2.0` in its `config/template.yml`; `scripts/eval/gate_on_off_decomp.py`,
+`nullspace_ceiling.py`, `oracle_branching_ceiling.py` are on that branch or its history, not on the current one).
+Only `scripts/eval/flux_beta_bucket_variance.py`, `stage0_branching_model_vs_oracle.py` and
+`branch_beta_target_coverage.py` are in the current tree. Numbers below are from W&B/local reads, not re-run.
+
+**Trained arms (2026-07-20, five 12h CC arms, `halt_bias=-2` post-fix, metric `val_cos_hun`; control `stage1_off` `kbh0u66c` 0.7118):**
+
+| arm | run | best / epoch cos | note |
+| --- | --- | --- | --- |
+| residual | `w4q1b1px` | 0.7118 / 0.7118 | gate settles ~0.28, moves P(n) 1.24-1.38 nats, dead tie |
+| `_noce` | `gej8v7u6` | 0.7120 | tie |
+| `_edgefeats` | `sewzn28h` | 0.7131 / 0.7121 | +0.0013 best, gone on epoch (noise) |
+| `_replace` | `a0wgbbib` | 0.6244 | gate forced 1.0, -0.087 collapse; the halt-bias fix did NOT save it |
+
+- **Why `replace` collapses:** a conserved flow cannot place a dominant deep fragment whose parents are empty
+  (halting is the only emit path, so mass taxes every ancestor); a free categorical does this trivially.
+  Conservation is the wrong inductive bias for a response-filtered measurement. Cost on a 34k-node batch:
+  +20% memory, +37% step time (level sweep, up to ~87 sequential launches); `fluxmpnn_edge_proj` is load-bearing
+  (without it the `E x 3*frag_struct_dim` concat is 1.2 GB and stage 3 OOMs).
+- **Why `residual` is null (gate-on/off test, `cos_hun_inst_tol`, val):** gate-on 0.7516 == baseline `kbh0u66c`
+  0.7516 (delta -0.0000); gate-off 0.7347. The +0.017 within-model gate-on minus gate-off is 100% base-head
+  co-adaptation, not flow value. The flow changes the spectrum on 88% of spectra (mean |delta cos| 0.067), helps
+  37% and hurts 37%: observable, directionless churn that cancels. The 71% node null-space ceiling is real but
+  is NOT where the movement went.
+- **beta-vs-oracle (`w4q1b1px` vs baseline, 4,945 mols, 5.87M competable parent-spectra):** flow branching is
+  indistinguishable from baseline (delta TV ~0.008; dominant-sibling mismatch 0.44-0.50 for both vs the 0.11
+  replicate floor). The flow moved P(n) along the halt/depth axis, which `ce_extent_headroom_finding.md` shows has
+  no headroom, and left branching untouched.
+- **Oracle-branching ceiling is confounded:** of 5,865,562 competable groups only 7,498 (0.1%) are exclusive to
+  one competable parent; per-parent substitution drifts total mass by 0.73. Per-parent branching is not
+  well-defined on the flat node marginal, only on edge flux. On the clean 0.1% the lift is null-to-ambiguous
+  (max bracket +0.003 to +0.013, min bracket negative). No eval-only gate exists on the node marginal.
+- **Identifiability of edge beta (`scripts/eval/beta_target_identifiability_audit.py`, 3,000 NIST20 DAGs, 2.37M
+  nodes, 2026-07-21):** multi-parent fraction of non-root nodes is 95.3% (full DAG), 87.7% after min-depth pruning
+  with no tie-break (fragmentation is order-invariant, so diamonds not chains), and 0% for a spanning arborescence
+  that keeps only 35.2% of branching parents. Edge-beta supervision stays dead; the marginal ranking target in
+  `sibling_ranking_target_plan.md` needs neither arborescence nor tie-break (the `indeg==1` filter selects only the
+  root: 620 usable targets vs 583,539 without it).
+- **beta pooling test (2026-07-22):** refuted "no tying"; the observed-branching reference test (ICC 0.0157 / 0.0936 /
+  0.1331 raw, 0.1817 corrected at r0/r1/r2; 173,930 edges) shows beta was over-determined (72% vs 18%).
+- Gotchas worth keeping: `pred_node_logprobs` is `frag_real_node_logprobs` (renormalized after NULL-formula slots),
+  NOT `log F_sink`; a conservation check must sum in float64 (float32 tripped a 1e-5 threshold on a conserved flow);
+  `batch_filter_by_peak_intensity` crashed with `UnboundLocalError` when the joint grouping was requested without
+  `pred_formula_probs` (check `keep_mask_j` before reusing that path).
+- **Remaining downstream slices (unrun):** formula/H-shift head P(f|n) oracle ceiling (hold P(n), swap P(f|n) for
+  the observed per-formula share) and global cross-fragment ranking; both point to objective/information side, not
+  any P(n)-reshaping module.

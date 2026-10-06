@@ -1,6 +1,7 @@
 # `i1`'s worst val predictions: bin-edge artifacts, then a ranking failure of both heads on new molecules
 
-> **Status:** FINDING · **Updated:** 2026-10-02 · Additive cut-probe follow-up linked below;
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Additive cut-probe follow-up linked below;
 > `fa1 - i1@63` independent-floor contrast sign corrected from the saved score table.
 > Inference only: `i1_inst_ob_obf` (`i50ig7rf`) at epoch 59, all 52,020 val spectra and the
 > 4,000-molecule train sample (49,205 spectra). Stored predictions from the
@@ -70,7 +71,7 @@
 >       head;
 >     - more varied training molecules.
 >
->     See [Next steps](#next-steps-not-built).
+>     See [Next steps](#next-steps-training-arms-not-built).
 
 ## Question
 
@@ -416,6 +417,19 @@ model's dominant candidate at that m/z
     ([catalog](../../reference/masster_smarts_rules.md#rule-added-from-the-i1-worst-prediction-read-2026-09-30)).
   - Templates stay off by default. Its effect is confined to about 150 sulfonyl tail spectra, so
     read a templates-on arm on that subset, not on whole val.
+
+### Templates-on arm `so1` (2026-09-30, from project-state handoff)
+
+Prepared, not submitted. `so1` is `i1` plus `masster_smarts_templates: true` (the `t1i` recipe), with
+control `i1`; config `config/masster/mh_ft_memorization_route_2026_09_24/so1_smarts_o_transfer_ob_obf.yml`.
+Submit on Fir with stage `smarts` of `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh`.
+A local 2-epoch CUDA smoke on a sulfonamide mini-split passed and the candidate builder emitted 880
+new-rule template sides. Read it with `output/i1_worst_predictions_2026_09_30/smarts_o_transfer/read_so1.py`
+on template-bearing, sulfonamide and sulfonamide-tail spectra, with `fa1`@63 as the independent tail
+selector. The no-template arms (`fa1`, `i3`) already show about +0.012 on sulfonamide molecules
+against `i1`@59, so a template effect has to clear that. The SMARTS, pathway, continuation and
+annotation tests were updated for the fixture that now matches the rule; 847 tests across the touched
+suites passed.
 
 ## Result: uncovered candidates
 

@@ -1,12 +1,9 @@
 # Fragment intensity ranking findings
 
-> **Status:** FINDING — PROVISIONAL NODEMLP EVIDENCE &nbsp;·&nbsp; **Updated:** 2026-08-11
->
-> Empirical findings for complementary cuts, sibling competition, global base-peak selection,
-> and collision-energy-dependent fragment ranking. Experiment specifications and promotion gates
-> live in the separate
-> [`complementary-cut`](../../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) and
-> [`global-ranking`](../../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) plans.
+> **Status:** FINDING · **Updated:** 2026-08-11
+> Provisional NodeMLP (`9t63zils`, `min_peak_int=1.0` export) evidence for complementary cuts, sibling competition, global base-peak selection and CE-dependent ranking; the large unresolved error is global ranking.
+
+Experiment specifications and promotion gates live in the separate [`complementary-cut`](../../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) and [`global-ranking`](../../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) plans.
 
 ## Bottom line
 

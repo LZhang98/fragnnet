@@ -1,6 +1,6 @@
 # FraGNNetPL Training Loop Memory Review
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-04-21
+> **Status:** REFERENCE · **Updated:** 2026-10-06
 >
 > Memory pressure points in the Lightning training loop.
 
@@ -303,3 +303,17 @@ Mostly CPU RAM:
 - epoch-long result retention
 - datapoint metric preallocation
 - dataloader workers and prefetch queues
+
+## Training memory levers (from local memory, 2026-07-14; flags re-checked 2026-10-06)
+
+- FraGNNet training memory is activation-bound, not parameter-bound (about 5.8M parameters).
+  Activations scale with `mlp_hidden_size` x total DAG nodes in the batch x `mlp_output_dim`, so
+  the dials are `dynamic_batch_sampler_max` (the master dial; it overrides `train_batch_size`) and
+  `mlp_hidden_size`.
+- `activation_checkpointing: True` (default False) saves about half the activation memory for
+  one extra forward.
+- `skip_train_explainability: True` skips the `frag_real_*` / `nb_iso` marginals on training
+  forwards only; spectrum outputs are bit-identical; it raises if an entropy loss is active.
+  Tests: `tests/test_skip_train_explainability.py`.
+- Not implemented: checkpointing only `formula_module`, which has a better memory/compute ratio.
+- bf16 is a no-go (unstable; user decision 2026-07-14).

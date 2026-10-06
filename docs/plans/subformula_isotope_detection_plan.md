@@ -1,14 +1,7 @@
 # Subformula-Sourced Fragment Formulas for Isotope Detection
 
-> **Status:** LANDED (working tree, uncommitted) &nbsp;·&nbsp; **Updated:** 2026-09-20
->
-> Steps 0-5 done. The fragment-composition source in target-side isotope cleanup is now
-> pluggable, and the subformula source needs no DAG and no `frag_dp`. Measured head to head on
-> 1,500 FT NIST20 spectra it **matches the DAG source** (F1 0.808 vs 0.805 native, 0.876 vs
-> 0.878 with group-f; 99.2% of peak decisions identical), so the Step 4 gate passed and the
-> config surface shipped. **The feature itself is still off in every template** and no training
-> run has used it - `remove_isotope_formula_source: none` by default. Step 6 (soft output) not
-> started. Read "Results" before proposing anything here.
+> **Status:** LANDED · **Updated:** 2026-10-06
+> Steps 0-5 done and committed: pluggable isotope-cleanup formula source; subformula source matches the DAG source (F1 0.808 vs 0.805 native, 99.2% identical decisions). Off by default (`remove_isotope_formula_source: none`), no training run uses it; Step 6 (soft output) not started.
 
 ## Motivation
 
@@ -316,3 +309,63 @@ the formula source; two of them survive this plan untouched:
 
 Also out of scope: the prediction-side `frag_params.num_isotopes` axis, QTOF (the detector is
 FT-gated by design), and any change to `filter_subformula_peaks` itself.
+
+## Isotope audit facts and open defects (from local memory, verified 2026-10-06)
+
+- **Four isotope axes; the two that affect the model are off everywhere.** (1) Prediction side
+  `frag_params.num_isotopes` defaults to 1 and no config overrides it, so FraGNNet has only ever
+  emitted the monoisotopic peak per formula. The machinery exists end to end: the dataset truncates
+  `formula_peak_mzs` / `probs` to `num_isotopes` and renormalizes, and the model adds
+  `log(peak_probs)`, splitting a formula's probability by the fixed natural-abundance prior with no
+  new parameters. Cap `MAX_NUM_MZS_PER_FORMULA = 5`. (2) DAG side `--isotopes`: every production
+  `frag_dp` is `isoFalse`, so axis 1 is gated on rebuilding DAGs, and `isotopes=True` with
+  `num_isotopes=1` silently hands the model the most abundant isotopologue (see
+  [inference_pitfalls.md](../reference/inference_pitfalls.md)). (3) Target side
+  `spec_params.remove_isotope_*` is marked NOT HOOKED UP in every `config/*_template.yml` (user
+  decision 2026-09-20; keys stay so old configs pass `unknown_config_keys`). The only config that
+  enabled it was deleted 2026-09-20, never A/B'd. `frag_dp` is declared only by
+  `fragnnet_template.yml`; do not add it to a non-FraGNNet template. (4) `nb_iso` is
+  neighbourhood **isomorphism** (WL-hash classes), not isotopes, despite the `nb_iso_idx` comment
+  in `template.yml` and some `script_utils.py` docstrings; the `config/entropy/d4_*` configs with
+  `nb_iso: True` are not isotope experiments. `ann_params.max_isotope: 2` belongs to the `graff`
+  model.
+- **`+Ni` precursors.** NIST's trailing `+Ni` (`[M+H+2i]+`, about 27k NIST20 spectra) means the
+  M+N isotopologue was isolated. It was once parsed as two iodine atoms (about 253.8 Da off); the
+  entries were removed from the `PREC_TYPE_TO_*` tables and cannot be a fixed delta, because the
+  shift depends on the formula (+1.99705 for 37Cl, +1.99795 81Br, +1.99812 41K, +2.00671 for two
+  13C) and every halogen-retaining fragment shifts too. Absence from the tables is the
+  enforcement (see the Notes block in `formula_utils.py`).
+- **Prevalence (NIST20).** Cl in 11.7% of molecules, Br 5.6%, either 16.4% of molecules and 19.4%
+  of spectra; `[M+Cl]-` is a production training adduct. K is not worth scoping: `[M+K]+` is 6,113
+  spectra and is absent from the production `prec_types`.
+- **Why confident detection is irreducible** (user position 2026-09-16, backed by
+  [detect_isotope_peaks_tuning.md](../reference/detect_isotope_peaks_tuning.md) at the shipped
+  `min_coiso_fraction=0.05`: precision 0.700, recall 0.733, F1 0.716 on FT, the easy case; the
+  F1 0.875 `DAG+Group-f` figure is a 500-spectrum sample the thresholds were tuned on and is not
+  the operating point): the discriminating gap is the fixed 4.47 mDa between 13C spacing and H gain,
+  against a 4 mDa FT window; the intensity test needs the fragment formula the model is meant to
+  predict; the co-isolation fraction `f` is estimable only from precursor residuals that vanish at
+  high CE (65% of false negatives are "detector never fired"); and a peak can be both an isotope
+  satellite and a real fragment, so no hard label is correct. Do not ship hard removal as a target
+  gate (it deletes about 195k real peaks to remove about 455k isotope peaks); prefer predicting the
+  envelope (`num_isotopes > 1`) or soft downweighting by posterior.
+- **Open defect: the regular-isotope branch is not instrument-gated.**
+  `isotope_utils.py` (~line 1307) does `mz_tol = _INST_MZ_TOL.get(inst_type) or 0.02`, turning the
+  `None` sentinel ("never filter") into a 20 mDa window, so with `remove_regular_isotope_peaks:
+  True` an H-gain peak (+1.007825) is flagged as an isotope on QTOF/IT but not on FT, i.e. it
+  deletes the H-transfer peaks the model must learn. Only the co-isolation branch has the FT
+  gate. One-line fix (not applied, per the 2026-09-20 audit): skip the regular branch when
+  `_INST_MZ_TOL.get(inst_type)` is None and no explicit `remove_isotope_regular_mz_tol` is set.
+  Line 1307 re-checked 2026-10-06; the rest of this bullet and the next are **unverified** since
+  2026-09-20.
+- **Open defect: ladders.** `detect_isotope_peaks_formula_aware` never checks whether the M+0
+  parent it matched was itself flagged, so a 5-peak series spaced 1.003355 loses 4 of 5 and an
+  H-transfer ladder (+1.007825) loses 3 of 4 at the 20 mDa non-FT fallback (0 of 4 at FT).
+  `mono_int` is the maximum intensity in the window, not the nearest m/z, which makes flagging
+  easier, and the docstring's Br2 example only holds at the loose 0.02 default (False at FT's 4 mDa).
+- DAG `idx_to_formula` holds neutral fragment formulas while the subformula source returns ion
+  compositions, so the subformula path counts a retained Cl/K carrier's M+2 and the DAG path does
+  not; this accounts for part of the 0.81% decision difference.
+- Repro scripts: `scripts/debug/isotopes/debug_dag_iso_peak_detection.py` and
+  `scripts/debug/fragnnet/debug_subformula_grid_density.py`. DAG-based isotope strategies tested
+  2026-04-08 did not improve on the current method.

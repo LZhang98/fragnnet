@@ -1,6 +1,7 @@
 # MASSter `[M]+` handling on Spectraverse
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Code read, SPV census, and inference checks; no code or config changed.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Code read, SPV census and inference checks; `[M]+` is always a pre-charged cation on SPV; no code or config changed.
 
 ## Decision
 

@@ -1,10 +1,7 @@
 # MASSter fragment and ion/H channel-selection findings
 
-> **Status:** HISTORICAL RESULTS — CHEMISTRY REVALIDATION AND BARCODE CONTROL PENDING &nbsp;·&nbsp; **Updated:** 2026-09-05
->
-> The current count-based spectrum precision conflates fragment selection with ion/H
-> expansion. It is useful for measuring output clutter, but it is not fragment precision.
-> Numerical conclusions below are unverified under the corrected chemistry rules.
+> **Status:** FINDING · **Updated:** 2026-09-05
+> Historical (2026-09-05) results; chemistry revalidation and the barcode control are pending, so numerical conclusions are unverified under the corrected rules.
 
 ## Experiment
 

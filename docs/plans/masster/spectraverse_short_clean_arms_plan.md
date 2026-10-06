@@ -1,7 +1,7 @@
 # Spectraverse MASSter: short-schedule and clean-train arms
 
-> **Status:** PREPARED · **Updated:** 2026-10-03 · Six configs (3 arms × cv0/cv1) and the
-> clean split built and resolved. Nothing has been submitted.
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> Six configs (3 arms x cv0/cv1) and the clean split built and resolved; nothing submitted.
 
 ## Why
 

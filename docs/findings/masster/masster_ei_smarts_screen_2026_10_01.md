@@ -1,8 +1,7 @@
 # Three EI SMARTS families: no rule admitted
 
-> **Status:** COMPLETE · **Updated:** 2026-10-01
-> Anisoyl fluoride and para-hydroxyazobenzene add no nominal coverage. Sulfonamide
-> oxygen transfer has training-only support, insufficient for admission.
+> **Status:** CLOSED NULL · **Updated:** 2026-10-06
+> Anisoyl fluoride and para-hydroxyazobenzene add no nominal coverage; sulfonamide oxygen transfer has training-only support, insufficient for admission. No rule admitted.
 
 ## Decision and measurements
 

@@ -1,6 +1,7 @@
 # MASSter — Batched Direct Peak-List Loss
 
-> **Status:** LANDED &nbsp;·&nbsp; **Updated:** 2026-09-19
+> **Status:** LANDED · **Updated:** 2026-09-19
+> `sparse_peak_list_distance` and `round_aggregate_peaks` are batched: `closest` 170.1 to 3.8 ms (44x) and `hungarian` 208.9 to 19.0 ms (11x) on an RTX 2070S; loss values unchanged.
 >
 > `sparse_peak_list_distance` now uses the chunked-and-padded shape of the vectorized
 > cross-entropy, and `round_aggregate_peaks` is a batched segment reduction. Measured on an

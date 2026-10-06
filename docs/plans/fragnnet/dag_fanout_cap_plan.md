@@ -1,8 +1,7 @@
 # Per-Parent Fan-Out Cap — DAG Node-Count Reduction Plan
 
-> **Status:** SUPERSEDED &nbsp;·&nbsp; **Updated:** 2026-07-05
->
-> Per-parent fan-out cap is the right mechanism, but its hand-mined `BUCKET_LOSS_RANK` ranking was replaced by the learned radius-1/2 scorer — see `dag_bond_radius_env_plan.md` and `dag_full_recall_tractability_plan.md`.
+> **Status:** SUPERSEDED · **Updated:** 2026-07-05
+> Per-parent fan-out cap was the mechanism, but static priority ranking (hand-mined or learned) lost to random capping; see `dag_bond_radius_env_plan.md` and `dag_full_recall_tractability_plan.md`.
 
 ## Motivation
 

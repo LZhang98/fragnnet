@@ -1,7 +1,9 @@
 # Do the proposal and intensity heads see the same inputs?
 
-> **Status:** FINDING — source and config audit plus one W&B re-reading, 2026-09-22. No training
-> launched. §1-§6 are read off live code on `research/masshatter-ion-h-selection` and a census of
+> **Status:** FINDING · **Updated:** 2026-09-24
+> Source and config audit plus one W&B re-reading: in the whole `ma_mi_merged` production lineage the proposal branch reads encoder and context `.detach()`ed; section 8 adds that the `c4a` charge head is inert and the connected-run delay is convergence only.
+>
+> Original audit 2026-09-22; no training launched. §1-§6 are read off live code on `research/masshatter-ion-h-selection` and a census of
 > all 223 `config/masster/**` files resolved against `config/template.yml`; §7 re-reads an
 > existing 630-epoch run pair against that wiring and reaches the practical conclusion.
 > **Corrected 2026-09-23:** §7.2 item 4 called the base-probability column a one-key test. It

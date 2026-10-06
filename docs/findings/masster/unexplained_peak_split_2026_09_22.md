@@ -1,16 +1,7 @@
 # Splitting MASSter's unexplained intensity: escape versus coverage, 2026-09-22
 
 > **Status:** FINDING · **Updated:** 2026-09-22
-> The ~11% of validation intensity MASSter's candidate set cannot reach is **73% coverage
-> and 27% escape**. Only **2.91 points** of the 10.89-point residual carry no feasible
-> subformula and therefore cannot come from the molecule at all; **7.98 points** are real
-> analyte fragments the enumeration misses. The escape population is a **diffuse small-peak
-> background** — an infeasible peak carries 21% the intensity of a feasible one and half the
-> mass is spread over 7.9% of spectra — so a per-spectrum scalar gate cannot address it.
-> **46.5% of that escape population is isotopologues, not contaminants**: real analyte signal a
-> monoisotopic candidate set can never match. Nothing in the data path removes peaks above the
-> precursor, and the 0.90 points sitting there are 72% precursor isotopologue ladder, so cutting
-> them deletes signal rather than noise. Model-free; no checkpoint, no training.
+> The ~11% of validation intensity MASSter's candidate set cannot reach is **73% coverage and 27% escape**. Only **2.91 points** of the 10.89-point residual carry no feasible subformula and therefore cannot come from the molecule at all; **7.98 points** are real analyte fragments the enumeration misses. The escape population is a **diffuse small-peak background** — an infeasible peak carries 21% the intensity of a feasible one and half the mass is spread over 7.9% of spectra — so a per-spectrum scalar gate cannot address it. **46.5% of that escape population is isotopologues, not contaminants**: real analyte signal a monoisotopic candidate set can never match. Nothing in the data path removes peaks above the precursor, and the 0.90 points sitting there are 72% precursor isotopologue ladder, so cutting them deletes signal rather than noise. Model-free; no checkpoint, no training.
 
 ## Question
 

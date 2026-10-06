@@ -1,18 +1,7 @@
 # MASSter candidate features as one declared list
 
-> **Status:** IMPLEMENTED 2026-09-22, untrained · **Updated:** 2026-09-22
->
-> Replace the five per-feature boolean config keys that govern MASSter's candidate token with
-> a single ordered list of feature names, backed by one spec table. Adding a candidate
-> descriptor is now one spec entry plus one config-list entry, not edits in nine places.
-> No checkpoints exist for any of these keys, so this carried **no compatibility burden** and
-> no migration shim.
->
-> **Landed:** new `src/fragnnet/model/candidate_features.py`; the head takes one
-> `candidate_feature_dim` and one `candidate_features` tensor; `MassterModel` takes
-> `candidate_features: Sequence[str]`; 33 configs rewritten; the five old keys deleted from
-> `config/template.yml`. Behaviour-preserving: all 229 MASSter configs resolve to the token
-> they had before, 1,285 columns across the production family. Full suite 4,244 passed.
+> **Status:** LANDED · **Updated:** 2026-10-06
+> Ordered candidate-feature list and spec table are in the tree; the five token arms (`e1`-`e5`) ran at the 128-epoch screen and were all nulls (see cut-set plan).
 
 ## The problem, counted
 

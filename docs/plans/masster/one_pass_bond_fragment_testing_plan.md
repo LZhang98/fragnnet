@@ -1,9 +1,7 @@
 # MASSter Testing and Scale-Validation Plan
 
-> **Status:** IN PROGRESS &nbsp;·&nbsp; **Updated:** 2026-08-14
->
-> This document tracks verification only. Model architecture and probability
-> semantics remain in `masster_plan.md`.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Verification tracker for the one-pass model from 2026-08-14; not updated since, model semantics live in `masster_plan.md`.
 
 ## 1. Scope
 

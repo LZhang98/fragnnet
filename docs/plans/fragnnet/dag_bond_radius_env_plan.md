@@ -1,8 +1,7 @@
 # Radius-N Bond Environment — Learned Fan-Out Ranking Plan
 
-> **Status:** SUPERSEDED — FOLDED IN &nbsp;·&nbsp; **Updated:** 2026-07-05
->
-> Confirmed the learned radius-1/2 scorer (held-out AUC 0.884) over the hand-mined table. Prototype and remaining integration steps moved to `dag_full_recall_tractability_plan.md`.
+> **Status:** SUPERSEDED · **Updated:** 2026-07-05
+> Confirmed the learned radius-1/2 scorer (held-out AUC 0.884) over the hand-mined table; prototype and remaining integration steps moved to `dag_full_recall_tractability_plan.md` (itself negative, see there).
 
 ## Motivation
 

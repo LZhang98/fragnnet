@@ -1,6 +1,7 @@
 # MASSter excision continuation probe
 
-> **Status:** COMPLETED · **Updated:** 2026-09-28 · Diagnostic only; no model channel built.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Protocol completed 2026-09-28; diagnostic only, no model channel built.
 
 ## Objective and decision
 

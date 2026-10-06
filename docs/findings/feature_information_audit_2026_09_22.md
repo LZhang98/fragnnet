@@ -1,12 +1,7 @@
 # Feature and information audit, 2026-09-22 — what survived
 
-> **Status:** FINDING — synthesis, read this before any of its five parts &nbsp;·&nbsp;
-> **Updated:** 2026-09-27
->
-> One investigation, started from "do ICEBERG and GLACIER have a larger model or more features?",
-> ending at three proposed MASSter candidate-token changes. It produced five documents and
-> **withdrew two of its own conclusions along the way**, so the map matters more than any single
-> part. Nothing in it has been trained.
+> **Status:** FINDING · **Updated:** 2026-09-27
+> One investigation, started from "do ICEBERG and GLACIER have a larger model or more features?", ending at three proposed MASSter candidate-token changes. It produced five documents and **withdrew two of its own conclusions along the way**, so the map matters more than any single part. Nothing in it has been trained.
 
 ## Status of every claim
 

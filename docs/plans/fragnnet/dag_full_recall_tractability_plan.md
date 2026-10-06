@@ -1,8 +1,7 @@
 # DAG Full-Recall Tractability Plan
 
-> **Status:** ACTIVE HUB — MOSTLY NEGATIVE RESULTS &nbsp;·&nbsp; **Updated:** 2026-07-05
->
-> The 100%-recall requirement was walked back 2026-07-04. Both hand-mined and learned priority ranking lost to plain random capping; the global cutoff made things worse. Read the step results before proposing another pruning mechanism.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Paused since 2026-07-05: the 100%-recall requirement was walked back to recall-under-a-node-budget; hand-mined and learned static priority both lost to plain random capping, and the global cutoff made it worse (max-of-N-routes bias). Steps 5-7 unbuilt. Read the step results before proposing another pruning mechanism.
 
 ## Requirement reversed (2026-07-04)
 

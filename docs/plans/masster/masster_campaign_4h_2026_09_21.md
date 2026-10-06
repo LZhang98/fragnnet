@@ -1,6 +1,8 @@
 # MASSter 4 h exploration campaign (2026-09-21)
 
-> **Status:** SUBMITTED 2026-09-21 · **Created:** 2026-09-21
+> **Status:** REFERENCE · **Updated:** 2026-10-06
+> Launch record of the 2026-09-21 campaign (20 arms, box cut 4 h to 3 h after submission); results are in the campaign read-out finding.
+>
 > 20 arms x **3 h** on `fir:h100-3g.40gb`, all single-key diffs from one base.
 >
 > **Box cut 4 h -> 3 h after submission.** Justified by the `long_control` result that landed the

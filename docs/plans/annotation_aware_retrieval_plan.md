@@ -1,6 +1,8 @@
 # Annotation-aware candidate retrieval
 
-> **Status:** ACTIVE · **Updated:** 2026-10-03
+> **Status:** ACTIVE · **Updated:** 2026-10-06
+> Pilot and full formula-track runs done; next is a `[M+Na]+`/no-CE policy for full-challenge numbers and a checkpoint ensemble on val.
+>
 > Score MassSpecGym retrieval candidates with what the predicted spectrum carries beyond its
 > thresholded intensities: the full predicted support, the low-intensity tail, and per-peak
 > fragment annotations. A 400-query formula-val pilot ran on `ll04i00m` (2026-10-02).

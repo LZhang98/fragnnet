@@ -1,11 +1,7 @@
 # MASSter is supervised entirely through m/z, and ~2.75 substructures share every m/z
 
-> **Status:** FINDING — measurement stands, **its recommendation is RETRACTED** &nbsp;·&nbsp;
-> **Updated:** 2026-09-22
->
-> The measurement: nothing in MASSter's objective checks **which fragment** a candidate is,
-> and **2.75 distinct connected fragments share each formula** (p90 3.97), in 82.3% of molecules.
-> That much is solid.
+> **Status:** FINDING · **Updated:** 2026-09-22
+> The measurement: nothing in MASSter's objective checks **which fragment** a candidate is, and **2.75 distinct connected fragments share each formula** (p90 3.97), in 82.3% of molecules. That much is solid.
 >
 > **The conclusion drawn from it — that MASSter needs a structural teacher — does not
 > survive contact with the evidence, and is withdrawn.** See

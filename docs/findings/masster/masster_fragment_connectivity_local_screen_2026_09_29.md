@@ -90,7 +90,7 @@ Keys: `masster_fragment_connectivity_layers` (0 = off),
 
 ## Setup
 
-- **Recipe.** That of the [2026-09-27 local screens](../../plans/masster/masster_memorization_route_plan.md#local-screen-of-am1de1-2026-09-27):
+- **Recipe.** That of the [2026-09-27 local screens](../../history/masster_memorization_route_plan_log.md#local-screen-of-am1de1-2026-09-27):
   - a molecule-level subset of `nist20_inchikey`, 3,000 train and 1,000 val molecules;
   - `test_ids.csv` holds 1,000 train molecules, so the post-fit test pass is the eval-mode
     train fit;

@@ -1,14 +1,9 @@
 # Dominant-peak outcome decomposition: ranking headroom vs unexplained fragments
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-13
->
-> Base-peak failure is ~7:1 a ranking problem, not a DAG-coverage problem. At K=1, 36.7% of
-> spectra have the true base peak available in the prediction but ranked below something else,
-> against 5.2% where the DAG cannot reach it at all. Resolves the `min_peak_int` ambiguity left
-> open by [`fragment_intensity_ranking_findings.md`](fragment_intensity_ranking_findings.md).
->
-> Companion proposed work: the
-> [ion × collision-energy matrix experiment plan](../../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
+> **Status:** FINDING · **Updated:** 2026-08-13
+> Base-peak failure is ~7:1 a ranking problem, not a DAG-coverage problem: at K=1, 36.7% of spectra have the true base peak available but ranked below something else, vs 5.2% the DAG cannot reach. Resolves the `min_peak_int` ambiguity left open by `fragment_intensity_ranking_findings.md`.
+
+Companion proposed work: the [ion × collision-energy matrix experiment plan](../../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md).
 
 **Date:** 2026-08-12
 **Script:** `scripts/eval/dominant_peak_diagnostic.py`

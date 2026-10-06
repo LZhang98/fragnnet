@@ -1,6 +1,9 @@
 # Optional FastGNN-style MASSter proposals
 
-> **Status:** LANDED, EVIDENCE AGAINST CONTINUING · **Updated:** 2026-09-18 · The option is
+> **Status:** STOPPED · **Updated:** 2026-10-06
+> Option implemented and locally validated, but on trained bond logits the connected-fragment beam captures a flat 0.8695 of probability mass across a fourfold budget increase vs 1.0000 for `cut_masks`; no training run was performed. Evidence argues against continuing (see reuse/equivalence finding).
+>
+> The option is
 > implemented and locally validated. Comparative candidate measurement is now complete and
 > argues against continuing the line: on trained bond logits the beam's captured probability
 > mass is flat at 0.8695 across a fourfold budget increase against 1.0000 for `cut_masks`,

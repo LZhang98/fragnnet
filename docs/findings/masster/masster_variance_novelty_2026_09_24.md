@@ -1,7 +1,7 @@
 # Is MASSter's run-to-run variance epistemic?
 
-> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
-> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30
+> (Was FINDING, 2026-09-24.) **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
 > instrument labels, where identity routes stood in for the missing instrument input, so these
 > numbers are not current evidence.
 > Current reads: [dropout views on `i1`](masster_dropout_view_disagreement_2026_09_27.md) and

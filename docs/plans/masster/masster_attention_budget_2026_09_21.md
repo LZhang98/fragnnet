@@ -1,10 +1,7 @@
 # MASSter attention rework + parameter budget — implementation record
 
-> **Status:** BUILT, NOT RUN &nbsp;·&nbsp; **Updated:** 2026-09-21
->
-> Phase 2 (attention) and Phase 3 (bond head / budget) of the 2026-09-21 todo list are
-> implemented and tested. **Every option defaults to the historical behaviour**, so `main`
-> behaviour is unchanged until an arm config is launched. No training has been run.
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> Phase 2 (attention) and Phase 3 (bond head / budget) options are implemented and tested with historical defaults; the arm configs that ran are read in the architecture-arms finding, the rest (`a4`, `a5`, `b4`) were never submitted.
 
 ## Why these, and not more coverage
 
@@ -112,7 +109,7 @@ screen at ~128 epochs — val cosine saturates near ep100.
 
 ### Read the CE arms against a standing disagreement
 
-`[[project_ce_extent_allocation_null]]` and `[[project_stage0_branching_headroom_model]]`
+The [CE-extent finding](../../findings/fragnnet/ce_extent_headroom_finding.md) and the [Stage 0 branching read](../fragnnet/fluxmpnn_plan.md)
 both measured **CE-invariant** error, while the 2026-09-21 CE decomposition found
 realization falling monotonically with energy (88.4% of oracle at NCE<20 → 75.6% at 120+).
 That is unresolved, so run `a3` before `a5`: the pair difference isolates the CE dependence

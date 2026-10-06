@@ -1,6 +1,7 @@
 # MASSter explicit peak-ranking continuation pilot
 
-> **Status:** CLOSED NULL · **Updated:** 2026-10-02 · CPU pilot complete: tuning selects zero
+> **Status:** CLOSED NULL · **Updated:** 2026-10-02
+> CPU pilot complete: tuning selects zero
 > ranking weight. No end-to-end training conclusion or cluster submission.
 
 ## Objective and scope

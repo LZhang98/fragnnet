@@ -1,8 +1,7 @@
 # Spectraverse sources, replicates and merge shape
 
-> **Status:** FINDING · **Updated:** 2026-10-03 · Data audit plus a re-read of the 2,048 sampled
-> validation scores of the [oracle finding](spectraverse_oracle_ceiling_2026_10_03.md). No
-> training. Led to the [merged-train arm](../../plans/masster/spectraverse_merged_train_plan.md).
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Data audit plus a re-read of the oracle finding's sampled scores; led to the merged-train arm. A 2026-10-06 section records the reproducible pipeline.
 
 ## Result
 
@@ -261,3 +260,11 @@ oracle finding's last-checkpoint values (`ggifzj9m` / `u46v0k0g`, pre-`fill_miss
 intensity, not the model's transform. An earlier pass in this session joined source through
 `spectraverse_df.csv` by title number; that join was wrong (precursor m/z agreed on 0.03% of
 rows) and nothing from it is used here.
+
+## Reproducible pipeline (2026-10-06, from project-state handoff; uncommitted at the time)
+
+- **Problem.** Step 1 (`preproc_scripts/01_prepare_df.py`) could not read the v1.0.2 MGF (a single `FOLD` field, no `INDEX`), and nothing in git built the benchmark folds.
+- **Now.** `01_prepare_df.py` reads v1.0.2 and writes `<name>_fold.csv` (`spec_id,dset_spec_id,fold`). `preproc_scripts/spectraverse/build_benchmark_split.py` rebuilds `cv0..9` (test = `FOLD` k+1, val = `FOLD` k); its output matches all 30 existing fold files by `spec_id`.
+- **Step 2** needs `--skip_standardize` to match the stored pickles (checked on 2,000 spectra).
+- **Stale columns.** The existing `data/split/spectraverse_benchmark*` `mol_id`/`group_id` columns are a stale permutation; loaders select by `spec_id`, so earlier runs are unaffected. Nothing under `data/` was rewritten.
+- Commands: [`preproc_scripts/README.md`](../../../preproc_scripts/README.md). Tests: `tests/test_spectraverse_mgf_reader.py`, `tests/test_spectraverse_benchmark_split.py`.

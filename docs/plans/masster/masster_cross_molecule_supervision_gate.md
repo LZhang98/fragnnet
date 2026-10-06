@@ -5,7 +5,7 @@
 > manifest preparation and pilot tests are reverted. Census findings and artifacts are retained.
 >
 > **Bearing of the `i1` floor read (2026-09-30).** The case is mixed, per the
-> [worst-predictions finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#next-steps-not-built).
+> [worst-predictions finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#next-steps-training-arms-not-built).
 > - **For:** about 20% of the floor are transfer failures, where a close train analogue shows the
 >   dominant fragment and `i1` ignores it.
 > - **Against:** about 45% of the floor has no similar molecule showing the pattern, and `i1`

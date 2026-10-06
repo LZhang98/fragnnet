@@ -1,6 +1,8 @@
 # MASSter improvement plan
 
-> **Status:** ACTIVE · **Updated:** 2026-09-17
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Intensity-assignment/support-gating sequence from 2026-09-17; the CE/JSS/KL screen, CPU sampling and CUDA backend landed or were answered (CE/JSS/KL agree to 1e-4 epoch-matched); remaining experiments below are not being pursued.
+>
 > Prioritize intensity assignment and support gating while preserving candidate coverage.
 > CPU sampling improvements and an optional CUDA backend are validated locally; cluster rollout remains.
 > Remaining experiments below retain their individual evidence and execution status.

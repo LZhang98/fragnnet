@@ -1,12 +1,7 @@
 # MASSter on NIST23 EI (nominal mass, natural isotopes)
 
-> **Status:** ACTIVE · **Updated:** 2026-10-01
-> Stage 0 (feasibility) measured. Stage 1 built in the working tree (uncommitted): nominal mass
-> mode, natural isotope rows, the `e1`/`e0` configs, 16 tests, GPU smokes of both arms.
-> User decisions: nominal `nist23_ei`, not the NIST23 SHR set; select on `val_cos_sim_1.0`,
-> not `val_cos_sim_0.01`; model isotopes; `loss_tolerance_abs` 0.5.
-> Both EI arms completed 64 epochs in W&B; see the completion check below.
-> Local isotope audit fixes are not verified in those remote runs.
+> **Status:** ACTIVE · **Updated:** 2026-10-06
+> Stages 0-1 built; e1 (natural isotopes) and e0 both finished 64 epochs (e1 `jeljdikj` best val_cos_sim_1.0 0.870173 at ep 37, e0 `he3j5y3o` 0.861611). Matched e2/e3/e4 intensity arms prepared, not launched. User decisions: nominal `nist23_ei` (not SHR), select on `val_cos_sim_1.0`, model isotopes, `loss_tolerance_abs` 0.5. Local isotope-audit fixes are not verified in the remote runs.
 
 ## Objective and acceptance criteria
 

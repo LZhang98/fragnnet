@@ -1,6 +1,7 @@
 # MASSter code audit
 
-> **Status:** REFERENCE · **Updated:** 2026-09-13 · Candidate-attention A/B audit: seven findings fixed in the working tree; CUDA bfloat16 autocast now passes.
+> **Status:** REFERENCE · **Updated:** 2026-09-13
+> Candidate-attention A/B audit: seven findings fixed in the working tree; CUDA bfloat16 autocast now passes.
 
 ## Candidate attention topology audit (2026-09-13)
 

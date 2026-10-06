@@ -1,14 +1,7 @@
 # MASSter overfit read-out and cosine-ceiling decomposition, 2026-09-22
 
 > **Status:** FINDING · **Updated:** 2026-09-22
-> Read-only W&B review of the 25 runs created 2026-09-21 and 2026-09-22 on the merged
-> MA/MI base. The train/validation gap is **large (0.151 cosine), monotone, and never
-> plateaus** — but it is **not a coverage gap**: train and validation candidate coverage
-> agree to 0.006 `wrecall` while the model's cosine differs by 0.151, so **~98% of the
-> generalization gap is intensity allocation among peaks the model already proposes**.
-> Three LR-decay arms are the first thing in this family to clear the replicate floor.
-> A follow-up intensity-memorization audit records five plausible shortcut routes and an
-> ordered measurement/intervention gate. No code, config or run was changed for this review.
+> Read-only W&B review of the 25 runs created 2026-09-21 and 2026-09-22 on the merged MA/MI base. The train/validation gap is **large (0.151 cosine), monotone, and never plateaus** — but it is **not a coverage gap**: train and validation candidate coverage agree to 0.006 `wrecall` while the model's cosine differs by 0.151, so **~98% of the generalization gap is intensity allocation among peaks the model already proposes**. Three LR-decay arms are the first thing in this family to clear the replicate floor. A follow-up intensity-memorization audit records five plausible shortcut routes and an ordered measurement/intervention gate. No code, config or run was changed for this review.
 
 ## Scope and method
 

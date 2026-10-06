@@ -1,12 +1,7 @@
 # MASSter — One-Pass Bond-Set Fragmentation Plan
 
-> **Status:** IMPLEMENTED CORE WITH ACTIVE EXPERIMENTAL VARIANTS &nbsp;·&nbsp; **Updated:** 2026-09-29
->
-> The fixed-depth D3/D4 inference path has been replaced in MASSter by one-pass
-> precursor encoding, probability-ranked candidate generation, chemically valid ion
-> channels, and candidate-conditional intensity prediction. This document retains
-> its original design and staged-history sections below; the current implementation
-> snapshot is authoritative for present behavior.
+> **Status:** LANDED · **Updated:** 2026-10-06
+> MASSter core (one-pass bond-set proposal, ranked cut masks, ion/H channels, candidate intensity transformer) is production behavior; sections 1-9 are design rationale, and the dated stage/measurement logs now live in the [plan log](../../history/masster_plan_log.md).
 
 ## Objective
 
@@ -19,6 +14,35 @@ The model's canonical public name is **MASSter**. Code uses
 `MassterModel`, `MassterPL`, and `model_type: masster`; generic
 bond-mask and neural-head utilities retain descriptive names because they are
 reusable components rather than the complete model.
+
+## Current summary (2026-10-06)
+
+Design record and reference for the MASSter core. The implemented behavior is in the
+"Current implementation snapshot" below; where sections 1-9 disagree with it, the snapshot and
+source win. Dated stage records (Stages 1-4) and the 2026-08-20 base-CE measurement are in the
+[plan log](../../history/masster_plan_log.md).
+
+- **What shipped.** Single molecular GNN pass, Bernoulli bond-logit field(s), exact top-K cut-mask
+  ranking, unique-fragment pathway marginalization, charge retention, CRF/CMF H-transfer channels,
+  candidate-set transformer, `probability` or `independent` output. Atom decoder removed
+  (2026-09-19, -0.0018 inside the floor, 1.8x faster/epoch).
+- **Proposal training.** `masster_proposal_selection_only` is the default path: proposals get no
+  spectrum gradient and are trained by an intensity-weighted support loss. A fixed base-only CE
+  weight of 0.1/0.2/0.3 lowered cosine monotonically (0.72846 / 0.72626 / 0.72231); the learned
+  OOS class is retired.
+- **Matched 128-epoch screen** (merged MA/MI, control `c4a_base_s1` 0.7270, gate +-0.005):
+  `a1_prenorm` +0.0056 is the one clean pass; the 2026-09-20 feature bundle is worth about +0.006
+  to +0.007; most other architecture, regularization, cut-feature, escape, proposal-early-stop and
+  fragment-selection arms are nulls. See the [core hub](../../workstreams/masster_core.md).
+- **Not reachable by this action space.** 23 of 24 SMARTS rules need a new bond (section 6.2.1),
+  worth only 0.11% of observed intensity by m/z; connected-fragment beam is experimental and
+  not a drop-in (flat 0.8695 captured mass vs 1.0000 for `cut_masks`).
+- **Still open design sections.** 1.1 dual atom-bond backbone (arms 3-9 never run; Graphormer
+  alone loses ~0.034 at epoch 39), 6.1.2 correlated-cut support (mixture probe, autoregressive
+  cuts, ring-system factorization), 6.2 template channel for new-bond products, 7.2
+  bounded-cardinality support augmentation, section 9 risks.
+- **Next step.** None scheduled from this plan; new proposal or backbone work starts from the
+  [improvement plan](masster_improvement_plan.md) and the [architecture review todo](masster_architecture_review_todo.md).
 
 ## Current implementation snapshot (source-verified 2026-09-21)
 
@@ -96,8 +120,8 @@ precursor graph + spectrum metadata
 
 Sections 1–9 retain the August design rationale, original staged implementation
 record, and proposals. Where they conflict with this snapshot or the linked current
-references, this snapshot and source win. The project-state entry is the current
-cross-document index: [MASSter state](../../project-state.md#research-navigation).
+references, this snapshot and source win. The workstream hub is the current
+cross-document index: [MASSter core hub](../../workstreams/masster_core.md).
 
 ### Candidate-conditional spectrum correction (2026-08-23)
 
@@ -1192,83 +1216,7 @@ Matched experiment pairs:
 
 #### Measured finding: fixed base-only CE trades final cosine for support (2026-08-20)
 
-Three matched merged-spectrum grid sweeps varied
-`masster_base_ce_weight` over `0.1`, `0.2`, and `0.3` for unique-fragment
-targets 128, 256, and 512:
-
-- W&B sweep `o6gsdyvv`: U128, ranked-mask budgets 256 and 2048;
-- W&B sweep `9pmv90u1`: U256, ranked-mask budgets 256 and 2048;
-- W&B sweep `4wdysag2`: U512, ranked-mask budgets 512 and 2048.
-
-At the lower mask budget, mean best validation cosine decreased monotonically:
-
-| Fixed base-CE weight | Mean best validation cosine |
-| -------------------: | --------------------------: |
-|                  0.1 |                     0.72846 |
-|                  0.2 |                     0.72626 |
-|                  0.3 |                     0.72231 |
-
-The `0.3` mean contains two completed runs and the U512 run at epoch 121. At the
-2048-mask budget, the mature `0.1` and `0.2` arms showed the same ordering:
-`0.73240` versus `0.73044`. Those six arms crashed late at epochs 117--176, so the
-comparison uses their best checkpoint metric rather than successful completion. The
-2048-mask `0.3` arms were still too immature to compare.
-
-This is not a pure support regression. At mask budget 2048, increasing the weight
-from `0.1` to `0.2` raised mean candidate recall from `0.7064` to `0.7156` and mean
-candidate weighted recall from `0.8927` to `0.9007`, while mean best cosine fell by
-`0.00196`. The auxiliary objective therefore improves candidate inclusion but harms
-the final probability allocation. The sweeps have no `0.0` arm, and a matched
-proposal-anchored zero-weight run was not found; they establish that more weight is
-harmful over `0.1`--`0.3`, not that disabling the auxiliary term is optimal.
-
-The most plausible mechanism is gradient interference, because the implemented
-base-only loss is not proposer-only. `base_pred_logprobs` combines the base
-fragment probabilities with the same `ion_h_log_probabilities` produced by the
-candidate intensity transformer for the final spectrum. Its gradient therefore
-updates the shared transformer trunk and ion/H head as well as the bond, charge,
-and precursor paths. Meanwhile, proposal anchoring removes the base probabilities
-from the transformer's input even though the final score remains `l_i + r_i`, so
-the residual must correct a moving base offset that it cannot observe directly.
-Consistent with this interpretation, the U128/256 validation base-to-final CE gain
-shrinks from `0.3666` at weight `0.1` to `0.3226` at `0.2` and `0.2972` at `0.3`.
-The raw weighted base-loss magnitude also grows from roughly 8% of the primary-loss
-magnitude at `0.1` to 25% at `0.3`; this is not a gradient-norm estimate, but it
-shows that the nominally auxiliary term is not negligible.
-
-Revise the Defect 1 experiments in this order:
-
-1. **Isolate the shared-head gradient.** In the base-spectrum branch only, use
-   `ion_h_log_probabilities.detach()`. This preserves the base-CE value and its
-   gradients to the bond/charge proposal while preventing it from training the
-   candidate transformer through the shared ion/H prediction. Compare fixed `0.1`
-   with and without the detach at matched seed and budget. Advance the change only
-   if the candidate recall gain remains and final cosine recovers.
-2. **Measure gradient conflict directly.** On matched batches, log gradient norms
-   and cosine similarity between `L_final` and `L_base_only` for the bond head,
-   charge head, precursor encoder, candidate-transformer trunk, residual head, and
-   ion/H head. The working hypothesis is alignment in the proposer and conflict in
-   shared intensity parameters; do not redesign the shared encoder without this
-   attribution.
-3. **Reduce late-training pressure.** Compare fixed `0.1` with a warm-up schedule
-   that starts at `0.1` and decays to a small positive floor. Proposal-anchored setup
-   currently rejects an exact zero weight, so an exact-zero endpoint requires an
-   explicit compatibility change rather than a silent config edit.
-4. **Search below the observed boundary.** Test `0.01`, `0.025`, `0.05`, and `0.1`
-   after the shared-head ablation. Include an exact `0.0` control only after defining
-   how the anchored proposer remains supervised. The present evidence makes `0.2`
-   and `0.3` poor default choices.
-5. **Control support through selection.** Compare ranked-mask budget and a calibrated
-   minimum mask-probability threshold at matched realized candidate count. Candidate
-   support is a selection problem; do not use a stronger full-spectrum auxiliary loss
-   as the primary recall knob if budget or thresholding can recover the same support
-   without disturbing intensity gradients.
-6. **Escalate to a fully proposer-local objective only if needed.** If detaching ion/H
-   is insufficient, block base-loss gradients into the shared precursor encoder and
-   train only the bond/charge proposal parameters, or replace full-spectrum base CE
-   with an explicit candidate-ranking objective. This is a larger change and needs
-   its own matched control because it changes which representation learns proposal
-   information.
+Moved verbatim to the [plan log](../../history/masster_plan_log.md#measured-finding-fixed-base-only-ce-trades-final-cosine-for-support-2026-08-20). Result: a fixed `masster_base_ce_weight` of 0.1/0.2/0.3 lowered mean best validation cosine monotonically (0.72846 / 0.72626 / 0.72231 at the lower mask budget); candidate support is a selection problem, not a job for a stronger full-spectrum auxiliary loss. The shipped default is `masster_proposal_selection_only` (see the proposal-selection implementation above).
 
 ### 6.1.2 Independent-mask downward closure and correlated-cut support
 
@@ -1519,6 +1467,32 @@ section resolves against independence (20.5% of DAG-explained intensity needs th
 more cuts, 84% of it ring-crossing). See
 `masster_ring_system_cut_factorization.md`, which was never written (the link that stood
 here pointed at a file that does not exist).
+
+**Model-side half of that gate (ran 2026-08-23; from local memory, verified 2026-10-06).** The data
+half above was the only one measured on 2026-08-19. The model half, read from W&B summaries of merged
+FT-only runs with `explore_masks: 0`, found that the trained MAP mask is not empty and that the
+downward-closure premise does not hold for the trained model: `val_mask_cut_fraction_4plus` 0.772,
+`cut_3` 0.154, `cut_2` 0.060, `cut_1` 0.012, `cut_0` 0.0012; `candidate_wrecall_cut_3` 0.320,
+`cut_4plus` 0.344, total `val_candidate_wrecall` 0.895. More coverage cost cosine (enum1024 to
+enum2048 raised fill 0.699 to 0.867 and wrecall 0.896 to 0.906 while best cosine fell 0.7373 to
+0.7340). The ring-system line is therefore not gated on a missing support ceiling; reviving it needs a
+new justification. Two companion results: `masster_separate_proposal_encoder` did not help (0.7467
+shared vs 0.7436 separate), and `masster_proposal_loss_weight` is close to a no-op under AdamW because
+`proposal_selection_only` detaches the proposal path. Support-size measurements for the grouping
+(minimal two-component cuts only; `--max_options_per_system 512` omits oversized systems so their
+bonds revert to free Bernoullis): p99 235 / max 541 patterns per molecule at `k_max=4` (p99 177 at
+`k_max=5`), post-cap p99 240 / max 965 options, 0.23% of systems affected; grouping cost is
+heavy-tailed (median 0.48 ms, p90 26 ms, p99 179 ms, max 2,521 ms, mean 17.1 ms over 800 molecules;
+mean 9.3 ms with `--max_system_bonds 26`), so do not quote a mean. The grouping cache name must encode
+all four support parameters (`bond_groupings_k4_m2_o512_b26.pkl`). Of the 24 SMARTS rules, 23 (15/16
+`FRAG_RULES`, 8/8 `NL_RULES`) have non-empty `merge_outer_map_nums`, i.e. new bonds that no cut-set
+model reaches; only `morphinan_ring_cleavage` is pure deletion.
+
+**Caveat on the grouping code.** The modules this section and the memory note name
+(`frag/ring_system_cuts.py`, `grouped_cut_probability.py`, `factored_top_k.py`,
+`preproc_scripts/08_prepare_bond_groupings.py`) are absent from this checkout and from `git log --all`
+(searched 2026-10-06), so the "exist and are tested" statement above is unverified here and the
+grouping measurements are not reproducible from this tree.
 
 A same-ring/radius-2 pairwise Ising correction is chemically targeted, but it
 requires a partition function for normalized mask probabilities and loses the cheap
@@ -1795,139 +1769,7 @@ and must retain their gradient. Optimize the static topology work instead.
 
 ## 8. Implementation stages and verification gates
 
-### Stage 1 — Probability translator, no learned model — IMPLEMENTED 2026-08-14
-
-Implement a standalone top-K mask enumerator and mask-to-ion translator using
-provided synthetic bond, atom-charge, and H-transfer logits.
-
-Implemented the model-independent portion in
-`src/fragnnet/frag/bond_mask_generator.py`: lazy exact mask ranking, bounded
-top-K collection, connected-component translation, and truncated fragment
-marginal aggregation. `tests/test_bond_mask_generator.py` verifies the ranking
-against brute force through eight bonds and covers unrestricted cut counts,
-ring cuts, duplicate marginal paths, extreme logits, and input validation.
-Charge retention and H-transfer remain Stage 2/3 work.
-
-Bond endpoints use PyG's `(2, num_bonds)` layout across the learned head and
-translator. The initial mask budget may be extended when high-ranked masks only
-open rings or duplicate previously generated atom subsets, with a separate hard
-enumeration cap.
-
-Verify:
-
-- exact top-K mask equality with brute force for small `B`;
-- no fixed cut-count/depth assumption;
-- components match a reference graph implementation;
-- duplicate fragment and ion probabilities equal direct probability sums;
-- stable behavior for probabilities near 0 and 1;
-- CPU determinism and bounded memory at `K=500`.
-
-### Stage 2 — MASSter bond and charge heads
-
-Add the one-pass molecular encoder, endpoint bond baseline, optional line-graph
-bond GNN, and atom charge-affinity head.
-
-**Initial integration implemented, 2026-08-14:**
-`src/fragnnet/model/bond_fragment_heads.py` now contains the symmetric endpoint
-bond baseline, atom charge-affinity head, differentiable selected-mask
-log-probability evaluation, component charge competition, and component/boundary
-pooling. Charge competition is segmented by cut mask, and all component pooling
-uses sparse membership pairs. `MassterModel` reuses FraGNNet's molecular GNN
-as an unpooled `precursor_encoder`; molecular PyG graphs now carry canonical
-chemical bonds and atom chemistry fields. `MassterPL` uses `SpecMolDataset`
-and `SpectrumPL` rather than the D3/D4 dataset and training wrapper.
-
-**Bond-focused ablation implemented, 2026-08-16:** setting
-`masster_bond_num_layers` above zero replaces only the endpoint cleavage
-head with explicit bond states and alternating bond-to-atom/atom-to-bond
-updates. Bonds communicate when they share an atom, without materializing a
-line graph, and endpoint-order invariance is preserved. A value of zero keeps
-the original endpoint baseline. The charge/ion heads and independent-Bernoulli
-top-K mask ranking remain unchanged. The controlled K256 GINE-EFA experiment is
-`config/masster/merged/ablations/bond_model/nist20_merged_mask256_gine_gsa384_bond2.yml`.
-
-**Architecture direction from the initial W&B runs, 2026-08-16:** increasing
-the atom-centered GINE encoder from 256/4 layers to 384/5 layers did not improve
-validation cosine, while GINE-EFA reached the best observed score and converged
-in fewer epochs. Mixed-mask exploration improved candidate weighted recall but
-did not improve cosine. These results favor a more bond-focused encoder over a
-larger generic atom transformer. The next controlled architecture experiment
-should maintain explicit learned bond states, update adjacent bonds through a
-line graph or edge-aware attention, alternate atom-to-bond and bond-to-atom
-updates, and condition bond attention on acquisition context. Keep the current
-independent-Bernoulli mask ranking and the charge/ion heads unchanged for this
-comparison so any gain can be attributed to the bond representation. Only if
-that model improves held-out results should correlated multi-bond scoring be
-tested; pairwise or autoregressive cut dependencies change the exact top-K
-semantics and are a separate, higher-risk experiment.
-
-Verify:
-
-- bond predictions are invariant to endpoint ordering;
-- charge probabilities across components sum to one;
-- the bond GNN beats the endpoint baseline before retaining it;
-- held-out bond ranking and fragment coverage beat random mask selection.
-
-### Stage 3 — H-transfer / ion-mode head
-
-Add component/complement/boundary pooling and the joint categorical head.
-
-**Initial integration implemented, 2026-08-14:** the same module contains the
-joint ion-mode/H-transfer head and masked channel normalization. MASSter now
-constructs per-adduct chemical-validity masks and monoisotopic CRF/CMF masses,
-including explicit H-transfer channels. Isotope envelopes remain out of scope
-for the first training slice.
-
-Verify:
-
-- invalid formula channels receive zero probability;
-- CRF/CMF masses match `formula_utils.py` exactly;
-- known complementary components can receive different H-transfer
-  distributions;
-- per-adduct and per-polarity calibration is reported.
-
-### Stage 4 — Flat fragment-ion integration
-
-Return a flat fragment-ion batch containing atom masks, cut-mask provenance,
-formula/mass, generation log probability, charge probability, ion-mode/H-transfer
-probability, and combined log probability. Do not require DAG depth or DAG edges.
-
-**Initial integration implemented, 2026-08-14:** sparse mask/component batching
-preserves `(molecule, cut mask, component)` provenance and emits
-`pred_mzs`, `pred_logprobs`, `pred_batch_idxs`, and truncated OOS probability for
-`SpectrumPL`. Training uses the same sparse cross-entropy implementation as
-FraGNNet. Empty and all single-bond masks are forced exploration candidates in
-addition to learned top-K masks, preventing the zero-signal random-initialization
-failure observed with deterministic top-K alone. Consequently, `max_masks` is
-the learned ranking budget; the actual count can be larger by the single-bond
-exploration set and is logged explicitly.
-
-**Unique-fragment integration implemented, 2026-08-19:** compiled topology assembly
-now records component-to-unique-atom-set mappings and canonical representatives.
-Charge affinity is evaluated once per unique atom set, normalized per latent mask,
-and marginalized across duplicate pathways before the intensity transformer. This
-removes duplicate transformer tokens without discarding their probability mass or
-changing OOS semantics.
-
-The first production-shaped configuration is
-`config/nist20_merged_inchikey/masster/s0.yml`: K=100, CRF/CMF channels,
-H-transfer range -4 through +4, and FraGNNet's sparse Gaussian cross-entropy.
-Training logs intensity-weighted candidate recall, retained exact-mask
-probability, selected mask count, and component pathway count so support errors
-can be separated from probability-allocation errors.
-
-Verify at matched candidate budgets against D3 and D4:
-
-- formula recall and intensity-weighted peak recall;
-- downstream cosine/JSS metrics;
-- unique fragments per evaluated cut mask;
-- runtime and peak memory, including combinatorial outlier molecules;
-- recall beyond four broken bonds;
-- stability across at least three seeds.
-
-The design advances only if it beats both random-mask selection and the existing
-D3 candidate set at a matched fragment budget on held-out scaffolds. D4 is the
-higher-recall reference, not an inference dependency.
+Stages 1-4 (probability translator, bond/charge heads, H-transfer / ion-mode head, flat fragment-ion integration; all implemented 2026-08-14 to 2026-08-19) are recorded verbatim in the [plan log](../../history/masster_plan_log.md#8-implementation-stages-and-verification-gates). The standing gate they set still applies to any new proposal design: it must beat random-mask selection and the D3 candidate set at a matched fragment budget on held-out scaffolds (D4 is the higher-recall reference, not an inference dependency), judged on formula and intensity-weighted peak recall, downstream cosine/JSS, unique fragments per mask, runtime and peak memory, recall beyond four broken bonds, and three seeds.
 
 ## 9. Review findings and unresolved risks
 

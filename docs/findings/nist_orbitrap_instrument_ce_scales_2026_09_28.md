@@ -1,13 +1,14 @@
 # NIST Orbitrap instruments: two collision-energy scales, and MASSter's Lumos bias
 
-> **Status:** FINDING · **Updated:** 2026-10-01 (§7: `OB` / `OB_F` renamed `ORB` / `ORB_F`)
+> **Status:** FINDING · **Updated:** 2026-10-01
+> `OB` / `OB_F` were renamed `ORB` / `ORB_F` on 2026-10-01 (§7); `i1`/`i2` have finished (§8).
 > The two NCE "ladders" in NIST20/NIST23 Orbitrap HCD are two instruments, the Elite Orbitrap
 > and the Orbitrap Fusion Lumos. For the same molecule their spectra differ well beyond
 > same-instrument repeat variation. Part of the difference is a mass-dependent energy offset;
 > part remains at the best-matching energy. MASSter `c0` under-fragments Lumos val spectra, and
 > no energy relabel at inference fixes it. **Implemented:** `inst_type` now labels Orbitraps
 > `OB` / `OB_F`, renamed `ORB` / `ORB_F` on 2026-10-01, and `FT` is retired (§7); NIST20/NIST23 are relabelled locally from their raw
-> MSP instrument fields, and the template's `ace_max` is 460. **Training (running, §8):** `n4`
+> MSP instrument fields, and the template's `ace_max` is 460. **Training (§8):** `n4`
 > on the new labels (`i1`) leads `n4` by +0.021 val cosine epoch-matched, and the smooth-energy
 > penalty falls from −0.021 to −0.004 (`i2` − `i1`). On the finished `i1`, full-split Lumos val
 > gains +0.054 and Elite +0.025 over `c0`, and the Lumos precursor-fraction bias falls from +0.092
@@ -541,7 +542,7 @@ the only change from `n4` and `n1`. The metric is `val_cos_sim_0.01_epoch/mean` 
   was read against `c0` or `n4` on the one-class embedding. Their deltas are not guaranteed to
   carry over.
 - **Stacking arms on `i1`** (`i3`: `k1` + EMA; `i4`: plus pre-norm) are built, not submitted
-  ([plan](../plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
+  ([plan](../history/masster_memorization_route_plan_log.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
 
 **`i1` final read (2026-09-28).** `i1` finished its 64 epochs.
 
@@ -596,7 +597,7 @@ the only change from `n4` and `n1`. The metric is `val_cos_sim_0.01_epoch/mean` 
   - Before any dual-CE arm, stop converting missing Lumos eV by the Elite convention.
     *Done 2026-09-29, opt-in:* `spec_params.fill_missing_ace: false` leaves a missing eV missing.
     The first arm using it is `i5`
-    ([plan](../plans/masster/masster_memorization_route_plan.md#dual-ce-on-i1-i5-built-2026-09-29-not-submitted)).
+    ([plan](../history/masster_memorization_route_plan_log.md#dual-ce-on-i1-i5-built-2026-09-29-not-submitted)).
   - For NIST23 negative-mode Elite spectra the NCE is doubled against NIST20 and against the
     Lumos. Use eV there, or halve that NCE, and keep NIST20 and NIST23 on the same convention.
 - **Smooth-CE failures.** `n1`-`n3`

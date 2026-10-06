@@ -1,8 +1,7 @@
 # Bond Breakability Mask — DAG Depth Extension Plan
 
-> **Status:** STOPPED 2026-07-03 &nbsp;·&nbsp; **Updated:** 2026-07-03
->
-> Hard bond mask gave 30.28% edge reduction but only 1.50% node reduction — and nodeMLP, not edges, is the cost driver. Its mined bucket table survives as the source of truth for `BUCKET_LOSS_RANK`. Successors: `dag_fanout_cap_plan.md`, `dag_bond_radius_env_plan.md`.
+> **Status:** STOPPED · **Updated:** 2026-07-03
+> Hard bond mask gave 30.28% edge reduction but only 1.50% node reduction; nodeMLP, not edges, is the cost driver. Its mined bucket table survives as the source of truth for `BUCKET_LOSS_RANK`. Successors: `dag_fanout_cap_plan.md`, `dag_bond_radius_env_plan.md`.
 
 ## Motivation
 

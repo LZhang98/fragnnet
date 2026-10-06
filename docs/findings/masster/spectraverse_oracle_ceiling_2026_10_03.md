@@ -1,7 +1,7 @@
 # Spectraverse MASSter oracle cosine ceiling
 
-> **Status:** FINDING · **Updated:** 2026-10-03 · 1,024 sampled validation spectra per fold
-> (cv0, cv1), last checkpoints, CPU. No config or training change.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> 1,024 sampled validation spectra per fold (cv0, cv1), last checkpoints, CPU; intensity allocation is the largest gap. No config or training change.
 
 ## Result
 

@@ -1,8 +1,7 @@
 # Sibling-ranking supervision on P(n)
 
-> **Status:** ACTIVE — CURRENT LEAD &nbsp;·&nbsp; **Updated:** 2026-07-22
->
-> Coverage gate PASSED (583,539 clean targets at margin 0.1); the ranking loss on P(n) is not yet implemented.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Was the FraGNNet lead (2026-07-22): coverage gate PASSED (583,539 clean targets at margin 0.1) but the ranking loss on P(n) was never implemented; no FraGNNet implementation or job since Stage A prep (2026-09); project-state shows all active work on MASSter.
 
 **Status 2026-07-22: coverage gate PASSED, loss not yet implemented.**
 
@@ -11,7 +10,7 @@ targets mined from observed peaks. No new parameters, no DAG change, no edge mac
 
 ## 1. Why this and not a competition head
 
-The Stage 0 result (`project_stage0_branching_headroom_model`) — model dominant-sibling mismatch
+The Stage 0 result ([FluxMPNN Stage 0 gate](fluxmpnn_plan.md)) — model dominant-sibling mismatch
 ~45–50% against a ~0.11 replicate floor — was read as evidence for **edge-level** competition, which
 motivated FluxMPNN Stage 3 and the β-supervision line. That reading is wrong.
 
@@ -30,7 +29,7 @@ Consequences:
 
 - The defect is reachable inside the existing flat categorical.
 - Consistent with Stage 3 (adding edge structure moved nothing) and with
-  `project_capacity_vs_generalization` (bottleneck is generalization, not expressiveness → reshape
+  [capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06) (bottleneck is generalization, not expressiveness → reshape
   what capacity fits rather than adding modules).
 
 ## 2. Coverage gate (measured, `scripts/eval/branch_beta_target_coverage.py --allow_multi_parent`)
@@ -123,7 +122,7 @@ sibling_rank_target_dp: null
 | **shuffled labels** | best λ | confound control |
 
 The shuffled arm keeps loss, group structure and gradient magnitude, permuting only the target
-distribution. It is **not optional**: `project_capacity_vs_generalization` showed regularization is
+distribution. It is **not optional**: [capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06) showed regularization is
 worth ~+0.18 val and is unswept, so any aux term can raise val for reasons unrelated to branching.
 
 ### Stop-test

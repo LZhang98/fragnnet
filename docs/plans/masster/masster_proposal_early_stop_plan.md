@@ -1,12 +1,7 @@
 # MASSter proposal early stop and proposal-only weight decay
 
 > **Status:** CLOSED NULL · **Updated:** 2026-09-23
-> Two knobs landed behind new template keys, both default off. `p1` (freeze@32) and `p3`
-> (proposal wd 0.1) ran the 128-epoch screen and are **both cosine nulls** (+0.0010, +0.0020
-> against 0.7270, gate ±0.005). `p2` was never submitted. `p1` also measured the shared encoder
-> moving under frozen proposal heads, which is the limitation §1 predicted. Read
-> [Results](#results-p1-and-p3-at-the-128-epoch-screen-2026-09-23) before proposing a separate
-> proposal encoder on the strength of it.
+> `p1` freeze@32 (+0.0010) and `p3` proposal wd 0.1 (+0.0020) are cosine nulls at the 128-epoch screen against 0.7270 (gate +-0.005); `p2` was never submitted. `p1` showed the shared encoder moving under frozen heads, so a clean freeze needs `separate_proposal_encoder`; read [Results](#results-p1-and-p3-at-the-128-epoch-screen-2026-09-23) before proposing it.
 
 ## Objective
 

@@ -1,6 +1,6 @@
 # Unmerged MASSter generalization audit
 
-> **Status:** FINDING · **Updated:** 2026-09-16 (America/Chicago)
+> **Status:** FINDING · **Updated:** 2026-09-16
 > Live W&B histories support a growing loss generalization gap in mature runs, not a universal architecture-invariant ceiling or a proven dropout remedy.
 
 ## Scope and method
@@ -137,6 +137,64 @@ underfitting, optimization limits, and missing conditioning can also produce it.
 A train≫validation result motivates regularization experiments but does not identify their
 best form or guarantee a gain. No training, checkpoint evaluation, configuration change,
 or model-code change was performed during this audit.
+
+## Merged vs unmerged task, exposure, and merged baseline (from local memory, verified 2026-10-06)
+
+Source: agent-memory notes of 2026-09-16 to 2026-09-19 (W&B reads, and `data/proc/nist20/spec_df.pkl`
+joined to the split directories). The task-table counts were recomputed from the arithmetic below;
+W&B-derived numbers were not re-queried.
+
+| | merged (`nist20_inchikey`) | unmerged (`nist20_ma_mi_inchikey`) |
+| --- | --- | --- |
+| `merge` | True | False |
+| instruments | 100% FT | 94.0% FT, 6.0% QTOF |
+| frag modes | 100% HCD | 86.5% HCD, 13.5% CID |
+| adducts | 100% `[M+H]+` | 64.7% `[M+H]+`, 25.6% `[M-H]-`, 8.1% `[M+Na]+`, 1.6% `[M+Cl]-` |
+| train molecules / rows | 12,668 / 12,800 | 15,514 / 287,721 |
+| rows per molecule | 1.01 | 18.55 |
+
+- **They are different tasks.** Merged is the most homogeneous slice of NIST20 and averages CE
+  variance out, so 0.80 against 0.69 was never like for like. The clean comparator on the hard
+  mixture is FraGNNet on the identical split (0.70932): the real MASSter deficit was 0.016, not 0.11.
+  IT appears in `spec_params.inst_types` but is 0.0% of the unmerged rows: count rows, not listed types.
+- **Epochs are not comparable.** Molecule counts are similar (12,668 vs 15,514) but one epoch is 1.01
+  passes per molecule merged and 18.55 unmerged. Molecule-passes to the best epoch: merged 140-193,
+  unmerged 370 / 630 / 816 / 1,190 (`d1iv8151`, `bu8mzm40`, `9gms37kj`, `qnjttwod`). In rows,
+  unmerged reaches 99% of its best at 2.6-5.5M rows against 0.59-1.3M merged. Convert to
+  molecule-passes before comparing the families.
+- **Merging on `ma_mi` is 6.30x, not 18.55x**: merging collapses by `group_id`, and train has 45,639
+  groups over 15,514 molecules (2.94 per molecule, 6.30 rows per group, p50 4, p90 15, max 86). The
+  group is the acquisition and its rows are the CE ladder. See the
+  [merged-control guide](../../guides/benchmark_masster_merged_control.md).
+- **`group_sampler`.** The memory note claimed `GroupSampler` freezes one subset because `set_epoch`
+  is not called. That is superseded: `SpectrumPL._seed_dataloader` now calls `_pre_compute_batches()`
+  on the sampler each epoch (`spectrum_pl.py`, re-checked 2026-10-06), as the corrections section above
+  already says. `GroupSampler._pre_compute_meta` still materializes every dataset item to read
+  `group_id`, the up-front-load pattern that got `GreedyInferenceBatchSampler` deleted.
+- **Merged is healthy where unmerged stalls** (n=139 merged runs, 2026-09-16): epoch at 99% of own
+  best 46-102 against 9-19 unmerged; cos@40 to best +0.019..+0.035 against +0.0023..+0.0037;
+  ep-to-ep noise 0.0007-0.0035 against 0.0009-0.0013. Learning rate 0.001, `lr_schedule: False`,
+  weight decay 0.01 and the three dropouts at 0.1 were identical across 139/139 merged and all 27
+  unmerged runs, so the hyperparameters are not globally wrong, only untested for the unmerged
+  regime. Train/val spectrum-CE gap at epoch 5 was +0.31/+0.36 nats unmerged against slightly
+  negative merged; both families stopped gaining val at a gap of about 0.42-0.58 nats.
+- **Late-phase note (2026-09-19, 232 runs):** train cosine had never been logged then
+  (`compute_train_auxiliary_metrics` False in 232/232; since measured, see the read-out). W&B logs train
+  and val on *separate steps*, so `r.history()` returns NaN for the other side: `groupby("epoch").last()`
+  each side and join. On unmerged `h0gvuf4f` val loss bottomed at epoch 15 while val cosine climbed to
+  epoch 82 (+0.015), so loss and cosine disagree about when to stop; the checkpoint is best-val-cosine
+  (`save_top_k: 1`), so overfitting costs wall clock, not checkpoint quality. Wall-clock saturation: merged
+  `mgs5qts9` within 0.005 of best at 3.92 of 8.66 h, `zp06g7ml` 1.84 of 4.79 h; unmerged `h0gvuf4f` 3.48
+  of 14.38 h, `6ks7v8ce` 5.22 of 11.29 h.
+- **Inert cosine schedule.** The six `..._formula_support_*` FraGNNet runs of 2026-09-03/07/08 carry
+  `lr_schedule_type: cosine, lr: 4e-4` with `lr_schedule: False`; `spectrum_pl.py` reads the type only
+  inside `if lr_schedule`, so they ran constant 4e-4 and are not a schedule experiment. The only true
+  `lr_schedule: True` MASSter run is `qz0uelf0` (2026-08-18, 0.7014, pre-`tolerance_consensus`).
+- **Target change.** `spec_params.merge_method` moved from absent to `tolerance_consensus` (plus
+  `merge_normalize_each_spectrum` and `merge_equal_ce_weight`) around 2026-09-03; template default stays
+  `exact_sum`. 105 old-merge runs (2026-08-15..09-02) never beat 0.7515 (`ef7fl5c6`); the new cohort
+  reaches 0.78-0.80 (best 0.8010 `8v0i0fq7`). Never compare a MASSter cosine across that date without
+  checking `config.spec_params.merge_method`.
 
 ## Complete unmerged run census
 

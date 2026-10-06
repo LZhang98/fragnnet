@@ -1,6 +1,6 @@
 # Local fragment scoring with a constrained context correction
 
-> **Status:** ACTIVE · **Updated:** 2026-09-29
+> **Status:** STOPPED · **Updated:** 2026-10-06
 > Stage 1 (frozen-token probe) is built and was run locally on three producers: the two local
 > `i1` anchors and the full-data `i1` (user decision, 2026-09-29: `i1`, not `i4`, for the
 > full-data token check and 3A; ordinary `i3` or `i4` is the 3B baseline). Caches reproduce every

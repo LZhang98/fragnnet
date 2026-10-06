@@ -1,6 +1,6 @@
 # MassSpecGym retrieval runs, end to end
 
-> **Status:** GUIDE · **Updated:** 2026-10-04
+> **Status:** GUIDE · **Updated:** 2026-10-06
 > One command scores a MASSter checkpoint on MSGYM 1.5 retrieval, locally or on Fir/Vulcan.
 > Verified locally on the formula val fold. Prepare reproduces the
 > [2026-10-03 run's](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
@@ -121,3 +121,29 @@ Compare runs by hit@k, not by per-candidate scores.
   - All of these are now in the driver and the scoring CLI.
 - **Out of scope.** GLACIER inference (ms-pred environment) and the `[M+Na]+` / no-CE queries
   are not covered.
+
+## Candidate-set files and sharded inference (from local memory, verified 2026-10-06)
+
+`--fold`, `build-proc-large` and the `requires_dags` shard filter were re-checked in code.
+
+- `data/ms2c/msgym/v1_5/retrieval_candidates_{formula,mass}_{test,val,train}` are built by
+  `preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py` (`export`, then `build-proc`). The
+  old `_all` suffix meant every test-fold spectrum (`--subset all`), never all folds.
+- `build-proc` always writes the split as `test_ids.csv`, because `base_dataset.py` reads that
+  name; the fold is in the directory name only.
+- After the `(source_identifier, candidate_smiles)` dedup: formula test 17,556 queries /
+  2,297,662 spectrum rows / 490,266 molecules; formula val 19,429 / 2,433,451 / 504,824; mass val
+  19,429 / 4,640,577 / 796,564.
+- Renaming a directory also means renaming its `.zip` and rewriting the zip's top-level path
+  (e.g. `zipnote -w`).
+- `*_train.zip` use `mol_df_shards/` plus `train_ids.csv` (20 shards formula, 28 mass;
+  `build-proc-large`). Do not merge them: a live RDKit mol costs 10.9 KB of native heap, so merged
+  train frames are 43.5 GB (formula, 3,987,596 molecules) and 59.2 GB (mass, 5,422,947),
+  unwritable on the 31 GB workstation.
+- `run_inference.py` predicts one shard directly: pass `--mol_fp .../part-000NN.pkl` with the
+  whole `spec_df.pkl` (it filters to the shard's `mol_id`s in the `requires_dags` block), not
+  `--start_mol_idx/--num_mols`. `--custom_fp` is required. Set `TMPDIR`, because DAGs go to a temp
+  dir and local `/tmp` is small. Each shard re-reads the 2.2 GB (formula) or 2.8 GB (mass) `spec_df`.
+- Export is single-threaded (about 6 min per fold) and `build-proc` is memory-hungry: run folds
+  sequentially on a 31 GB box. `pandas.memory_usage(deep=True)` undercounts a live-mol column
+  about 450x; measure RSS.

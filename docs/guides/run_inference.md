@@ -1,6 +1,6 @@
 # FraGNNet Inference
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-10-01
+> **Status:** GUIDE · **Updated:** 2026-10-06
 >
 > How to run inference end to end.
 
@@ -517,6 +517,29 @@ Across those GPU runs, the annotated and plain exports differ in one spectrum's 
 Plain repeated forward passes in one process flip the same spectrum between 215 and 216
 fragments with the flag held fixed, so this is the known GPU nondeterminism in MASSter
 exports, not the annotation. On CPU the two exports are bit-identical.
+
+#### MASSter peak rows and the peak filter
+
+Moved here from the project-state handoff (2026-09-24 entries) on 2026-10-06.
+
+- **One row per peak.** MASSter emits candidate rows, about 4.5 connected fragments per peak
+  m/z. For `MassterPL` only, `process_batch_to_tabular_row` (`src/fragnnet/utils/script_utils.py`,
+  called by every exporter) sums candidates within 4-decimal m/z groups with
+  `aggregate_peaks_exact_mz` before the base-peak rescale and before `--min_peak_int`. The exact
+  m/z is kept (intensity-weighted mean where members differ). Rounded m/z moved binned
+  `cos_sim_0.01` on 378 MSGYM test spectra, which is why exact m/z is used. An unfiltered
+  aggregated export reproduces all six in-model scores to 4.8e-7. Exports made before 2026-09-24
+  hold candidate rows. Tests: `tests/test_inference_masster_peak_aggregation.py`.
+- **Peak filter applies to MASSter.** `batch_filter_by_peak_intensity` used to filter only when
+  the batch carried the DAG peak-to-formula map, so `--min_peak_int` did nothing for MASSter.
+  It now filters whenever `min_peak_int > 0`; the formula/joint/node cascade still needs the map.
+  `run_save_inference_eval.py` defaults to `--min_peak_int 1.0` (0.1% of base), which drops
+  about 89% of aggregated peaks (median 924 to 65 per spectrum on MSGYM test) at a cost of
+  −0.0001 linear cosine. **Pass `--min_peak_int 0` for any analysis that needs every peak.**
+  Earlier MASSter exports (cross-eval, ranking decomposition, per-peak uncertainty) were
+  effectively unfiltered candidate rows. Tests: `tests/test_batch_filter_peak_intensity.py`.
+- **GPU nondeterminism.** Two GPU exports of one checkpoint differ on about 1.3% of spectra (up
+  to 0.015 cosine); means agree to 1e-5. CPU exports are bit-identical.
 
 #### Resume Capability
 The script automatically checks the output directory (`--save_dp`) for existing prediction chunks. If found, it skips the spectra that have already been processed, allowing you to resume interrupted jobs without restarting from scratch.

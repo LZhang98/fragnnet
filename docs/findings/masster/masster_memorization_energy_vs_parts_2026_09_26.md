@@ -1,7 +1,7 @@
 # Is MASSter's memorized allocation keyed on energy, on molecules or on parts?
 
-> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-27)
-> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30
+> (Was FINDING, 2026-09-27.) **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
 > instrument labels, where identity routes stood in for the missing instrument input, so these
 > numbers are not current evidence.
 > Its `f0` sections are retired. The 2026-09-27 set-message probe (`c0`, `r2`, `nl1`, `nl2`) is
@@ -47,7 +47,7 @@
 
 The [route map](masster_route_map_2026_09_24.md) found that the lookup is keyed on molecule
 identity, written by global attention and rebuilt by local message passing when that is removed
-([Step 1](../../plans/masster/masster_memorization_route_plan.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25)).
+([Step 1](../../history/masster_memorization_route_plan_log.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25)).
 Two questions were open:
 
 1. **Energy.** The encoder is CE-blind, so the key is identical across a molecule's ~12
@@ -392,9 +392,9 @@ reference, score 1.20-1.33 on every checkpoint.
 - **What this points to.** The set message is where the lookup sits, and the route it moves to
   when another is cut. Val barely uses it on `c0`. A training-time substitution there, `gm1`'s
   recipe moved to the allocator, is built as arm `sm1`
-  ([plan](../../plans/masster/masster_memorization_route_plan.md#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted)).
+  ([plan](../../history/masster_memorization_route_plan_log.md#set-message-substitution-arm-sm1-built-2026-09-27-not-submitted)).
   Its companion `sd1` hides random candidates from the summary's keys instead
-  ([plan](../../plans/masster/masster_memorization_route_plan.md#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
+  ([plan](../../history/masster_memorization_route_plan_log.md#set-dropout-on-the-allocators-keys-arm-sd1-built-2026-09-27-not-submitted)).
 - **Limits.**
   - One seed per checkpoint, and best checkpoints at different epochs.
   - The val sample is the `spec_id`-ordered prefix described below.

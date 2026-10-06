@@ -1,7 +1,6 @@
 # CE → fragmentation-extent allocation: measured null
 
-> **Status:** FINDING — CLOSED NULL &nbsp;·&nbsp; **Updated:** 2026-07-16
->
+> **Status:** CLOSED NULL · **Updated:** 2026-07-16
 > The CE -> 'mass moves deeper' prior has no headroom. Kills the CFM-flow stop head, `depth_ce_bias`, and a CE x `num_cut_bonds` bias. Read before building any CE-conditioned module.
 
 **Date:** 2026-07-16
@@ -120,7 +119,7 @@ axis, and it is correctly aimed: the discrimination problem plausibly worsens wi
 fragments share a size as fragmentation proceeds, which is exactly what cross-fragment competition
 addresses.
 
-This independently corroborates `project_oracle_decomposition`'s "rank/identity, not calibration"
+This independently corroborates the [gap decomposition](dag_oracle_ceiling_nist20.md#gap-decomposition-and-overfit-ladder-from-local-memory-verified-2026-10-06)'s "rank/identity, not calibration"
 conclusion on a second, unrelated axis.
 
 ## Confirming the identity signal is present (cc-corruption probe)

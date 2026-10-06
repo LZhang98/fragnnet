@@ -1,6 +1,7 @@
 # MASSter SMARTS set and literature review
 
-> **Status:** FINDING · **Updated:** 2026-09-13 · Registry and tests checked; targeted primary-literature review complete. Coverage gains and new atom mappings remain unvalidated.
+> **Status:** FINDING · **Updated:** 2026-09-13
+> Registry and tests checked; targeted primary-literature review complete. Coverage gains and new atom mappings remain unvalidated.
 
 ## Scope and conclusion
 

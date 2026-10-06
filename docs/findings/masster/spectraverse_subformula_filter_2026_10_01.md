@@ -1,6 +1,7 @@
 # Spectraverse subformula filter tolerance screen
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Fixed 0.05 Da SPV artifact generated; no training launched.
+> **Status:** STOPPED · **Updated:** 2026-10-06
+> The precursor-bounded subformula filter is not enabled for SPV training (removes 26.2% of intensity); fixed 0.05 Da artifact generated, no training launched, temporary configs withdrawn.
 
 ## Decision
 

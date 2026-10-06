@@ -1,6 +1,6 @@
 # Data Mapping Definitions
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-08
+> **Status:** REFERENCE · **Updated:** 2026-10-06
 >
 > Weighted CE input contract updated; remaining historical schema should be verified against code.
 
@@ -198,3 +198,14 @@ for peak_idx in peak_indices:
     print(f"Formula {f_idx} -> Peak at {peak_mz:.4f} m/z with intensity {peak_intensity:.4f}")
 ```
 ```
+
+## Split ratios (from local memory, re-measured 2026-10-06)
+
+- `preproc_scripts/04_prepare_split.py` defaults: `--test_frac 0.2 --val_frac 0.2 --split_key
+  inchikey_s --split_type random --meta_rseed 42`. Both fractions come off the total key count
+  (test first, then val), so train is the 0.6 residual.
+- Spectra (train / val / test): `nist20_ma_mi_inchikey` 287,721 / 96,153 / 96,128;
+  `nist20_inchikey` 157,678 / 52,020 / 52,621.
+- Scaffold splits do not hold the ratio: `nist20_ma_mi_scaffold` is 0.547 / 0.302 / 0.151
+  (262,693 / 144,775 / 72,534). Do not quote 60/20/20 for a scaffold run. No MASSter config uses a
+  scaffold split.

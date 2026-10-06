@@ -1,6 +1,7 @@
 # FraGNNet and MASSter loss setup review
 
-> **Status:** FINDING · **Updated:** 2026-09-21 · CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
 >
 > **Proposal coverage:** this review is canonical for the blind-spot counterexample; it is
 > consolidated with three other reviews, and re-run against live code, in [MASSter proposal loss — consolidated audit](masster/masster_proposal_loss_audit_2026_09_22.md).
@@ -429,3 +430,19 @@ Configured interpreter: `/home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/python`.
 
 Only this report and its documentation navigation/handoff were changed. Next action:
 implement the verified loss-contract fixes, then collect the bounded MASSter diagnostics.
+
+## `spec_ce` is a Gaussian density: negative by design (from local memory, verified in `loss.py` 2026-10-06)
+
+- `loss_type: cross_entropy` with `output_distribution: gaussian` is a mixture-of-Gaussians density
+  over m/z (`mog_ce_fn` in `src/fragnnet/model/loss.py`). Each predicted peak has
+  sd = clamp(pred_mz, min=`loss_tolerance_min_mz`) x `loss_tolerance_rel` (10 ppm floored at m/z
+  200, so sd >= 0.002 Da). The log-density is positive (about 5), so `spec_ce` is negative and
+  falls as the model sharpens. It is not a sign bug.
+- `oos_tolerance_multiple = -1` means no truncation (every true peak counts as in-support);
+  `oos_loss=False` makes `primary_loss` equal `ios_ce` alone; `jss_distance` is on another scale.
+- So run families optimize different objectives: `s3gy1ro4`, `ef7fl5c6`, `8v0i0fq7` use
+  `oos_loss` False / -1 (the last with `jss_distance`); `qnjttwod`, `d1iv8151`, `jnokddr9`,
+  `s3iimtqi`, `a6s5it2m` use True / 1. **Never compare losses across runs; compare
+  `val_cos_sim_0.01_epoch/mean`.**
+- `loss = primary_loss_weight * primary_loss` (+ 0.1 x proposal loss for MASSter). Check on
+  `s3gy1ro4`: -3.0830 + 0.1 x 2.0299 = -2.8800.

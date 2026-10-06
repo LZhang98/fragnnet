@@ -1,11 +1,7 @@
 # Ion × collision-energy matrix experiment plan
 
-> **Status:** PROPOSED — PRECURSOR AND CE-SWITCH LOSSES SHIPPED; MATRIX AUDIT, TRAJECTORY LOSS, AND V2 NOT IMPLEMENTED
-> &nbsp;·&nbsp; **Updated:** 2026-08-13
->
-> Use an ion × collision-energy matrix as the diagnostic contract while keeping V1 training sparse.
-> The precursor contender loss already exists; V1 adds an eligible-normalized reduction and tests a
-> new full-trajectory objective against the shipped adjacent-CE switch loss. V2 is gated on V1.
+> **Status:** PROPOSED · **Updated:** 2026-08-13
+> Ion x CE matrix as the diagnostic contract with sparse V1 training. Precursor and CE-switch losses are shipped; matrix audit, trajectory loss and V2 are not implemented (V2 gated on V1).
 
 Empirical basis: [dominant-peak outcome decomposition](../../findings/fragnnet/dominant_peak_outcome_decomposition.md).
 

@@ -1,6 +1,7 @@
 # MASSter metadata usage audit vs published forward models
 
-> **Status:** FINDING · **Updated:** 2026-10-03 · Read-only code + data audit at `c5e38529` plus
+> **Status:** FINDING · **Updated:** 2026-10-03
+> Read-only code + data audit at `c5e38529` plus
 > the working tree; literature comparison from papers/READMEs. No code, configs or data changed.
 
 ## Summary

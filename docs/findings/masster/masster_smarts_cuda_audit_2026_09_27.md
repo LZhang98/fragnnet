@@ -348,6 +348,37 @@ Results, in % of spectrum intensity:
   - The diacylhydrazine and PFAS lower bounds sit at 0 because resampling can draw only the
     zero-scoring molecules.
 
+## 7b. Ring-cut review of 2026-09-21 (from local memory, verified 2026-10-06)
+
+Source: agent-memory review of 2026-09-21, written before the CUDA port above. Its headline, that
+templates are a hard CUDA incompatibility (`ValueError` when combined with
+`candidate_backend: cuda`), is **superseded** by section 1. The measurements below still stand.
+
+- **No ring-cut code exists in MASSter.** Ring cleavage is emergent: `top_k_cut_masks` ranks arbitrary
+  bond masks by independent-Bernoulli probability, then union-find (`build_component_arrays_raw`) or the
+  CUDA `connected_components` kernel decides which masks split the graph. A single ring-bond cut is one
+  component and is discarded; two or more bonds of one ring are a real cleavage. `max_ring_cut_steps`,
+  `ring_open_mask`, `ring_bond_groups` and `GetRingInfo` belong to the FraGNNet DAG BFS only.
+- **Ring-cut waste is not a bottleneck.** At E=4096 / U=256 on real NIST20 molecules, non-productive
+  (single-component) masks are 3.3-3.4% of scanned masks; at the default E=256 it is 6-18% (up to 34%
+  for high-ring molecules under a flat prior, and only 73-82% of molecules reach U=256). NIST20
+  ring-bond fraction averages 52.7% and 65% of molecules are at least 50% ring bonds. Eliminating the
+  waste is worth about 0.2% end to end (3% of topology x 60% of candidate x 5-10% of batch), against the
+  plan's 5% gate.
+- **Cost of SMARTS on the CPU path** (real molecules, E=4096 / U=256, batch 128): +19.8% candidate wall,
+  `smarts_assembly_ms` 27.8 ms (15.5% of candidate total) for 7 matched molecules, spent rebuilding
+  `bond_set_to_mask_index` over all 4096 masks in Python. Reach: 3.8% of NIST20 molecules match any
+  ring-cleavage rule (113 templates / 3000 molecules), 5.5-9.0% match any template.
+- **Benchmark trap.** `scripts/debug/bench/benchmark_masster_candidates.py` builds ring-free linear
+  chains and gives every molecule one synthetic template, so its `smarts_assembly_ms` 1129 ms and 3.5x
+  slowdown is a 100%-match worst case; never quote it as the SMARTS cost.
+- **Accuracy limit no kernel fixes.** Independent Bernoulli underweights ring cleavage because a
+  cleavage needs two correlated cuts, P = p1 x p2, below both singleton ancestors that produce nothing.
+  `productive_mask_fraction` lumps redundancy with ring openings, so it is an upper bound on ring waste.
+- **Missing-control note.** The old header claim that SMARTS is incompatible with proposal-only warmup
+  is not enforced in code: the warmup gate checks only `proposal_selection_only` and
+  `proposal_loss_weight > 0`. The SMARTS-off, warmup-null sibling of the SMARTS arm was never built.
+
 ## 8. Method and limits
 
 - §3 ran on the pre-drop registry (26 rules, duplicates kept). Rerunning the probe now skips

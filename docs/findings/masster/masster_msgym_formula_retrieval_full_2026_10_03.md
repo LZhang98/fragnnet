@@ -1,6 +1,9 @@
 # MSGYM 1.5 formula-track retrieval: full val and test, MASSter vs GLACIER
 
-> **Status:** FINDING · **Updated:** 2026-10-03 · Complete. Simulation-challenge `[M+H]+` queries
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Complete (2026-10-03); calibrated likelihood reaches test hit@1 0.528.
+>
+> Complete. Simulation-challenge `[M+H]+` queries
 > on the formula track; not leaderboard-comparable. On test, scoring each candidate by the query's
 > log-likelihood under MASSter's full prediction gives hit@1 0.485 against 0.358 for the
 > MassSpecGym cosine. GLACIER's released checkpoint is below MASSter on cosine (−0.023 hit@1 on

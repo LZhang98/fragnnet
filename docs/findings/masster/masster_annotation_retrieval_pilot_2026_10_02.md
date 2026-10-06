@@ -1,6 +1,9 @@
 # Fragment and formula annotations for MSGYM retrieval: 400-query pilot
 
-> **Status:** FINDING · **Updated:** 2026-10-02 · Pilot, not the plan's Gate 1. On formula
+> **Status:** FINDING · **Updated:** 2026-10-06
+> 400-query pilot, not the plan's Gate 1; likelihood beats cosine by +14.8 hit@1 points.
+>
+> Pilot, not the plan's Gate 1. On formula
 > val, `ll04i00m`'s fragment-cost scores add to linear cosine but add nothing once the query is
 > scored by its likelihood under the full predicted spectrum. That likelihood beats cosine by
 > +14.8 hit@1 points; most of that gain is small-peak weighting.

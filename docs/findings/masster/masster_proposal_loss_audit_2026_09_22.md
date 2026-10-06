@@ -1,11 +1,7 @@
 # MASSter proposal loss — consolidated audit
 
-> **Status:** FINDING — synthesis, read this before its four parts &nbsp;·&nbsp;
-> **Updated:** 2026-09-22
->
-> Everything the repository knows about `masster_proposal_loss_weight` and the term it
-> weights, previously spread across four documents that each met it from a different angle.
-> Each claim names its source; none is carried over without a check against the working tree.
+> **Status:** FINDING · **Updated:** 2026-09-22
+> Everything the repository knows about `masster_proposal_loss_weight` and the term it weights, previously spread across four documents that each met it from a different angle. Each claim names its source; none is carried over without a check against the working tree.
 >
 > **Three results are new here.** (1) The 2026-09-13 blind-spot counterexample, re-run against
 > the current function, is sharper than recorded: the loss is **exactly proportional to the

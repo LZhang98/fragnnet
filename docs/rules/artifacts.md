@@ -78,7 +78,9 @@ resolved config. Cite the copy, not `ckpts/`.
   `--save_dp output/<investigation>/...`. Do not make new undated top-level buckets like
   `analysis/`, `diagnostics/`, `eval/` or `tmp/`.
 - **Code goes in the repo, data goes in `output/`.** A script whose result a doc cites goes
-  under `scripts/` (usually `scripts/debug/`), where Git tracks it. It does not go inside
+  under `scripts/` (usually the matching topic folder of `scripts/debug/`: `dag/`, `fragnnet/`,
+  `isotopes/`, `bench/`, `masster_candidates/`, `masster_memorization/`, `smarts/`, `ei/`,
+  `spectraverse/`, `casmi26/`; import as `scripts.debug.<group>.<name>`), where Git tracks it. It does not go inside
   `output/`, because `output/` is unversioned. Shell wrappers and logs may stay with the data.
 - **No checkpoints in `output/`.** Use §2.2.
 - **No third-party code in `output/`.** Clone external repos (DreaMS, ms-pred) outside the

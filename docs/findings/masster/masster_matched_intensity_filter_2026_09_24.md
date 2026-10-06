@@ -1,7 +1,7 @@
 # Matched intensity filter and target cleanup on MASSter `3bej6fq7`
 
-> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
-> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30
+> (Was FINDING, 2026-09-24.) **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
 > instrument labels, where identity routes stood in for the missing instrument input, so these
 > numbers are not current evidence.
 > No `i1` rerun. What each filter does to the target does not depend on the model; the cosine

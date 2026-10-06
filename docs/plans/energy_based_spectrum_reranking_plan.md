@@ -1,7 +1,7 @@
 # Energy-based spectrum reranking experiment
 
 > **Status:** PROPOSED · **Updated:** 2026-09-13
-> Shared design of record for FraGNNet and MASSter reranking; no implementation or runs.
+> Shared design of record for FraGNNet and MASSter reranking; no implementation or runs. The user ordered MASSter bond-cut EBM modeling first (2026-09-13), then this spectrum protocol.
 
 ## Objective and rationale
 

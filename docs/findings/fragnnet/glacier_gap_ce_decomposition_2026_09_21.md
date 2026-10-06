@@ -1,10 +1,7 @@
 # Why we are not at 0.838: the GLACIER gap is CE-dependent allocation
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-09-21
->
-> The 0.077 gap to GLACIER on `[M+H]+` is **entirely concentrated at high collision energy**, and
-> it is an **allocation** deficit, not a coverage one. Realizing our low-CE rate uniformly would
-> give 0.835.
+> **Status:** FINDING · **Updated:** 2026-09-21
+> The 0.077 gap to GLACIER on `[M+H]+` is entirely at high collision energy and is an allocation deficit, not coverage; realizing our low-CE rate uniformly would give 0.835.
 
 ## The like-for-like number
 
@@ -44,9 +41,9 @@ training data.** The entire gap is CE-dependent intensity allocation.
 
 ## How to get there, ranked
 
-1. **Marginal sibling-ranking loss on P(n)** (`[[project_marginal_sibling_ranking_target]]`, GREEN,
+1. **Marginal sibling-ranking loss on P(n)** ([sibling-ranking plan](../../plans/fragnnet/sibling_ranking_target_plan.md), GREEN,
    583,539 clean targets at margin 0.1). A ranking/allocation fix, and
-   `[[project_branching_headroom]]` independently measured that observed sibling branching is
+   the branching headroom probe ([FluxMPNN plan](../../plans/fragnnet/fluxmpnn_plan.md)) independently measured that observed sibling branching is
    strongly CE-dependent (same-NCE floor 0.11 -> 0.68 at max NCE gap) — the same mechanism reached
    from a different direction. **Run first.**
 2. **Composition-aware intensity head** — fragment formula + neutral-loss complement +
@@ -61,8 +58,8 @@ training data.** The entire gap is CE-dependent intensity allocation.
 
 ## Open tension — reconcile before betting on CE conditioning
 
-`[[project_ce_extent_allocation_null]]` (CE -> "mass moves deeper" has no headroom; error is
-CE-invariant) and `[[project_stage0_branching_headroom_model]]` (dominance mismatch is CE-FLAT,
+the [CE-extent null](ce_extent_headroom_finding.md) (CE -> "mass moves deeper" has no headroom; error is
+CE-invariant) and the FluxMPNN Stage 0 gate ([plan](../../plans/fragnnet/fluxmpnn_plan.md)) (dominance mismatch is CE-FLAT,
 not high-NCE-concentrated) both concluded the error is CE-invariant. The realization ratio here
 falls monotonically with CE. These measure different quantities — fragmentation extent and
 sibling-dominance mismatch vs overall cosine realization — but the conflict should be resolved

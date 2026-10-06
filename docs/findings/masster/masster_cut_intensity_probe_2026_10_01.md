@@ -1,6 +1,7 @@
 # Train-only cut scores do not improve frozen intensity allocation
 
-> **Status:** FINDING — CLOSED NULL · **Updated:** 2026-10-01 · Full offline screen complete.
+> **Status:** CLOSED NULL · **Updated:** 2026-10-01
+> Full offline screen complete.
 > This closes the tested additive boundary-score correction, not all cut-supervision designs.
 
 ## Decision

@@ -1,12 +1,7 @@
 # MASSter — Non-Probabilistic Intensity Plan
 
-> **Status:** HELLINGER, LEAK, AND CE AUXILIARY IMPLEMENTED &nbsp;·&nbsp; **Updated:** 2026-09-21
->
-> Replace MASSter's Gaussian probability-density objective with direct, tolerance-matched
-> peak-list training, compare cosine and Jensen-Shannon objectives with optional entropy matching,
-> then test whether independent nonnegative peak scores outperform the current
-> candidate-normalized intensity probabilities. The direct-loss path is implemented; the dated
-> follow-up below narrows the next objective experiment. Fragment proposal remains separate.
+> **Status:** LANDED · **Updated:** 2026-10-06
+> Direct peak-list losses (Hellinger, leak term, CE auxiliary) are implemented and default off; the one merged arm (`h1_hellinger_closest`, `oykkffls`) read 0.7247 and the production objective stays cross-entropy.
 
 ## Decision
 

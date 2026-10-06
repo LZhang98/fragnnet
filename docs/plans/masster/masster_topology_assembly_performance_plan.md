@@ -1,7 +1,7 @@
 # MASSter — Topology and Assembly Performance Plan
 
-> **Status:** ACTIVE · **Added:** 2026-08-29 · **Updated:** 2026-09-17
-> Some CPU stages are implemented; canonical full-training performance gates remain open.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> CPU stages landed; canonical full-training performance gates remain open and the CPU-first, optional-GPU backend plan governs new work.
 
 The [CPU-first, optional-GPU backend plan](masster_candidate_backend_plan.md) now governs
 the order of new work. This document preserves landed-stage history, detailed CPU designs and

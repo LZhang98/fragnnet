@@ -1,8 +1,7 @@
 # ClassyFire atom-level pretraining for FraGNNet
 
-> **Status:** PROPOSED — NOT STARTED &nbsp;·&nbsp; **Updated:** 2026-07-25
->
-> Pretrain a transferable encoder on ClassyFire labels, reuse it without needing annotations at inference.
+> **Status:** PROPOSED · **Updated:** 2026-07-25
+> Pretrain a transferable encoder on ClassyFire labels and reuse it without annotations at inference. Not started; no owner since July.
 
 **Status:** research plan
 
@@ -192,3 +191,18 @@ L =
 ```
 
 This is a fallback after the initialization experiment, not part of v1.
+
+## Related idea: ClassyFire as a conditioning input (from local memory, verified 2026-10-06)
+
+Not started (idea dated 2026-07-10). ClassyFire superclass/class labels
+(`data/classyfire/nist{20,23}_mol_classyfire.pkl`) are used only for post-hoc analysis; nothing
+in `src/` reads them. A cheaper alternative to pretraining:
+
+1. Add the superclass as one more conditioning embedding next to CE, precursor type and
+   instrument type. Rare classes need bucketing; they are as data-starved as CID.
+2. Only if step 1 helps: fixed, ClassyFire-driven routing in a mixture of experts. The earlier
+   learned-router MoE failed (best 0.6394 vs baseline 0.6403; its doc is no longer in the tree)
+   from a lack of natural partitions and rich-get-richer collapse; fixed routing avoids the collapse.
+
+Per-class weighted-recall gaps that motivated it: nucleosides +0.104, organic acids +0.093,
+benzenoids +0.070.

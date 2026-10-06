@@ -18,7 +18,7 @@
 # WHY THESE KEYS. NIST20 unmerged [M+H]+ on ORB / ORB_F labels, 54-63 tail of
 # val_cos_sim_0.01_epoch/mean: i1 0.7607, i3 (i1 + k1 + EMA, xypkkfti) 0.7710 (+0.0102,
 # 2.4x the 0.0042 seed spread), i4 (i3 + pre-norm, rd9rsdqx) 0.7729 (+0.0019 over i3, a hold).
-# docs/plans/masster/masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29
+# docs/history/masster_memorization_route_plan_log.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29
 # fourier: at nce_max 300 abs-sines gives x and 512 - x one code (44 pairs in 212-300), and MSGYM's
 # derived NCE reaches p99 284. fourier gives every integer 0-300 its own row, as in the Spectraverse
 # and Enveda configs. Its NIST20 test (n4) passed with no expected gain.

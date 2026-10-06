@@ -1,6 +1,7 @@
 # FraGNNet and MASSter correctness audit
 
-> **Status:** FINDING · **Updated:** 2026-09-12 · Reproduced defects; fixes pending.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Reproduced defects in FraGNNet/MASSter/shared code; the FraGNNet and shared fixes landed (see [`fragnnet_audit_fixes.md`](../plans/fragnnet/fragnnet_audit_fixes.md)); the MASSter precursor-pair rejection is present in source reviewed 2026-09-21.
 
 ## Scope and baseline
 
@@ -198,3 +199,14 @@ contracts and HDF5 final flush, then rerun their targeted counterexamples and th
 full suite using extensions built from the matching source. Reject or implement the
 ignored MASSter precursor-pair option. Preserve input schemas
 and historical experiment provenance when evaluating corrected explanations or losses.
+
+### Status of the fixes (2026-10-06, from project-state handoff)
+
+The "Next check" above is closed for the FraGNNet and shared defects: the six fixes are recorded and
+validated in [`fragnnet_audit_fixes.md`](../plans/fragnnet/fragnnet_audit_fixes.md). The 2026-09-13/21
+loss-setup reviews found the prior audit's three FraGNNet loss/explanation fixes and the MASSter
+precursor-pair rejection already present in the reviewed source (revision `551a64ae`); the loss review
+then reproduced four further FraGNNet vectorized-JSD defects, two of them fixed (see
+[`loss_setup_review_2026_09_13.md`](loss_setup_review_2026_09_13.md)). The audit's own pass count
+(2,876 passed, 21 skipped, 2 expected failures, from an isolated rebuild; the pre-existing multi-cut
+extension was stale) is historical.

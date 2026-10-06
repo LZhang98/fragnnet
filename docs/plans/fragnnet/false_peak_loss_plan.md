@@ -1,8 +1,7 @@
 # False-Peak Penalty + Intensity Calibration — Loss Extension Plan
 
-> **Status:** CLOSED NULL &nbsp;·&nbsp; **Updated:** 2026-07-16
->
-> No headroom: `log1p_huber` is actively harmful above lambda=0.1. Kept for the negative result — the sweeps in `slurm_scripts/losses_false_peak_sweep.sh` and `losses_log1p_huber_sweep.sh` cite this doc. Recovered from branch `research/ce_perfrag_features`, where it was the only copy.
+> **Status:** CLOSED NULL · **Updated:** 2026-10-06
+> No headroom: `log1p_huber` is actively harmful above lambda=0.1. Kept for the negative result; `slurm_scripts/losses_false_peak_sweep.sh` and `losses_log1p_huber_sweep.sh` cite this doc. Recovered from branch `research/ce_perfrag_features`, where it was the only copy.
 
 ## Motivation
 
@@ -387,3 +386,65 @@ Key comparison: A vs. D.
 - `data/predicted/predictions_test.pkl` + `data/proc/nist23/spec_df.pkl` —
   existing prediction dump used for Step 1; re-run against fresh
   checkpoints' prediction dumps in the same format for later steps.
+
+## Successor output-head lines, all null (from local memory, verified 2026-10-06)
+
+None of the following code is on the current branch (`scatter_sparsemax`, `IntensityHead`, `PresenceHead`,
+`FormulaBagCorrectionHead` are absent from `src/`). It lives on `research/it-takes-two` (two-head, sparsemax/entmax15,
+`intensity_head`) and `research/ce_perfrag_features` / `research/frag_competition_v2` (formula bag, competition). Metric
+`val_cos_sim_0.01_best` on NIST20, plain-softmax baseline band 0.710-0.712 (`9t63zils` 0.7119, `4ews8j6f`).
+
+- **Sparse gate and `intensity_head` (2026-07-09 to 07-10): null.** Sparsemax and entmax15 gates (`output_normalization`)
+  plus `IntensityHead` (a product-of-experts reweighting `g_j * mu_j`, renormalized; not a hurdle model) finished at
+  `fq0f9vjb` sparsemax 0.702, `vyib86j1` entmax15 0.705, `f7mxbe4v` sparsemax + `output_scale` 0.685 (worse), and
+  `9fjevxif` softmax + head 0.700 vs baseline 0.703 at epoch 46. Test inference (96,128 spectra): cos_hun_inst_tol
+  0.743 / 0.748 vs baseline 0.751, bad-case rate (<0.3) 8.9% -> ~10%, predicted peaks 104 -> 78 / 68. The head does
+  what it was built to do (fewer peaks) without improving quality: the trimming is indiscriminate. An earlier claim
+  that the sparsemax gate "collapsed" (0.415 vs 0.703 at epoch 43) did not match the finished W&B history
+  (smooth 0.431 -> 0.671 -> 0.702) and should not be cited. Real bug found on the way: `scatter_sparsemax` overflowed on
+  `LOG_ZERO` (-3.4e38) masked slots (cumsum in raw logit space); any new scatter primitive that does arithmetic on raw
+  logits needs its own `LOG_ZERO` safety pass.
+- **Two-head presence/intensity auxiliary losses (2026-07-10 to 07-12): no evidence of benefit.** Independent
+  `PresenceHead` (sigmoid) and `AuxIntensityHead` (softplus) never feed the primary spectrum. The first hard
+  candidate-level BCE was replaced (user: "we don't have ground truth") by a noisy-OR observability loss over
+  m/z-matched candidate bags plus responsibility-weighted Huber and a composed-spectrum CE. Sweep `4lgizh9g` (best
+  0.7085, crashed step 149) and `6jneywv3` (0.7054, crashed step 93, `val_composed_spectrum_loss` 5.09, ~15x the
+  other auxiliary terms): never beat baseline. A latent NaN (`exp` of an aux log-probability above ~88.7) was fixed.
+  Presence is root-cause dead rather than under-tuned: `presence_bce`/`observability_loss` plateaus at 0.32-0.34 val in
+  every design (BCE weight 1.0, noisy-OR at 0.1), while the aux-intensity Huber learns (~0.07). Three causes: noisy-OR
+  saturates on large isomeric-tie bags, presence is CE-dependent so labels look XOR-like and collapse to the base
+  rate, and an independent sigmoid has no competition. The composed presence x intensity spectrum was never scored.
+  Do not sweep presence-head loss weights again.
+- **Residual recalibration head (`residual_head`, KL-leashed `q' = softmax(logits + delta)`, 2026-07-09):** infrastructure and
+  8 tests only; never run against a pretrained checkpoint. Given the nulls above, treat it as unvalidated.
+- **Formula-bag correction (`FormulaBagCorrectionHead`, 2026-07-11): near-neutral.** Deep-Sets `delta_f` on the formula
+  marginal with a KL leash: `kl000` (`mu3nb02n`) 0.7090, `kl005` (`t5fhykzo`) 0.7102, `kl01` (`o2fr25j1`) 0.7119 vs
+  softmax ~0.709. More leash was better, so the extra capacity earned nothing. The CE-response variant (per-bag
+  quadratic energy curve) learned a degenerate near-constant attractor (`mirlys0d` b_NCE +11.98 std 0.10; `ykh2hts0`
+  +12.48 std 0.32), nearly uniform corrections that cancel under softmax; see also the Git-history report cited in
+  `energy_based_spectrum_reranking_plan.md`. Formula-level `delta_f` leaves P(r|f) exactly invariant; "smaller
+  softmax denominator" is not a real advantage because logsumexp regroups the same Z.
+- **Per-fragment CE features (`ce_perfrag_feats`, `zhjgd01n`, 2026-07-13): null.** `ce_insert_location: mol,mlp` plus
+  `b_ring`, `b_conj`, `num_heavy_atoms`: best 0.7112 vs baseline `9t63zils` 0.7119 (-0.0007), final 0.7091. CE-binned
+  metrics were not logged (`log_adduct_inst_ce_metrics: False`), so a high-CE-only effect is unexcluded. A silent
+  drop bug (`"mol,mlp"` matching neither exact branch) was guarded.
+- **Candidate multiplicity (2026-07-15, 349,882 matched peaks / 14,992 FT/HCD `[M+H]+` spectra, 10 ppm): null.**
+  "Many-to-one candidate-to-peak matching stops identifying the formula at high CE" is unsupported: unique candidate
+  m/z clusters per peak mean 1.30, >1 on 28.8% of peaks, flat-to-declining in CE at fixed m/z (the intensity-weighted
+  rise 1.14 -> 1.46 is a mass mix effect). Do not build responsibility weighting or ambiguity penalties on that
+  story. Systematic +/-H CMF/CRF aliasing needs the charge carrier to be a proton: `[M+H]+` (54.4% of NIST20) and
+  `[M-H]-` (23.4%) alias, `[M+Na]+`/`[M+K]+` do not; live aliasing must be counted after `frag_joint_mask`
+  (the earlier "63.3% duplicates" counted pre-mask rows and is wrong).
+- **Fragment competition head (`FragmentCompetitionHead`, GLACIER Tier-3 analogue, 2026-07-13/14): never trained.**
+  Top-K transformer over the highest-scoring formulas, zero-init `delta_f` on the spectrum path only, CE-conditioned.
+  `scripts/eval/competition_topk_coverage.py`: K=96 covers ~95% of even high-NCE spectra (p95 94-100 significant
+  peaks at the 1% threshold), K=128 is the cheap hedge. Four NaN crashes: FiLM `log_scale` drift (clamped to +/-10); a
+  zero-init `0*inf` trap; gradient back-flow through the shared `ce_embed` into the frag encoder (proved by backward
+  from the head alone; the fix is `detach` on every head input, and the regression test must assert that no non-head
+  parameter receives gradient, not spot-check named inputs); and a `LOG_ZERO` (finite -3.4e38) score overflowing the
+  token LayerNorm. The current-tree implementation is `src/fragnnet/model/fragment_competition.py`
+  (`frag_competition*` keys in `config/template.yml`).
+- **Whole-set readout (`frag_pool_combine`):** production already runs `subtract` (template default), so every node
+  already gets `h_n - max_pool(h)`. The `concat` mode is built (6 tests, `fragnnet_model.py`) with config
+  `..._context_embedding_bottleneck_pool_concat.yml`, never trained. If concat-max ties subtract, whole-set readout
+  is exhausted and the next lever is m/z-local competition (fragments in the same predicted m/z bin, ~1.3/peak).

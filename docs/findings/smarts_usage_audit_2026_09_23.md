@@ -1,6 +1,7 @@
 # SMARTS usage audit (2026-09-23)
 
-> **Status:** FINDING · **Updated:** 2026-09-23 · Read-only audit of every SMARTS path, from
+> **Status:** FINDING · **Updated:** 2026-09-23
+> Read-only audit of every SMARTS path, from
 > rule definition to model input, plus a model-free census on NIST20. No code, config, DAG or
 > data changed; nothing trained. Probe: `scripts/debug/smarts/debug_smarts_rule_census.py`.
 
@@ -174,6 +175,37 @@ Corpus-wide, multi-cut BFS reaches **33.1%** of the intensity `smpTrue` misses (
 
 No rule targets terpenoids, steroids or chromones/flavones. 1,073 molecules carry a chromone
 core, which `benzopyranone_*` never matches because it requires the 2-one.
+
+### 2.4 The `alvhehe2` vs `pqx7ywc9` comparison (from local memory, verified 2026-10-06)
+
+Source: agent-memory note dated 2026-07-06. The inference HDF5s are
+`output/inference_eval/{alvhehe2,pqx7ywc9}/predictions_test.hdf5` (same 96,128-spectrum NIST20 test
+set, both d4/h4/17-element). The `smpTrue` global-stats file the note read is no longer on disk
+(only `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar` remains), so the DAG-side numbers below
+are unverified today.
+
+- **Not a controlled A/B.** `alvhehe2` = SMARTS-prepass DAG (`smpTrue`) with baseline mol features
+  only; `pqx7ywc9` = no prepass (`smpFalse`) plus `a_ring_size`, `a_charge`, `b_ring`, `b_conj`,
+  RWPE k=16 and frag-node `frag_q`.
+- **Result.** `alvhehe2` predicts more peaks per spectrum (123.4 vs 121.5) but scores lower
+  (`cos_hun_inst_tol` 0.7521 vs 0.7555) and puts more predicted mass out of support (0.139 vs 0.114).
+  Where it predicts more peaks than `pqx7ywc9` the score is lower by a mean 0.0072.
+- **Why this is not "prepass hurts".** Recall is a DAG ceiling; `cos_hun_inst_tol` is what the model
+  realizes. At h4, `smpTrue` beat `smpFalse` on every recall/wrecall metric at every threshold
+  (spectrum recall at 1% intensity 0.8204 vs 0.7972; wrecall 0.9202 vs 0.9072; 5 ppm recall 0.6482
+  vs 0.6316; unverified now). Node count barely changed (807.4 vs 802.9, +0.6%; formula
+  redundancy 4.701 vs 4.714), so crowding does not explain the gap.
+- **Few-shot explanation.** Prepass gains sit in rare motifs (xanthone 56 molecules, phenoxazine 2,
+  morphinan 14+, halogenated quinoline 96), so there is little training signal per rule to learn to
+  weight the new node. This agrees with the 99.0% finding in 2.1 and with the `prepass_rule_id`
+  feature having no effect.
+- **Third run `dm3xa4gd`** (`..._tgt1pct`, `target_rel_ints_thresh: 0.01`, non-prepass DAG, baseline
+  features): 90.7 mean / 47 median peaks per spectrum (against about 122 / 67), but only 0.7510
+  `cos_hun_inst_tol`. A 26% cut in peaks costs under 0.7% of score; the extra peaks are low-intensity.
+  It is a parsimony axis, stackable with the new feature set.
+- **The untested combination** is a `smpTrue` DAG with the new feature set (and
+  `num_cut_bonds`, see section 5); only it separates "the prepass ceiling is unexploited" from
+  "this model cannot exploit it".
 
 ## 3. Defects
 

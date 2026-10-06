@@ -1,7 +1,7 @@
 # Spectraverse MASSter: merged train without MS-DIAL
 
-> **Status:** PREPARED · **Updated:** 2026-10-03 · Code, two fold configs and the split are
-> built; tests and a real-data CUDA smoke pass. Nothing has been submitted.
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> Code, two fold configs and the split are built; tests and a real-data CUDA smoke pass; nothing submitted.
 
 ## Why
 

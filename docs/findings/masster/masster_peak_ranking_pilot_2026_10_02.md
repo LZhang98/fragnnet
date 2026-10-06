@@ -1,6 +1,7 @@
 # Explicit peak-ranking loss: no gain in a bounded intensity-head continuation
 
-> **Status:** CLOSED NULL · **Updated:** 2026-10-02 · Completed local CPU pilot. Tuning
+> **Status:** CLOSED NULL · **Updated:** 2026-10-02
+> Completed local CPU pilot. Tuning
 > selects zero ranking weight; this does not rule out full-data or end-to-end training.
 
 ## Result

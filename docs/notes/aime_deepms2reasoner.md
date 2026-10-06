@@ -48,7 +48,7 @@ spectra, so the likely magnitude is small — but that is our estimate, not thei
 **We are not clean here either.** `clean_spectra` runs at dataset load
 ([`base_dataset.py:430`](../../src/fragnnet/dataset/base_dataset.py)) over the whole `spec_df`,
 before the split, so every `..._subformula_filter.yml` config filters our val and test targets
-too. See `[[project_subformula_filter_adduct_bug]]`: "Neither Δcosine is a matched eval… each arm
+too. See [subformula-filter A/B verdict](../findings/subformula_filter_ft_qtof.md#fragnnet-ab-verdict-and-live-hazard-from-local-memory-wb-numbers-not-re-queried-2026-10-06): "Neither Δcosine is a matched eval… each arm
 is scored against its own cleaned target", and the uniform +0.026 `val_candidate_wrecall` was a
 denominator artifact. Any future claim of ours built on a subformula-filtered eval carries the
 same caveat we are applying to theirs.

@@ -243,7 +243,7 @@ an estimate from formula-isomer counts, not a measurement.
 | ours, merged | ~26,000 | 25,859 | 1.01 |
 
 Molecule counts are within 1.2%. The 20x impression comes from comparing their unmerged count
-against our merged setup (1.01 rows/mol, see `[[project_masster_merged_vs_unmerged_root_cause]]`).
+against our merged setup (1.01 rows/mol, see [merged-vs-unmerged root cause](../findings/masster/masster_unmerged_overfitting_2026_09_16.md)).
 The residual 10% is composition: theirs is all HCD in both polarities, ours spans FT/QTOF/IT over
 4 adducts. Against the older ms-pred NIST20 subset (35,129 spectra in the checked-in
 `split_1.tsv`, the ICEBERG 1.0 / SCARF era) GLACIER is ~15x larger — a change in extraction, not
@@ -652,7 +652,7 @@ The paper gives no ratios. It states only that it evaluates a random split "part
 key" and a Murcko scaffold split, over 530,640 HCD spectra / 25,541 unique structures. The repo
 default (`data_scripts/make_splits.py`) is `--train-frac 0.8 --val-frac 0.1 --test-frac 0.1`
 applied at the object level, which measures 0.809/0.090/0.101 on the checked-in `split_1.tsv`.
-Ours is 60/20/20 — see `[[project_split_ratio_ours]]`.
+Ours is 60/20/20 — see [our split ratios](../reference/dataloader_data.md#split-ratios-from-local-memory-re-measured-2026-10-06).
 
 ## Method
 
@@ -730,7 +730,7 @@ GLACIER eq. 14's three inputs map onto existing code:
 So for FraGNNet this is a **config edit, not a build**. For MASSter, absolute mass arrived
 2026-09-20 as a template default; composition, the neutral-loss complement, a sinusoidal/RBF mass
 encoding and any pairwise `dm_ij` attention bias are still absent — see
-`[[project_masster_architecture_lit_review]]`, whose "mass-blind" section is amended for this.
+[architecture review](../plans/masster/masster_architecture_review_todo.md), whose "mass-blind" section is amended for this.
 
 ### 3. Proposal: ours is strictly more expressive, and it is not the bottleneck
 
@@ -795,7 +795,7 @@ This adds an item 0 to the ranking in
 
 0. **Give FraGNNet a real fragment-set interaction.** Replace `frag_pool_combine: subtract` with
    attention over the fragment set — `set_transformer` already exists in `build_pool_module`, and
-   the `concat` readout cell from `[[project_frag_pool_concat_readout]]` is built and untrained.
+   the `concat` readout cell from the [successor-lines note](../plans/fragnnet/false_peak_loss_plan.md#successor-output-head-lines-all-null-from-local-memory-verified-2026-10-06) is built and untrained.
    It is the only one of GLACIER's three mechanisms with no production analog on our side, and the
    one the CE finding points at.
 1. Marginal sibling-ranking loss on P(n) — unchanged; attacks the same allocation defect from the

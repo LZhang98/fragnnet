@@ -1,12 +1,7 @@
 # What information do we hold and never use?
 
-> **Status:** FINDING — OPEN, the largest item is actionable &nbsp;·&nbsp; **Updated:** 2026-09-22
->
-> The biggest unused input in this repository is not a feature. **NIST ships an expert formula
-> assignment for 95.8% of peaks carrying 99.4% of intensity, on 68.4% of our spectra, and it
-> never reaches the training loss** — only the GrAFF baseline reads `ann_df`. Measured against
-> our DAG, ~8% of annotated intensity is scored as explained by a formula whose heavy-atom
-> skeleton NIST disagrees with and the DAG cannot build.
+> **Status:** FINDING · **Updated:** 2026-09-22
+> The biggest unused input in this repository is not a feature. **NIST ships an expert formula assignment for 95.8% of peaks carrying 99.4% of intensity, on 68.4% of our spectra, and it never reaches the training loss** — only the GrAFF baseline reads `ann_df`. Measured against our DAG, ~8% of annotated intensity is scored as explained by a formula whose heavy-atom skeleton NIST disagrees with and the DAG cannot build.
 
 Companion to [feature headroom](feature_headroom_2026_09_22.md), which closed the question for
 descriptor features. This asks the complementary question: not "what could we compute", but

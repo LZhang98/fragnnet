@@ -66,7 +66,7 @@ memorization instruments are:
   - It turns out to be 90% Elite, against 74% for the split.
 - **`c0` references.**
   - The stored `c0`@42 probe (`output/allocator_route_nl_2026_09_26/`).
-  - `c0`@63 from the [plan's eval-mode gap table](../../plans/masster/masster_memorization_route_plan.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25).
+  - `c0`@63 from the [plan's eval-mode gap table](../../history/masster_memorization_route_plan_log.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25).
   - `c0`@42's full-split val cosine by instrument from
     [instrument finding §5](../nist_orbitrap_instrument_ce_scales_2026_09_28.md#5-masster-c0-on-the-two-instruments).
     There, `OB` = Elite + Velos.
@@ -376,7 +376,7 @@ arms.
 - **The per-molecule lookup is otherwise intact.** About 86% of `c0`'s gap remains at matched
   epoch, and every route's train damage is still nearly flat across novelty.
   - The levers that act on that lookup (`k1`, EMA) are what `i3` stacks on `i1`
-    ([plan](../../plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
+    ([plan](../../history/masster_memorization_route_plan_log.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted)).
   - `k1` and EMA were measured on the `FT` labels, so whether they add on `i1` is open.
 - **Earlier probe reads carry the instrument proxy.** Route maps and gap reads on `FT`-label
   checkpoints mix the instrument cue into the lookup. Their val side is 90% Elite.

@@ -1,12 +1,7 @@
 # Should we add more features? Measured: no, except one class we cannot compute
 
-> **Status:** FINDING — CLOSED NULL for descriptor features &nbsp;·&nbsp; **Updated:** 2026-09-22
->
-> Every standard 2D descriptor family is recoverable from the inputs both models already
-> receive, at 0.93–1.00 held-out skill with only two hops of context. The one feature class with
-> real headroom is externally-derived quantum knowledge (bond dissociation energies, protonation
-> sites), and the repository's own reference test caps any bond-environment-only signal at
-> **~18% of observed branching**. Read this before adding an atom or bond feature.
+> **Status:** CLOSED NULL · **Updated:** 2026-09-22
+> Every standard 2D descriptor family is recoverable from the inputs both models already receive, at 0.93–1.00 held-out skill with only two hops of context. The one feature class with real headroom is externally-derived quantum knowledge (bond dissociation energies, protonation sites), and the repository's own reference test caps any bond-environment-only signal at **~18% of observed branching**. Read this before adding an atom or bond feature.
 >
 > **Second pass, shortcut framing.** Derivability is the wrong criterion on its own: a feature
 > can be derivable and still not be the function the model fits. The charge-retention test below
@@ -82,8 +77,31 @@ diagnostic run `a6s5it2m`, with regularization off, reaches train 0.8951 against
 of 0.9221 — **97% of the DAG ceiling** — while val sits at 0.5283 against a val oracle of 0.9292
 (57%). A model that already fits 97% of what its DAG supports is deriving whatever it needs from
 the inputs it has; derivable features cannot fix a generalization gap, and each one widens the
-input. That run is recorded in W&B and in the agent memory store, **not** under `docs/`, so it is
-cited here rather than restated — it is worth promoting into a finding of its own.
+input.
+
+### Overfit diagnostic `a6s5it2m` vs baseline `zhjgd01n` (from local memory, verified 2026-10-06)
+
+Source: the agent memory note recorded 2026-07-15 from W&B (`frag-gnn/frag-gnn`, run `a6s5it2m`
+= `nist20_inchikey_fraggnn_d3_ma_mi_all_overfit_diagnostic_lrdecay`); not re-queried today. Same
+split (`data/split/nist20_ma_mi_inchikey`), same d3 DAG, same config family; only regularization differs.
+
+| run | regularization | epoch | train | val | gap | train oracle |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `zhjgd01n` (baseline) | `frag_dropout` 0.1, `mlp_dropout` 0.3, `weight_decay` 0.01 | 99 | 0.8197 | **0.7091** | 0.111 | 0.9271 |
+| `a6s5it2m` (overfit diag) | all dropout 0, weight decay 0 | 379 | **0.8951** | **0.5283** | **0.367** | 0.9221 |
+
+- Regularization off buys +0.075 train and costs -0.181 val. The older premise "train underfits its
+  oracle (0.82 vs 0.92)" is refuted: 0.82 is the *regularized* train number, suppressed on purpose.
+- Val flatlined near epoch 92; epochs 92-379 bought train +0.037 and val +0.007. Best val 0.5331 at
+  epoch 203. The run was at step 12095 against `lr_total_steps=9600`, past the cosine end at the 4e-6 floor.
+- Consequences recorded then: regularization (+0.18 val) had not been swept beyond
+  `mlp_dropout 0.3 / wd 0.01`; the "+0.21 intensity headroom" of the oracle decomposition was
+  measured on a regularized model and is a generalization phenomenon, not a capacity gap; the long
+  FraGNNet null streak (formula-bag, sparsemax, presence head, `ce_scale`, per-fragment features)
+  were all output-layer or capacity interventions on a generalization-limited model.
+- Reproduce with `wandb.Api().run('frag-gnn/frag-gnn/a6s5it2m')`. The entity/project are
+  `frag-gnn/frag-gnn`, not the W&B default entity; `config/template.yml` shows them as
+  placeholders that happen to be correct.
 
 ## Metadata: audited, and almost all of it is dead
 

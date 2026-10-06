@@ -1,9 +1,7 @@
 # Retained-fragment encoding and candidate-graph comparison
 
 > **Status:** DEFERRED · **Updated:** 2026-09-29
-> The post-cut information gate lowers the case for a retained-fragment GNN. The user then had
-> the bounded retained-fragment branch built and screened locally (`fc1`, 2026-09-29): not
-> positive (see the addendum under "Current state"). The candidate branch is still unbuilt.
+> The post-cut information gate lowers the case for a retained-fragment GNN. The user then had the bounded retained-fragment branch built and screened locally (`fc1`, 2026-09-29): not positive (see the addendum under "Current state"). The candidate branch is still unbuilt.
 
 ## Objective and evidence
 
@@ -36,7 +34,7 @@ including nested and sibling decisions. Reopen the atom branch only with a concr
 expect useful signal beyond the tested descriptors, and a cheap edge-vs-pool pilot. Do not treat
 this design as an approved training campaign.
 
-The [existing candidate-graph proposal](masster_memorization_route_plan.md#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)
+The [existing candidate-graph proposal](../../history/masster_memorization_route_plan_log.md#candidate-graph-allocator-arms-fa0-cg1-and-cg2-proposed-2026-09-27-not-built)
 owns the earlier `fa0`/`cg1`/`cg2` design. This document specifies a new controlled extension
 on `i1`, not authorization to submit those older `c0` configs unchanged.
 

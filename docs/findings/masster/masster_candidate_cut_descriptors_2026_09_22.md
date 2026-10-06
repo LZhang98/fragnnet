@@ -1,13 +1,7 @@
 # What the candidate token's cut description resolves, on MASSter's own candidates
 
-> **Status:** FINDING — measurement only, nothing trained &nbsp;·&nbsp; **Updated:** 2026-09-22
->
-> Recomputes the [cut-set plan](../../plans/masster/masster_cut_set_features_plan.md)'s premise on the
-> right population and **changes what the plan should build**. The plan's item A led with
-> ring-sharing cut pairs; on MASSter's own candidates the pooled cut-bond sum already
-> determines the ring-sharing flag (**0.0%** residual ambiguity) while it leaves the adjacency
-> flag ambiguous for **48.9%** of candidates. Adjacency is the missing relation, it needs no ring
-> identity, and therefore no new graph field and no cache regeneration.
+> **Status:** FINDING · **Updated:** 2026-09-22
+> Recomputes the [cut-set plan](../../plans/masster/masster_cut_set_features_plan.md)'s premise on the right population and **changes what the plan should build**. The plan's item A led with ring-sharing cut pairs; on MASSter's own candidates the pooled cut-bond sum already determines the ring-sharing flag (**0.0%** residual ambiguity) while it leaves the adjacency flag ambiguous for **48.9%** of candidates. Adjacency is the missing relation, it needs no ring identity, and therefore no new graph field and no cache regeneration.
 
 `scripts/debug/masster_candidates/debug_candidate_cut_descriptors.py`. 400 NIST20 molecules, **73,045** candidates.
 

@@ -1,6 +1,8 @@
 # MASSter vs GLACIER's released checkpoint on the MassSpecGym simulation test set
 
-> **Status:** FINDING · **Updated:** 2026-10-03 (instrument prediction audit; GLACIER outputs sqrt intensity)
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Linear-cosine gap +0.026 for MASSter over GLACIER's released checkpoint; instrument audit 2026-10-03; GLACIER outputs sqrt intensity.
+>
 > GLACIER predicts sqrt(intensity), so its output is squared before a linear comparison.
 > The test set is the 9,954-spectrum MassSpecGym simulation-challenge test set. On the linear
 > cosine MassSpecGym requires (`cos_sim`), computed with our exact `cos_sim_0.01`, MASSter

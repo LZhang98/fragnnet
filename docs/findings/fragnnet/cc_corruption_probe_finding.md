@@ -1,8 +1,7 @@
 # cc-mask corruption probe: is the fragment identity representation used?
 
-> **Status:** FINDING — CLOSED &nbsp;·&nbsp; **Updated:** 2026-07-16
->
-> Fragment identity representation IS used (cos 0.82 -> 0.61 under mask randomization). The gap is comparative scoring, not features.
+> **Status:** FINDING · **Updated:** 2026-07-16
+> Fragment identity representation IS used (cos 0.82 -> 0.61 under mask randomization); the gap is comparative scoring, not features. Closed.
 
 **Date:** 2026-07-16
 **Script:** `scripts/debug/debug_cc_corruption_eval.py` (on `research/ce_perfrag_features`)

@@ -1,18 +1,7 @@
 # MASSter — Intensity-Head Bucketing Sync Removal Plan
 
-> **Status:** PROPOSED, not implemented &nbsp;·&nbsp; **Added:** 2026-09-14
->
-> Scoped out from [masster_gpu_audit.md](masster_gpu_audit.md)'s finding 2 on
-> `bond_fragment_heads.py:489 _contextualize_by_molecule`. **The measured 6.34% of total CUDA
-> self-time is the `th.bincount` kernel, which this plan does not remove** — that `bincount` is the
-> source of the counts everything here depends on. The target is the *separate, unmeasured*
-> `isin`/`nonzero`/`searchsorted` bucketing overhead around it, so the payoff is currently
-> unquantified; do not budget against 6.34%. Unlike the `batched_rel_filter_func` fix already applied, this one cannot
-> be a one-line change: the values being synced are genuinely data-dependent on the model's own
-> learned pruning, not recoverable from any CPU-known count. This document separates what actually
-> requires a host sync (little) from what the current code syncs on anyway (a lot), and proposes a
-> redesign that pays the unavoidable part once and hides it, instead of paying an avoidable part
-> repeatedly.
+> **Status:** PROPOSED · **Updated:** 2026-09-14
+> Scoped from the GPU audit; not implemented, payoff unmeasured (the measured 6.34% `bincount` kernel is not what this plan removes).
 
 ## Why this isn't a quick fix
 

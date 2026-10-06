@@ -40,7 +40,7 @@ instead of learning fragmentation.
 **MOST IMPORTANT FOR US:** the confound is ~3x worse under a **conventional structure-disjoint
 split** (9.5% -> 26.9%) than under MCES separation, because related structures may sit in
 different folds. **That is exactly our split style** (`inchikey_s`, see
-`[[project_split_ratio_ours]]`). MCES-style separation suppresses it; ours maximises it.
+[our split ratios](../reference/dataloader_data.md#split-ratios-from-local-memory-re-measured-2026-10-06)). MCES-style separation suppresses it; ours maximises it.
 
 **The fix:** train a generative model on reference-library structures and sample decoys from the
 same region of chemical space. Residual above-chance performance traces to candidate sets where
@@ -57,7 +57,7 @@ Its stated design points, each of which fixes something we hit elsewhere this se
 5. **Training data is explicitly specified**, "to isolate the effects of modelling decisions from
    the composition of the training dataset ... given the well-documented pitfalls of incorporating
    auxiliary datasets." This is precisely the objection to the GLACIER comparison
-   (`[[project_beating_glacier_plan]]`): GLACIER retrained baselines on its own split with numbers
+   ([GLACIER gap decomposition](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)): GLACIER retrained baselines on its own split with numbers
    inherited from an unpublished ICEBERG 2.0, so nothing isolates modelling from data composition.
 6. **Candidate sets are specified**, not left to each researcher — all models evaluated identically.
 7. Large candidate sets act as a practical efficiency test.
@@ -75,7 +75,7 @@ and spectra (no auxiliary data), and report across **all ten** CV folds.
 - A strong FraGNNet *forward* result is explained by measured factors, none of them artifacts of
   this paper's concern (measured 2026-09-20):
   - **merged target** — `merge: True`, 5.03 spectra/group; worth ~0.11 cosine on identical
-    molecules per `[[project_masster_merged_vs_unmerged_root_cause]]`;
+    molecules per [merged-vs-unmerged root cause](../findings/masster/masster_unmerged_overfitting_2026_09_16.md);
   - **2.2x more training structures** — 33,947 train molecules vs 15,514 in
     `nist20_ma_mi_inchikey`;
   - **richer conditioning enabled only there** — ACE, frag_mode, ce_scale, frag_mode_scale,

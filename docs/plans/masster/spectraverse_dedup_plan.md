@@ -1,7 +1,7 @@
 # Spectraverse MASSter: deduplicated train
 
-> **Status:** PREPARED · **Updated:** 2026-10-04 · Split built for cv0/cv1 (grouped by molecule and adduct),
-> configs resolve, 16 tests pass. Nothing submitted.
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> Split built for cv0/cv1 (grouped by molecule and adduct), configs resolve, 16 tests pass; nothing submitted.
 
 ## Why
 

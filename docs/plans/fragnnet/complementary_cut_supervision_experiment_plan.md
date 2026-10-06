@@ -1,14 +1,9 @@
 # Complementary-cut supervision experiment plan
 
-> **Status:** PROPOSED — KL SUBSYSTEM AND CUT TARGET BUILDER EXIST; MATCHED GINE-1 GATES PENDING
-> &nbsp;·&nbsp; **Updated:** 2026-08-10
->
-> Reuse the implemented sibling-ranking KL and cache machinery. First prove that
-> detection-limit-softened complementary-pair evidence improves a matched flat GINE-1 model; do not
-> add conserved flow or a cut-specific head.
->
-> Empirical results and reproduction details live in
-> [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md).
+> **Status:** PROPOSED · **Updated:** 2026-08-10
+> KL subsystem and cut-target builder exist; matched GINE-1 gates pending. Prove that detection-limit-softened complementary-pair evidence helps a matched flat GINE-1 model; no conserved flow or cut-specific head. Soft negative in the current oracle edit (3.37% of headroom).
+
+Empirical results and reproduction details live in [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md).
 
 ## Decision
 

@@ -1,6 +1,7 @@
 # MASSter merged-context design audit
 
-> **Status:** REFERENCE · **Updated:** 2026-09-08 · CE range and weighted aggregation fixes implemented; no training launched.
+> **Status:** REFERENCE · **Updated:** 2026-09-08
+> CE range and weighted aggregation fixes implemented; no training launched.
 
 ## Decision
 

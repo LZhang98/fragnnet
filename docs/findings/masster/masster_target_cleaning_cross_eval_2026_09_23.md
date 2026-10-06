@@ -1,11 +1,11 @@
 # Does cleaning the `[M+H]+`/FT training target make a better MASSter model?
 
-> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was CLOSED NULL, 2026-09-23)
-> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30
+> (Was CLOSED NULL, 2026-09-23.) **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
 > instrument labels, where identity routes stood in for the missing instrument input, so these
 > numbers are not current evidence.
 > No `i1` rerun. Its weight-averaging lead became EMA, now read on `i1` as `i3`
-> ([Batch 5 read](../../plans/masster/masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
+> ([Batch 5 read](../../history/masster_memorization_route_plan_log.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
 >
 > Inference-only cross-eval, no training. It was the acceptance test the `mh_ft_clean` pair was
 > built around. Cleaning the target taught the model nothing: on the raw target, the f1 checkpoint

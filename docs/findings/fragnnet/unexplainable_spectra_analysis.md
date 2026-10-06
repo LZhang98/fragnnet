@@ -1,8 +1,7 @@
 # Unexplainable-Spectra Analysis (DAG Oracle Ceiling)
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-07-21
->
-> Workflow for finding spectra the DAG cannot explain, grouped by adduct/molecule/ClassyFire class.
+> **Status:** REFERENCE · **Updated:** 2026-07-21
+> Workflow for finding spectra the DAG cannot explain (oracle ceiling < 0.5), grouped by adduct, molecule and ClassyFire class.
 
 A workflow for finding and diagnosing NIST spectra that the fragmentation DAG **cannot explain**,
 grouped by adduct, molecule, and ClassyFire class. "Unexplainable" is measured by the **oracle

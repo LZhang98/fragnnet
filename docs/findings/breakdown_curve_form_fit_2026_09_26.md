@@ -190,7 +190,7 @@ Mean precursor share of the raw target:
 
 - **Capacity is not the obstacle.** Fitted freely per molecule, M1g reproduces training spectra
   at 0.988 on the full target, against `c0`'s eval-mode train cosine of 0.922
-  ([Step 1 table](../plans/masster/masster_memorization_route_plan.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25);
+  ([Step 1 table](../history/masster_memorization_route_plan_log.md#eval-mode-trainval-gap-on-the-step-1-checkpoints-2026-09-25);
   a different sample and metric pipeline, so the comparison is approximate).
   - A head that outputs `(a_i, e_i)` per candidate from a CE-blind candidate token, with CE
     entering only through one shared β(NCE), would not cap the training fit.

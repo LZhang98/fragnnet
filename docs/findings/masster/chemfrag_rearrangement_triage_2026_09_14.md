@@ -1,10 +1,7 @@
 # ChemFrag rearrangement rule triage
 
-> **Status:** FINDING · **Updated:** 2026-09-28 · Symbolic and substructure probes complete; no
-> rule implemented. The 2026-09-28 coverage check closes the set: **none of the 32 transforms
-> adds a fragment that plain cuts cannot, and one that explains peaks beyond chance**, including
-> the Wagner–Meerwein Candidate A. See
-> [Unique-coverage check](#unique-coverage-check-2026-09-28).
+> **Status:** FINDING · **Updated:** 2026-09-28
+> Symbolic and substructure probes complete; no rule implemented. The 2026-09-28 coverage check closes the set: **none of the 32 transforms adds a fragment that plain cuts cannot, and one that explains peaks beyond chance**, including the Wagner–Meerwein Candidate A. See [Unique-coverage check](#unique-coverage-check-2026-09-28).
 
 ## Scope and conclusion
 
@@ -77,7 +74,7 @@ neutral partner.
 
 The zero counts are structural, not incidental: the templates describe charged or
 open-valence intermediates that exist only inside a fragmentation tree. This is the same
-failure mode recorded for `nl_rule_sulfoxide_so_loss`, which matches 0 of 52,787 molecules
+failure mode recorded for [sulfoxide SO-loss rule notes](../../reference/frag_gen_prepass.md), which matches 0 of 52,787 molecules
 because the standardizer writes `[S+][O-]`.
 
 **Neutral-scaffold occurrence proxies for the six skeleton-changing transforms:**

@@ -1,7 +1,7 @@
 # Connected-fragment beam speed audit
 
-> **Status:** FINDING · **Updated:** 2026-09-17 · Local synchronized GPU measurements;
-> correctness fixes retained, no production code changes or optimizer updates.
+> **Status:** FINDING · **Updated:** 2026-09-17
+> Local synchronized GPU measurements; correctness fixes retained, no production code changes or optimizer updates.
 
 ## Result
 

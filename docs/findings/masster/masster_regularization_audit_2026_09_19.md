@@ -1,9 +1,7 @@
 # MASSter regularization audit: dropout, normalization, generalization
 
-> **Status:** FINDING · **Updated:** 2026-09-19 (America/Chicago)
-> Regularization and optimization have effectively never been varied in MASSter, and the
-> train/eval candidate-set divergence is driven by BatchNorm rather than by dropout.
-> The atom decoder was removed as a result (3.5); no other model code changed.
+> **Status:** FINDING · **Updated:** 2026-09-19
+> Regularization and optimization have effectively never been varied in MASSter, and the train/eval candidate-set divergence is driven by BatchNorm rather than by dropout. The atom decoder was removed as a result (3.5); no other model code changed.
 
 ## Scope and method
 

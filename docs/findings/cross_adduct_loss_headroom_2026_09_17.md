@@ -1,8 +1,7 @@
 # Cross-adduct loss: data-side headroom gate
 
-> **Status:** FINDING · **Updated:** 2026-09-17 · Model-free measurements on NIST20 only.
-> The data-side gate passes; the trained-model half of the gate is still open and blocked
-> on a multi-adduct MASSter checkpoint.
+> **Status:** FINDING · **Updated:** 2026-09-17
+> Model-free measurements on NIST20 only. The data-side gate passes; the trained-model half of the gate is still open and blocked on a multi-adduct MASSter checkpoint.
 
 ## Question
 

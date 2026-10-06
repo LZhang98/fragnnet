@@ -1,10 +1,7 @@
 # Per-fragment context routing and final-logit gate experiment plan
 
-> **Status:** PROPOSED — ZERO-CODE ROUTING ABLATION FIRST; GATE NOT IMPLEMENTED
-> &nbsp;·&nbsp; **Updated:** 2026-08-11
->
-> First test whether the existing per-fragment context path has held-out value. Implement a
-> final-logit multiplicative gate only if that zero-code test is positive.
+> **Status:** PROPOSED · **Updated:** 2026-08-11
+> Zero-code routing ablation first: does the existing per-fragment context path have held-out value? Implement a final-logit multiplicative gate only if that is positive. Gate not implemented.
 
 ## Corrected premise
 

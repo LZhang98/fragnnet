@@ -1,8 +1,7 @@
 # MASSter candidate features: what pooling destroys, and the shortcut it leaves behind
 
-> **Status:** SCREENED, ALL NULL — B0, an adjacency form of A, and G are in the tree behind
-> default-off keys; all five matched arms ran the 128-epoch screen on 2026-09-22 and **none moved
-> validation cosine** &nbsp;·&nbsp; **Updated:** 2026-09-27
+> **Status:** CLOSED NULL · **Updated:** 2026-10-06
+> B0, an adjacency form of A, and G are in the tree behind default-off keys; all five matched arms ran the 128-epoch screen on 2026-09-22 and none moved validation cosine (best `e4_cut_adjacency` +0.0032 against 0.7270, gate +-0.005).
 >
 > **Result first.** Against a 0.7270 control (replicate spread 0.0007, gate ±0.005):
 > `e4_cut_adjacency` **+0.0032**, `e5_cut_bond_plus_adjacency` +0.0021, `e3_cc_atom_drop02`
@@ -390,3 +389,12 @@ encode, a corruption probe would show it: randomize `cut_counts` and the boundar
 trained checkpoint and measure the prediction shift. Large shift means the head leans on the cut description it has; no shift means
 it has already stopped listening, and none of A/B/C will matter. That probe needs a production
 checkpoint, which is not in the local tree. **Nothing here has been implemented or trained.**
+
+### Caveat for later one-key arms: the e-arms were eight-key diffs (2026-09-22, from project-state handoff)
+
+Each `e*` arm differs from `c4a_base_s1` by **eight** resolved keys, not one: seven new keys
+resolving to `False`/`0` plus three inert `spec_params` additions from the above-precursor filter.
+All are no-ops at those values, so the comparison holds, but check whether `spec_params`
+participates in any dataset cache identity before the next such arm: new inert keys in a hashed
+dict are how a "one-key" arm quietly changes its inputs. (The `e1_escape`/`e0_independent` pair on
+the `batch256x2_lb32` base read 0.7225 vs 0.7225, delta +0.0000, at epoch 118 while still running.)

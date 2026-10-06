@@ -1,10 +1,7 @@
 # MASSter Exploration and Policy-Learning Plan
 
-> **Status:** SUPERSEDED 2026-08-19 &nbsp;·&nbsp; **Updated:** 2026-08-19
->
-> Historical analysis only; nothing below was implemented. The active successor is
-> the support decision gate, Bernoulli-mixture probe, and canonical autoregressive
-> design in [masster_plan.md](masster_plan.md) Section 6.1.2.
+> **Status:** SUPERSEDED · **Updated:** 2026-08-19
+> Historical analysis only; nothing below was implemented. The active successor is the support decision gate, Bernoulli-mixture probe, and canonical autoregressive design in [masster_plan.md](masster_plan.md) Section 6.1.2.
 
 ## Why this doc is retained
 

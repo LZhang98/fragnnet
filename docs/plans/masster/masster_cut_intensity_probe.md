@@ -1,13 +1,14 @@
 # Frozen cut-to-intensity probe
 
-> **Status:** CLOSED NULL · **Updated:** 2026-10-01 · Full offline screen complete: tuning
+> **Status:** CLOSED NULL · **Updated:** 2026-10-01
+> Full offline screen complete: tuning
 > selects zero correction for both probes. No MASSter retraining or cluster submission.
 
 ## Objective and acceptance
 
 Test whether train-only cut predictions improve `i1`'s intensity allocation on molecules the
 correction never saw. This is the cheap check proposed in the
-[worst-prediction finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#next-steps-not-built).
+[worst-prediction finding](../../findings/masster/masster_i1_worst_predictions_2026_09_30.md#next-steps-training-arms-not-built).
 Bond AUC alone does not establish fragment-ranking value, especially for multi-cut fragments.
 
 The locked confirmation screen passes only if the selected probe improves instrument-tolerance

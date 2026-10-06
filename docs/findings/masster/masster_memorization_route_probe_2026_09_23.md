@@ -1,7 +1,7 @@
 # Which intensity-head input carries MASSter's memorization?
 
-> **Status:** SUPERSEDED · **Updated:** 2026-09-30 (was FINDING, 2026-09-24)
-> **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
+> **Status:** SUPERSEDED · **Updated:** 2026-09-30
+> (Was FINDING, 2026-09-24.) **Retired 2026-09-30 with the `f0`/`f1` runs (user decision).** They trained on the old `FT`
 > instrument labels, where identity routes stood in for the missing instrument input, so these
 > numbers are not current evidence.
 > Current read: [`i1` memorization read](masster_i1_memorization_read_2026_09_28.md).

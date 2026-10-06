@@ -1,21 +1,7 @@
 # MASSter shared fragment proposal pathway audit
 
 > **Status:** FINDING · **Updated:** 2026-09-27
-> Audit of `masster_share_proposal_across_ev` and the CE-context batch sampler it requires, made
-> while arms `sp0`/`sp1` ran. **The sampler, not the sharing, was broken.** Every epoch ended with
-> 28 one-spectrum batches of one molecule. These left the BatchNorm running statistics used at
-> validation almost entirely from that molecule, and on `c0`'s checkpoint that alone costs −0.25
-> val cosine. `sp0` and `sp1` collapsed (val cosine 0.03-0.24 against `c0`'s 0.58-0.66) and
-> are marked crashed at epoch 2. The shared proposal path is correct. Its merged-target loss is
-> exactly the plain per-spectrum loss, so sharing does not need this sampler.
-> **Both bugs are fixed, committed in `1de12eb6` ([Fixes](#fixes-2026-09-26)):** the sampler
-> no longer emits the tail, and the shared ion-mode proposal head no longer reads CE.
-> **`sp0`/`sp1` were resumed, not resubmitted fresh** (2026-09-27,
-> [audit](masster_memorization_attempts_audit_2026_09_27.md)).
-> **Final read ([§4](#4-final-read-of-the-resumed-arms-sampler-null-sharing-fails-on-coverage-2026-09-27)):**
-> the sampler is null (`sp0` − `c0` = −0.0012). Sharing fails at −0.0083 against `sp0`: candidate
-> coverage falls 0.018 and deep-cut masks fall from 41% to 25%. Likely cause: a single CE-blind
-> product of Bernoullis cannot represent the energy mixture.
+> Audit of `masster_share_proposal_across_ev` and the CE-context batch sampler it requires, made while arms `sp0`/`sp1` ran. **The sampler, not the sharing, was broken.** Every epoch ended with 28 one-spectrum batches of one molecule. These left the BatchNorm running statistics used at validation almost entirely from that molecule, and on `c0`'s checkpoint that alone costs −0.25 val cosine. `sp0` and `sp1` collapsed (val cosine 0.03-0.24 against `c0`'s 0.58-0.66) and are marked crashed at epoch 2. The shared proposal path is correct. Its merged-target loss is exactly the plain per-spectrum loss, so sharing does not need this sampler. **Both bugs are fixed, committed in `1de12eb6` ([Fixes](#fixes-2026-09-26)):** the sampler no longer emits the tail, and the shared ion-mode proposal head no longer reads CE. **`sp0`/`sp1` were resumed, not resubmitted fresh** (2026-09-27, [audit](masster_memorization_attempts_audit_2026_09_27.md)). **Final read ([§4](#4-final-read-of-the-resumed-arms-sampler-null-sharing-fails-on-coverage-2026-09-27)):** the sampler is null (`sp0` − `c0` = −0.0012). Sharing fails at −0.0083 against `sp0`: candidate coverage falls 0.018 and deep-cut masks fall from 41% to 25%. Likely cause: a single CE-blind product of Bernoullis cannot represent the energy mixture.
 >
 > - The resubmission reused the job names, so the runner found `job_id/<job>.id` and resumed
 >   the same W&B ids from `last.ckpt` at epoch 2.

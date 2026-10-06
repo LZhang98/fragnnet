@@ -355,7 +355,7 @@ whose measured precursor fraction is below 0.05.
 - **Where that leaves the memorization levers.** They act on the per-molecule lookup, which is
   where the remaining gap is:
   - `i3` (`k1` + EMA on `i1`) and `i4`
-    ([plan](../../plans/masster/masster_memorization_route_plan.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted));
+    ([plan](../../history/masster_memorization_route_plan_log.md#stacking-on-the-instrument-input-i3-and-i4-built-2026-09-28-not-submitted));
   - inductive bias for fragment ranking;
   - more molecules (NIST23).
   - Candidate coverage is a separate lever for the 8%.

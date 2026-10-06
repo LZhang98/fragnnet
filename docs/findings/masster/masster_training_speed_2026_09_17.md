@@ -1,8 +1,7 @@
 # MASSter training speed: s3gy1ro4
 
-> **Status:** FINDING · **Updated:** 2026-09-18 · Reduced monitoring, CPU improvements,
-> optional exact CUDA construction and a batched proposal coverage loss measured locally;
-> target L40S acceptance remains pending. No cluster job or remote run was changed.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Reduced monitoring, CPU improvements, optional exact CUDA construction and a batched proposal coverage loss measured locally; target L40S acceptance remains pending. No cluster job or remote run was changed.
 
 ## Result and implementation
 
@@ -519,3 +518,85 @@ errors. `tests/test_masster_pl.py` and `tests/test_masster_model.py` pass (222 t
 These are synthetic tensors at production shapes on a smaller GPU than the L40S target. No
 end-to-end training-step or epoch measurement was made for this change, so the share of a real
 step it removes is not established here; use the existing full-training benchmark for that gate.
+
+## `CutBondEncoder` encodes each directed cut bond once (2026-09-23, from project-state handoff)
+
+Both callers, MASSter's `boundary_bond_encoder` and FraGNNet's `cut_bond`, ran the encoder on
+every (fragment, cut bond) row although its output depends only on the two endpoint embeddings:
+9.8x repeated rows on a 24-molecule NIST20 MASSter batch and 29x on the FraGNNet test DAG. The new
+`encode_cut_bond_pairs` in `base_model.py` encodes each distinct (inside, outside) pair once and
+gathers the rows back. Parameters are unchanged, so checkpoints load. Against the old code on the
+production-shaped MASSter model, predictions agree within 9.5e-7 and every non-negligible gradient
+within 4.2e-7 relative; the FraGNNet `cut_bond` test model is bit-identical. Encoder forward FLOPs
+fell from 20.1 to 2.1 GFLOP (MASSter total 45.9 to 27.8). Expect little wall clock: removing the
+encoder outright (`c4a_no_bbe`) saved only 6% per epoch. The model function is unchanged, so the
+boundary block's [memorization finding](masster_memorization_route_probe_2026_09_23.md) is not
+affected. Tests: `tests/test_cut_bond.py`, `tests/test_masster_candidate_features.py` (per-row
+equivalence checks for both models, including a planted orientation bug).
+
+## Live CPU-vs-CUDA runs, per-step cost and loss chunking (from local memory, verified 2026-10-06)
+
+Source: agent-memory notes from 2026-09-17 and 2026-09-18, read from W&B (`frag-gnn/frag-gnn`)
+and local benchmarks. The W&B figures were not re-queried today; code-side statements were
+re-checked against the current tree.
+
+**Six merged arms on L40S** (`nist20_ma_mi_merged_fast{,_batch256,_batch512}{,_cuda}`), three batch
+sizes by two backends. `masster_candidate_backend: cuda` is opt-in and requires FP32, one mixture,
+unique mode, no floors and no SMARTS.
+
+- CUDA is about 1.9x faster per epoch at every batch size (min/epoch, CPU to CUDA: batch 128
+  6.10 to 3.19, 256 5.60 to 2.88, 512 5.38 to 2.89). GPU utilization roughly doubles (mean 18-21%
+  to 42-45%). VRAM is the same (4.9 / 8.0 / 14.3 GB at 128 / 256 / 512). Loss curves track each CPU
+  sibling epoch for epoch, so the backends are training-equivalent.
+- **Stale-numbers trap.** The ~416 ms/batch candidate construction above belongs to the earlier
+  implementation (see the live-run follow-up section). From the live runs' own timers
+  (`train_candidate_{input_transfer,mask_selection,topology_assembly,output_transfer,total}_batch_ms_epoch/mean`):
+
+  | batch | backend | input | select | topo | out | total ms | share of batch |
+  | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 128 | cpu | 0.0 | 74.9 | 81.6 | 89.3 | 296.9 | 36% |
+  | 128 | cuda | 1.9 | 14.4 | 31.0 | 2.6 | 50.4 | 10% |
+  | 256 | cuda | 4.1 | 15.7 | 41.1 | 5.3 | 66.7 | 8% |
+  | 512 | cuda | 8.6 | 17.9 | 52.1 | 10.3 | 89.4 | 5% |
+
+  On CUDA, candidate construction is solved; further kernel work caps near 10%. Read the per-phase
+  timers off the run before blaming construction for GPU idle time.
+- **Unmerged CPU path was optimized too** (commits `cf88125c`, `541600ab`, `1b680002`). Unmerged
+  `ma_mi` cmf dual-CE, batch 256, 1124 steps/epoch: older `h0ibnndb` to updated `0quqkfd3` took
+  candidate total 791 to 570 ms/batch, topology plus assembly 392 to 143 ms, mask selection
+  141 to 109 ms, steady-state 1930 to 1745 s/epoch (-10%).
+- **Method trap.** Do not divide `_runtime` by `epoch`: at epoch 3 that gave 2420 s/epoch and made
+  the optimized run look slower. Take `history(['epoch','_runtime']).diff()` and the median from
+  epoch 2 on.
+- **Per-step decomposition at a matched 256 spectra per step.** Merged CUDA `hi4mfsbj` 1.04 s/step
+  (50 steps/epoch, 52 s/epoch) against unmerged CPU `0quqkfd3` 1.55 s/step (1124 steps/epoch,
+  1745 s/epoch). Candidate work is 0.10 s versus 0.567 s; non-candidate work is about 0.94 and
+  0.98 s, so the unmerged arm is not slower per step, it has 22x more steps per epoch, and any gain
+  in the shared non-candidate part helps both. Moving the unmerged arm to CUDA would cut about 33%
+  (1745 to about 1170 s/epoch); 100 epochs would still be about 32 h.
+- **Duplicate pathways are not the cost** (95.4% duplicate fraction). Construction is 4.06 us per
+  pathway on CUDA against 13.4 us on CPU, and the intensity transformer runs over about 232 unique
+  fragments per spectrum, not the ~10.8k pathways; marginalization is a scatter.
+- **`hi4mfsbj` (`nist20_merged_u256_cuda_1h`, best 0.7791 at epoch 63 of 200)** is a throughput win,
+  not a quality win: 54.3 s/epoch against 176-258 for its cohort, while *raising*
+  `masster_ranked_mask_budget` 1024 to 4096. Epoch-matched it ranks last of its cohort (0.8010
+  `8v0i0fq7` > `clmrbaz3` > `p6bnsc0p` > 0.7791). Its W&B `fir_h100_40gb` tag is wrong: the GPU was an
+  L40S, so the speedup is config, not hardware.
+- `masster_share_proposal_across_ev` does not help unmerged: the current sampler never puts a
+  molecule's CEs in one batch (`dual_group_dynamic_batch_sampler: False`, `dual_group_sampler_k1/k2: 1`).
+
+**`loss_batch_size` chunking** (pure memory and throughput knob; `test_loss_sync_removal.py` asserts
+identical loss across sizes). Sparse CE at lbs 8 / 32 / 128 took 23.5 / 8.0 / 7.0 ms with +0.14 GiB.
+At microbatch 256: lbs 8 gives 58 chunks / 0.90 GB, 32 gives 19 / 2.00 GB, 64 gives 10 / 4.89 GB,
+128 gives 5 / 5.86 GB, 256 gives 2 / OOM on 8 GB. 32 is the sweet spot for CE and `lbs >
+train_batch_size` is meaningless. For direct losses the setting differs by matching mode (see the
+[loss audit](masster_loss_audit_2026_09_19.md)). Not tried: bucketing spectra by peak count so
+chunks are homogeneous. Other batching measurements (RTX 2070S, `dny62x0i` shapes, B=128):
+`_contextualize_by_molecule` bucket loop 78.8 ms against 63.8 ms for one padded pass, a win only
+when several buckets exist; candidate host prep is about 1 ms/batch and is not worth batching.
+
+**Dataloader workers.** MASSter is exempt from `reload_dataloaders_every_n_epochs` and runs with
+`persistent_workers=True` (`runner.py`, gated on `model_type == "masster"`, `num_workers > 0` and
+`automatic_optimization`): it uses `SpecMolDataset`, which has no `frag_pl_sd`/`frag_pp_sd` fragment
+caches, so worker RSS is bounded (host RAM 8-10%, RSS about 11 GB on the L40S merged runs) and the
+respawn only threw away spectrum/molecule preprocessing caches.

@@ -1,6 +1,7 @@
 # Spectraverse MASSter recall at instrument tolerance
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Two finished validation folds rescored on 4,096 spectra each; recall logging corrected for future evaluations.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Two finished validation folds rescored on 4,096 spectra each; recall logging corrected for future evaluations (historical W&B metrics unchanged).
 
 ## Result
 

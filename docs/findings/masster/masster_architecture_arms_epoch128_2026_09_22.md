@@ -1,6 +1,8 @@
 # MASSter architecture arms, read at the matched 128-epoch screen, 2026-09-22
 
 > **Status:** FINDING · **Updated:** 2026-09-27
+> 128-epoch architecture-arm read against the 0.7270 control (gate +-0.005): `a1_prenorm` +0.0056 passes; `b2` -0.0062 and `g1` -0.0160 are rejections; sections 3-5 add the reproducibility floor, the full-attention re-check and `g1`.
+>
 > **§5 (added 2026-09-23) reads `g1`, one 5-layer GINE_GSA encoder with no bond-refinement
 > head and no `CutBondEncoder`. It is a REJECTION: −0.0160 against the control, −0.0136 against
 > the two-key `c4a_no_bbe` contrast, and below both controls at every epoch. The loss is
@@ -478,6 +480,60 @@ Tail means over epochs 118–127 unless the row says otherwise:
    is no tail. This is the pre-2026-09-03 target and a much older model (val about 0.60), so it
    does not transfer to `c4a` directly. It is the only one-key evidence for the head, though, and
    the bond head was adopted without an epoch-matched win.
+
+## 6. Historical encoder-size and head-size record (from local memory, verified 2026-10-06)
+
+Source: the 2026-09-18 head-capacity audit in agent memory (every run reconstructed from its W&B config
+through `MassterPL(**cfg)`; `s3gy1ro4` reproduced the 8,434,087 parameters in the
+[merged-control guide](../../guides/benchmark_masster_merged_control.md)). W&B figures were not
+re-queried. It predates the current 9.22M lineage, whose parameter budget is in the
+[attention budget](../../plans/masster/masster_attention_budget_2026_09_21.md), so treat it as
+background for any width or depth arm.
+
+- **Encoder plateau, every cell ever run** (best `val_cos_sim_0.01`; mixed cohorts, so only the
+  ordering inside one cohort is informative):
+
+  | encoder | hidden | layers | n | best |
+  | --- | ---: | ---: | ---: | ---: |
+  | GINE | 256 | 4 | 7 | 0.6093 |
+  | GINE | 384 | 5 | 3 | 0.6066 |
+  | GINE_EFA | 384 | 1 | 1 | 0.6054 |
+  | GINE_EFA/GSA | 384 | 2 | 185 | 0.8010 |
+  | GINE_EFA | 384 | 3 | 1 | 0.6442 |
+  | GINE_EFA | 384 | 5 | 2 | 0.6237 |
+  | GINE_GRAPHORMER | 384 | 2 | 2 | 0.7297 |
+  | Graphormer | 384 | 2 | 3 | 0.6922 |
+  | Graphormer | 512 | 5 | 7 | 0.6989 |
+
+  Encoder parameters anti-correlate with cosine in both older cohorts. Graphormer 384x2 is the clean
+  contrast (same 2.83M bond head, twice the encoder, -0.05); every Graphormer 512x5 also sets
+  `masster_bond_num_layers: 0`, collapsing the bond head from 2.83M to 595k, so those are confounded.
+  Depth 1 to 2 is +0.016 and 2 to 5 is +0.003. Width has never been varied above 384 and GINE at
+  hidden 512/768 is the untested cell. The depth result for the current lineage is `g1` in section 5.
+- **Size against score on merged is a crossover.** On `tolerance_consensus` / `nist20_inchikey`, the
+  7.4M `hi4mfsbj` beat the 22.7M `8v0i0fq7` at epoch 20 (0.7546 vs 0.7522), lost by epoch 40 (0.7682 vs
+  0.7792), and 22.7M ended at 0.8010. But `hi4mfsbj` was a one-hour job (63 epochs at 52 s/epoch against
+  252) still rising when killed; a small head at equal wall clock has never been run. Beyond 22.7M it
+  reverses: the 24.5M class (22.7M plus a second 1.81M `proposal_encoder`) is worse at every matched
+  epoch (epoch 40: 0.7762 vs 0.7792). Spearman(params, best) = +0.455 on the older cohort is a
+  model-generation artifact (3.1M models had no intensity transformer) and falls to +0.250, p=0.059,
+  in the comparable cohort.
+- **Atom-decoder history.** Older merged target, 16.61M (decoder off, n=4) vs 24.77M (4 layers, n=44),
+  best cosine by matched epoch: epoch 20 +0.0130, 40 +0.0100, 60 +0.0063, 100 +0.0008, best -0.0067;
+  clock-matched the decoder-on model loses outright (113 vs 189 s/epoch). The decoder is now removed
+  (see the [regularization audit](masster_regularization_audit_2026_09_19.md) and the
+  [campaign read-out](masster_campaign_readout_2026_09_21.md)).
+- **Unmerged family contrast.** `GINE_EFA` and `GINE_GSA` are one encoder renamed in `4b759e83`
+  (2026-09-13) with the global pass changed from ELU+1 linear attention to exact softmax, so no run
+  after that date can be EFA and none before it GSA; any EFA-vs-GSA delta absorbs two weeks of code
+  (see the caveat in the [MASSter plan](../../plans/masster/masster_plan.md)). The unmerged A-vs-B
+  gain (+0.0085) stays a bundle of attention kernel, dual CE, `drop_empty_spectra` and code. The
+  intensity head (256x2, FF512, 64 inducing, `probability`, `cross_entropy`) was never varied across
+  the 31 unmerged runs of 2026-09-18, while the merged 384x3/FF1024/ind128 + `independent` + JSS stack
+  was worth +0.0129 epoch-matched on merged.
+- **Config-resolution gotcha.** Reconstructing a current config needs a deep merge with the template
+  (a shallow `{**base, **over}` drops `mol_params.pyg_pe_embed_k`), and old configs need
+  `mol_gnn_type: GINE_EFA` changed to `GINE_GSA` plus `_legacy_candidate_backend=True`.
 
 ## Reproduction
 

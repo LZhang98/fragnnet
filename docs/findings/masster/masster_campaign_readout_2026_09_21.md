@@ -1,6 +1,8 @@
 # MASSter W&B campaign read-out, 2026-09-17 to 2026-09-20
 
-> **Status:** FINDING · **Updated:** 2026-09-24 (America/Chicago)
+> **Status:** FINDING · **Updated:** 2026-09-24
+> Read-only W&B review of the 41 runs since 2026-09-15: regularization sweep no promotions, atom-decoder removal clock-matched, merged track flat inside its replicate floor for 71 runs; the feature bundle is worth 0.006 with no single component clearing the gate (section 8).
+>
 > **§8 (added 2026-09-24) reads the bundle's leave-one-out arms: the bundle is worth 0.006 and no
 > single component clears the gate. §6 carries a correction: the "2026-07-13 removal" of
 > `boundary_bond_encoder` was a different FraGNNet idea.**

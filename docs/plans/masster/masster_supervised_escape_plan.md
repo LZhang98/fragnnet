@@ -1,6 +1,8 @@
 # MASSter supervised escape channel
 
-> **Status:** IMPLEMENTED, SCREENED NULL · **Updated:** 2026-09-27
+> **Status:** CLOSED NULL · **Updated:** 2026-09-27
+> Intensity escape is implemented end to end behind `masster_intensity_escape` (default off) and screened an exact null: `e1_escape` vs `e0_independent`, two seeds each, +0.0000 at epoch 118.
+>
 > Design of record for giving MASSter somewhere to put intensity it cannot place on a
 > candidate. **Two escapes, two targets, two purposes.** The *intensity* escape (§3) is the one
 > that changes training: `wrecall` is 0.891, so 10.9% of observed intensity sits at m/z values

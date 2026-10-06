@@ -1,6 +1,7 @@
 # MASSter JEPA spectrum-embedding auxiliary
 
-> **Status:** CLOSED NULL · **Updated:** 2026-10-04 · Gate 1 fails on all three arms
+> **Status:** CLOSED NULL · **Updated:** 2026-10-04
+> Gate 1 fails on all three arms
 > ([read](#gate-1-result-2026-10-03)). Encoder JEPA is level with `i1`; allocator JEPA is
 > 0.003 behind. Gate 2 is not run.
 > **Code and data removed 2026-10-04** (user): `jepa_utils.py`, the JEPA keys and model hooks,
@@ -14,7 +15,7 @@
 > 2026-10-01). [Step 1 is built](#step-1-result-2026-10-01): an audited target table, default-off
 > code with tests, and arm configs `j1a`/`j1b`/`j2`, smoke-tested on real data.
 > **Live W&B read, 2026-10-01:** all three arms are running at epoch 54. The earlier
-> preparation-only status was stale. [Snapshot and run links](masster_memorization_route_plan.md#remaining-single-model-arms-wb-read-2026-10-01): encoder arms are roughly level with matched
+> preparation-only status was stale. [Snapshot and run links](../../history/masster_memorization_route_plan_log.md#remaining-single-model-arms-wb-read-2026-10-01): encoder arms are roughly level with matched
 > `i1` epochs; allocator JEPA is behind. Gate 1 awaits the full 54-63 completion read.
 
 ## Objective and acceptance

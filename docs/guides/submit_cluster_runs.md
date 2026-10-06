@@ -1,6 +1,6 @@
 # Submit training runs on Fir and Vulcan
 
-> **Status:** GUIDE · **Updated:** 2026-09-14
+> **Status:** GUIDE · **Updated:** 2026-10-06
 > Submission procedure verified against repository source; no cluster jobs were submitted or tested.
 
 ## 1. Prepare on the target cluster
@@ -157,3 +157,49 @@ The examples and resource table were checked against the generator and existing 
 Live login access, module resolution, data staging, W&B authentication, queue acceptance, and
 training completion remain unverified. This guide documents submission; it does not authorize
 an agent to launch experiments outside the user's requested scope.
+
+## Cluster facts from local memory (verified 2026-10-06 where noted)
+
+### Fir GPU profile default
+
+Default every Fir GPU job to `fir:h100-3g.40gb` (`--gres=gpu:h100_3g.40gb:1`, 6 CPUs, 140G; half
+an H100). Use `fir:h100-80gb` only with a stated reason, such as a measured OOM at 40 GB. The
+presets encode each MIG slice's proportional share, so change gres, CPUs and memory together.
+Hand-written `scripts/manual_slurm/fir/*.sh` spell out the triple and use `--gres` with the gres
+type, never `--gpus-per-node` with an NVML device name. Exception (user-confirmed 2026-09-21):
+the `ma_mi_merged` 256x2 lineage (microbatch 256, `accumulate_grad_batches: 2`,
+`loss_batch_size: 32`, `num_workers: 3`; `config/masster/ma_mi_merged/loss_objective_2026_09_21/`,
+`scripts/manual_slurm/fir/submit_masster_loss_objective.sh`) is sized for `fir:h100-2g.20gb`
+(measured peak 12.7 GiB of about 19.5 GiB usable); do not move it to 3g. Vulcan keeps `vulcan:l40s`.
+
+### Fir environment
+
+- Fir and Vulcan compute nodes have internet (narval does not; use `w=offline` there). For array
+  jobs, warm the W&B checkpoint cache once before `sbatch`: `get_best_ckpt_from_wandb` copies
+  non-atomically.
+- The Fir checkout lives on Lustre `/project` (`/project/6006204/feiw/frag-gnn`; check
+  `readlink -f .`). `rrg-dwishart` has no allocation (default 2048 KiB / 1025-inode quota, far
+  over), so writes there can fail with `EDQUOT`. `/home` suits a source checkout.
+- A Lustre client fault makes `git reset --hard` fail with `unable to create file: File exists`.
+  Check `df -hT .` and `git status` first (impossible sizes, or `Cannot send after transport
+  endpoint shutdown`). The client is per node, so `ssh login1` usually fixes it. A half-done reset
+  leaves `AD` entries, recoverable with `git cat-file blob`. Never `git push --force` over it.
+- `setup_job_cc.py` bakes absolute `FRAGNNET_DP` into scripts, so generate scripts on the
+  cluster, not locally. One launch hit a Lustre `EIO` on a script file that cleared after `rm`
+  and regeneration.
+
+### Vulcan evaluation command (2026-09-16)
+
+```bash
+python scripts/setup_job_cc.py --python_script_fp scripts/eval/run_save_inference_eval.py \
+  --frag_gnn_dp ./ --time 30:00 --job_name infer_eval_<run_id> --gpu_profile vulcan:l40s \
+  --cc_account=aip-rgreiner --script_kwargs "custom_fp=<config>.yml" "wandb_run_id=<id>" \
+  "eval_split=test" "use_dynamic_sampler=True" "auxiliary_scores=cos_hun_inst_tol" "eval_sqrt=True"
+```
+
+- `--time 30:00` suffices on an L40S for the ~96k-spectrum NIST20 test split; it is a cap, not a
+  rate to scale by spectrum count.
+- A multi-value flag is one quoted kwarg, e.g. `"auxiliary_scores=cos_sim cos_hun_inst_tol"`.
+- Data staging comes from the config (`spec_fp`, `mol_fp`, `split_dp`, `frag_dp`), not the CLI.
+- `cos_hun_inst_tol` needs `inst_type_loss_tol` in the run's config.
+- Without `--gpu_profile` it falls back to 128G / 8 CPUs.

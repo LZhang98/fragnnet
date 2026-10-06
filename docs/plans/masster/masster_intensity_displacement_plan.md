@@ -1,6 +1,7 @@
 # Intensity displacement: where MASSter puts the intensity it misplaces
 
-> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Phase 0 and 1.4b ran on the retired `f0`/`f1` (old `FT` labels); arm 2A not submitted, Phase 2 not started, nobody pursuing it. Re-derive any premise on `i1` first. Detail below (as of 2026-09-30).
 > **2026-09-30: Phase 0 and Phase 1.4b ran on `f0`/`f1`, now retired (user decision; old `FT`
 > labels).** Re-derive any premise on `i1` ([base-peak
 > table](../../findings/masster/masster_i1_base_peak_errors_2026_09_28.md)) before running an arm.

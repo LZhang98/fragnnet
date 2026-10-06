@@ -1,15 +1,7 @@
 # Minimal FT contender-pair training plan
 
-> **Status:** ACTIVE — STAGE A PREPARED, NOT SUBMITTED
-> &nbsp;·&nbsp; **Updated:** 2026-09-26
->
-> Add one online auxiliary loss to the existing NodeMLP model. Do not change the model
-> architecture or write a persistent ranking-target cache. The four Stage A configs and their Fir
-> generator exist and were verified locally; no job has run. See
-> [Stage A preparation](#stage-a-preparation-2026-09-23).
-> **2026-09-26:** the `ce_context` sampler's packing was fixed (uncommitted). Its epochs had ended
-> in one-spectrum batches that poison BatchNorm. The sampler budget below is pre-fix:
-> re-measure steps per epoch before submitting.
+> **Status:** PREPARED · **Updated:** 2026-09-26
+> Stage A (four Fir arms `c0`/`c1`/`p1`/`p2`) configs and generator verified locally; no job submitted. `ce_context` sampler packing fixed 2026-09-26 (committed; no `src/` changes in the 2026-10-06 working tree): the 709-step / ~236-spectrum budget below is pre-fix, re-measure before submitting.
 
 ## Goal
 

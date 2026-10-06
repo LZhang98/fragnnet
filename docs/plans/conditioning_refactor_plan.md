@@ -1,10 +1,7 @@
 # Conditioning Injection: Audit & Consolidation Plan
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-09-08
->
-> MASSter GNN context input implemented with a matched merged pair; no runs launched.
-> The combined FraGNNet context module is already implemented. Earlier refactor stages below
-> are historical proposals, not the current implementation status.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Deferred: nothing run since 2026-09-08 (MASSter GNN context input implemented with a matched merged pair, no runs launched; the FraGNNet context module already exists). The 3-mechanism collapse plan is built, not run; later metadata findings are in `findings/masster/masster_metadata_usage_audit_2026_10_03.md`. Earlier refactor stages below are historical proposals.
 
 ## Current controlled screen (2026-09-08)
 
@@ -156,7 +153,7 @@ FraGNNet conditions on acquisition metadata (collision energy, adduct/precursor 
 instrument type, fragmentation mode) through **three** parallel mechanisms, and most metadata
 is conditioned **2–3× redundantly**. The bulk of the machinery (the output-FiLM "scaler"
 chain) can only *rescale* the intensity distribution uniformly across fragments — the exact
-lever the sharpening analysis (`project_oracle_decomposition`) proved
+lever the sharpening analysis ([gap decomposition](../findings/fragnnet/dag_oracle_ceiling_nist20.md)) proved
 buys ~nothing — while the one path that can actually *re-rank* fragments (the "insert"
 embeddings) was, until the `mol,mlp` change, used only weakly at the mol-encoder input.
 
@@ -173,7 +170,7 @@ change which fragment scores highest.
 - `ce_insert`, `prec_insert`, `inst_insert`, `frag_mode_insert`
 - Params: `*_insert_location`, `*_insert_size` (+ `ce_insert_type`, `ce_insert_merge`).
 - `ce_insert_location` is now multi-valued ("mol,mlp"); the other three are still single-value
-  exact-match (see `project_ce_perfrag_conditioning`).
+  exact-match (see [per-fragment CE features null](fragnnet/false_peak_loss_plan.md#successor-output-head-lines-all-null-from-local-memory-verified-2026-10-06)).
 
 ### Mechanism ② — "scaler" FiLM chain (condition output logits; RESCALE ONLY)
 Applied in sequence to `frag_joint_logits` in `fragnnet_model.py` forward

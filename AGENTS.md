@@ -9,7 +9,8 @@ Before planning or editing:
    For Python changes, also read [Python and ML rules](docs/rules/python.md).
    For documentation changes, also read [documentation rules](docs/rules/documentation.md).
    Before writing or citing checkpoints or run outputs, read [artifact storage rules](docs/rules/artifacts.md).
-2. Read [current project state](docs/project-state.md), then the relevant linked plan.
+2. Read [current project state](docs/project-state.md), then the relevant
+   [workstream hub](docs/workstreams/) and the plans it links.
 3. Read the [architecture map](docs/architecture.md) and relevant detailed references.
 4. Follow the [session workflow](docs/workflow/session.md), including validation and handoff.
 5. Inspect current Git status and relevant code; report conflicts with recorded state.

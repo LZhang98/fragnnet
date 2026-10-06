@@ -1,10 +1,7 @@
 # Connected-fragment beam: reuse and objective equivalence
 
-> **Status:** FINDING · **Updated:** 2026-09-17 · Source and algebra review, plus a local
-> candidate-only measurement of the predicted size and topology prior. No training and no code
-> changes. Speed numbers are quoted from the existing
-> [beam speed audit](connected_fragment_beam_speed_2026_09_17.md) and the
-> [FastGNN proposal plan](../../plans/masster/masster_fast_gnn_proposal.md).
+> **Status:** FINDING · **Updated:** 2026-09-17
+> Source and algebra review, plus a local candidate-only measurement of the predicted size and topology prior. No training and no code changes. Speed numbers are quoted from the existing [beam speed audit](connected_fragment_beam_speed_2026_09_17.md) and the [FastGNN proposal plan](../../plans/masster/masster_fast_gnn_proposal.md).
 
 ## Result
 
@@ -712,3 +709,11 @@ is a cheaper route to nearly the same objective or a more expensive one.
   and 2 above remain wholly or partly unrun.
 - New code added for this document: `scripts/debug/masster_candidates/analyze_proposal_fragment_coverage.py`. No
   production code, model, config or test was modified.
+
+## User decision on the prepared beam arms (from local memory, 2026-09-18)
+
+The user chose to run the four prepared beam arms despite this finding ("I know it does not
+perform well, but I want to test it out"), with `masster_candidate_coverage_metrics` switched on.
+They train on `data/split/nist20_ma_mi_inchikey` with `cross_entropy`, so they are not comparable
+to the merged JSS lead `8v0i0fq7`, and the beam bypasses the charge head, so a deficit is not
+attributable to search alone.

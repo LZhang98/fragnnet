@@ -1,6 +1,7 @@
 # Combined PCDL, NIST23, and Enveda-180 dataset
 
-> **Status:** IN PROGRESS · **Updated:** 2026-10-01 · A shared molecule-disjoint split exists; a directly loadable combined processed table does not.
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> A shared molecule-disjoint 80/10/10 split manifest exists and is verified; a directly loadable combined processed table does not (needs bounded-memory multi-source loading).
 
 ## Objective and acceptance
 

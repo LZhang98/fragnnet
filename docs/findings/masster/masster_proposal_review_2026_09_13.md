@@ -1,6 +1,7 @@
 # MASSter fragment proposal model review
 
-> **Status:** FINDING · **Updated:** 2026-09-13 · Source and live W&B review complete; no new implementation or training.
+> **Status:** FINDING · **Updated:** 2026-09-13
+> Source and live W&B review complete; no new implementation or training.
 >
 > **Proposal coverage loss:** the loss term itself, across this and three other reviews, is
 > consolidated in [MASSter proposal loss — consolidated audit](masster_proposal_loss_audit_2026_09_22.md). This document remains canonical for the proposal *branch* — budgets,

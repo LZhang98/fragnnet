@@ -1,8 +1,7 @@
 # Why Spectraverse `[M+K]+` and `[M+Na]+` spectra are unexplained
 
-> **Status:** FINDING · **Updated:** 2026-10-03 · Full SPV table, no model. Answers the "inspect
-> Na/K peak chemistry" next step of the
-> [subformula filter screen](spectraverse_subformula_filter_2026_10_01.md).
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Full SPV table, no model; explains why `[M+K]+` and `[M+Na]+` spectra are unexplained (answers the Na/K next step of the subformula filter screen).
 
 "Bad" means a peak-level subformula ceiling ≤ 0.5 (`data/proc/spectraverse/subformula_ceiling.csv`,
 built by `preproc_scripts/spectraverse/clean_train_split.py`). Scripts:

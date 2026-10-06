@@ -1,6 +1,8 @@
 # MASSter fragment-marginal selection
 
-> **Status:** CLOSED NULL · **Updated:** 2026-09-24
+> **Status:** CLOSED NULL · **Updated:** 2026-10-06
+> Marginal selection fails; U128 ties the control at 1.65x speed. The MSGYM U256/E1024 follow-up (2026-10-05) is PREPARED, not run.
+>
 > Implemented behind `masster_fragment_selection: marginal`; default behaviour unchanged.
 > All five arms ran. Marginal ranking fails both acceptance criteria. Mask-order U128 matches
 > the control at 1.65x the speed, and the August U128 penalty does not reproduce. See the

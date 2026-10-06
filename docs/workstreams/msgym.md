@@ -1,0 +1,70 @@
+# MassSpecGym (MSGYM) workstream
+
+> **Status:** HUB · **Updated:** 2026-10-06
+> MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring and the ChemBERTa-3 basic model.
+
+## Where it stands
+- **Best measured MASSter MSGYM result:** `ll04i00m` (GLACIER-parity features arm, epoch 60) reaches test `cos_sim_0.01` 0.5713 against 0.5455 for GLACIER's released checkpoint (+0.026, 99.9% CI +0.009 to +0.044). In sqrt space the gap is +0.011 (CI crosses zero). `1imawkx1` (base recipe) peaked at val 0.5754 (epoch 62) but has no uploaded checkpoint.
+- **Retrieval (formula track, simulation-challenge `[M+H]+`, test 9,954 queries):** query log-likelihood gives hit@1 0.485 against 0.358 for cosine; the val-selected calibrated rule `ll_g0.75_t2_e1e-4_a0.5` gives 0.528. GLACIER is level on ms-pred entropy and below on cosine. Not leaderboard-comparable.
+- **Generalization gap is the problem:** `ll04i00m` train 0.884 vs val 0.584; val peaks near epoch 60. No MSGYM seed replicate exists.
+- **Prepared, not submitted:** k1/EMA/Fourier control and 10-arm screen, sqrt arm, four calibrated-likelihood arms, five U256/E1024 configs, 48-trial W&B sweep `tiwhun9q`. All in [the training-arms plan](../plans/masster/masster_msgym_training_arms_plan.md). The one-command retrieval runner is built and verified locally but never run on a cluster.
+- **Uncommitted working-tree work:** none specific to this workstream recorded.
+- **Single next action:** submit the k1/EMA/Fourier control with `s2` (seed spread) on Fir, then re-select `loglik_cal` on val per checkpoint and run test retrieval for the best one.
+
+## Open threads
+| Thread | Status | Next concrete step |
+|---|---|---|
+| [MSGYM training arms](../plans/masster/masster_msgym_training_arms_plan.md) | PREPARED | Submit control + `s2`; read each arm against the seed spread. |
+| [U256/E1024 follow-up](../plans/masster/masster_fragment_marginal_selection_plan.md#msgym-u256e1024-follow-up-2026-10-05-prepared-not-run) | PREPARED | Real-data GPU smoke; record launch provenance; matched comparison with U256/E4096. |
+| [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | PREPARED | Fir login/checkout, measure worst-case GPU memory, submit array. |
+| [Annotation-aware retrieval](../plans/annotation_aware_retrieval_plan.md) | ACTIVE | `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val; Gate 1 baseline fixed by the user. |
+| [Retrieval runner](../guides/run_msgym_retrieval.md) | built, not run on a cluster | Submit a test-fold job for a new checkpoint after re-selecting `loglik_cal` on val. |
+| [ChemBERTa-3 basic model](../plans/chemberta3_msgym_plan.md) | DEFERRED | User decides; E4 (NEIMS) is the matched check, exact-mass stages the structural route. |
+| GLACIER CF NIST'20 shortcut | argument only | Needs MAGMa labelling and a retrain; judged not worth it ([swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md)). |
+
+## Settled — read before re-proposing
+**MASSter vs GLACIER**
+- [Released-checkpoint comparison](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md) — MASSter +0.026 on linear cosine; GLACIER outputs sqrt intensity (square it); no established QTOF winner.
+- [Formula retrieval, full](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md) — test hit@1 cos 0.358 / ll 0.485 / calibrated 0.528; GLACIER level on entropy via sub-1% peaks; reproduces paper's w/ CF row by entropy.
+- [GLACIER CF swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md) — wrong-formula spectrum ranks truth at chance for both; same-formula wrong spectrum above chance, MASSter higher. No CF structure prior.
+- [GLACIER gap = CE allocation (NIST)](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) — FraGNNet-side gap sits at high CE; coverage not binding.
+
+**Scoring and retrieval**
+- [Annotation pilot](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md) — likelihood +14.8 hit@1 over cosine, mostly small-peak weighting; fragment cost adds nothing to the likelihood; support worse than cosine.
+- Retrieval pipeline facts: truth is candidate 0 (never tie-break by position); identify truth by MSGYM source key; standardizing candidates changes no score (±0.005).
+- Entropy is how the GLACIER paper ranks retrieval; ms-pred bootstrap treats spectra as independent, so its intervals are too narrow.
+
+**Training**
+- GLACIER-parity features arm: no gain (0.5669 vs 0.5695 tail); both MSGYM recipes peak near epoch 60 and drift down ([arms plan](../plans/masster/masster_msgym_training_arms_plan.md)).
+- User scope decision 2026-09-24: benchmark subset only, no extra MassSpecGym data (`ms_gym_all_1_5` would add 9,313 molecules).
+- [Marginal selection](../plans/masster/masster_fragment_marginal_selection_plan.md) — CLOSED NULL on NIST; U128 ties U256 at 1.65x speed.
+- [ChemBERTa-3 E1/T2](../plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished) — peak after epoch 0 at val 0.199/0.194, end 0.169/0.152; structure-blind prior scores 0.194; random SMILES hurt.
+
+## All documents
+| Doc | Status (updated) | One-line content |
+|---|---|---|
+| [masster_msgym_training_arms_plan](../plans/masster/masster_msgym_training_arms_plan.md) | PREPARED (2026-10-06) | Control, 10-arm screen, sqrt, calibrated arms, baseline history, scope decision, ms-pred CE handling. |
+| [msgym_val_loss_sweep_48](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | PREPARED (2026-10-03) | W&B sweep `tiwhun9q`, 48 trials, Fir launch recipe. |
+| [masster_fragment_marginal_selection_plan](../plans/masster/masster_fragment_marginal_selection_plan.md) | CLOSED NULL (2026-10-06) | NIST marginal-selection null; holds the MSGYM U256/E1024 config list. |
+| [annotation_aware_retrieval_plan](../plans/annotation_aware_retrieval_plan.md) | ACTIVE (2026-10-06) | Retrieval scoring plan, frozen full-track protocol, calibration. |
+| [chemberta3_msgym_plan](../plans/chemberta3_msgym_plan.md) | DEFERRED (2026-10-06) | ChemBERTa-3 first 6 layers end to end with NEIMS head; results and deferred stages. |
+| [masster_msgym_vs_glacier_released_ckpt](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md) | FINDING (2026-10-06) | Test cosine comparison, peak over-prediction, instrument audit. |
+| [masster_msgym_formula_retrieval_full](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md) | FINDING (2026-10-06) | Full val+test formula retrieval, GLACIER matching, calibrated likelihood. |
+| [masster_annotation_retrieval_pilot](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md) | FINDING (2026-10-06) | 400-query pilot: likelihood, fragment cost, mass track, GLACIER. |
+| [glacier_cf_swap_test](../findings/masster/glacier_cf_swap_test_2026_10_03.md) | FINDING (2026-10-03) | Wrong-spectrum swap test of GLACIER contrastive fine-tuning. |
+| [run_msgym_retrieval](../guides/run_msgym_retrieval.md) | GUIDE (2026-10-04) | One-command prepare/infer/score/summarize runner. |
+| [glacier_object_detection](../notes/glacier_object_detection.md) | NOTE (2026-10-02) | GLACIER paper note (CF, ms-pred datasets). |
+| [massspecgym_in_the_wild_audit](../notes/massspecgym_in_the_wild_audit.md) | NOTE (2026-09-20) | Evaluation audit of MassSpecGym. |
+| [aime_deepms2reasoner](../notes/aime_deepms2reasoner.md) | NOTE (2026-09-28) | AIMe / DeepMS2Reasoner; its 0.83 is on formula-filtered targets. |
+| [molspecflow](../notes/molspecflow.md) | NOTE (2026-09-20) | MolSpecFlow paper note. |
+| [glacier_gap_ce_decomposition](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) | owned by [FraGNNet hub](fragnnet.md) | GLACIER gap on NIST20 is high-CE allocation. |
+
+Neighbours: [MASSter core](masster_core.md) · [MASSter generalization](masster_generalization.md) · [Spectraverse](spectraverse.md) · [NIST23 EI](nist23_ei.md) · [CASMI / Enveda](casmi_enveda.md) · [FraGNNet](fragnnet.md).
+
+## Key artifacts
+- Configs: `config/masster/massspecgym/` (control `…_cuda_k1_ema999_fourier.yml`; arms `…_<arm>.yml`; `msgym_u256_e1024_*.yml`; `msgym_val_loss_sweep_40gb.yml`); ChemBERTa configs `config/massspecgym/chemlm/{e1,e4,t2}*.yml`.
+- Sweep: `sweep/masster/msgym_val_loss_48_40gb.yml`, W&B [tiwhun9q](https://wandb.ai/frag-gnn/frag-gnn/sweeps/tiwhun9q); launcher `scripts/manual_slurm/fir/prepare_msgym_val_loss_sweep.sh`.
+- Runs: `ll04i00m` (checkpoint uploaded), `1imawkx1` (no checkpoint), ChemBERTa E1 `tm9qwq78`, T2 `ku742mhq`.
+- Retrieval code: `scripts/ms2c/run_msgym_retrieval.py`, `scripts/manual_slurm/prepare_msgym_retrieval.sh`, `scripts/eval/score_retrieval_candidates.py`, `scripts/eval/summarize_retrieval.py`, `src/fragnnet/utils/retrieval_utils.py`.
+- Retrieval outputs: `output/msgym_formula_retrieval_2026_10_02/`, `output/glacier_msg_eval_2026_09_24/`, pilot `output/annotation_retrieval_pilot_2026_10_02/`.
+- ChemBERTa weights: `data/pretrained/ChemBERTa-100M-MLM`.

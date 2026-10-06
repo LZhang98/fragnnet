@@ -1,11 +1,7 @@
 # MASSter — Candidate-Generation Pathway Refactor
 
-> **Status:** LANDED &nbsp;·&nbsp; **Updated:** 2026-08-29
->
-> All five layers implemented and verified behavior-identical on 72 configurations. Exploration
-> deleted. Selection is hoisted out of the assembly loop, `mixtures=1` now threads, and two latent
-> bugs surfaced (see Outcome). Committed in `ebfb64ed`; the 2026-08-29 follow-up cleanup below is
-> uncommitted. 2304 tests pass.
+> **Status:** LANDED · **Updated:** 2026-08-29
+> All five layers implemented and verified behavior-identical on 72 configurations. Exploration deleted. Selection is hoisted out of the assembly loop, `mixtures=1` now threads, and two latent bugs surfaced (see Outcome). Committed in `ebfb64ed`; the 2026-08-29 follow-up cleanup below is uncommitted. 2304 tests pass.
 
 ## Why now
 

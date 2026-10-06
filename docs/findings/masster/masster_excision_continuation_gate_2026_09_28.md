@@ -1,6 +1,7 @@
 # MASSter excision continuation coverage gate
 
-> **Status:** FINDING · **Updated:** 2026-09-28 · Diagnostic completed. A nitro NO-loss
+> **Status:** FINDING · **Updated:** 2026-09-28
+> Diagnostic completed. A nitro NO-loss
 > family confirms on validation; unrestricted bridge excision is not supported by this gate.
 > No production loss channel or training run was added.
 

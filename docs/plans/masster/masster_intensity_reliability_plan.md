@@ -1,6 +1,7 @@
 # MASSter intensity reliability and transfer
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Only the P1 census ran (G1 stops the observation-noise head pending replicate provenance); P2-P5 not run, no runs planned. Detail below (as of 2026-09-27).
 > Selected `k1_ema` epoch 50 downloaded and checksum-verified. Detailed execution stages below
 > now correct existing noise estimates with ladder-aware replicate matching, prioritize transfer, and
 > use independent-seed ensembles for uncertainty. Replicate-trained head deferred; no new runs.

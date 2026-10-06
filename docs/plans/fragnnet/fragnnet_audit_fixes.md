@@ -1,6 +1,7 @@
 # FraGNNet audit fixes on feiw_v2
 
-> **Status:** REFERENCE · **Updated:** 2026-09-12 · Six fixes validated in the working tree; uncommitted.
+> **Status:** LANDED · **Updated:** 2026-09-12
+> Six FraGNNet/shared fixes from the 2026-09-12 audit, validated with regression tests (`tests/test_fragnnet_audit_fixes.py`); present in the source reviewed 2026-09-21.
 
 ## Objective and baseline
 
@@ -80,3 +81,19 @@ branch changes are part of this work. CUDA and a real trained-checkpoint quality
 evaluation remain unavailable/unperformed. Next: review the working-tree diff,
 then perform target-environment scientific evaluation
 before using changed optional losses for experiment comparisons.
+
+### Landed, and two later FraGNNet items (2026-10-06, from project-state handoff)
+
+- **Landed.** The fixes are committed (`tests/test_fragnnet_audit_fixes.py`); the "uncommitted" wording above is historical. The 2026-09-21 loss review found them present in source revision `551a64ae`.
+- **Formula-support crash follow-up (2026-09-07).** W&B runs `kvrlaxof` and `71qtthvw` both failed with infinite
+  loss on batch 0 before backward. Local reproduction: positive support targets for unreferenced formula
+  slots overflow the binary loss because their logits keep the float32 minimum sentinel. The fix in
+  `fragnnet_model.py` derives support validity from valid joint-state contributors and zeros invalid
+  support logits; tensor shapes, parameters, configs and spectral intensities are unchanged. Regression
+  tests cover both attribution methods, finite gradients, max pooling and empty support (40 focused tests
+  passed on CPU). The exact remote batch was not replayed: this is a reproduced defect and candidate fix,
+  not a confirmed remote cure. Next check was a short cluster smoke run with the patched package.
+- **`CutBondEncoder` dedup (2026-09-23).** `encode_cut_bond_pairs` (`base_model.py`) encodes each distinct
+  (inside, outside) pair once for both MASSter's `boundary_bond_encoder` and FraGNNet's `cut_bond`
+  (29x repeated rows on the FraGNNet test DAG). Parameters are unchanged; the FraGNNet `cut_bond` test model is
+  bit-identical. Details: [training-speed finding](../../findings/masster/masster_training_speed_2026_09_17.md).

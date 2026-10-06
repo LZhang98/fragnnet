@@ -1,8 +1,7 @@
 # DAG Oracle Recall / Wrecall by Collision Energy
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-07-18
->
-> DAG coverage ceiling as a function of collision energy and adduct. Figures in `docs/figures/`.
+> **Status:** FINDING · **Updated:** 2026-07-18
+> DAG coverage ceiling (recall / wrecall) as a function of collision energy and adduct on NIST20. Figures in `docs/figures/`.
 
 Measures the fragmentation-DAG **coverage ceiling** (oracle) as a function of collision
 energy (CE) and precursor adduct on NIST20. For each spectrum the oracle keeps the true

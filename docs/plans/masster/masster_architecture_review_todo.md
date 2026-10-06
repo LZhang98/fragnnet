@@ -1,6 +1,7 @@
 # MASSter architecture review — remaining todo
 
-> **Status:** ACTIVE · **Updated:** 2026-09-27
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Five of seven review items implemented 2026-09-20/21 (default-off); section 1 closed by the 128-epoch read (`a1_prenorm` +0.0056 passes, `b2` rejected). Remaining: `a5_ce_pair_bias` (read against `a3`), `a4`, `b4`, RWSE, an `a1_prenorm` seed replicate; nothing scheduled since 2026-09-27 because work moved to the `i1` generalization line.
 >
 > Tracks only what is still open from the 2026-09-19 code-vs-literature review of the MASSter
 > stack. Five of its seven items were implemented on 2026-09-20/21, all default-off. **§1 is now
@@ -231,6 +232,29 @@ the older unmerged/merged bases.
 on `c4a_base_s1` or close this item with the reason. Do not port the old reference configs.
 
 ---
+
+## Review details not in the table (from local memory, verified 2026-10-06)
+
+From the 2026-09-19 code-vs-literature review; line numbers are dropped because the code moved.
+Literature IDs were recorded from that review and not re-fetched.
+
+- **Literature anchors.** Relative-mass attention bias follows Graphormer-3D / Uni-Mol Gaussian
+  distance kernels and arXiv 2511.11489 (power-law bias `b_ij = p * log||r_i - r_j||`, matching
+  accuracy at near-zero parameters). The MS/MS analogue is an additive bias on `dm_ij = m_i - m_j`
+  through RBFs centred on common neutral losses, which is what `masster_intensity_mass_pair_bias`
+  implements. Post-LN under a constant unwarmed LR is the configuration Peri-LN (arXiv 2502.02732)
+  and QK-norm target. The Set Transformer paper itself reports 16 inducing points *beating* full
+  attention and attributes it to regularization, so item 6 is two-sided: the ISAB bottleneck may be
+  the regularizer, not a defect.
+- **`cut_counts` scaling.** `CandidateIntensityTransformerHead` feeds `cut_counts` raw into the
+  linear layer while fragment size goes through `log1p` (re-checked in `bond_fragment_heads.py`
+  2026-10-06).
+- **Warmup is not justified by post-LN structure.** A random-init probe measured per-layer gradient
+  max/min of 1.02/1.01/1.04/1.07 at depth 2/3/6/12, flatter than a pre-LN twin
+  ([regularization audit](../../findings/masster/masster_regularization_audit_2026_09_19.md)).
+- **Bond head normalization pattern.** The bond head uses `norm(x + f(x))` (branch can attenuate)
+  while the GNN uses `norm(f(x)) + x` (branch pinned); `charge_head` and the bond scorer have no
+  normalization. The correct pattern already exists in-repo.
 
 ## What this doc deliberately excludes
 

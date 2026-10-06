@@ -1,11 +1,12 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** ACTIVE · **Updated:** 2026-09-28 (E1 and T2 finished on Fir, 100 epochs each. Both
-> peak after epoch 0, at val `cos_sim_0.01` 0.199 and 0.194, and end at 0.169 and 0.152. The
-> best barely beats a structure-blind 0.194, and random SMILES hurt; see
-> [Results](#results-2026-09-28-runs-finished). The next step is the user's call. Cut to a basic
-> model on 2026-09-26 at the user's request; the earlier design and its
-> [Review](#review-2026-09-26) are kept)
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> E1 and T2 finished on Fir (100 epochs, 2026-09-28): both peak after epoch 0 at val `cos_sim_0.01`
+> 0.199 / 0.194, end at 0.169 / 0.152, and barely beat a structure-blind 0.194; random SMILES hurt.
+> No next run is scheduled (the user decides; E4 NEIMS baseline is the matched check). See
+> [Results](#results-2026-09-28-runs-finished). Cut to a basic model on 2026-09-26 at the user's
+> request; the earlier design and its [Review](#review-2026-09-26) are kept.
+>
 > **Current scope: a basic model, to see whether it works.** ChemBERTa-3's first 6 of 12 layers,
 > loaded encoder-only, fine-tuned **end to end** with the NEIMS binned 0.01 Da head on
 > MassSpecGym's simulation-challenge spectra. Two runs, one seed each (the user's call,

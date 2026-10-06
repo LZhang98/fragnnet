@@ -1,7 +1,7 @@
 # MASSter candidate generation: CPU improvements, then an optional GPU backend
 
-> **Status:** ACTIVE · **Updated:** 2026-09-17 · CPU implementation is validated locally;
-> full CUDA passes local correctness/speed gates and final regressions. L40S checks remain.
+> **Status:** LANDED · **Updated:** 2026-10-06
+> CPU path validated and the opt-in CUDA candidate backend is in production use (resolved `cuda` on all 2026-09-19/20 sweep jobs); the L40S acceptance checks listed below were never recorded as run.
 
 ## Objective and scope
 

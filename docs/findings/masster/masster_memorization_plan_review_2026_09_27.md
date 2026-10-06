@@ -15,7 +15,7 @@ helps consistently; a large residual error remains on unfamiliar chemistry.
 Some methods work. The [attempts audit](masster_memorization_attempts_audit_2026_09_27.md)
 records replicated key-dropout gains (+0.0074 and +0.0048), replicated EMA gains, and merged
 LR-decay gains. These are useful performance improvements even when the train/val gap persists.
-The [latest local screen](../../plans/masster/masster_memorization_route_plan.md#local-screen-allocator-size-standard-attention-and-mz-encoding-2026-09-27)
+The [latest local screen](../../history/masster_memorization_route_plan_log.md#local-screen-allocator-size-standard-attention-and-mz-encoding-2026-09-27)
 also has promising full-attention and atom-mask results, under a different data/batch/horizon
 recipe. They are not confirmed main-recipe successes or failures.
 

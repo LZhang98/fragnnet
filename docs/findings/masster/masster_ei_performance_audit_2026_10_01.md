@@ -1,6 +1,7 @@
 # MASSter EI performance audit
 
-> **Status:** FINDING · **Updated:** 2026-10-01 · Checkpoint and inference audit complete; proposed training comparisons remain unrun.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Checkpoint and inference audit complete (e1 `jeljdikj`@37: Stein 0.886845, RASSP-eligible subset 0.899167); proposed training comparisons remain unrun.
 
 ## Scope and comparison
 

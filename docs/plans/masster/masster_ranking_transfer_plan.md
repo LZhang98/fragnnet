@@ -1,9 +1,10 @@
 # Reducing MASSter's per-molecule shortcut so its ranking transfers
 
-> **Status:** ACTIVE · **Updated:** 2026-09-30
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> All four arms ran; the surviving lever, weight EMA, is carried into `i3`/`i4` on `i1`. Gates 2-3 were never read and the `f0` reads are retired; no next step is pursued. Detail below (as of 2026-09-30).
 > **2026-09-30: results read against `f0` (`3bej6fq7`) are retired with the `f0`/`f1` runs (user
 > decision; old `FT` labels).** Its surviving lever, weight EMA (`u2`), was re-read on `i1` inside
-> `i3` (`k1` + EMA), +0.0102 ([Batch 5 read](masster_memorization_route_plan.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
+> `i3` (`k1` + EMA), +0.0102 ([Batch 5 read](../../history/masster_memorization_route_plan_log.md#batch-5-read-from-wb-i3-i4-fa1-and-mz1-2026-09-29)).
 > **Switch-EMA arm `u3` finished and fails** ([section](#switch-ema-arm-u3-built-2026-09-25-not-submitted)):
 > −0.0089 against `u2`, below it at all 64 epochs; it underfits. EMA helps only as an average
 > kept off the training weights.
@@ -209,7 +210,7 @@ Next, in order:
 **Why.** `u2`'s EMA changes only the weights that are validated and saved. The callback never
 writes the average into training, so `u2` trains exactly as its control and keeps the
 per-molecule lookup. Its val loss still rises late
-([memorization-route plan](masster_memorization_route_plan.md#batch-2-configs-2026-09-25-not-submitted)).
+([memorization-route plan](../../history/masster_memorization_route_plan_log.md#batch-2-configs-2026-09-25-not-submitted)).
 Switch EMA (SEMA, Li et al., 2024) copies the average into the training weights at the start of
 every epoch, so the trajectory itself changes. The Hare & Tortoise reset is the same family. The
 [literature note](../../notes/memorization_literature_2026_09_24.md) demoted resets, since they add

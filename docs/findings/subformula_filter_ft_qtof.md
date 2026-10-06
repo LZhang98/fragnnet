@@ -1,12 +1,7 @@
 # 5 ppm Subformula Filtering on NIST20-HR
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-09-16
->
-> Historical NIST20-HR census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
-> The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
-> tables remain the two-adduct baseline until the four-adduct run is complete.
-> The 2026-09-16 section at the end measures the Cl/Na budget fix on all four adducts and
-> records the MASSter scope; it does not restate the 5 ppm tables.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Historical NIST20-HR census for `[M+H]+`/`[M-H]-` by FT and QTOF; the 5 ppm tables are the two-adduct baseline. The 2026-09-16 section measures the Cl/Na budget fix on all four adducts and records the MASSter scope.
 
 ## Question
 
@@ -455,3 +450,22 @@ a C6H8N2O3 stand-in, the filter rejects 21.6% of the channels MASSter can emit f
 against 24.5%/21.4% for `[M+Na]+`/`[M+Cl]-`; the rejects are over-hydrogenated negative-RDBE
 channels, so the filter is stricter in the same way for every adduct and creates no MASSter-
 specific asymmetry.
+
+## FraGNNet A/B verdict and live hazard (from local memory, W&B numbers not re-queried, 2026-10-06)
+
+- **Before the fix** the filter deleted Na and Cl peaks. Retention on `nist20_ma_mi_inchikey` val:
+  `[M+Na]+` kept 65.76% of intensity and 82.50% of base peaks; `[M+Cl]-` 42.61% and 45.06%;
+  `[M+H]+`/`[M-H]-` 97-98%. Cause: `_subformula_masses` used one fixed carrier per precursor type
+  (`PREC_TYPE_TO_COMP_DIFF`). Fixed in `d0393776`, `2922ef7e`, `04133d45`.
+- **Verdict: the fixed filter helps.** Baseline over 10 full-length replicates: mean 0.70988,
+  sd 0.00140. `lawkhwqi` 0.71235 and `njsqzar2` 0.71276 beat all 10 (max 0.71192), mean +0.0027,
+  exact permutation p = 1/66. Pre-fix run `9kk1p0xi`: 0.70784. The single-variable control for the
+  `target_rel_ints_thresh: 0.01` confound is `dm3xa4gd` (0.70940, n=1). Metric:
+  `val_cos_sim_0.01_best/mean`.
+- **Live hazard:** `filter_subformula_peaks: True` with `include_cmf: False` on Na/Cl hands the
+  model unreachable targets. DAG coverage of retained intensity, CMF vs CRF-only: Na 0.904 vs
+  0.704, Cl 0.961 vs 0.196. Nothing guards the combination (`runner.py` only checks
+  `include_cmf` against `cmf_h_formulae_idx`).
+- `INSTRUMENT_TOLERANCES` in `clean_spectra_utils.py` is hard-coded and independent of
+  `inst_type_loss_tol`; `subformula_ppm` is dead while `subformula_use_instrument_tolerance` is on.
+  The filter raises on `IT` while the loss falls back silently.

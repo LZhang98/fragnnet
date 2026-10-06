@@ -1,10 +1,7 @@
 # Enveda-180 dataset: contents and preprocessing
 
-> **Status:** FINDING · **Updated:** 2026-09-25 · Steps 1-2 (df, proc) have run locally on the
-> filtered export, and a first 8:1:1 InChIKey split exists (§7). No DAGs. Dimer,
-> formate/acetate and `[M+Br]-` spectra are outside the split (§7). `[M+Br]-` is now supported by
-> the adduct tables (§8). Isotopes (§9): 13C satellites are 7.7% of positive-mode target
-> intensity, and the release's MS1 isotope fields are unreliable.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Steps 1-2 (df, proc) ran locally and the 8:1:1 InChIKey split exists (section 7); no DAGs. Dimer and misnamed formate/acetate spectra are outside the split; `[M+Br]-` is now supported by the adduct tables (section 8). Isotopes (section 9): 13C satellites are 7.7% of positive-mode target intensity; the release's MS1 isotope fields are unreliable. Baseline config section added at the end.
 
 ## 1. Source
 
@@ -274,3 +271,12 @@ more intense, and at the given spacing:
     M+2 peaks the spectra do not have.
   - The [isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md#step-3-on-enveda-val-2026-09-27-gate-0a-fails)
     closed null on it.
+
+## 10. Baseline config and run state (2026-09-27/28, from project-state handoff)
+
+- **Config:** `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`. Enveda-180 trains standalone, not with NIST/MSGYM (user decision).
+- **CE:** `ce_insert_type: embed` with `int_embedder: fourier`, as in the Spectraverse folds, replacing `qet` after `n1`-`n3` trailed `c0` on NIST20.
+- **ACE only, no EMA (user decision, 2026-09-28).** `spec_params.nce: false` and no `ema_decay`, because Enveda records only ACE and the dataset's NCE is derived from it. Renamed from `...dual_ce_fourier_ema999` (never submitted); the fork origin is the MSGYM non-EMA arm. A one-epoch smoke exits 0, and its checkpoint holds only an ACE table and no EMA state.
+- **Other deltas from the MSGYM arm:** `[M+H]+`/`[M-H]-` through `filter_prec_types`, a 10 ppm QTOF loss tolerance, 20 epochs (24,240 steps).
+- **Status:** not submitted; it needs a second seed before any arm is read against it. Local runs need a short `TMPDIR` on the root disk (`/tmp` is 3.7 GB, and a long `TMPDIR` path breaks the dataloader sockets).
+- The original role of this file was control `i0` of the closed-null [isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md): on the 77,320 `[M+H]+`/`[M-H]-` val spectra, a perfect monoisotopic model plus the best scalar envelope recovers only 0.0047 cosine (positive) and 0.0010 (negative) against a 0.005 gate, so FraGNNet on Enveda keeps `num_isotopes: 1`.

@@ -1,6 +1,8 @@
 # MASSter regularization and normalization sweep (Fir, one-hour boxes)
 
-> **Status:** EXECUTED, NO PROMOTIONS; ONE ARM REOPENED · **Updated:** 2026-09-22
+> **Status:** PREPARED · **Updated:** 2026-10-06
+> Sweep executed 2026-09-19/20 with no promotions (0 promote, 5 hold, 1 reject); the full-length `wd10` arm and its matched control are prepared on `fir:h100-80gb` and were never submitted.
+>
 > **`wd10` is the one unsettled item and it is now prepared at full screen length.**
 > The 2026-09-19 screen read it at epoch 64-65 in a **one-hour** box, i.e. ~10% of the 630-epoch
 > horizon it was configured for, and it was the only arm that narrowed the train/validation gap
@@ -138,6 +140,16 @@ Per-job fixed overhead is small and does not decide this: in-run setup to the en
 The train-side eval tensors added by `compute_train_auxiliary_metrics` are built with `sparse=True`
 (`spectrum_pl.py:619-629`), so they are peak-list sized (~27k peaks at batch 512, merged rows
 averaging 51.9 peaks), well under a GiB. The instrumentation costs **time, not memory**.
+
+> **Correction (2026-09-20, from local memory, verified 2026-10-06).** The sentence above was wrong.
+> With train auxiliary metrics on, peak GPU rose from 26.2-26.8 GiB (off, L40S) to 36.2 / 37.5 / 43.7 /
+> 53.1 GiB (ctrl_a / hbound_complement / hbound_valence / drop03): `precision`/`recall`/`w*` go through
+> `calculate_match_mzs`, which builds a dense `|true| x |pred|` outer product, now on train batches, and
+> scales with retained candidates, so more dropout means less confident means more candidates and more
+> memory. The 2g pilot `ybmf4gaq` OOM'd at 19.62 GiB and these arms cannot fit `3g.40gb` (39.5 GiB); they
+> ran on full 80 GB cards. Two identical controls spanned 36.2 and 40.8 GiB, so single-run memory is too
+> noisy to attribute. A MIG slice with train instrumentation needs the match-based aux scores off on train.
+> See the [campaign read-out](../../findings/masster/masster_campaign_readout_2026_09_21.md#7-guards-for-anyone-reading-these-numbers).
 
 ### Equal-budget shapes, decided by the Stage A measurement
 

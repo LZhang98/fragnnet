@@ -1,12 +1,7 @@
 # Global fragment intensity ranking experiment plan
 
-> **Status:** PROPOSED — FINDINGS MEASURED; TARGETS AND LOSS NOT IMPLEMENTED
-> &nbsp;·&nbsp; **Updated:** 2026-08-12
->
-> Train the model to select the correct high-intensity fragment globally and to follow reliable
-> winner changes across collision energy. Start with peak-mass losses on the existing flat head;
-> add a set-level competition head only if the supervised target has held-out signal that the flat
-> scorer cannot realize.
+> **Status:** PROPOSED · **Updated:** 2026-10-06
+> Design of record for global base-mass ranking and CE contender-pair supervision; findings measured, targets and loss not implemented. Only its minimal Stage A (separate plan) is prepared, not submitted; project-state shows no active FraGNNet work since Sept 2026.
 
 For the smallest first training experiment, use
 [`ft_contender_pair_minimal_training_plan.md`](ft_contender_pair_minimal_training_plan.md). It tests
@@ -14,6 +9,21 @@ only the high-confidence FT soft pairwise loss on the unchanged NodeMLP model, u
 cache-free context batching and a sampler-only control. The document below is the complete research
 plan and supplies later targets, controls, and escalation paths; they are not all part of the
 minimal first run.
+
+## Current summary
+
+- **Tried:** nothing trained from this plan. Measurement only: provisional NodeMLP (`9t63zils`) validation read and Step 0 replicate floors, both in the
+  [log](../../history/global_fragment_intensity_ranking_experiment_plan_log.md) and
+  [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md).
+- **Verdicts:** base-peak failure is a ranking problem (57.4% base-peak accuracy; 84.1% of misses keep the true mass in support), reproduced at 7:1 ranking:coverage in
+  [`dominant_peak_outcome_decomposition.md`](../../findings/fragnnet/dominant_peak_outcome_decomposition.md). The model follows CE-driven winner switches poorly (38.5% winner changes, 13.1% both endpoints right).
+  Step 0: FT directional headroom is real (replicate cosine 0.885 vs model 0.765, gap 0.120 `[0.091, 0.149]`); QTOF inconclusive.
+- **Standing decisions:** first-arm population frozen to FT `[M+H]+` and `[M-H]-`; `ce_pair_target_gamma = 1.0`; no competition head and no extra CE insertion path first; the
+  `ce_insert_location: mol,mlp` experiment changed little, so CE access is not the defect.
+- **Open:** every Phase 2 gate (raw-DAG coverage, noise-floor transition signal, matched-baseline defect, direction vs uniform gain, offline-oracle specificity) is unrun on an unfiltered matched
+  export; all losses and the bounded `CEContextDynamicBatchSampler` audit are unbuilt here (the sampler and pair loss exist as code for Stage A).
+- **Next step:** Stage A of [`ft_contender_pair_minimal_training_plan.md`](ft_contender_pair_minimal_training_plan.md) (PREPARED, four Fir arms, not submitted). Read its p1/p2 vs c1 before activating anything below.
+- The Alternatives A-K sections are deferred designs with activation criteria; none is started.
 
 ## Full-plan decision
 
@@ -63,29 +73,13 @@ Global softmax is necessary for a probability distribution but is not itself a c
 
 ## Evidence that motivates the experiment
 
-The provisional NodeMLP validation analysis found:
-
-- base-peak accuracy 57.4% over 96,153 spectra;
-- 84.1% of base-peak misses retained the observed mass in exported prediction support;
-- supported misses had mean DAG-oracle cosine 0.979 but model cosine 0.578;
-- within 7,519 fixed FT contexts, base-peak accuracy fell from 92.4% at the lowest available CE to
-  42.3% at the highest;
-- conditional on the observed mass remaining in support, FT accuracy fell from 92.8% to 50.8%;
-- on adjacent FT CE transitions where the observed winner changed, the model changed its winner
-  only 38.5% of the time and got both endpoints right only 13.1%;
-- predictions captured 85.8% of observed FT variation around the fixed-context CE mean and were
-  closer to the CE-specific target than the leave-one-CE-out average in 79.8% of cases, rejecting a
-  pure static-average explanation;
-- despite that continuous response, predicted FT variation at winner-changing adjacent steps was
-  only 0.205 TV versus 0.298 observed, and the top node changed in only 35.9% of such transitions;
-- the metric-consistent L2-optimal uniform gain at winner-changing steps was 1.010
-  `[0.996, 1.025]` for FT and 0.847 `[0.760, 0.936]` for QTOF, so uniform amplification is not the
-  missing fix; switch-only delta cosine was only 0.593 for FT and 0.478 for QTOF;
-- the observed winner was stable in 71.9% of adjacent FT transitions, motivating stable-winner
-  contender pairs as anchors rather than training only on reversals;
-- adding CE directly at `mol,mlp` changed performance very little.
-
-These are provisional because the inference export applied `min_peak_int=1.0`. Repeat every gate
+Measured on a provisional NodeMLP export (`9t63zils`, `min_peak_int=1.0`); full list in the
+[log](../../history/global_fragment_intensity_ranking_experiment_plan_log.md#evidence-that-motivates-the-experiment)
+and in the findings doc. Headlines: base-peak accuracy 57.4% (96,153 spectra); 84.1% of misses keep the
+observed mass in export support; within fixed FT contexts accuracy falls 92.4% (lowest CE) to 42.3%
+(highest); on winner-changing adjacent FT transitions the model changes its winner only 38.5% of the
+time (both endpoints right 13.1%); uniform gain is not the fix (L2-optimal gain 1.010 FT); CE inserted
+at `mol,mlp` changed little. Provisional because of the `min_peak_int=1.0` export: repeat every gate
 below on an unfiltered matched NodeMLP export.
 
 ## Shared peak-mass contract
@@ -134,43 +128,16 @@ directional defect may be replicate noise: stop the contender-pair line before c
 implementing the loss.
 Do not transport the replicate estimate to a different cohort or instrument.
 
-The provisional validation cohort gives:
+Measured results (provisional FT/QTOF validation cohort) are in the
+[log](../../history/global_fragment_intensity_ranking_experiment_plan_log.md#step-0--model-free-replicate-noise-floors).
+Outcome: FT winner-flip floor 0.171, replicate delta cosine 0.885 vs matched model 0.765 (paired
+difference 0.120 `[0.091, 0.149]`), so the kill criterion does not fire for FT; QTOF (15 double-replicated
+switches) is inconclusive. **Frozen first-arm population: FT `[M+H]+` and `[M-H]-` only**; `[M+Na]+`
+(interval crosses zero) and `[M+Cl]-` (coverage) stay excluded, and QTOF cannot be admitted on this evidence.
+The FT estimate covers only 572 of 20,573 switching transitions (2.8%), so it supports high-confidence,
+well-measured crossings only; stable anchors show headroom only in the top two change quartiles, so
+confidence eligibility must apply when anchors are introduced and stable/switch outcomes are scored separately.
 
-| Instrument | Same-CE pairs / molecules | Winner-flip floor | Double-replicated switches / molecules | Replicate cosine | Matched model cosine | Paired difference | Decision |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| FT | 4,519 / 1,202 | 0.171 `[0.156, 0.186]` | 572 / 386 | 0.885 `[0.856, 0.913]` | 0.765 `[0.737, 0.793]` | 0.120 `[0.091, 0.149]` | continue |
-| QTOF | 160 / 10 | 0.200 `[0.103, 0.319]` | 15 / 7 | 0.035 `[-0.193, 0.302]` | not interpreted | not interpreted | inconclusive coverage |
-
-Thus the kill criterion does not fire for FT on a valid cohort-matched comparison. For the first
-training arm, however, freeze the eligible population to FT `[M+H]+` and `[M-H]-`: their paired
-directional gaps clear zero. FT `[M+Na]+` remains excluded because its interval crosses zero, and
-FT `[M+Cl]-` remains excluded because it is below the coverage threshold. Admit another adduct only
-if the matched NodeMLP audit passes the same predeclared gate; “FT-only” by itself is not a complete
-population definition. The full-cohort
-model value of 0.593 is not used in this decision because the double-replicated subset is easier.
-The approximate independent-error correction gives \(\sqrt{0.885}=0.941\) for single-observation
-reliability, but same-lab replicate correlation can bias 0.885 upward; treat both effects as
-unquantified sensitivity considerations, not a corrected endpoint. QTOF cannot be admitted to the
-target population on this evidence; obtain more replication before admitting it. The first
-contender-pair experiment is specifically FT `[M+H]+` and `[M-H]-`, not all FT spectra.
-
-The FT reliability estimate covers only 572 of 20,573 switching transitions (2.8%). It is not a
-representative ceiling for the full target population: the matched transitions have median
-\(\lVert\Delta q\rVert_2=0.396\) and CE gap 5, versus 0.235 and CE gap 10 for unmatched
-transitions, and 57.0% of matched transitions lie in the largest-change quartile. The model reaches
-0.765 on the matched cohort and 0.588 on the unmatched cohort. A shared-molecule restriction does
-not remove the gap, while replicate averaging can denoise the matched target. Treat the Step 0 go
-as evidence for high-confidence, well-measured FT crossings only; do not extrapolate it to weak
-transitions without a measured ceiling.
-
-The paired switch gap nevertheless persists after stratifying by full-population
-\(\lVert\Delta q\rVert_2\): Q1 0.177 `[0.068, 0.279]`, Q2 0.106
-`[-0.031, 0.234]`, Q3 0.109 `[0.061, 0.155]`, and Q4 0.113 `[0.084, 0.143]`.
-Thus the FT switch go is not solely a large-change artifact; Q2 is underpowered rather than showing
-a reversed point estimate. Stable anchors are different: their Q1 gap is 0.002
-`[-0.097, 0.098]`, with measurable headroom appearing only in Q3 and Q4. Confidence eligibility
-must therefore apply when stable anchors are first introduced, and stable and switch outcomes must
-be evaluated separately.
 
 ## Target A — confidence-weighted global base-mass ranking
 

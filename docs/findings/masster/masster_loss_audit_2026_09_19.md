@@ -1,8 +1,7 @@
 # MASSter loss-path audit after the batching refactor
 
-> **Status:** FINDING · **Updated:** 2026-09-19 · Reviewed `86cbf98d` (clean tree). Measured on a
-> local RTX 2070S without `torch_linear_assignment`, so Hungarian magnitudes are the SciPy
-> fallback and need a cluster re-measure. No code, configuration, or training state changed.
+> **Status:** FINDING · **Updated:** 2026-09-19
+> Reviewed `86cbf98d` (clean tree). Measured on a local RTX 2070S without `torch_linear_assignment`, so Hungarian magnitudes are the SciPy fallback and need a cluster re-measure. No code, configuration, or training state changed.
 >
 > **Proposal coverage:** the proposal term's objective-level properties are consolidated in
 > [MASSter proposal loss — consolidated audit](masster_proposal_loss_audit_2026_09_22.md).
@@ -55,7 +54,7 @@ These were checked rather than assumed, and none of them needs work.
 
 The batching benchmark in the plan used a uniform 52 observed peaks per spectrum. The measured
 merged distribution is log-normal with p50 25, p99 343, max 1168
-(`reference_merged_peak_count_distribution`). Because every spectrum in a chunk is padded to the
+([peak-count distribution](#peak-count-distribution-from-local-memory-measured-2026-09-17)). Because every spectrum in a chunk is padded to the
 chunk's widest peak list, a single tail spectrum inflates the whole chunk, and for Hungarian it
 inflates the assignment problem each spectrum has to solve.
 
@@ -149,7 +148,7 @@ turns on two per-spectrum Python loops inside `loss_fn`, on every training step:
 Batch 64, 256 fragments per spectrum, 2 ion modes x 9 H channels. Together 81.6 ms per batch,
 against 3.8-20 ms for the primary loss itself, and **faster on CPU** - the same signature as
 `observational_channel_targets`, which was 230 ms per batch and the same on CPU before being
-batched to 2.7 ms (`project_per_spectrum_loops_sync_bound`). Both loops index dense tensors with
+batched to 2.7 ms ([GPU audit](../../plans/masster/masster_gpu_audit.md)). Both loops index dense tensors with
 a boolean `fragment_batch_idxs == batch_index` mask, and `_ion_h_required_k_metrics` adds a
 per-spectrum `th.quantile` and an `if not batch_supported.any()` sync.
 
@@ -198,3 +197,61 @@ current runs.
   profiled end to end.
 - `torch_linear_assignment` is absent locally, so every Hungarian timing is the SciPy fallback.
 - Timings come from one consumer GPU; only ratios within a row of a table should be carried over.
+
+## Loss-objective comparison and JSS-vs-CE verdict (from local memory, verified 2026-10-06)
+
+Source: agent-memory notes of 2026-09-19 reconstructed from all 226-230 `model_type: masster` W&B
+runs. W&B figures were not re-queried today; the keys named below exist in `config/template.yml`.
+
+- **Cosine is a wash.** Loss-matched merged pair `7abal2ru` (CE, `probability`) against `38ugaxen`
+  (JSS, `independent`), 199 epochs: 0.7985 against 0.7996 (+0.0011); KL `kj17tksj` 0.7984. The 0.8010
+  headline `8v0i0fq7` is not loss-matched (warmup `e0_4`, swept for JSS only). Matched paired-seed
+  screen at epoch 42 (`*_warmup_e0_15_dense`): CE 0.7711 / 0.7636, KL 0.7710 / 0.7635 (two seeds,
+  agreement to 1e-4), JSS 0.7662. Long subformula runs epoch-matched at 60/100/140: JSS
+  0.7912/0.7936/0.8010, CE 0.7846/0.7921/0.7951, KL 0.7868/0.7902/0.7970, spread 0.006 against a
+  within-arm seed spread of 0.004-0.008. The primary objective is not a lever.
+- **Same-seed replicate floor.** Identical config, seed and epoch count: `lzhb3ozh`/`mgs5qts9`
+  0.7941 vs 0.7990 (0.0049), `k5gslw0f`/`96i3q8up` 0.7915 vs 0.7949 (0.0034), `zp06g7ml`/`6ru0lg6f`
+  0.7987 vs 0.7981 (0.0007). Effects below about 0.005 cannot be resolved at n=1 (wprecision floor
+  0.003-0.005, recall 0.0010, wrecall 0.0002). Do not re-run a JSS-vs-CE cosine comparison at n=1.
+- **Wall clock favours CE where one would stop.** Merged best val by hour, 3 h: CE 0.7872 vs JSS
+  0.7715; 5 h: 0.7966 vs 0.7905; JSS crosses at about 8 h. Unmerged is parity at 1.5x cost:
+  `6ks7v8ce` CE 0.7058 at 99 ep / 11.3 h against `66unqbwq` JSS 0.7057 at 48 ep / 17.3 h; widening the
+  head (`h0gvuf4f`, 384x3) reached 0.7101, four times what the loss did. Throughput was 20.5-20.8 ep/h
+  for CE and 14.0-14.8 for JSS/KL before the loss batching refactor (1.46x), with candidate time
+  107-122 ms/batch in every arm.
+- **The one real JSS effect is weighted precision.** Merged at epoch 99: CE 0.9211, JSS 0.9500,
+  KL 0.9288; at 199: 0.9366 / 0.9497 / 0.9322; epoch 20: 0.7344 / 0.8774 / 0.7352. Recall and wrecall
+  are identical and unweighted precision is flat, so JSS puts less *intensity* on wrong peaks rather
+  than emitting fewer. `38ugaxen` and `kj17tksj` differ in exactly one key (`loss_type`), so this is
+  the objective. Mechanism: CE and KL are forward-KL shaped and never visit `p = 0` (KL sums only over
+  `positive_true`), so spurious predicted mass is penalized only through the normalizer; JSS is
+  symmetric.
+- **Confound map.** CE vs JSS/KL is a five-key bundle (`loss_type`, `masster_intensity_output`
+  probability vs independent, `masster_ion_h_support_loss_weight` 0 vs 0.1, the support-gate and
+  support-head switches); JSS vs KL is clean. `masster_peak_matching` has never been varied within a
+  loss (all JSS/KL runs `hungarian`, the single `cosine_distance` run `closest` and diverged to 0.148)
+  and is inert under CE. The entropy-match auxiliary (`masster_intensity_entropy_match_weight`) was 0
+  in all 117 runs that carry it, and `masster_kl_epsilon` stayed 1e-4 (caps the KL penalty at 9.2 nats).
+  The sqrt intensity transform is harmful twice (JSS 0.7668 to 0.7566, KL 0.7710 to 0.7505 at epoch 42).
+- **Batching measurements behind the sync-bound finding** (RTX 2070S, fwd+bwd): per-spectrum loops
+  with boolean-mask indexing cost about 900 us per spectrum regardless of arithmetic, cost is flat in
+  problem size, and CPU is as fast or faster than CUDA. `observational_channel_targets` 230 ms to 2.7 ms
+  (82x, bit-identical, 13 implicit syncs per spectrum before, 9 per call after).
+  `_candidate_weighted_recall` 45.0 to 1.3 ms (35x) at batch 128, agreeing to 2.98e-8 (index-add
+  reassociation; do not assert `th.equal`). Diagnose with `th.cuda.set_sync_debug_mode("warn")`.
+  Still-looping siblings at the time: `_candidate_coverage_by_cut_count` (one match pass per bucket per
+  spectrum) and other channel-metric helpers.
+
+## Peak-count distribution (from local memory, measured 2026-09-17)
+
+On the `nist20_ma_mi` train split: 287,721 unmerged rows in 45,639 groups; merged statistics
+from a 4,000-group sample.
+
+| Peaks per row | mean | p50 | p90 / p95 | p99 | max |
+|---|---|---|---|---|---|
+| Unmerged | 31.9 | 17 | p95 110 | 200 | 804 |
+| Merged | 52.0 | 25 | p90 134 | 343 (p99.9 582) | 1168 |
+
+Merged is log-normal (log-space sd 1.29, max/mean 22.5x). Size padded buffers from the tail
+(max about 1170, p99 about 343), never the mean.

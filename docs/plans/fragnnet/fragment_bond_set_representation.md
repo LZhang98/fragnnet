@@ -1,8 +1,7 @@
 # Fragment representation: bond sets, and where the charge sits
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-07-23
->
-> All four gates measured, then the objective was corrected to regularization. Read §7 first. Next step: run the written-but-never-run `cc_atom_dropout_p{00,01,02}` sweep.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> All four gates measured, objective corrected to regularization (read §7 first). The never-run `cc_atom_dropout_p{00,01,02}` sweep was the next step; no result is recorded in the docs and no work has followed since 2026-07-23.
 
 **Status 2026-07-23: ALL FOUR GATES MEASURED, THEN THE OBJECTIVE WAS CORRECTED. Read §7 first.**
 
@@ -104,7 +103,7 @@ bond-set readout is *wider* than the atom mask it replaces.
 its cost is set by node **count** and `frag_hidden_size`, and the readout only feeds the single
 `input_project` layer ahead of it. Changing how each node's vector is pooled cannot move it. The one
 thing that reduces nodeMLP cost is *fewer nodes* — which is exactly what
-`project_bond_breakability_mask_plan` targeted and exactly why that line stopped when node reduction
+[bond breakability mask plan](bond_breakability_mask_plan.md) targeted and exactly why that line stopped when node reduction
 came in at 1.5–6.6%.
 
 **Measured, production scale** (RTX 2070S, 34k nodes, `mol_hidden=384`, `frag_hidden=256×4`):
@@ -183,7 +182,7 @@ the charge.
 
 Why this is attractive: unlike sibling branching, the pair is defined by a *single cut*, so it does
 not suffer the multi-parent entanglement that killed edge-β supervision
-(`project_beta_identifiability_pruning`, `project_fluxmpnn_stage3`). Pair membership is recoverable
+([FluxMPNN plan](fluxmpnn_plan.md#stage-3-trained-verdict-and-ceilings-from-local-memory-verified-2026-10-06)). Pair membership is recoverable
 offline with no extra bookkeeping — `cc[a] ∩ cc[b] = ∅ ∧ cc[a] ∪ cc[b] = cc[parent]` identifies the
 cut uniquely, and it determines the parent.
 
@@ -223,7 +222,7 @@ commit.
   than an addition, with the cost argument that was not on the table then, plus directed pairs and the
   charge-site term. The earlier priority call does not bind.
 - It does not address the measured bottleneck (generalization, not capacity —
-  `project_capacity_vs_generalization`); the cost argument is what carries it.
+  [capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06)); the cost argument is what carries it.
 
 ## 6. Gates — run before building anything
 
@@ -285,18 +284,18 @@ commit.
    - **The trained β was a bond-type lookup table.** Bond environment explains ~72% of learned β but
      only ~18% of observed branching — a 4× gap in the wrong direction. The flow model did not fail to
      learn a function of local bond environment; it learned one *too well*, collapsing branching onto
-     something far more deterministic than reality. This refines the `project_fluxmpnn_stage3`
+     something far more deterministic than reality. This refines the [FluxMPNN Stage 3 verdict](fluxmpnn_plan.md#stage-3-trained-verdict-and-ceilings-from-local-memory-verified-2026-10-06)
      post-mortem: β was over-determined by exactly the descriptor later used to probe it, which is also
      why that probe looked clean.
    - **~18% is a ceiling on any bond-environment-only scorer.** Relevant to the cheap non-GNN
-     BFS-time scorer proposed in `project_bond_breakability_mask_plan`: plausibly enough for *pruning*
+     BFS-time scorer proposed in [bond breakability mask plan](bond_breakability_mask_plan.md): plausibly enough for *pruning*
      which bonds to enumerate, not enough for *ranking* flux. Also bears on §2.2 — a boundary-only
      representation inherits this limit unless the heteroatom pool and formula carry the rest.
 
    *Caveat:* the correction treats all within-edge variance as noise, but at 7.64 observations/edge that
    variance is mostly real CE dependence, not measurement error. So 0.1817 is the right number for
    "how much of the *CE-averaged* edge signal is bond-environment-determined," and the large residual is
-   consistent with `project_branching_headroom` — branching is strongly CE-dependent, and no CE-agnostic
+   consistent with the branching headroom probe ([FluxMPNN plan](fluxmpnn_plan.md)) — branching is strongly CE-dependent, and no CE-agnostic
    descriptor reaches it. That is an argument for the per-spectrum soft targets in
    `docs/plans/fragnnet/sibling_ranking_target_plan.md` rather than another architectural module.
 4. **Representation probe.** — **MEASURED, 2026-07-23.** Predict observed sibling ordering from
@@ -324,7 +323,7 @@ commit.
    TV 0.4702 vs 0.4700) — no signal leaks through group structure or gradient magnitude. And `cc`
    does **not** improve with 54% more parameters (TV 0.3777 → 0.3776, dom 0.4553 → 0.4573), so no
    arm's advantage here is a capacity artifact. That independently reproduces
-   `project_capacity_vs_generalization` on a completely different task.
+   [capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06) on a completely different task.
 
    **Cut-bond information beats the atom mask — but production already has it.** Against a *cc-only*
    baseline the proposal looks strong (TV 0.3777 → 0.3580, dom 0.4553 → 0.4364, many σ). That is the
@@ -348,7 +347,7 @@ commit.
    *Caveats:* this scores sibling ranking only — 26% of parent-spectra and 0.26 of intensity — not
    spectrum cosine; the probe is a 2-layer GNN on 882 molecules, not the production model; and
    `dom_mismatch ≈ 0.44` here sits in the same band as production's measured 0.45–0.50
-   (`project_stage0_branching_headroom_model`), which is itself notable — a tiny probe matches the
+   (the FluxMPNN Stage 0 gate ([plan](fluxmpnn_plan.md))), which is itself notable — a tiny probe matches the
    production model's branching quality.
 
 All four are offline and need no training run. 1–3 are done; **4 is the one that decides the
@@ -370,8 +369,8 @@ The motivation recorded in §1–§2.2 — cheaper nodes — was the wrong objec
 2. **make the model less overfit by giving it a less identifiable fragment feature.**
 
 Point 2 makes this a *regularization* proposal, which lines it up with the largest unclaimed number
-in the project (`project_capacity_vs_generalization`: capacity is not the bottleneck, regularization
-is worth ~+0.18 val and is unswept), and with `project_cc_corruption_probe` (cos 0.82 → 0.61 under
+in the project ([capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06): capacity is not the bottleneck, regularization
+is worth ~+0.18 val and is unswept), and with the [cc-corruption probe](../../findings/fragnnet/cc_corruption_probe_finding.md) (cos 0.82 → 0.61 under
 mask randomization = the model **does** lean on exact fragment identity). Under this objective the
 right metric is the train→val gap, not fit quality — which §6.4 never measured.
 
@@ -521,7 +520,7 @@ branching variance, so a static cut term alone will not reach `het_only`'s ranki
 term. And the third term has to go, or it undoes the first two.
 
 This is close to CFM-ID's feature-tied break parameters, which is notable given
-`project_fluxmpnn_stage3`: the trained β collapsed to a bond-type lookup (ICC 0.72 on bond environment
+[FluxMPNN Stage 3 verdict](fluxmpnn_plan.md#stage-3-trained-verdict-and-ceilings-from-local-memory-verified-2026-10-06): the trained β collapsed to a bond-type lookup (ICC 0.72 on bond environment
 vs 0.18 for reality). The model was already trying to be tied; this hands it a tied parameterization
 instead of letting it fake one.
 
