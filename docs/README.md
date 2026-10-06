@@ -110,8 +110,9 @@ are append-only. Add sections with `/analyze-subclass` and `/analyze-subclass-mh
 measurement comes from `scripts/eval/find_missing_peaks.py`.
 `src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
 
-[`spectra_cleanup.md`](spectra_cleanup.md) is a placeholder with no content; it points at
-`clean_spectra_utils.py` and [findings/subformula_filter_ft_qtof.md](findings/subformula_filter_ft_qtof.md).
+Spectrum cleanup is implemented in
+[`clean_spectra_utils.py`](../src/fragnnet/utils/clean_spectra_utils.py); measured effects are in
+[subformula-filter findings](findings/subformula_filter_ft_qtof.md).
 
 ## figures/
 

@@ -85,10 +85,9 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## Uncommitted working tree (2026-10-06)
 
-- Documentation cleanup: corrected historical roadmap links, hub navigation and stale
-  working-tree descriptions. Local link checks and `git diff --check` passed.
-- The CASMI additions and docs consolidation previously listed here landed in `09e95e9a`;
-  the working tree was clean before this cleanup.
+- Retired the empty `docs/spectra_cleanup.md` placeholder; the documentation index now links
+  directly to the implementation and canonical finding. Local link checks and
+  `git diff --check` passed.
 
 ## Standing cross-workstream rules
 
