@@ -28,7 +28,7 @@ This step Writes `<output_name>_df.csv` (or `.json`) in `data/df/` by default. E
 - `ramped` / `stepped` / `normalized`: flags parsed from collision energy fields when applicable.
 - Misc placeholders: `notes`, `rating`, `cas_num`, `pressure`, `ri`, `ionization` extras, etc., kept for upstream completeness.
 
-Some input formats also emit helper split files (e.g., `*_fold.csv` for MS-Gym or Spectraverse) containing only ids needed for downstream splitting.
+Some input formats also emit helper fold files next to the df. MassSpecGym and Spectraverse v1.0.2 write `<output_name>_fold.csv` (one file for the whole set). For Spectraverse its columns are `spec_id,dset_spec_id,fold`, and `fold` is the MGF's own `FOLD=` value (1..10). Older Spectraverse MGFs with `FOLD_INCHI`/`FOLD_FORM`/`FOLD_MCES`/`FOLD_MCESFORM` keys write one `<output_name>_<fold_col>_<k>.csv` per fold column and value instead. A helper holds only ids and fold labels, for downstream splitting.
 
 ### NIST 20
 This assumes that the NIST20 data is in a folder `data/raw/nist_20`, containing two files: `hr_nist_msms.MSP` (the MSP file with the spectrum information) and `hr_nist_msms.MOL` (the MOL file with the molecule structures).
@@ -46,7 +46,7 @@ names each spectrum's instrument model (`Instrument:`, e.g. `Orbitrap Fusion Lum
 needs the MOL files.
 
 ### MassSpecGym
-This assumes that the Spectraverse data is in `data/raw/msgym/MassSpecGym_with_test.tsv`, this will use `ms_gym`,`ms_gym_extra` as dataset name for each part of MassSpecGym
+This assumes that the MassSpecGym data is in `data/raw/msgym/MassSpecGym_with_test.tsv`, this will use `ms_gym`,`ms_gym_extra` as dataset name for each part of MassSpecGym
 
 ```bash
 # for sim challenege
@@ -57,15 +57,36 @@ python preproc_scripts/01_prepare_df.py --input_format=ms_gym_extra --output_for
 ```
 
 ### Spectraverse
-This assumes that the Spectraverse data is in `data/raw/spectraverse/spectraverse-0.0.1.mgf`
+The current data is Spectraverse v1.0.2, `data/raw/spectraverse/spectraverse-1.0.2/spectraverse-1.0.2.mgf`
+(md5 `50803b370a118299bfef3e9485ef6895`, 488,797 records). Each record has a `SOURCE=` field and one
+`FOLD=` field (1..10, the benchmark's MCES fold, disjoint by 2D InChIKey); `TITLE=SPECTRAVERSE%010d`.
+`--mgf_file` is joined to `--raw_data_dp` (default `data/raw`).
 
 ```bash
 python preproc_scripts/01_prepare_df.py \
-	--input_format=spectraverse \
+    --input_format=spectraverse \
     --output_format=csv \
+    --raw_data_dp=data/raw \
+    --output_dp=data/df_spectraverse_1_0_2 \
     --output_name=spectraverse \
-    --mgf_file=spectraverse/spectraverse-0.0.1.mgf
+    --mgf_file=spectraverse/spectraverse-1.0.2/spectraverse-1.0.2.mgf
 ```
+
+This writes `spectraverse_df.csv` and `spectraverse_fold.csv` (`spec_id,dset_spec_id,fold`) to
+`data/df_spectraverse_1_0_2/`. `spec_id` is the 0-based MGF record order and `dset_spec_id` is the
+integer in `TITLE` (the 1-based record index, `SPECTRAVERSE0000000001` gives 1). The reader raises on
+a truncated record, a peak count that differs from `NUM_PEAKS`, a bad `TITLE`, or a `FOLD` outside 1..10,
+and only warns when an MGF has no fold field at all (v1.0.0/v1.0.1).
+
+`--output_dp` is a new directory because `data/df/spectraverse_df.csv` already exists and must not be
+overwritten. A new `--output_name` would not do instead: step 2 labels the `dset` column with the
+`--dsets` name, and the Spectraverse configs and splits select the dataset `spectraverse`.
+
+**Never join `data/df/spectraverse_df.csv` or `data/df/spectraverse_fold_*.csv` to the current
+`data/proc/spectraverse`.** They are an older build (v1.0.0 era; `INDEX` and `FOLD_*` keys, 8-digit
+titles, 478,530 rows) whose `spec_id`/`dset_spec_id` do not match the current ones. See
+[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)
+and [the curation note](../docs/notes/spectraverse_curation_paper.md).
 
 ### Enveda-180
 This assumes the Enveda-180 release is in `data/raw/enveda-180/`. Use the `-filtered` export:
@@ -147,9 +168,24 @@ python preproc_scripts/02_prepare_proc.py \
 ### Spectraverse
 ```bash
 python preproc_scripts/02_prepare_proc.py \
-	--proc_dp=data/proc/spectraverse \
-    --dsets spectraverse
+    --df_dp=data/df_spectraverse_1_0_2 \
+    --proc_dp=data/proc/spectraverse_rebuild \
+    --dsets spectraverse \
+    --skip_standardize
 ```
+`--skip_standardize` is required to reproduce the stored pickles: without it the standardizer rewrites
+sulfoxide SMILES to `[S+][O-]`, and the stored `mol_df.pkl` has none. `--df_dp` must point at the
+step 1 directory above (its default `data/df` holds the old CSV). `--proc_dp` is a new directory
+because `--ow_spec_mol` defaults to true and would overwrite `spec_df.pkl`, `mol_df.pkl` and `ann_df.pkl`;
+the live `data/proc/spectraverse` also holds files the Step 4 variants read (`near_dup_*.csv`,
+`spec_source.csv`, `subformula_ceiling.csv`). No spectrum is dropped: `spec_df.pkl` has one row per MGF
+record (488,797). `inst_type` comes from the MGF `INSTRUMENT_TYPE` (`orbitrap` gives `ORB` (290,183), `qtof` gives
+`QTOF` (169,380), `iontrap` gives `Other` (16,181) and `nan` gives `NA` (13,053); there is no
+`ORB_F`). The `NORMALIZED_COLLISION_ENERGY_*` keys are not read, so all `nce*` columns are NaN.
+
+The stored `spec_df.pkl` was built on 2026-05-04 with the retired `FT` label; it was relabelled in place
+to `OB`/`ORB` on 2026-09-28 and renamed to `ORB` on 2026-10-01 (the two sections below). A fresh run
+emits `ORB` directly, so no migration is needed on a rebuild.
 ### Enveda-180
 ```bash
 python preproc_scripts/02_prepare_proc.py \
@@ -245,20 +281,6 @@ python preproc_scripts/04_prepare_split.py \
   --predefined_dsetid_csv=data/df/ms_gym_fold.csv
 ```
 
-### Spectraverse
-
-```bash
-# Benchmark split (sim chanllenge)
-python ./preproc_scripts/04_prepare_split.py \
-  	--split_type predefined \
-    --predefined_id_type spec_id \
-    --predefined_test_id_fp data/df/spectraverse_fold_inchi_1.csv \
-    --primary_dsets spectraverse \
-    --split_dp data/split/spectraverse_nemis_inchikey_cv1 \
-    --proc_dp data/proc/spectraverse \
-    --dag_filtering False 
-```
-
 ## Step 4: Preparing Splits
 
 This step splits the data into training, validation, and test sets. To exactly reproduce the splits used in the paper, download the split id files ([inchikey](), [scaffold]()) and place them in `data/split/nist20_inchikey/` and `data/split/nist20_scaffold/` respectively. Then, run the following scripts to remap the ids to work with the processed dataset from the previous step:
@@ -288,6 +310,72 @@ Scaffold split:
 ```bash
 python preproc_scripts/04_prepare_split.py --split_type random --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types ORB ORB_F --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
+
+### Spectraverse
+The benchmark folds `data/split/spectraverse_benchmark/cv0..cv9` come from the MGF's own `FOLD=` field,
+not from `04_prepare_split.py`. For `cv<k>`, test is `FOLD k+1`, val is `FOLD k` (`cv0` uses `FOLD 10`)
+and train is the other eight folds. Every spectrum is in exactly one of the three, and folds are disjoint
+by 2D InChIKey (not by formula). Each `cv` holds `train_ids.csv`, `val_ids.csv`, `test_ids.csv`
+(`mol_id,spec_id,group_id`); the existing directory has no `stats.json`, but the rebuild writes one
+per `cv<k>`. See
+[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md).
+
+`build_benchmark_split.py` rebuilds them from the MGF, with `mol_id`/`spec_id`/`group_id` taken from the
+current `spec_df.pkl`. `--dst-split-dp` is required, has no default, and must not be the existing
+benchmark directory. A bare `--mgf-fp` selects the v1.0.2 MGF path above.
+
+```bash
+python preproc_scripts/spectraverse/build_benchmark_split.py \
+    --spec-fp data/proc/spectraverse/spec_df.pkl \
+    --mgf-fp \
+    --expect-md5 50803b370a118299bfef3e9485ef6895 \
+    --dst-split-dp data/split/spectraverse_benchmark_rebuild \
+    --check-against data/split/spectraverse_benchmark
+```
+
+Instead of `--mgf-fp`, `--fold-fp data/df_spectraverse_1_0_2/spectraverse_fold.csv` gives byte-identical
+id files (joined on `dset_spec_id`; `stats.json` has a null `mgf_md5`). `--check-against` runs after the
+files are written and exits 1 only if a `spec_id` set differs; `mol_id`/`group_id` differences are logged.
+
+The existing `data/split/spectraverse_benchmark` has the same `spec_id` sets as this script's output in
+all 30 files, but its `mol_id` and `group_id` columns are a stale permutation of the current
+`spec_df.pkl`/`mol_df.pkl` numbering (about half the rows disagree). That is harmless, because the
+loaders select spectra by `spec_id` only; do not join on those two columns. The splits derived from it
+(variants below) inherit the same columns.
+
+#### Spectraverse train-side variants
+Each reads `data/split/spectraverse_benchmark` and the current `data/proc/spectraverse/spec_df.pkl` and
+writes `cv<k>` directories. The first three also write one `stats.json` and change only the training
+spectra: `val_ids.csv` and `test_ids.csv` are copied unchanged, so held-out scores stay comparable with
+the benchmark. They require `--folds` and were run for `--folds 0 1` only. `split_by_adduct.py` has no
+`--folds` and writes no `stats.json`.
+
+```bash
+# Near-duplicate removal -> data/split/spectraverse_benchmark_dedup. One spectrum per cluster of
+# same molecule + adduct spectra with cosine > 0.99 (instrument and CE must match; missing values match
+# anything). Also writes data/proc/spectraverse/near_dup_{clusters,edges}.csv.
+python preproc_scripts/spectraverse/dedup_train_split.py --folds 0 1
+
+# Drop train spectra with subformula ceiling <= 0.5 -> data/split/spectraverse_benchmark_subceil05.
+# Reuses data/proc/spectraverse/subformula_ceiling.csv if it exists (delete it after any spec_df
+# rebuild), else computes it.
+python preproc_scripts/spectraverse/clean_train_split.py --folds 0 1
+
+# Drop train spectra from a raw SOURCE -> data/split/spectraverse_benchmark_nomsdial. Reads SOURCE= from
+# the v1.0.2 MGF and writes data/proc/spectraverse/spec_source.csv. The default --dst-split-dp is the
+# nomsdial directory whatever --drop-sources is; set --dst-split-dp when dropping another source.
+python preproc_scripts/spectraverse/source_filter_split.py --folds 0 1 --drop-sources MS-DIAL
+
+# Per-adduct splits for the NEIMS models -> data/split/spectraverse_benchmark_neims_adduct/<adduct>/cv<k>.
+# All ten folds, and val and test are filtered to the adduct as well. The directory tag is the lowercase
+# adduct, e.g. m+h+, m-h-, m+.
+python preproc_scripts/spectraverse/split_by_adduct.py --adducts "[M+H]+" "[M-H]-" "[M+Na]+"
+```
+
+Plans: [dedup](../docs/plans/masster/spectraverse_dedup_plan.md),
+[subformula-ceiling arms](../docs/plans/masster/spectraverse_short_clean_arms_plan.md),
+[merged train with MS-DIAL dropped](../docs/plans/masster/spectraverse_merged_train_plan.md).
+The resulting train sizes are in each variant's `stats.json`.
 
 ### Enveda-180
 8:1:1 InChIKey split over the six adducts in `PREC_TYPE_TO_MASS_DIFF`. It excludes the two-energy

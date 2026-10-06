@@ -1,8 +1,34 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-04
+> **Status:** REFERENCE · **Updated:** 2026-10-05
 
 ## Current handoff
+
+**MSGYM U256/E1024 configs (2026-10-05), prepared, not submitted.** Five batch512,
+128-epoch k1/EMA/Fourier configs: control, second seed, weight decay 0.1, sqrt intensity,
+and power-0.75 + peak-marginal loss. Config resolution and intended-only diffs pass;
+no training ran. Next: GPU smoke and matched U256/E4096 comparison.
+[Config list and protocol](plans/masster/masster_fragment_marginal_selection_plan.md#msgym-u256e1024-follow-up-2026-10-05-prepared-not-run).
+
+**Spectraverse pipeline made reproducible (2026-10-06), uncommitted.** Step 1 could not read the
+v1.0.2 MGF (single `FOLD`, no `INDEX`) and nothing in git built the benchmark folds. Now:
+`01_prepare_df.py` reads v1.0.2 and writes `<name>_fold.csv` (`spec_id,dset_spec_id,fold`), and
+`preproc_scripts/spectraverse/build_benchmark_split.py` rebuilds `cv0..9` (test = FOLD k+1, val = FOLD k).
+Its output matches all 30 existing fold files by `spec_id`. Step 2 needs `--skip_standardize` to match the stored
+pickles (checked on 2,000 spectra). The existing `data/split/spectraverse_benchmark*` `mol_id`/`group_id`
+columns are a stale permutation; loaders select by `spec_id`, so runs are unaffected. Nothing under
+`data/` was rewritten. Commands: `preproc_scripts/README.md`; tests `tests/test_spectraverse_{mgf_reader,benchmark_split}.py`.
+
+**CASMI 2026 data checked (2026-10-05), extracted to `data/raw/casmi2026/`, not preprocessed.**
+The visible `test.parquet` is a placeholder copied verbatim from `train.parquet` (Enveda-180
+rows with SMILES); the hidden natural-product test replaces it at Kaggle notebook scoring.
+Validate on a molecule-disjoint split of train. pyarrow 25.0.1 is now in `FRAGNNET-GPU` (user
+approved). Train checks, uncommitted: `scripts/debug/casmi26/casmi26_train_stats.py` writes
+`output/casmi26_train_check_2026_10_05/`, read by `notebooks/data_notebooks/casmi26_train.ipynb`.
+Labels are consistent. Judge subformula coverage only at the tight (ORB) tier and against its
+shifted-peak control. RIKEN rows labelled plain `QTOF`/`Orbitrap` are 70% of the 166k suspect
+spectra. The Spectraverse dedup rule drops 17.6% of train (`casmi26_train_duplicates.py`).
+Next: decide the train filter. [Finding](findings/casmi2026_dataset_2026_10_05.md).
 
 **JEPA / DreaMS removed (2026-10-04, user), working tree, uncommitted.** The closed-null JEPA
 auxiliary is gone from code, template, configs, preprocessing, submit script and tests, with

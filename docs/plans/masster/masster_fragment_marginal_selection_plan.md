@@ -207,6 +207,34 @@ What it says so far:
 Re-read at the 118–127 tail before drawing a conclusion; the pool-wide proposal loss may still
 reshape the ranking.
 
+### MSGYM U256/E1024 follow-up (2026-10-05): prepared, not run
+
+The user requested MSGYM training configs after selecting U256/E1024 as the budget
+experiment. Five configs in `config/masster/massspecgym/` copy the existing batch512,
+128-epoch k1/dropout + EMA + Fourier recipe, changing the ranked-mask budget from 4096
+to 1024 and assigning fresh W&B identities:
+
+- [Control](../../../config/masster/massspecgym/msgym_u256_e1024_control.yml).
+- [Second seed](../../../config/masster/massspecgym/msgym_u256_e1024_s2.yml): seed 20261003.
+- [Weight decay](../../../config/masster/massspecgym/msgym_u256_e1024_wd10.yml): 0.1.
+- [Sqrt intensity](../../../config/masster/massspecgym/msgym_u256_e1024_sqrt.yml): sqrt
+  targets and exact-mass pathway merging.
+- [Power-0.75 + peak marginal](../../../config/masster/massspecgym/msgym_u256_e1024_pow075_pm1.yml):
+  power-0.75 targets, exact-mass pathway merging and peak-marginal loss at 1x tolerance.
+
+Compare the new control with its linked U256/E4096 source, then compare each arm with
+the new control. Keep data, batching, exposure, schedule and monitoring matched. Read
+runtime, actual fragment count, weighted recall, validation loss/cosine and validation
+retrieval; unchanged cosine alone does not establish retained small-peak retrieval quality.
+These configs retain cosine checkpoint selection from their sources; they are separate
+from the primary-validation-loss sweep. Source headers hold dataset provenance.
+
+Validation: all five resolve through the production config loader; resolved differences
+against their sources are only budget and W&B identity, and differences against the new
+control are exactly the listed arm keys. Schedule arithmetic remains 128 x 194 = 24832.
+No training, GPU smoke, evaluation or submission ran. Next: real-data GPU smoke, then
+record launch provenance before submitting matched comparisons.
+
 ### Tail read (2026-09-24): marginal selection fails, and U128 is a free speed-up
 
 All five arms finished 128 epochs at seed 397623 on the `fir:h100-3g.40gb` profile the

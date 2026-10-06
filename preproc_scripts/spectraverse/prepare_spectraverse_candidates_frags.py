@@ -5,7 +5,7 @@ takes the first N rows, builds a molecule dataframe, runs fragment generation in
 parallel, and writes results to an HDF5 file.
 
 Usage:
-    python preproc_scripts/prepare_spectraverse_candidates_frags.py \
+    python preproc_scripts/spectraverse/prepare_spectraverse_candidates_frags.py \
         --input_fp data/raw/spectraverse/candidates/smiles_SMILES_processed_min1_freq-avg.csv.gz \
         --output_dp data/processed/spectraverse_candidates \
         --n_rows 1000000 \
