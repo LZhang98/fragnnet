@@ -13,8 +13,8 @@ Improve spectral similarity and practical output sparsity without materially red
 recall or formula-retrieval performance. Keep individual collision-energy spectra, full acquisition
 conditioning, and the existing unmerged InChIKey split and target preprocessing.
 
-This is the MASSter-specific execution sequence under the
-[model improvement roadmap](../model_improvement_plan.md). Use the detailed
+This was the MASSter-specific execution sequence under the model improvement roadmap,
+now [available only in Git history](../../README.md#removed-historical-plans). Use the detailed
 [intensity plan](masster_nonprobabilistic_intensity_plan.md) for output and loss contracts,
 the [channel-selection findings](../../findings/masster/masster_channel_selection_findings.md) for support
 semantics and pruning evidence, and the

@@ -9,7 +9,7 @@
 - **Train quality:** labels consistent; 166k HR spectra are poorly explained by their labelled molecule (70% RIKEN rows labelled plain `QTOF`/`Orbitrap`, mostly unmerged BMDMS-NP replicate scans); the Spectraverse dedup rule drops 17.6% of train; 2,022 multi-peak spectra are filed under two molecules.
 - **Distribution bias:** train is synthetic-heavy (NP median -1.31; Enveda-180 is 66% of molecules at -1.49) against the NP proxy (+1.42); the NP proxy's nearest-neighbour Tanimoto to train has median 0.775. Quality filters fall on NP-like data (19.7% suspects, 33.7% near-duplicates).
 - **MSnLib vs NIST:** nearly disjoint (6,432 shared molecules, 13.7% of MSnLib); NIST HR would add 34,295 molecules not in any CASMI train library.
-- **Uncommitted working tree:** new finding sections 5.7-5.9 and scripts `scripts/debug/casmi26/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
+- **Landed in `09e95e9a`:** finding sections 5.7-5.9 and scripts `scripts/debug/casmi26/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
 - **Enveda-180 baseline** (standalone, ACE only, no EMA; user decisions): `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`, not submitted, needs a second seed.
 - **Combined split:** manifest exists (seed 42, 80/10/10, zero molecule overlap); no loader reads it as one dataset.
 - **Single next action:** decide the CASMI train filter (drop suspects, near-duplicates, low-res rows, keep good BMDMS-NP scans), then preprocess to a split.

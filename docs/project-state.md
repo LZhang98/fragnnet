@@ -85,9 +85,10 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## Uncommitted working tree (2026-10-06)
 
-- CASMI finding §5.7-5.9 and `scripts/debug/casmi26/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
-- The 2026-10-06 docs consolidation: hubs, `docs/history/`, banners, trimmed giant plans,
-  this dashboard, and link-only comment edits in 16 `config/masster/massspecgym/*fourier*.yml`.
+- Documentation cleanup: corrected historical roadmap links, hub navigation and stale
+  working-tree descriptions. Local link checks and `git diff --check` passed.
+- The CASMI additions and docs consolidation previously listed here landed in `09e95e9a`;
+  the working tree was clean before this cleanup.
 
 ## Standing cross-workstream rules
 

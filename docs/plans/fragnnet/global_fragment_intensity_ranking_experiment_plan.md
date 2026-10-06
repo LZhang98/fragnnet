@@ -1182,8 +1182,8 @@ coverage rather than forcing the ranking head to solve an unrealizable target.
 
 - [`fragment_intensity_ranking_findings.md`](../../findings/fragnnet/fragment_intensity_ranking_findings.md)
   supplies the empirical defect, CE-transition statistics, and limitations.
-- [`model_improvement_plan.md`](../model_improvement_plan.md) supplies the three-seed promotion and
-  retrieval-protection contract.
+- The historical `model_improvement_plan.md` supplied the three-seed promotion and
+  retrieval-protection contract; it is now [available only in Git history](../../README.md#removed-historical-plans).
 - [`pairwise_loss.md`](../../reference/pairwise_loss.md) documents existing samplers and explains why
   the shipped whole-spectrum pairwise losses are a different objective.
 - [`complementary_cut_supervision_experiment_plan.md`](complementary_cut_supervision_experiment_plan.md)

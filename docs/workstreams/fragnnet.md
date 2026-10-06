@@ -4,7 +4,7 @@
 > FraGNNet (NodeMLP over the bond-cut fragmentation DAG): DAG generation, recall and pruning, oracle ceilings, intensity ranking, FluxMPNN, contender-pair training, GLACIER gap, and the cross-model conditioning and reranking plans.
 
 ## Where it stands
-- **No active FraGNNet work.** project-state shows all work since September 2026 on MASSter (see [MASSter core](masster_core.md)); every FraGNNet plan below is DEFERRED, PROPOSED, STOPPED or closed.
+- **No active FraGNNet work.** project-state shows all work since September 2026 on MASSter (see [MASSter core](masster_core.md)); Stage A is PREPARED; the other plans are deferred, proposed, landed or closed.
 - **Best FraGNNet numbers cited in docs:** `pqx7ywc9` scores 0.7555 `cos_hun_inst_tol` on the NIST20 test split (`nist20_ma_mi_inchikey`, 96,128 spectra) and 0.7612 on FT `[M+H]+` at 0.1 Da bins, 0.077 below GLACIER's 0.838 ([gap finding](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)). The DAG oracle ceiling is 0.937 cos_hun (0.959 at instrument tolerance), so the gap is intensity ranking and allocation, not coverage ([ceiling](../findings/fragnnet/dag_oracle_ceiling_nist20.md)).
 - **Prepared, not submitted:** FT contender-pair Stage A, four Fir arms `c0`/`c1`/`p1`/`p2` under `config/exp_fraggnn_ma_mi/ce_pair_2026_09_23/`, generator `scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh` ([plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md)). The `ce_context` sampler packing fix (2026-09-26) is committed and post-dates the budget, so re-measure steps per epoch before submitting.
 - **User decision:** no SMARTS for FraGNNet (VRAM); SMARTS work is MASSter only ([pathway plan](../plans/masster/masster_smarts_pathway_plan.md), CLOSED NULL for MASSter). Production FraGNNet DAGs are `..._smpFalse` ([usage audit](../findings/smarts_usage_audit_2026_09_23.md)).
@@ -93,7 +93,7 @@
 | [lz_molecular_generation](../notes/lz_molecular_generation.md) | NOTE (2026-06-08) | Spectrum-conditioned generation literature, part 1 |
 | [lz_part2](../notes/lz_part2.md) | NOTE (2026-06-08) | Part 2: spectrum-to-DAG generation |
 
-Neighbouring hubs (may not exist yet): [MASSter core](masster_core.md), [MASSter generalization](masster_generalization.md), [MSGYM/GLACIER](msgym.md), [Spectraverse](spectraverse.md), [NIST23 EI](nist23_ei.md), [CASMI/Enveda](casmi_enveda.md).
+Neighbouring hubs: [MASSter core](masster_core.md), [MASSter generalization](masster_generalization.md), [MSGYM/GLACIER](msgym.md), [Spectraverse](spectraverse.md), [NIST23 EI](nist23_ei.md), [CASMI/Enveda](casmi_enveda.md).
 
 ## Key artifacts
 - **DAG data:** `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar` (Stage A needs it on Fir), `nist20_ma_mi_d4_h4_isoFalse_smpFalse.tar`, `nist23_ma_mi_d3_h4_isoFalse.tar`.

@@ -8,8 +8,8 @@
 Fix the six FraGNNet/shared issues reproduced in the September 12 audit, on `feiw_v2`
 at `bf3820b1`. The branch was already checked out and clean. It predates the shared
 project-state/rules files, which were inspected read-only from revision `19a33c28`.
-The [model improvement roadmap](../model_improvement_plan.md) remains the scientific
-acceptance reference. MASSter-specific changes are outside this task.
+The model improvement roadmap was the scientific acceptance reference for this audit;
+it has since been [removed from the tree](../../README.md#removed-historical-plans). MASSter-specific changes are outside this task.
 
 Acceptance: regression tests must reproduce the original defects, pass with the
 fixes, preserve checkpoint parameter shapes and primary spectrum behavior, and

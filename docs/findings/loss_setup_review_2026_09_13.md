@@ -215,7 +215,7 @@ separate decision about the whole FraGNNet loss family.
 
 Reviewed clean revision `fe417a2f990a7041f80d63306cdc5f3f1512c051`, model/Lightning
 loss wiring, shared loss helpers, representative checked-in configurations, and the
-[model roadmap](../plans/model_improvement_plan.md) and
+[historical model roadmap](../README.md#removed-historical-plans) and
 [MASSter plan](../plans/masster/masster_improvement_plan.md).
 Configurations below establish available setups, not the identity of a running experiment.
 No model code, configuration, data, environment, or training state was changed.

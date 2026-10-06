@@ -10,7 +10,7 @@
 - The train/val gap (0.151 cosine) is intensity allocation among peaks the model already proposes, not coverage; capacity is not the bottleneck. Work on that gap lives in the generalization hub.
 - Prepared, not submitted: full-length `wd10` arm and matched `c4a_base_s1_trainaux` control (`fir:h100-80gb`); `a4`, `a5_ce_pair_bias`, `b4` (`config/masster/ma_mi_merged/attention_2026_09_21/`).
 - Blocked: ion-H Phase 2 selection sweep needs a recoverable trained checkpoint.
-- Uncommitted working-tree work for this workstream: none known (git status shows only CASMI docs/scripts).
+- Working-tree changes are tracked in [project state](../project-state.md#uncommitted-working-tree-2026-10-06).
 - Next action: none scheduled here; new core levers go through the `a1_prenorm` + LR-decay stack on `i1` ([generalization hub](masster_generalization.md)), and an `a1_prenorm` seed replicate is the cheapest open confirmation.
 
 ## Open threads
