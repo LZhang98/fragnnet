@@ -177,7 +177,9 @@ distinct formulas.
   ranking rule because MassSpecGym leaves the score free. "pes" ranks every one of them above
   the truth, a vacuous bound.
 - Scripts: `build_mass_pilot.py`, `filter_mass_pilot.py`, `mass/run_mass_pilot.sh`,
-  `mass_unexplained.py`, `analyze_mass_pilot.py`; log `analyze_mass_pilot.log`.
+  `mass_unexplained.py`, `analyze_mass_pilot.py`; log `analyze_mass_pilot.log`. The predictions
+  `mass/shard_00/masster/ll04i00m_ep060_orb/predictions_test.hdf5` (675 MB) were deleted
+  2026-10-07 at the user's request; `mass_unexplained.py` needs a re-inference.
 
 | score | hit@1 | hit@5 | hit@20 | top-1 has true formula | Δhit@1 vs `cos` |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -316,12 +318,13 @@ All under `output/annotation_retrieval_pilot_2026_10_02/`:
 - `patch_ft_to_orb.py` and `ckpt/ll04i00m_ep060_orb.ckpt`; `test_recheck/` and its log.
 - `build_pilot_inputs.py`, `data/pilot/` (spec/mol/split, `pilot_queries.csv`,
   `pilot_candidates.csv`) and `query_novelty.py`.
-- `pred/ll04i00m_ep060_orb/predictions_test.hdf5` (5.1 GB, annotated, `--min_peak_int -1`) and
-  `pred.log`.
+- `pred/ll04i00m_ep060_orb/predictions_test.hdf5` (5.1 GB, annotated, `--min_peak_int -1`;
+  deleted 2026-10-07 at the user's request, so `score_pilot.py` and the scripts that read it need
+  a re-inference) and `pred.log`.
 - `score_pilot.py` (the fixed protocol), `analyze_pilot.py`, `analyze_pilot.log`,
   `scores/part_*.pkl` and `scores/summary_*.csv`.
 - `score_extra.py`, `analyze_extra.py`, `analyze_extra.log` and `scores/extra_*.pkl`.
-- `tautomer/`: `build_std_inputs.py`, `mol_df_std.pkl`, `std_changes.csv`, `pred_std/` (491 MB),
+- `tautomer/`: `build_std_inputs.py`, `mol_df_std.pkl`, `std_changes.csv`, `pred_std/` (its 491 MB HDF5 deleted 2026-10-07 at the user's request),
   `score_std.py`, `compare_std.py`, `compare_std.csv` and `.log`.
 - `glacier/`: `build_labels.py`, `labels_pilot*.tsv`, `preds_k256*/preds.hdf5` and logs,
   `score_glacier_pilot.py`, `scores_k256.pkl`, `compare.py`, `compare_k256.csv` and `.log`.

@@ -43,13 +43,13 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## MassSpecGym
 
 - **Best:** `ll04i00m` test `cos_sim_0.01` 0.5713 vs GLACIER released 0.5455. Formula-track
-  retrieval hit@1 on test: 0.358 cosine, 0.485 log-likelihood, 0.528 calibrated rule.
-- **Problem:** generalization, train 0.884 vs val 0.584; no MSGYM seed replicate exists.
-- **Prepared, not submitted:** k1/EMA/Fourier control + 10-arm screen, sqrt arm, 4
-  calibrated-likelihood arms, 5 U256/E1024 configs, 48-trial sweep `tiwhun9q`
+  retrieval: `pow075` (`q3oxbpgx`@55) hit@1 `loglik_cal` 0.542, `mspred_ent` 0.516 (+0.031 over
+  `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
+- **Problem:** generalization, train 0.884 vs val 0.584; arms one seed each (control spread 0.0025).
+- **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms. **Prepared, not submitted:** 4
+  calibrated-likelihood arms, 5 U256/E1024 configs, sweep `tiwhun9q`
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
-- **Next:** submit the control and `s2` on Fir; re-select `loglik_cal` on val, then run test
-  retrieval for the best checkpoint.
+- **Next:** re-select `loglik_cal` on val for `pow075`/`wd10`; a second `pow075` seed.
 
 ## Spectraverse
 

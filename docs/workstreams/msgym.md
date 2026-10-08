@@ -1,20 +1,21 @@
 # MassSpecGym (MSGYM) workstream
 
-> **Status:** HUB · **Updated:** 2026-10-06
+> **Status:** HUB · **Updated:** 2026-10-07
 > MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring and the ChemBERTa-3 basic model.
 
 ## Where it stands
 - **Best measured MASSter MSGYM result:** `ll04i00m` (GLACIER-parity features arm, epoch 60) reaches test `cos_sim_0.01` 0.5713 against 0.5455 for GLACIER's released checkpoint (+0.026, 99.9% CI +0.009 to +0.044). In sqrt space the gap is +0.011 (CI crosses zero). `1imawkx1` (base recipe) peaked at val 0.5754 (epoch 62) but has no uploaded checkpoint.
-- **Retrieval (formula track, simulation-challenge `[M+H]+`, test 9,954 queries):** query log-likelihood gives hit@1 0.485 against 0.358 for cosine; the val-selected calibrated rule `ll_g0.75_t2_e1e-4_a0.5` gives 0.528. GLACIER is level on ms-pred entropy and below on cosine. Not leaderboard-comparable.
+- **Retrieval (formula track, simulation-challenge `[M+H]+`, test 9,954 queries):** `ll04i00m` query log-likelihood gives hit@1 0.485 against 0.358 for cosine; the calibrated rule `ll_g0.75_t2_e1e-4_a0.5` gives 0.528. GLACIER is level on ms-pred entropy and below on cosine. Not leaderboard-comparable.
+- **Best retrieval checkpoint (2026-10-07):** `pow075` (`q3oxbpgx`@55) reaches `loglik_cal` 0.542 and `mspred_ent` 0.516 (+0.031 over `ll04i00m`, CI excludes zero); `wd10` (`8afoui7e`@50, best val) is within noise of `ll04i00m` on retrieval ([arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
 - **Generalization gap is the problem:** `ll04i00m` train 0.884 vs val 0.584; val peaks near epoch 60. No MSGYM seed replicate exists.
-- **Prepared, not submitted:** k1/EMA/Fourier control and 10-arm screen, sqrt arm, four calibrated-likelihood arms, five U256/E1024 configs, 48-trial W&B sweep `tiwhun9q`. All in [the training-arms plan](../plans/masster/masster_msgym_training_arms_plan.md). The one-command retrieval runner is built and verified locally but never run on a cluster.
+- **Screen ran 2026-10-02/03:** control (×3) + `s2` + arms, 18 checkpoints in W&B; val best spans 0.571–0.587 against a control spread of 0.0025 ([finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)). Still prepared, not submitted: four calibrated-likelihood arms, five U256/E1024 configs, 48-trial sweep `tiwhun9q` ([training-arms plan](../plans/masster/masster_msgym_training_arms_plan.md)). The retrieval runner has run locally (formula test, three checkpoints), never on a cluster.
 - **Uncommitted working-tree work:** none specific to this workstream recorded.
-- **Single next action:** submit the k1/EMA/Fourier control with `s2` (seed spread) on Fir, then re-select `loglik_cal` on val per checkpoint and run test retrieval for the best one.
+- **Single next action:** re-select `loglik_cal` on val for `pow075` and `wd10`; a second `pow075` seed to check the entropy/likelihood gain.
 
 ## Open threads
 | Thread | Status | Next concrete step |
 |---|---|---|
-| [MSGYM training arms](../plans/masster/masster_msgym_training_arms_plan.md) | PREPARED | Submit control + `s2`; read each arm against the seed spread. |
+| [MSGYM training arms](../plans/masster/masster_msgym_training_arms_plan.md) | screen RAN 2026-10-03 | Val read in the [arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md); test retrieval done for `wd10`, `pow075`; other arms not retrieval-tested. |
 | [U256/E1024 follow-up](../plans/masster/masster_fragment_marginal_selection_plan.md#msgym-u256e1024-follow-up-2026-10-05-prepared-not-run) | PREPARED | Real-data GPU smoke; record launch provenance; matched comparison with U256/E4096. |
 | [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | PREPARED | Fir login/checkout, measure worst-case GPU memory, submit array. |
 | [Annotation-aware retrieval](../plans/annotation_aware_retrieval_plan.md) | ACTIVE | `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val; Gate 1 baseline fixed by the user. |
@@ -30,6 +31,7 @@
 - [GLACIER gap = CE allocation (NIST)](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) — FraGNNet-side gap sits at high CE; coverage not binding.
 
 **Scoring and retrieval**
+- [Arm screen + formula retrieval](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md) — `pow075` +0.031 `mspred_ent` / +0.018 `loglik` hit@1 over `ll04i00m`; `wd10` within noise; val cosine does not rank checkpoints for retrieval.
 - [Annotation pilot](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md) — likelihood +14.8 hit@1 over cosine, mostly small-peak weighting; fragment cost adds nothing to the likelihood; support worse than cosine.
 - Retrieval pipeline facts: truth is candidate 0 (never tie-break by position); identify truth by MSGYM source key; standardizing candidates changes no score (±0.005).
 - Entropy is how the GLACIER paper ranks retrieval; ms-pred bootstrap treats spectra as independent, so its intervals are too narrow.
@@ -49,6 +51,7 @@
 | [annotation_aware_retrieval_plan](../plans/annotation_aware_retrieval_plan.md) | ACTIVE (2026-10-06) | Retrieval scoring plan, frozen full-track protocol, calibration. |
 | [chemberta3_msgym_plan](../plans/chemberta3_msgym_plan.md) | DEFERRED (2026-10-06) | ChemBERTa-3 first 6 layers end to end with NEIMS head; results and deferred stages. |
 | [masster_msgym_vs_glacier_released_ckpt](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md) | FINDING (2026-10-06) | Test cosine comparison, peak over-prediction, instrument audit. |
+| [masster_msgym_arm_screen_formula_retrieval](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md) | FINDING (2026-10-07) | Val table of all 18 screen checkpoints; formula test retrieval for `wd10`, `pow075`, `ll04i00m` with paired CIs. |
 | [masster_msgym_formula_retrieval_full](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md) | FINDING (2026-10-06) | Full val+test formula retrieval, GLACIER matching, calibrated likelihood. |
 | [masster_annotation_retrieval_pilot](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md) | FINDING (2026-10-06) | 400-query pilot: likelihood, fragment cost, mass track, GLACIER. |
 | [glacier_cf_swap_test](../findings/masster/glacier_cf_swap_test_2026_10_03.md) | FINDING (2026-10-03) | Wrong-spectrum swap test of GLACIER contrastive fine-tuning. |
