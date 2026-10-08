@@ -1,5 +1,17 @@
 # Sweep base: k1/EMA/Fourier MSGYM control; loss-minimizing checkpoints.
 # 99,306 train spectra, 128 epochs. Agent derives cosine steps per sampled batch.
+#
+# 2026-10-08: ints_transform pow0.75 + masster_merge_same_mz_rows true (the pow075 arm's pair;
+# merge is required with an exact-mass MASSter and a non-none transform, template.yml:834-839).
+# WHY. The 2026-10-03 screen read (docs/findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md):
+# pow075 (q3oxbpgx@55) beats ll04i00m on formula test retrieval, mspred_ent hit@1 +0.031
+# [+0.017, +0.046] and loglik +0.018 [+0.003, +0.033], and val cosine does not rank checkpoints
+# for retrieval -- so the sweep trains at the pow0.75 operating point. pm1 is NOT taken: it
+# passed val cosine alone (+0.0041 vs a 0.0025 control spread) but pow075_pm1 measured 0.5829,
+# control-level, and pm1 has no retrieval read. wd10 needs no base change: weight_decay 0.1 is
+# in the sweep's weight_decay values. val_primary_loss is now CE against pow0.75 targets --
+# comparable within the sweep, not against pre-change runs. Sweep tiwhun9q's W&B description
+# still says "linear-intensity Gaussian CE"; its sampled parameters are unchanged.
 wandb_name: msgym_masster_val_loss_40gb
 wandb_group: msgym_masster_val_loss_48_20261003
 wandb_tags:
@@ -7,6 +19,8 @@ wandb_tags:
 - massspecgym
 - val_loss_sweep
 - fir_h100_3g40gb
+- ints_pow075
+- merge_same_mz_rows
 seed: 397623
 spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
 mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
@@ -156,3 +170,6 @@ masster_boundary_encoder_dropout: 0.2
 masster_intensity_input_dropout: 0.2
 ema_decay: 0.999
 eval_test_split: false
+# pow075 pair (2026-10-08, see header)
+ints_transform: pow0.75
+masster_merge_same_mz_rows: true

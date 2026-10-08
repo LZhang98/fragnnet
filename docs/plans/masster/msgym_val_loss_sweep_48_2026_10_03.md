@@ -1,6 +1,6 @@
 # MASSter MSGYM validation-loss sweep, 48 trials
 
-> **Status:** PREPARED · **Updated:** 2026-10-03
+> **Status:** PREPARED · **Updated:** 2026-10-08
 > W&B sweep created; Fir submission awaits the SSH login and checkout path. No training launched.
 
 ## Objective and acceptance
@@ -15,14 +15,22 @@ Record completed/failed trials separately; the cap counts assigned trials, not 4
 
 - [Sweep definition](../../../sweep/masster/msgym_val_loss_48_40gb.yml).
 - [Training base](../../../config/masster/massspecgym/msgym_val_loss_sweep_40gb.yml), copied
-  from the current MSGYM k1/EMA/Fourier control. Only labels, checkpoint selection, and explicit
-  test disabling differ before sampling.
+  from the current MSGYM k1/EMA/Fourier control. Labels, checkpoint selection, and explicit
+  test disabling differed at creation; on 2026-10-08 the base also took the pow075 pair
+  (`ints_transform: pow0.75` + `masster_merge_same_mz_rows: true`) after the
+  [screen read](../../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)
+  put `pow075` ahead of `ll04i00m` on test retrieval (`mspred_ent` hit@1 +0.031, CI excludes
+  zero) with val cosine not ranking checkpoints for retrieval. `pm1` was deliberately not taken
+  (`pow075_pm1` measured control-level val, no retrieval read); `wd10` is covered by the swept
+  `weight_decay` values. `val_primary_loss` is now CE against pow0.75 targets — comparable
+  within the sweep, not against pre-change runs or the screen's val table.
 - Batch 256/512; encoder depth 2/3; bond-head depth 1/2/3; intensity-transformer depth 1/2/3.
 - Encoder dropout 0/0.1/0.2/0.3; head, boundary-encoder, intensity-input and transformer dropout
   each 0.1/0.2/0.3; LR log-uniform 1e-4–2e-3; weight decay 0.001/0.01/0.1.
-- Fixed seed 397623, width 384, U256, ranked-mask budget 4096, linear-intensity Gaussian CE,
-  loss chunks 16 (64 until 2026-10-08, see Memory below), CUDA candidate backend, EMA 0.999,
-  Fourier CE and 128 epochs.
+- Fixed seed 397623, width 384, U256, ranked-mask budget 4096, pow0.75-intensity Gaussian CE
+  (linear until 2026-10-08), loss chunks 16 (64 until 2026-10-08, see Memory below), CUDA
+  candidate backend, EMA 0.999, Fourier CE and 128 epochs. Sweep `tiwhun9q`'s W&B description
+  still says "linear-intensity Gaussian CE"; its sampled parameters are unaffected.
 - Sample/candidate budgets are held fixed for comparable loss; tune them in a separate screen.
   Winning settings still need seed replication before claiming improvement.
 
