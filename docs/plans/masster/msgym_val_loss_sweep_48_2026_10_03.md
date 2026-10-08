@@ -21,18 +21,26 @@ Record completed/failed trials separately; the cap counts assigned trials, not 4
 - Encoder dropout 0/0.1/0.2/0.3; head, boundary-encoder, intensity-input and transformer dropout
   each 0.1/0.2/0.3; LR log-uniform 1e-4–2e-3; weight decay 0.001/0.01/0.1.
 - Fixed seed 397623, width 384, U256, ranked-mask budget 4096, linear-intensity Gaussian CE,
-  loss chunks 64, CUDA candidate backend, EMA 0.999, Fourier CE and 128 epochs.
+  loss chunks 16 (64 until 2026-10-08, see Memory below), CUDA candidate backend, EMA 0.999,
+  Fourier CE and 128 epochs.
 - Sample/candidate budgets are held fixed for comparable loss; tune them in a separate screen.
   Winning settings still need seed replication before claiming improvement.
 
 ## Memory and schedule
 
 The [previous memory measurements](masster_regularization_sweep_plan.md#slice-sizing-is-a-measured-open-question-not-a-settled-choice)
-put batch512/loss64 at 25.1–26.9 GiB in another MASSter setup. They do not establish this
-sweep's worst-case memory. CPU construction checks cover depth extremes (6.11M and 11.18M
-parameters); a real Fir forward/backward memory check remains required. No GPU is accessible
-in this workspace. Inspect the largest architecture on Fir before increasing concurrency;
-record OOM failures rather than silently changing individual trials' batch or candidate budgets.
+put batch512/loss64 at 25.1–26.9 GiB in another MASSter setup, and the 2026-10-03 MSGYM fourier
+screen (batch512/loss64, full H100) peaked at 18.5–36.3 GB NVML across shape-identical variants —
+the peak is set by worst-batch composition, so single measurements understate it. On 2026-10-08
+the base config dropped `loss_batch_size` 64 → 16 (accumulation-order only, per the linked
+slice-sizing section; ~0.22 GiB/lb unit above a ~12.3 GiB base at batch 512, so projected
+~15.8 GiB at batch512/lb16). The sweep samples no `loss_batch_size`, so the edited base applies
+to all trials at submission; sweep tiwhun9q predates the edit but has launched no trials.
+These numbers still do not establish this sweep's worst-case memory: CPU construction checks
+cover depth extremes (6.11M and 11.18M parameters); a real Fir forward/backward memory check
+remains required. No GPU is accessible in this workspace. Inspect the largest architecture on
+Fir before increasing concurrency; record OOM failures rather than silently changing individual
+trials' batch or candidate budgets.
 
 The agent receives `--schedule_train_size 99306`. After W&B merges sampled values, the runner
 sets total cosine steps to `128 * ceil(ceil(99306 / batch) / accumulation)` and preserves the

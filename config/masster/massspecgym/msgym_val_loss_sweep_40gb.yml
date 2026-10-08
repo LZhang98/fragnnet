@@ -90,7 +90,12 @@ oos_loss: false
 gaussian_renormalize: true
 sparse_cosine_similarity: true
 loss_vectorized: true
-loss_batch_size: 64
+# 16, not the control's 64: loss_batch_size only sets the padded-chunk window in
+# sparse_cross_entropy_vec (float accumulation order, not a modeling knob). Measured NVML peaks
+# scale ~0.22 GiB/lb unit above a ~12.3 GiB base at batch 512 (lb64 25.1-26.9 GiB, lb8 14.1 GiB);
+# lb16 keeps the worst 3g.40gb trial clear of OOM without touching the loss.
+# docs/plans/masster/masster_regularization_sweep_plan.md#slice-sizing-is-a-measured-open-question-not-a-settled-choice
+loss_batch_size: 16
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
