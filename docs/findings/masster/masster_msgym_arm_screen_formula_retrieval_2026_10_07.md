@@ -1,6 +1,6 @@
-# MSGYM arm screen (val) and formula-track test retrieval for `wd10` and `pow075`
+# MSGYM arm screen (val) and test retrieval for `wd10` and `pow075`
 
-> **Status:** FINDING · **Updated:** 2026-10-07
+> **Status:** FINDING · **Updated:** 2026-10-08
 > The k1/EMA/Fourier screen ran on 2026-10-02/03 (18 checkpoints in W&B). On formula test retrieval,
 > `pow075` beats `ll04i00m` on likelihood and entropy scoring (`mspred_ent` +0.031 hit@1, CI excludes
 > zero); `wd10` is +0.003 to +0.012 with every CI crossing zero. One seed each.
@@ -72,6 +72,27 @@ Paired hit@1 differences, 95% molecule bootstrap (2,000 resamples):
 | `mspred_ent` | +0.010 [−0.003, +0.023] | **+0.031 [+0.017, +0.046]** | **+0.021 [+0.007, +0.036]** |
 | `loglik` | +0.011 [−0.003, +0.025] | **+0.018 [+0.003, +0.033]** | +0.008 [−0.006, +0.021] |
 | `loglik_cal` | +0.003 [−0.011, +0.018] | +0.014 [−0.002, +0.029] | +0.011 [−0.003, +0.025] |
+
+## Mass-track test retrieval, `pow075` (2026-10-08)
+
+Same runner, mass candidates, test fold: 9,954 queries, 2,466,243 candidates (about 248 per query;
+one unloadable non-truth candidate excluded; 19 queries with two truth rows). No comparison model
+has been run on this track. Expected top-k in %, random ties; top-1 95% molecule bootstrap.
+
+| score | top-1 [95% CI] | top-3 | top-5 | top-20 | ORB top-1 (8,374) | QTOF top-1 (1,580) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `loglik` | 71.35 [67.97, 74.66] | 86.78 | 91.23 | 96.59 | 75.89 | 47.28 |
+| `loglik_cal` | 74.52 [70.92, 77.93] | 89.42 | 93.54 | 97.98 | 79.51 | 48.10 |
+| `cos_sim_0.01` | 52.08 [49.15, 54.95] | 72.16 | 78.29 | 88.38 | 56.22 | 30.16 |
+| `mspred_ent` | 69.18 [65.63, 72.48] | 83.80 | 87.89 | 94.91 | 74.06 | 43.29 |
+
+- Paired top-1: `loglik` − cosine +19.26 [+17.48, +21.06]; `loglik` − entropy +2.17 [+0.79, +3.43].
+- The likelihood margin over cosine is larger than on the formula track (+14.1), and largest on
+  QTOF, where cosine top-20 is 75.4 against 92.2 for `loglik`.
+- GLACIER's paper reports mass top-1 69.95 (w/ CF) and 69.69 (w/o CF) on ms-pred's candidate list.
+  That is unpaired, and our mass list has not been checked against ms-pred's (the formula list was).
+- Artifacts: `output/msgym_retrieval/mass_test/` (`run_pow075.{sh,log}`,
+  `summary_q3oxbpgx_pow075_ep055.csv`, `topk_masster_mass.py`, `topk_1_3_5_20_q3oxbpgx_pow075_ep055.csv`).
 
 ## Interpretation
 

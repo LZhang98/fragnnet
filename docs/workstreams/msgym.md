@@ -1,12 +1,12 @@
 # MassSpecGym (MSGYM) workstream
 
-> **Status:** HUB · **Updated:** 2026-10-07
+> **Status:** HUB · **Updated:** 2026-10-08
 > MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring and the ChemBERTa-3 basic model.
 
 ## Where it stands
 - **Best measured MASSter MSGYM result:** `ll04i00m` (GLACIER-parity features arm, epoch 60) reaches test `cos_sim_0.01` 0.5713 against 0.5455 for GLACIER's released checkpoint (+0.026, 99.9% CI +0.009 to +0.044). In sqrt space the gap is +0.011 (CI crosses zero). `1imawkx1` (base recipe) peaked at val 0.5754 (epoch 62) but has no uploaded checkpoint.
 - **Retrieval (formula track, simulation-challenge `[M+H]+`, test 9,954 queries):** `ll04i00m` query log-likelihood gives hit@1 0.485 against 0.358 for cosine; the calibrated rule `ll_g0.75_t2_e1e-4_a0.5` gives 0.528. GLACIER is level on ms-pred entropy and below on cosine. Not leaderboard-comparable.
-- **Best retrieval checkpoint (2026-10-07):** `pow075` (`q3oxbpgx`@55) reaches `loglik_cal` 0.542 and `mspred_ent` 0.516 (+0.031 over `ll04i00m`, CI excludes zero); `wd10` (`8afoui7e`@50, best val) is within noise of `ll04i00m` on retrieval ([arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
+- **Best retrieval checkpoint (2026-10-07):** `pow075` (`q3oxbpgx`@55) reaches `loglik_cal` 0.542 and `mspred_ent` 0.516 (+0.031 over `ll04i00m`, CI excludes zero); `wd10` (`8afoui7e`@50, best val) is within noise of `ll04i00m` on retrieval. Mass track (`pow075` only, no comparator): top-1 `loglik_cal` 74.5, `loglik` 71.4, cosine 52.1 ([arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
 - **Generalization gap is the problem:** `ll04i00m` train 0.884 vs val 0.584; val peaks near epoch 60. No MSGYM seed replicate exists.
 - **Screen ran 2026-10-02/03:** control (×3) + `s2` + arms, 18 checkpoints in W&B; val best spans 0.571–0.587 against a control spread of 0.0025 ([finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)). Still prepared, not submitted: four calibrated-likelihood arms, five U256/E1024 configs, 48-trial sweep `tiwhun9q` ([training-arms plan](../plans/masster/masster_msgym_training_arms_plan.md)). The retrieval runner has run locally (formula test, three checkpoints), never on a cluster.
 - **Uncommitted working-tree work:** none specific to this workstream recorded.
