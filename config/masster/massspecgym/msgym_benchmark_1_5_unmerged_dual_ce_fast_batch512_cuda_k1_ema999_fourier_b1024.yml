@@ -1,6 +1,6 @@
 # ARM msgym k1_ema999_fourier_b1024 -- 2026-10-08 (prepared, not run).
 # Exactly msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier.yml (the
-# control) plus: train_batch_size 1024, lr_total_steps 12416, loss_batch_size 16.
+# control) plus: train_batch_size 1024, lr_total_steps 12416.
 # Everything else (seed, data, schedule unless listed) is the control's.
 #
 # WHY. The 2026-10-03 fourier screen ran 28-60% H100 power at batch 512, so the GPU is
@@ -10,7 +10,8 @@
 # 8.1% of the schedule vs the control's 4.0%. Larger batch at fixed lr halves the gradient noise
 # and halves EMA updates per epoch -- this arm reads the opposite direction of b256.
 #
-# MEMORY. loss_batch_size 64 -> 16 keeps the arm inside an 80 GB H100: NVML peaks scale
+# MEMORY. loss_batch_size 16 (all MSGYM configs since 2026-10-08; the screen ran at 64) keeps
+# the arm inside an 80 GB H100: NVML peaks scale
 # ~0.22 GiB/lb unit above a ~12.3 GiB base at batch 512 (lb64 25.1-26.9 GiB measured, worst
 # MSGYM lb64 peak 36.3 GB), and doubling the batch roughly doubles both parts. loss_batch_size
 # only sets the padded-chunk window in sparse_cross_entropy_vec (float accumulation order, not

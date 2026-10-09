@@ -87,7 +87,7 @@ wandb_name: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_glacier_feat
 wandb_group: msgym_mass_shatter
 wandb_tags:
 - cuda_candidates
-- loss_batch_64
+- loss_batch_16
 - masster
 - massspecgym
 - ms_gym_benchmark_1_5
@@ -209,7 +209,7 @@ oos_loss: false
 gaussian_renormalize: true
 sparse_cosine_similarity: true
 loss_vectorized: true
-loss_batch_size: 64
+loss_batch_size: 16
 primary_loss_weight: 1.0
 ce_pair_loss_weight: 0.0
 inst_type_loss_tol:

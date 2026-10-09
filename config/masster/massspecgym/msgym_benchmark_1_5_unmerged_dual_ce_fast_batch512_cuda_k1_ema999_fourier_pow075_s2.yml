@@ -1,14 +1,14 @@
 # ARM msgym k1_ema999_fourier_pow075_s2 -- 2026-10-08 (prepared, not run).
 # Exactly msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier_pow075.yml
-# (q3oxbpgx) plus: seed 20261003 (the control's s2 seed), loss_batch_size 16.
+# (q3oxbpgx) plus: seed 20261003 (the control's s2 seed).
 # Everything else (data, model, schedule, transform) is pow075's.
 #
 # WHY. pow075 is the best retrieval checkpoint (mspred_ent hit@1 +0.031 [+0.017, +0.046] over
 # ll04i00m) on one seed; its val best 0.5790 sits below the control mean, so the retrieval gain is
 # not visible on val cosine and needs its own replicate before the sweep base and any headline
 # rely on it. docs/findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md
-# loss_batch_size 64 -> 16 lets this fit the default fir:h100-3g.40gb profile; it only sets the
-# padded loss-chunk window (float accumulation order, not a modeling knob).
+# loss_batch_size is 16 here as in every MSGYM config since 2026-10-08, but q3oxbpgx trained at 64;
+# it only sets the padded loss-chunk window (float accumulation order, not a modeling knob).
 # docs/plans/masster/masster_regularization_sweep_plan.md#slice-sizing-is-a-measured-open-question-not-a-settled-choice
 #
 # READ: formula test retrieval on the best checkpoint (mspred_ent, loglik, loglik_cal re-selected
