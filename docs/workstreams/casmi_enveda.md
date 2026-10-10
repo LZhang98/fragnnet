@@ -1,9 +1,11 @@
 # CASMI 2026, Enveda-180 and shared data quality
 
-> **Status:** HUB · **Updated:** 2026-10-06
+> **Status:** HUB · **Updated:** 2026-10-10
 > CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
 
 ## Where it stands
+
+- **RT/CCS:** `RTHead` and `CCSHead` with independent label sets: [GPU debug rerun completed](../plans/masster/masster_rt_ccs_plan.md#separate-head-debug-rerun--completed-2026-10-10): 10 epochs on small train/validation subsets, checkpoint retained. Full Enveda arm remains prepared.
 
 - **CASMI 2026:** data extracted to `data/raw/casmi2026/`, nothing preprocessed. The visible `test.parquet` is a verbatim copy of `train.parquet` (Enveda-180 rows); the hidden natural-product test replaces it at Kaggle notebook scoring. Validate only on a molecule-disjoint split of train.
 - **Train quality:** labels consistent; 166k HR spectra are poorly explained by their labelled molecule (70% RIKEN rows labelled plain `QTOF`/`Orbitrap`, mostly unmerged BMDMS-NP replicate scans); the Spectraverse dedup rule drops 17.6% of train; 2,022 multi-peak spectra are filed under two molecules.
@@ -20,6 +22,7 @@
 | --- | --- | --- |
 | [CASMI train filter](../findings/casmi2026_dataset_2026_10_05.md) | OPEN | Choose filter (subformula suspects at ORB tier vs shifted-peak control, dedup, `riken` rule in section 5.9), then preprocess |
 | CASMI external data (NIST) | OPEN | Competition rules on external data not checked; hidden test energy protocol unknown (section 6) |
+| [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Full matched multitask/control evaluation; confirm CCS calibration before cross-dataset use |
 | [Enveda-180 baseline](../findings/enveda_180_dataset_2026_09_25.md#10-baseline-config-and-run-state-2026-09-2728-from-project-state-handoff) | PREPARED | Second seed, then submit; re-check SMARTS rules on Enveda-180 (see generalization hub) |
 | [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED | Bounded-memory multi-source loader and model-specific filters |
 | [NIST20 data-quality validation](../plans/nist_data_quality_plan.md) | DEFERRED | Independent contaminant false-removal check before any peak stripping; precursor-mass sanity filter |
@@ -46,6 +49,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |
+| [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | RTHead and CCSHead, label audit, completed GPU debug run and full experiment |
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |
 | [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED (2026-10-06) | Shared split manifest and loader gap |
 | [NIST20 data-quality plan](../plans/nist_data_quality_plan.md) | DEFERRED (2026-10-06) | Zero-coverage and contaminant diagnostics |

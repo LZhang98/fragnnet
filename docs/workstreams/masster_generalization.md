@@ -1,21 +1,23 @@
 # MASSter generalization on NIST20 (the `i1` line)
 
-> **Status:** HUB · **Updated:** 2026-10-06
+> **Status:** HUB · **Updated:** 2026-10-10
 > Why MASSter fits training molecules and ranks new ones poorly on unmerged NIST20 `[M+H]+`: the memorization routes, `i1` error analyses, information gates and the SMARTS/excision/isotope/JEPA side threads.
 
 ## Where it stands
 
+- **Proposed:** [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) for NIST20 and MSGYM; measured edit-effect transfer with partial ratio labels proposed; training-only rarity/edge census first, no code or runs.
 - **Best recipe:** `i4` = `i1` (instrument input on `ORB`/`ORB_F`) + `k1` dropout 0.2 + weight EMA 0.999 + intensity pre-norm. Tail mean of `val_cos_sim_0.01_epoch/mean`, epochs 54-63: **0.7729** (W&B `rd9rsdqx`), +0.0019 over `i3` (`xypkkfti`, 0.7710) and +0.0102 / +0.0122 over `i1` (`i50ig7rf`, 0.7607). Seed spread 0.0042; single-seed gate +0.005. Configs: `config/masster/mh_ft_memorization_route_2026_09_24/{i1,i3,i4}_*_ob_obf.yml`.
 - **Open problem:** the validation floor, not the average. 330 spectra / 119 molecules score below 0.05 at instrument tolerance (train sample: 4); 88% are ranking failures with the candidates present. No tested arm (`fa1`, `i3`, cut probe, peak-ranking loss, fragment connectivity) moves a floor chosen by an independent checkpoint.
 - **Single next action:** the computed-energetics information gate. Formal floor coverage is 97% but only 14 / 24 harder channels keep a distance-preserved product pair, so first fix a bounded, target-independent state/calculation policy and a train/calibration/confirmation protocol ([plan](../plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed)).
 - **Prepared, not submitted:** `so1` (`i1` + SMARTS templates, aryl-sulfonamide O transfer; Fir stage `smarts`), `fc1`/`fc1p` (configs exist, not in the submitter; local screen not positive).
-- **Working tree:** none of this workstream is uncommitted as of 2026-10-06 (JEPA code and data removal is committed, `6f2fdea2`).
+- **Working tree:** rare chemistry augmentation plan and hub links are uncommitted; JEPA code and data removal is committed (`6f2fdea2`).
 - Core architecture/training lives in [masster_core](masster_core.md); retrieval in [msgym](msgym.md); other datasets in [spectraverse](spectraverse.md), [nist23_ei](nist23_ei.md), [casmi_enveda](casmi_enveda.md); the sibling model in [fragnnet](fragnnet.md).
 
 ## Open threads
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PROPOSED | Rarity and matched-edit census with preregistered coverage gate before fitting |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) (dated log: [history](../history/masster_memorization_route_plan_log.md)) | ACTIVE | Energetics gate protocol (above); coverage run `so1` when the user decides |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING | State/calculation policy, missing-feature handling, independent selector, effect size, before any fit |
 | [Transfer-oriented (MLDG-style) training](../plans/masster/masster_memorization_route_plan.md#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred) | DEFERRED | Only a cheap head-gradient conflict check on training-only batches, if revived |
@@ -84,6 +86,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PROPOSED (2026-10-10) | Shared NIST20/MSGYM rarity census, capped sampling, conditional replicate augmentation and confirmation gates |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) | ACTIVE (2026-10-06) | Route-removal arm queue, gates, current summary; open energetics and MLDG designs |
 | [Memorization-route log](../history/masster_memorization_route_plan_log.md) | REFERENCE (2026-10-06) | Verbatim dated log of every arm, read and build (batches 1-5, `i1` stack, ladders, `ce1`/`ce2`) |
 | [Intensity displacement plan](../plans/masster/masster_intensity_displacement_plan.md) | DEFERRED (2026-10-06) | Phase 0 / 1.4b on retired `f0`/`f1`; arm 2A not submitted |

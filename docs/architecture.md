@@ -1,6 +1,6 @@
 # Architecture map
 
-> **Status:** REFERENCE · **Updated:** 2026-09-25 · MASShatter renamed MASSter; MASSter backend
+> **Status:** REFERENCE · **Updated:** 2026-10-08 · MASShatter renamed MASSter; MASSter backend
 > boundary updated 2026-09-17; other boundaries last verified against source on 2026-09-07.
 
 ## Entry points and data flow
@@ -27,6 +27,10 @@
    MASSter defaults to CPU candidate construction; its optional CUDA backend performs exact
    selection and topology for the supported modes. See the
    [backend and benchmark guide](guides/benchmark_masster_cpu.md) for limits and validation.
+   MASSter can also share its context-free precursor encoder with optional
+   [separate RTHead and CCSHead](plans/masster/masster_rt_ccs_plan.md), independently enabled
+   with separate label sets. Their per-spectrum
+   scalar outputs accompany the sparse MS/MS prediction; they default off.
 5. [Inference](../scripts/run_inference.py) is documented in the [inference guide](guides/run_inference.md).
    [Evaluation scripts](../scripts/eval/) and [findings](findings/) connect artifacts to analysis.
 

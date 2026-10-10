@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-10
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -31,6 +31,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy
   and a train/calibration/confirmation protocol.
+- **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), shared with MSGYM; rarity/edge census, then one-family edit-effect transfer test before implementation.
 
 ## MASSter core
 
@@ -38,6 +39,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
 - **Prepared:** full-length `wd10` and its `trainaux` control (`fir:h100-80gb`); `a4`,
   `a5_ce_pair_bias`, `b4`. Ion-H Phase 2 is blocked on a recoverable checkpoint.
+- **RT/CCS:** [Separate RTHead/CCSHead GPU debug run completed](plans/masster/masster_rt_ccs_plan.md); full Enveda arm prepared, heads default off.
 - **Next:** an `a1_prenorm` seed replicate. Otherwise, core levers go through the `i1` stack.
 
 ## MassSpecGym
@@ -46,10 +48,11 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   retrieval: `pow075` (`q3oxbpgx`@55) hit@1 `loglik_cal` 0.542, `mspred_ent` 0.516 (+0.031 over
   `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
 - **Problem:** generalization, train 0.884 vs val 0.584; arms one seed each (control spread 0.0025).
-- **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms. **Prepared, not submitted:** 4
-  calibrated-likelihood arms, 5 U256/E1024 configs, sweep `tiwhun9q`
+- **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms, including the calibrated-likelihood arms. **Prepared, not submitted:** `pow075_s2`, `b1024`, `b256` rerun,
+  5 U256/E1024 configs, sweep `tiwhun9q`
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
 - **Next:** re-select `loglik_cal` on val for `pow075`/`wd10`; a second `pow075` seed.
+- **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), benchmark subset retained; matched-edit census and partial-label feasibility proposed.
 
 ## Spectraverse
 
@@ -74,7 +77,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   molecule-disjoint. Dedup drops 17.6% of train; NIST HR would add 34,295 molecules.
 - **Enveda-180:** baseline (standalone, ACE only, no EMA) prepared, not submitted. The combined
   PCDL+NIST23+Enveda-180 split is a manifest only.
-- **Next:** decide the CASMI train filter, then preprocess.
+- **RT/CCS:** [MASSter RTHead and CCSHead](plans/masster/masster_rt_ccs_plan.md) with independent label sets trained for 10 debug epochs on GPU; selected and final checkpoints retained. Full Enveda run remains prepared.
+- **Next:** decide the CASMI train filter, then preprocess; confirm CCS calibration before multitask evaluation.
 
 ## FraGNNet
 
@@ -83,11 +87,11 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
   after the 2026-09-26 sampler fix before submitting.
 
-## Uncommitted working tree (2026-10-06)
+## Uncommitted working tree (2026-10-10)
 
-- Retired the empty `docs/spectra_cleanup.md` placeholder; the documentation index now links
-  directly to the implementation and canonical finding. Local link checks and
-  `git diff --check` passed.
+- RT/CCS heads, scalar-label join, metrics/export, compatibility tests, and Enveda arm;
+  validation and remaining experiment checks are in the [RT/CCS plan](plans/masster/masster_rt_ccs_plan.md).
+- MASSter rare chemistry augmentation plan: reviewed sampler/key definitions, citation checks and pre-fit coverage gate; planning only.
 
 ## Standing cross-workstream rules
 
