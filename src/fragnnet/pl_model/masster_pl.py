@@ -46,10 +46,15 @@ from fragnnet.model.loss import (
     sparse_peak_list_distance,
     validate_hellinger_auxiliary_weights,
 )
+from fragnnet.model.rt_ccs import property_regression_terms
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.misc_utils import scatter_reduce
-from fragnnet.utils.pl_utils import migrate_legacy_masster_name, migrate_masster_proposal_method
+from fragnnet.utils.pl_utils import (
+    migrate_legacy_masster_name,
+    migrate_masster_proposal_method,
+    migrate_masster_rt_ccs_hparams,
+)
 from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
     get_ints_transform_func,
@@ -842,6 +847,7 @@ class MassterPL(SpectrumPL):
         if legacy_candidate_backend and "masster_candidate_backend" not in kwargs:
             kwargs["masster_candidate_backend"] = "cpu"
         if legacy_candidate_backend:
+            migrate_masster_rt_ccs_hparams(kwargs)
             if "masster_proposal_method" not in kwargs:
                 kwargs["masster_proposal_method"] = "cut_masks"
             if "masster_fast_gnn_beam_width" not in kwargs:
@@ -882,6 +888,22 @@ class MassterPL(SpectrumPL):
             ValueError: If ``compile`` is on, or the spectrum config does not provide
                 the precursor type MASSter needs to compute adduct-dependent m/z.
         """
+        for name in ("rt", "ccs", "rt_ccs"):
+            if not isinstance(self.hparams[f"masster_predict_{name}"], bool):
+                raise ValueError(f"masster_predict_{name} must be boolean")
+        self.property_names = tuple(
+            name for name in ("rt", "ccs")
+            if self.hparams[f"masster_predict_{name}"] or self.hparams.masster_predict_rt_ccs
+        )
+        if self.property_names:
+            if self.hparams.spec_params["merge"] or self.hparams.spec_params["merge_train_only"]:
+                raise ValueError("RT/CCS heads require unmerged spectra")
+            if self.hparams.masster_proposal_only_until_epoch is not None:
+                raise ValueError("RT/CCS heads require joint training, without proposal-only warmup")
+            for name in self.property_names:
+                weight = self.hparams[f"masster_{name}_loss_weight"]
+                if not math.isfinite(weight) or weight <= 0:
+                    raise ValueError(f"masster_{name}_loss_weight must be finite and positive")
         proposal_only_until_epoch = self.hparams.masster_proposal_only_until_epoch
         if proposal_only_until_epoch is not None and (
             isinstance(proposal_only_until_epoch, bool)
@@ -979,6 +1001,10 @@ class MassterPL(SpectrumPL):
             self.hparams.spec_params["frag_modes"] if self.hparams.spec_params["frag_mode"] else []
         )
         self.model = MassterModel(
+            predict_rt="rt" in self.property_names,
+            predict_ccs="ccs" in self.property_names,
+            rt_scale=self.hparams.masster_rt_scale,
+            ccs_scale=self.hparams.masster_ccs_scale,
             candidate_backend=self.hparams.masster_candidate_backend,
             proposal_method=self.hparams.masster_proposal_method,
             fast_gnn_beam_width=self.hparams.masster_fast_gnn_beam_width,
@@ -2207,6 +2233,22 @@ class MassterPL(SpectrumPL):
                         self.hparams.masster_ion_mode_proposal_loss_weight
                         * ion_mode_proposal_loss
                     )
+            if self.property_names:
+                for name in self.property_names:
+                    if f"true_{name}" not in kwargs:
+                        raise ValueError(f"{name.upper()} training requires spec_params.{name} labels")
+                    terms = property_regression_terms(
+                        kwargs[f"pred_{name}"],
+                        kwargs[f"true_{name}"],
+                        self.hparams[f"masster_{name}_scale"],
+                    )
+                    aux_loss, abs_error, pct_error, valid = terms
+                    loss = loss + self.hparams[f"masster_{name}_loss_weight"] * aux_loss
+                    loss_values[f"{name}_loss"] = aux_loss
+                    loss_values[f"{name}_mae"] = abs_error
+                    loss_values[f"{name}_label_fraction"] = valid.to(abs_error)
+                    if name == "ccs":
+                        loss_values["ccs_mape"] = pct_error
             loss_values["loss"] = loss
             if self.hparams.masster_proposal_method == "connected_fragment_beam":
                 loss_values = {
@@ -2342,6 +2384,10 @@ class MassterPL(SpectrumPL):
                 for name in loss_names
                 if fast_metric_names.get(name, name) is not None
             ]
+        for name in self.property_names:
+            loss_names.extend([f"{name}_loss", f"{name}_mae", f"{name}_label_fraction"])
+            if name == "ccs":
+                loss_names.append("ccs_mape")
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 
@@ -2433,6 +2479,60 @@ class MassterPL(SpectrumPL):
 
         self.metric_fn = metric_fn
 
+    def on_load_checkpoint(self, checkpoint: dict) -> None:
+        """Preserve optimizer parameter alignment for combined-wrapper checkpoints."""
+        state = checkpoint["state_dict"]
+        legacy_prefix = "model.rt_ccs_heads."
+        if any(key.startswith(legacy_prefix) for key in state):
+            renames = {
+                legacy_prefix + "rt_head.": "model.rt_head.regressor.",
+                legacy_prefix + "ccs_head.": "model.ccs_head.regressor.",
+                legacy_prefix + "adduct_embedding.": "model.ccs_head.adduct_embedding.",
+            }
+            old_order = {}
+            for index, key in enumerate(state):
+                for old, new in renames.items():
+                    if key.startswith(old):
+                        key = new + key[len(old):]
+                        break
+                old_order[key] = index
+            parameter_names = {id(parameter): name for name, parameter in self.named_parameters()}
+            groups = self._weight_decay_parameter_groups()
+            if groups is None:
+                groups = [{"params": list(self.parameters())}]
+            for optimizer_state in checkpoint.get("optimizer_states", []):
+                saved_groups = optimizer_state["param_groups"]
+                if len(saved_groups) != len(groups):
+                    raise ValueError("Cannot migrate RT/CCS optimizer with changed parameter groups")
+                for saved_group, group in zip(saved_groups, groups):
+                    names = [parameter_names[id(parameter)] for parameter in group["params"]]
+                    if len(names) != len(saved_group["params"]):
+                        raise ValueError("Cannot migrate RT/CCS optimizer with changed parameters")
+                    ids_by_name = dict(zip(sorted(names, key=old_order.__getitem__), saved_group["params"]))
+                    saved_group["params"] = [ids_by_name[name] for name in names]
+        super().on_load_checkpoint(checkpoint)
+
+    def _accumulate_running_metrics(self, batch_results: dict, split: str) -> None:
+        """Exclude missing property labels from epoch metric denominators."""
+        super()._accumulate_running_metrics(batch_results, split)
+        if not self.property_names:
+            return
+        weights = self._get_sample_weights(
+            split,
+            batch_results["spec_per_group"],
+            batch_results["spec_per_mol"],
+            batch_results["group_per_mol"],
+        )
+        sum_w = getattr(self, f"{split}_metric_sum_w")
+        for name in self.property_names:
+            invalid = 1.0 - batch_results[f"{name}_label_fraction"]
+            missing_weight = (weights.to(invalid) * invalid).sum().detach()
+            metrics = [f"{name}_loss", f"{name}_mae"]
+            if name == "ccs":
+                metrics.append("ccs_mape")
+            for metric in metrics:
+                sum_w[metric] = sum_w[metric] - missing_weight
+
     def _memorization_sink_indices(self, batch_kwargs: dict) -> th.Tensor | None:
         """Return the memorization-sink row of each spectrum in a training batch, else None.
 
@@ -2505,6 +2605,11 @@ class MassterPL(SpectrumPL):
             and self.hparams.masster_proposal_loss_weight > 0.0
         ):
             output["proposal_group_ids"] = batch_kwargs["group_id"]
+        if self.property_names:
+            # Targets travel only to the loss, never into the model. Inference can omit them.
+            for name in self.property_names:
+                if f"spec_{name}" in batch_kwargs:
+                    output[f"true_{name}"] = batch_kwargs[f"spec_{name}"]
         cross_ev_enabled = self.hparams.cross_ev_fragment_loss_weight != 0.0 and self.training
         if cross_ev_enabled:
             output.update(

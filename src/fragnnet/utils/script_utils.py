@@ -638,6 +638,8 @@ COLUMN_SPECS = (
     ColumnSpec("pred_mzs", "peak", token="pred_mzs"),
     ColumnSpec("pred_ints", "peak", token="pred_ints"),
     ColumnSpec("pred_oos_prob", token="pred_oos_prob"),
+    ColumnSpec("pred_rt", token="pred_rt"),
+    ColumnSpec("pred_ccs", token="pred_ccs"),
     ColumnSpec("frag_formula_peak_idxs", "peak"),
     ColumnSpec("frag_formula_peak_mzs", "peak", token="frag_formula_peak_mzs"),
     ColumnSpec("pred_formula_formula_idxs", "formula"),
@@ -774,6 +776,8 @@ def required_index_vars_for_outputs(
         "pred_mzs": {"batch": {"pred_batch_idxs"}},
         "pred_ints": {"batch": {"pred_batch_idxs"}},
         "pred_oos_prob": {},
+        "pred_rt": {},
+        "pred_ccs": {},
         "frag_formula_peak_mzs": {"batch": {"pred_batch_idxs"}},
         # P(f)
         "pred_formula_probs": {
@@ -2347,6 +2351,14 @@ def process_batch_to_tabular_row(
     pred_node_batch_idxs = arrays.pred_node_batch_idxs
     pred_node_probs = arrays.pred_node_probs
     pred_node_node_idxs = arrays.pred_node_node_idxs
+    property_predictions = {
+        name: (
+            batch_result[name].detach().cpu().numpy()
+            if name in batch_result and _want(name)
+            else np.full(batch_size, np.nan)
+        )
+        for name in ("pred_rt", "pred_ccs")
+    }
     numpy_pred_oos_probs = (
         pred_oos_probs.detach().cpu().numpy() if pred_oos_probs is not None else None
     )
@@ -2519,6 +2531,7 @@ def process_batch_to_tabular_row(
             "pred_mzs": b_spec_mzs,
             "pred_ints": b_spec_ints,
             "pred_oos_prob": b_pred_oos_prob,
+            **{name: values[b_idx] for name, values in property_predictions.items()},
             "frag_formula_peak_idxs": b_frag_formula_peak_idxs,
             "frag_formula_peak_mzs": b_frag_formula_peak_mzs,
             "pred_formula_formula_idxs": b_pred_formula_formula_idxs,

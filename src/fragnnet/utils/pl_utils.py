@@ -454,6 +454,27 @@ class ExponentialMovingAverage(Callback):
         self._last_switch_epoch = state_dict["last_switch_epoch"]
 
 
+def migrate_masster_rt_ccs_hparams(hparams: dict) -> None:
+    """Explicitly migrate pre-RT/CCS checkpoints to the disabled legacy behavior."""
+    if "spec_params" in hparams:
+        for name in ("rt", "ccs"):
+            hparams["spec_params"].setdefault(name, False)
+            hparams["spec_params"].setdefault(f"{name}_labels_fp", None)
+        hparams["spec_params"].setdefault("rt_ccs", False)
+        hparams["spec_params"].setdefault("rt_ccs_labels_fp", None)
+    if hparams.get("model_type") == "masster":
+        for key, value in {
+            "masster_predict_rt_ccs": False,
+            "masster_predict_rt": False,
+            "masster_predict_ccs": False,
+            "masster_rt_loss_weight": 0.1,
+            "masster_ccs_loss_weight": 0.1,
+            "masster_rt_scale": 60.0,
+            "masster_ccs_scale": 100.0,
+        }.items():
+            hparams.setdefault(key, value)
+
+
 def get_pl_hparams(ckpt: dict) -> dict:
     """Extract and return a deep copy of hyperparameters from a checkpoint.
 
@@ -476,6 +497,7 @@ def get_pl_hparams(ckpt: dict) -> dict:
             f"{RETIRED_INST_TYPE_HELP}"
         )
     migrate_legacy_masster_name(hyper_parameters)
+    migrate_masster_rt_ccs_hparams(hyper_parameters)
     migrate_legacy_hparams(hyper_parameters)
     # Old checkpoints retain first-replicate CE context unless explicitly migrated.
     if "spec_params" in hyper_parameters:

@@ -45,6 +45,12 @@ subsample_params:
   test: True
   secondary: True
 spec_params:
+  rt: False  # Load RT targets independently; requires unmerged spectra.
+  ccs: False  # Load CCS targets independently; requires unmerged spectra.
+  rt_labels_fp: null  # CSV with dset_spec_id and rtinseconds; partial coverage allowed.
+  ccs_labels_fp: null  # CSV with dset_spec_id and ccs; partial coverage allowed.
+  rt_ccs: False  # Deprecated alias enabling both label sets.
+  rt_ccs_labels_fp: null  # Optional imported single-source CSV keyed by dset_spec_id.
   merge: True
   merge_keep_ces: False
   # Merge only the train split (needs merge: False); val/test stay one row per spectrum.
@@ -771,6 +777,14 @@ skip_train_explainability: False
 # MASSter only
 # model_type: masster
 # ==========================================================================
+# Optional intact-molecule regression; RT seconds and source CCS units.
+masster_predict_rt: False
+masster_predict_ccs: False
+masster_predict_rt_ccs: False  # Deprecated alias enabling both heads.
+masster_rt_loss_weight: 0.1
+masster_ccs_loss_weight: 0.1
+masster_rt_scale: 60.0  # Fixed units, not fitted statistics; Smooth-L1 beta is one scale.
+masster_ccs_scale: 100.0
 masster_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
 masster_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
 masster_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.

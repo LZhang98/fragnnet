@@ -10,6 +10,7 @@ import torch as th
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
 from fragnnet.utils.clean_spectra_utils import clean_spectra
 from fragnnet.utils.data_utils import (
     CHARGE_FACTOR_MAP,
@@ -164,6 +165,27 @@ class BaseDataset(Dataset):
         mol_df = (
             mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
         )
+        # Older direct dataset callers omit the opt-in fields; checkpoint migration
+        # and the current template declare them explicitly.
+        if spec_params.get("rt_ccs", False):
+            if spec_params["merge"] or spec_params["merge_train_only"]:
+                raise ValueError("RT/CCS labels require unmerged spectra")
+            labels_fp = spec_params["rt_ccs_labels_fp"]
+            if labels_fp is not None:
+                spec_df = join_rt_ccs_labels(spec_df, labels_fp)
+            missing = {"rtinseconds", "ccs"}.difference(spec_df.columns)
+            if missing:
+                raise ValueError(f"Missing RT/CCS columns {sorted(missing)}; supply rt_ccs_labels_fp")
+        for name, column in (("rt", "rtinseconds"), ("ccs", "ccs")):
+            if not spec_params.get(name, False):
+                continue
+            if spec_params["merge"] or spec_params["merge_train_only"]:
+                raise ValueError("RT/CCS labels require unmerged spectra")
+            labels_fp = spec_params[f"{name}_labels_fp"]
+            if labels_fp is not None:
+                spec_df = join_property_labels(spec_df, labels_fp, name)
+            if column not in spec_df:
+                raise ValueError(f"Missing {column}; supply {name}_labels_fp")
         if "inst_type" in spec_df.columns:
             retired = sorted(set(spec_df["inst_type"]).intersection(RETIRED_INST_TYPES))
             if retired:
@@ -992,6 +1014,11 @@ class BaseDataset(Dataset):
                 - spec_per_group: Spectra count per group (if counts enabled)
         """
         spec_data = {}
+        for name, column in (("rt", "rtinseconds"), ("ccs", "ccs")):
+            if self.spec_params.get(name, False) or self.spec_params.get("rt_ccs", False):
+                value = pd.to_numeric(spec_entry[column], errors="coerce")
+                value = float(value) if pd.notna(value) and np.isfinite(value) and value > 0 else float("nan")
+                spec_data[f"spec_{name}"] = th.tensor([value], dtype=th.float32)
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
         if self.spec_params["remove_isotope_peaks"]:

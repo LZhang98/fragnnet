@@ -90,6 +90,7 @@ from fragnnet.model.candidate_features import (
 )
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN
+from fragnnet.model.rt_ccs import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
     H_MASS,
     PERIODIC_TABLE,
@@ -1144,10 +1145,20 @@ class MassterModel(nn.Module):
         isotope_envelope: str = "none",
         isotope_max_order: int = 4,
         isotope_min_ratio: float = 1e-3,
+        predict_rt_ccs: bool = False,  # Deprecated alias enabling both heads.
+        predict_rt: bool = False,
+        predict_ccs: bool = False,
+        rt_scale: float = 60.0,
+        ccs_scale: float = 100.0,
     ) -> None:
         """Initialize the MASSter model.
 
         Args:
+            predict_rt_ccs: Deprecated alias enabling both property heads.
+            predict_rt: Enable the independent retention-time head.
+            predict_ccs: Enable the independent collision-cross-section head.
+            rt_scale: Positive fixed RT output/loss scale in seconds.
+            ccs_scale: Positive fixed CCS output/loss scale in source units.
             node_feature_dim: Width of the precursor atom features.
             edge_feature_dim: Width of the precursor bond features.
             precursor_hidden_dim: Hidden width of the precursor GNN; also the width of
@@ -1721,6 +1732,13 @@ class MassterModel(nn.Module):
                 raise ValueError(
                     "isotope_min_ratio must be in [0, 1 / (2 * isotope_max_order + 1))"
                 )
+        predict_rt = predict_rt or predict_rt_ccs
+        predict_ccs = predict_ccs or predict_rt_ccs
+        if predict_rt or predict_ccs:
+            if context_in_gnn or encoder_context_token:
+                raise ValueError("RT/CCS heads require a context-free precursor encoder")
+            if not all(math.isfinite(s) and s > 0 for s, enabled in ((rt_scale, predict_rt), (ccs_scale, predict_ccs)) if enabled):
+                raise ValueError("RT/CCS scales must be finite and positive")
         self.mass_mode = mass_mode
         self.merge_same_mz_rows = merge_same_mz_rows
         self.isotope_envelope = isotope_envelope
@@ -1991,6 +2009,18 @@ class MassterModel(nn.Module):
             candidate_graph=intensity_candidate_graph,
             rule_pathway_dim=MASSTER_NUM_RULES if rule_pathway_token else 0,
         )
+        self.rt_head = None
+        self.ccs_head = None
+        # Preserve initialization and RNG state of the existing MS/MS branches.
+        with th.random.fork_rng(devices=[]):
+            if predict_rt:
+                self.rt_head = RTHead(precursor_hidden_dim, head_hidden_dim, rt_scale)
+            if predict_ccs:
+                self.ccs_head = CCSHead(
+                    precursor_hidden_dim, head_hidden_dim, len(precursor_types),
+                    metadata_embedding_dim, ccs_scale,
+                )
+        self._register_load_state_dict_pre_hook(self._migrate_property_head_state)
         self._setup_chemistry_buffers()
         self._register_load_state_dict_pre_hook(self._restore_chemistry_buffers)
         if use_smarts_templates:
@@ -2001,6 +2031,21 @@ class MassterModel(nn.Module):
                 th.tensor(MASSTER_RULE_NAME_HASHES, dtype=th.long),
             )
             self._register_load_state_dict_pre_hook(self._restore_smarts_rule_vocabulary)
+
+    def _migrate_property_head_state(self, state_dict, prefix, *args) -> None:
+        """Load the original combined-wrapper checkpoints into independent heads."""
+        renames = {
+            "rt_ccs_heads.rt_head.": "rt_head.regressor.",
+            "rt_ccs_heads.ccs_head.": "ccs_head.regressor.",
+            "rt_ccs_heads.adduct_embedding.": "ccs_head.adduct_embedding.",
+        }
+        for old, new in renames.items():
+            for key in list(state_dict):
+                if key.startswith(prefix + old):
+                    replacement = prefix + new + key[len(prefix + old):]
+                    if replacement in state_dict:
+                        raise ValueError(f"Duplicate legacy and current property head key: {replacement}")
+                    state_dict[replacement] = state_dict.pop(key)
 
     def _restore_chemistry_buffers(
         self,
@@ -4552,6 +4597,12 @@ class MassterModel(nn.Module):
                 }
             )
         output.update(pool_proposal_outputs)
+        if self.rt_head is not None or self.ccs_head is not None:
+            pooled = pool_property_atoms(atom_embeddings, mol_pyg.batch, precursor_type_indices.numel())
+            if self.rt_head is not None:
+                output["pred_rt"] = self.rt_head(pooled)
+            if self.ccs_head is not None:
+                output["pred_ccs"] = self.ccs_head(pooled, precursor_type_indices)
         if return_annotation:
             pathway_rows = {
                 "pred_pathway_fragment_idxs": fragment_channel_indices.flatten()[
