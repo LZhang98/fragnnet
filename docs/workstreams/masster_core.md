@@ -66,6 +66,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | Shared heads, label evidence, completed GPU debug training and full experiment |
+| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model: models/baselines subpackages, shared `fragmentation/` layer, plugin hooks out of runner/script_utils |
 | [masster_plan](../plans/masster/masster_plan.md) | LANDED (2026-10-06) | Core design record: one-pass bond-set model, mask enumeration, ion/H channels; snapshot of shipped behavior |
 | [masster_ion_h_channel_selection_plan](../plans/masster/masster_ion_h_channel_selection_plan.md) | DEFERRED (2026-10-06) | Ion-mode / H-support / channel selection hierarchy; no trained arm exercised selection; Phase 2 blocked on a checkpoint |
 | [masster_architecture_review_todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED (2026-10-06) | Open items from the 2026-09-19 code-vs-literature review (a4, a5, b4, RWSE, a1 replicate) |

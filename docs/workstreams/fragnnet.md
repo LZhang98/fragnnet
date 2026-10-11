@@ -66,6 +66,7 @@
 | [unexplainable_spectra_analysis](../findings/fragnnet/unexplainable_spectra_analysis.md) | REFERENCE (2026-07-21) | Workflow for spectra the DAG cannot explain |
 | [conditioning_refactor_plan](../plans/conditioning_refactor_plan.md) | DEFERRED (2026-10-06) | Audit of 3 conditioning mechanisms; MASSter GNN context |
 | [energy_based_spectrum_reranking_plan](../plans/energy_based_spectrum_reranking_plan.md) | PROPOSED (2026-09-13) | Energy head reranking, oracle-vs-null Gate A |
+| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model: models/baselines subpackages, shared `fragmentation/` layer, plugin hooks out of runner/script_utils |
 | [bond_breakability_mask_plan](../plans/fragnnet/bond_breakability_mask_plan.md) | STOPPED (2026-07-03) | Hard bond mask; bucket table source |
 | [classyfire_atom_pretraining_plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md) | PROPOSED (2026-07-25) | ClassyFire pretraining |
 | [complementary_cut_supervision_experiment_plan](../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) | PROPOSED (2026-08-10) | Complementary-cut KL supervision |
