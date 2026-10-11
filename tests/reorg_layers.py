@@ -65,6 +65,37 @@ COMPAT_SHIMS: dict[str, dict[str, str]] = {}
 
 OWNER_LAYERS = ("fragnnet", "masster")
 
+# Every model_type the runner accepts at 13b1599d (runner.VALID_MODEL_TYPES), in plan order.
+MODEL_TYPES = (
+    "frag_gnn",
+    "fragnnet",
+    "masster",
+    "neims",
+    "chemlm",
+    "massformer",
+    "iceberg_gen",
+    "iceberg_inten",
+    "graff",
+    "precursor",
+    "gnn",
+    "mces_pretraining",
+    "clip",
+    "spec_mol_clip_pretraining",
+)
+
+# Core entry modules checked by the isolation gate (plan, Phase 1 gate table).
+ENTRY_MODULES = (
+    "fragnnet.runner",
+    "fragnnet.utils.script_utils",
+    "fragnnet.pl_model.spectrum_pl",
+    "fragnnet.dataset.spec_mol_dataset",
+    "fragnnet.dataset.base_dataset",
+    "fragnnet.utils.feat_utils",
+    "fragnnet.utils.proc_utils",
+    "fragnnet.dataset.data_sampler",
+    "fragnnet.utils.pl_utils",
+)
+
 
 def layer_of(module: str) -> str:
     """Return the post-reorganization layer of a ``fragnnet`` module."""
