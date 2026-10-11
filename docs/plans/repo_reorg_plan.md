@@ -1,13 +1,21 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
-> **Status:** PROPOSED · **Updated:** 2026-10-11
-> Implementation not started. ICEBERG will be retired locally in favor of external ms-pred; the main environment will be DGL-free. Remaining decisions are in [Open decisions](#open-decisions).
-> Line references below were measured at commit `13b1599d` on branch `masster`.
+> **Status:** ACTIVE · **Updated:** 2026-10-11
+> Phases 0–5 approved for implementation on `refactor/fragnnet-masster-reorg`, one commit per step; Phase 6 (directory moves) waits for the live branches and the layout decision. ICEBERG is retired in favor of external ms-pred, and the main environment becomes DGL-free.
+> Line references were measured at commit `13b1599d` (code is unchanged through `d2e3b03e`) and re-verified by a 12-agent review on 2026-10-11.
+
+## Current summary
+
+- **Goal.** FraGNNet and MASSter become owner packages over a model-agnostic core. GRAFF and MassFormer become baseline subpackages; ICEBERG moves to external ms-pred. The dependency rule below is enforced by tests.
+- **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
+- **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging). Phase 6 (renames) and Phase 7 (doc paths) come later.
+- **Next action.** Phase 0, step 1: the shared deterministic fixture and the registry expected-mapping test.
+- Earlier dated entries are in the [plan log](../history/repo_reorg_plan_log.md).
 
 ## Goal
 
 Center the repository on FraGNNet and MASSter. Each retained model and baseline (GRAFF,
-MassFormer) becomes its own subpackage. The shared layer stops naming any specific model.
+MassFormer) becomes its own subpackage, and the shared layer stops naming any specific model.
 Retire the local ICEBERG implementation and use external ms-pred for that baseline.
 
 The folders are the smaller part of this. Most of the work is removing the model-specific branches
@@ -19,591 +27,665 @@ step changes paths and leaves the coupling in place.
 User decision, 2026-10-11: stop maintaining this repository's ICEBERG fork; use
 [coleygroup/ms-pred](https://github.com/coleygroup/ms-pred) for future ICEBERG runs.
 
-- Preserve the fork through a recorded full Git revision before removal, including its configs,
-  scripts and environment definitions; retain any uncommitted changes in that provenance.
-  Git history is the archive. Do not keep an importable archive under `src/` or put source code
-  in `docs/history/`. No commit or tag is created by this plan.
-- Remove the local implementation, its integration branches and ICEBERG-only entry points.
-  Retain historical findings and run references. Existing local ICEBERG checkpoints remain
-  associated with the archived revision; do not claim that ms-pred can load them.
-- Run ms-pred from a separate checkout and environment, outside artifact stores. Pin the
-  upstream commit, model version, config and checkpoint identity for each comparison. Its
-  dependency requirements belong to that environment, not `FRAGNNET-GPU`.
-- Exchange prediction files with this repository's evaluation tools. Validate sample identity,
-  split, adduct, collision energy, m/z units, intensity transformation and binning before scoring.
-  Existing GLACIER/ms-pred readers are candidates for reuse, not proof of ICEBERG compatibility.
-  A small fixture must demonstrate the adapter's values and schema. No training or upstream
-  installation is required for the retirement itself.
-- Remove DGL requirements from package metadata, maintained environment and cluster scripts,
-  shared utilities and installation docs. No `iceberg` extra, DGL shim or batch-type registry
-  is needed in the target repository. Do not uninstall packages from the current environment
-  as part of a source reorganization.
+- **Archive.**
+  - Record the full SHA of an existing commit that contains the unmodified fork. Before recording, confirm that `git status --short src/fragnnet/iceberg config preproc_scripts scripts/ms2c env` is clean; if it is not, the user commits those changes first.
+  - Before Phase 1 merges, confirm with `git merge-base --is-ancestor <sha> <target branch>` that the SHA stays reachable from the branch that lands, or ask the user for a tag.
+  - Git history is the archive. Do not keep an importable copy under `src/` or put source code in `docs/history/`.
+  - The SHA is written into the retirement error message, `docs/reference/baselines.md` and the provenance note for the local ICEBERG checkpoints.
+- **What goes.** Remove the local implementation, its integration branches, its configs and its ICEBERG-only entry points (inventory in Phase 1 step 2). Keep historical findings and run references.
+- **Local checkpoints.** The ICEBERG checkpoints (`saved_ckpts/speed_benchmark_1000/*iceberg*.ckpt`) stay tied to the archive revision. Do not claim that ms-pred can load them.
+- **Running ms-pred.** Use a separate checkout and environment, outside artifact stores. Pin the upstream commit, model version, config and checkpoint identity for each comparison. Its dependencies belong to that environment, not `FRAGNNET-GPU`.
+- **Exchanging predictions.** Pass prediction files into this repository's evaluation tools. Before scoring, validate sample identity, split, adduct, collision energy, m/z units, intensity transform and binning.
+  - Readers today: `scripts/eval/compare_msgym_predictions.py` (`load_glacier_peaks`), `scripts/eval/score_retrieval_candidates.py` (`--pred_format mspred`) and `src/fragnnet/utils/retrieval_utils.py` (`mspred_*` scoring, pinned to ms-pred `318bb7b`).
+  - They read a PredSpecDB HDF5 with exactly one InChIKey and one collision energy per entry, treat intensities as square roots, and serve MassSpecGym retrieval only.
+  - NIST20 per-seed ICEBERG rows need a new adapter to the `run_save_inference` pkl schema (`{split}/{model}/s{seed}/{split}.pkl`, read by `scripts/stats_scripts/calculate_similarity_stats.py`), proven on a fixture.
+  - No training or upstream installation is needed for the retirement itself.
+- **DGL.** Remove DGL requirements from package metadata, maintained environment and cluster scripts, shared utilities and installation docs. No `iceberg` extra, DGL shim or batch-type registry is needed. Do not uninstall packages from the current environment as part of a source reorganization.
 
-This is an intentional retirement exception to behavior preservation: `iceberg_gen` and
-`iceberg_inten` must fail with an actionable message directing users to ms-pred and the archived
-revision, rather than silently selecting another model. Other models retain their behavior.
+This is an intentional exception to behavior preservation: `iceberg_gen` and `iceberg_inten` must
+fail with an actionable message pointing to ms-pred and the archive revision, rather than silently
+selecting another model. Other models keep their behavior.
 
 ## Target layout
 
 ```
 src/fragnnet/
   dataset/ model/ pl_model/ utils/ runner.py   # core: model-agnostic, import paths unchanged
-  registry.py                                  # model_type -> "module:Class", imported lazily
+  registry.py                                  # model_type -> "module:Class" (lazy), aliases, retired types
   fragmentation/                               # bond-cut chemistry shared by both fragment models
   models/
     fragnnet/                                  # DAG model
     masster/                                   # MASSter
   baselines/
-    graff/ massformer/
+    graff/ massformer/                         # neims/ only if open decision 2 says so
 ```
 
-Dependency rule, enforced by a test:
+Dependency rule:
 
-- `models/fragnnet`, `models/masster` and each baseline may import `fragmentation/` and core,
-  never one another.
+- `models/fragnnet`, `models/masster` and each baseline may import `fragmentation/` and core, never one another.
 - `fragmentation/` imports core only.
-- Core imports none of them, `fragmentation/` included; it reaches models only through the
-  registry. Anything core consumes (for example the annotation output keys) therefore lives in
-  core, even when only fragment models produce it.
+- Core imports none of them, `fragmentation/` included; it reaches models only through the registry, which holds strings. Anything core consumes, such as the annotation output keys, therefore lives in core, even when only fragment models produce it.
+- Tests may import any layer. For example, MASSter's H-cap parity test may use FraGNNet's Cython `update_bonds` as its oracle.
+
+Until Phase 6, owner modules still sit in core directories, so the boundary check classifies each
+module through a checked-in module-to-layer table rather than by directory.
 
 Shared modules stay where they are rather than moving into a `core/` package. They hold about
-32k lines, and moving them would change nearly every import in the repo. `fragnnet.fragnnet` is
-avoided because the top-level package already has that name. One cosmetic wart remains: shared
-`model/` sits next to `models/`; renaming it to `nn/` later is optional.
+32k lines, and moving them would change nearly every import. `fragnnet.fragnnet` is avoided
+because the top-level package already has that name. Shared `model/` sitting next to `models/` is
+a cosmetic wart; renaming it to `nn/` later is optional.
 
 ## Current coupling
 
 ### Sizes
 
+Lines of `.py`, `.pyx` and `.cu` under `src/fragnnet` (70.3k in total):
+
 | Group | Lines | Files |
 | --- | --- | --- |
-| MASSter-only | ~17.9k | `frag/masster_*`, `masster_core.pyx`, `.cu` kernels, `bond_mask_generator`, `masster_model`, `bond_fragment_heads`, `candidate_features`, `rt_ccs`, `masster_pl` |
+| MASSter-only | ~17.6k | `frag/masster_*`, `masster_core.pyx`, `.cu` kernels, `bond_mask_generator`, `masster_model`, `bond_fragment_heads`, `candidate_features`, `rt_ccs`, `masster_pl` |
 | FraGNNet-only | ~6.8k | `compute_frags.pyx`, `multi_cut_bfs.pyx`, `fragnnet_model`, `fragnnet_pl`, `*spec_mol_frag_dataset` |
+| Split or moved to `fragmentation/` | ~4.0k | `utils/frag_utils.py` (2.6k, split below), `frag/smarts_prepass.py`, `model/candidate_support.py` |
 | Shared | ~32k | `SpectrumPL`, loss, `nn_blocks`, encoders, utils, runner |
-| Baselines | ~9.8k | ICEBERG 6.5k, MassFormer 2.0k, GRAFF 1.4k |
+| Baselines | ~9.8k | ICEBERG 6.5k (retired), MassFormer 2.0k, GRAFF 1.4k |
 
-`MassterPL` and `FraGNNetPL` are siblings: both subclass `SpectrumPL`. Their direct imports of
-each other are limited to `CANONICAL_ELEMENT_ORDER` (see the chemistry section), but there is one
-indirect FraGNNet → MASSter dependency: `fragnnet_pl` imports `candidate_support`, which imports
+`MassterPL` and `FraGNNetPL` are siblings: both subclass `SpectrumPL`. Their model-specific
+modules have no direct imports of each other. MASSter reads `CANONICAL_ELEMENT_ORDER` (and
+`candidate_features` also `CANONICAL_H_IDX`) from the shared `frag_utils`. There is one indirect
+FraGNNet → MASSter path: `fragnnet_pl` imports `candidate_support`, which imports
 `_validate_tensor_condition` from the MASSter module `bond_fragment_heads`
-([candidate_support.py:8](../../src/fragnnet/model/candidate_support.py#L8)). The validator is
-also used by `candidate_features` and `masster_model`.
+([candidate_support.py:8](../../src/fragnnet/model/candidate_support.py#L8)). The package
+initializers also load each model with the other; see [Package initializers](#package-initializers).
 
 ### Shared layer depends on the models
 
 | Where | What it knows about a model |
 | --- | --- |
 | [spectrum_pl.py:23](../../src/fragnnet/pl_model/spectrum_pl.py#L23) | Imports `EXPLAINABILITY_OUTPUT_KEYS` from `fragnnet_model` |
-| [spectrum_pl.py:2469](../../src/fragnnet/pl_model/spectrum_pl.py#L2469) | `_seed_dataloader` checks `dag_size_curriculum`, `bond_size_curriculum`, `masster_batch_sampler` |
-| [spec_mol_dataset.py:57](../../src/fragnnet/dataset/spec_mol_dataset.py#L57) | Filters spectra when `model_type == "masster"` via `formula_utils.masster_has_valid_ion` |
-| [spec_mol_dataset.py:7,237-280](../../src/fragnnet/dataset/spec_mol_dataset.py#L7) | MassFormer `mf` preprocessing and GRAFF `mol_graff` collation |
-| [data_sampler.py](../../src/fragnnet/dataset/data_sampler.py) | FraGNNet samplers (`SpecMolFragDynamicBatchSampler`, `DualGroupDynamicBatchSampler`, `BondCountCurriculumSampler`) and MASSter's `MassterCEContextDynamicBatchSampler`; only `_CEContextBatchSamplerBase` and the group samplers are generic |
-| [runner.py](../../src/fragnnet/runner.py#L218) | 8 `model_type` branches (lines 218, 331, 345, 515, 556, 806, 1069, 1267) and a hard-coded `VALID_MODEL_TYPES` |
-| [setup_utils.py:1-16](../../src/fragnnet/utils/setup_utils.py#L1) | Imports every model and baseline when the module is imported, so dgl loads with core |
-| [script_utils.py:850-940](../../src/fragnnet/utils/script_utils.py#L850) | 7 `isinstance` branches (`FraGNNetPL`, `MassterPL`, `IcebergIntenPL`) |
-| [script_utils.py:481-515](../../src/fragnnet/utils/script_utils.py#L481) | MAGMA (ICEBERG) and GRAFF inference-config edits |
+| [spectrum_pl.py:2454-2500](../../src/fragnnet/pl_model/spectrum_pl.py#L2454) | `_seed_dataloader` reads `dag_size_curriculum`, `bond_size_curriculum`, `batch_sampler_type == "ce_context"` and `masster_batch_sampler`, then takes either the `set_epoch` + Lightning batch-count refresh path or the `_pre_compute_batches` path |
+| [spec_mol_dataset.py:57-62](../../src/fragnnet/dataset/spec_mol_dataset.py#L57) | Filters spectra inside `__init__` when `model_type == "masster"`, through `_filter_masster_spectra` and core `formula_utils.masster_has_valid_ion` |
+| [spec_mol_dataset.py:7,237-280](../../src/fragnnet/dataset/spec_mol_dataset.py#L7) | MassFormer `mf` preprocessing and collation (imports `massformer.data_utils`, which loads the MassFormer Cython `algos`) and GRAFF `mol_graff` collation |
+| [data_sampler.py](../../src/fragnnet/dataset/data_sampler.py) | FraGNNet-only (budget on fragment-DAG nodes or edges): `SpecMolFragDynamicBatchSampler`, `DualGroupDynamicBatchSampler`, `CEContextDynamicBatchSampler`, `validate_dag_size_curriculum`. MASSter-only: `MassterCEContextDynamicBatchSampler`. Generic: `_CEContextBatchSamplerBase`, `GroupSampler`, `FormulaPrecTypeGroupSampler`, `get_group_sampler`, `BondCountCurriculumSampler` and `validate_bond_size_curriculum` (need only `mol_df.num_bonds`; every config enabling the bond curriculum is MASSter) |
+| [proc_utils.py:6](../../src/fragnnet/utils/proc_utils.py#L6) | Imports `MAX_NUM_NODES`, `MAX_NUM_EDGES` from FraGNNet's Cython `frag.compute_frags`; `base_dataset.py:34` imports `proc_utils`, so importing any core dataset loads `compute_frags` |
+| [runner.py](../../src/fragnnet/runner.py#L218) | 8 `model_type` branches (218, 331, 345, 515, 556, 806, 1069, 1267), a hard-coded `VALID_MODEL_TYPES` (:50), module-level sampler and curriculum-validator imports (:20-34), MASSter-only checks (609-631), FraGNNet curriculum and sampler checks (773-808), shared CE-pair checks naming `use_masster_batch_sampler` (588, 640), and `masster_batch_sampler` in the sweep-schedule key list (924) |
+| [setup_utils.py:1-16](../../src/fragnnet/utils/setup_utils.py#L1) | Imports every model, NEIMS and every baseline at module load, so dgl loads with core |
+| [script_utils.py](../../src/fragnnet/utils/script_utils.py#L850) | 10 model `isinstance` checks. 850-913: `required_index_vars_for_outputs` and `get_idx_vars` (the function ends at 978). 1075: `run_inference_pkl`, which gates the explainability switch and FraGNNet-only index vars (1107-1187). In `process_batch_to_tabular_row`: 2112 (MASSter-only rule-provenance error), 2127 (explainability switch), 2149-2200 (MASSter peak aggregation and the `masster_annotation_tables` call at 2167), 2414 (FraGNNet formula-delta fallback). Also 2586 (`get_node_feats` for the cc hash) and module imports at 20-22 (`MASSTER_RULE_VOCABULARY`, `IcebergIntenPL`, `FraGNNetPL`, `MassterPL`) |
+| [script_utils.py:462-515](../../src/fragnnet/utils/script_utils.py#L462) | Inference-config overlays: the `disable_preproc` loop over `spec`, `mol`, `frag`, `magma`, `ann` (462-471); FraGNNet `frag_params.formula_str/preload/preprocess` (477-479, 509-512); MAGMA (ICEBERG) at 481-483 and 514-515; GRAFF `ann_params` at 484-486. `spec_params.prec_type_str = True` (479) applies to every model, and the formula-delta export needs it |
 | [script_utils.py:1754-2063](../../src/fragnnet/utils/script_utils.py#L1754) | MASSter annotation export (`MassterAnnotationTables`, `masster_annotation_tables`) |
-| [pl_utils.py](../../src/fragnnet/utils/pl_utils.py) | `migrate_legacy_masster_name`, `migrate_masster_proposal_method`, `migrate_masster_rt_ccs_hparams` |
+| [pl_utils.py](../../src/fragnnet/utils/pl_utils.py) | `migrate_legacy_masster_key`, `migrate_legacy_masster_name`, `migrate_masster_proposal_method`, `migrate_masster_rt_ccs_hparams`; inline MASSter backfills in `get_pl_hparams` (507-539), four of which duplicate `runner.load_config` (218-227); `migrate_legacy_hparams` (72-160, called for every model from `SpectrumPL.__init__`) holds string-keyed FraGNNet, CLIP and MCES default tables |
 | [dgl_compat_utils.py](../../src/fragnnet/utils/dgl_compat_utils.py) | Used by ICEBERG and by shared [misc_utils.py:42](../../src/fragnnet/utils/misc_utils.py#L42), whose `to_device` and `print_shapes` check `isinstance(v, DGLGraph)` |
 
-### Loss terms copied in both Lightning modules
+### Lightning modules and their loss terms
 
-The CE-pair objective is duplicated almost line for line: eligibility tensors built from
-`ce_pair_eligible_*`, the `ce_switch_pair_bce` call, weighting and logging.
+Both modules build their loss in a large `_setup_loss_fn` closure (fragnnet_pl.py:555-1464,
+masster_pl.py:1353-2393). They also override other `SpectrumPL` hooks:
 
-- FraGNNet: [fragnnet_pl.py:786-800](../../src/fragnnet/pl_model/fragnnet_pl.py#L786) and
-  [1016-1043](../../src/fragnnet/pl_model/fragnnet_pl.py#L1016)
-- MASSter: [masster_pl.py:1660-1675](../../src/fragnnet/pl_model/masster_pl.py#L1660) and
-  [2185-2226](../../src/fragnnet/pl_model/masster_pl.py#L2185)
+- **FraGNNetPL:** `training_step`, `configure_optimizers`, `on_train_epoch_end`, `optimizer_step` (manual optimization).
+- **MassterPL:** `__init__`, `forward`, `_setup_metric_fns`, `on_load_checkpoint`, `on_train_epoch_start`, `_accumulate_running_metrics`, `_weight_decay_overrides`. It also keeps about 530 lines of loss helpers at module level (masster_pl.py:303-830).
 
-`SpectrumPL` already prepares the `ce_pair_*` batch fields
-([spectrum_pl.py:1460](../../src/fragnnet/pl_model/spectrum_pl.py#L1460)); only the loss term is
-copied. `spectral_leak_loss` and `spectral_ce_auxiliary` (with
-`validate_hellinger_auxiliary_weights`) are also implemented in both. How closely those two match
-has not been checked line by line. The two modules override only `_setup_model` and
-`_setup_loss_fn`; each keeps all its loss logic in one closure.
+Only two things are straight copies between the modules: the CE-pair term and
+`validate_hellinger_auxiliary_weights`. For the CE-pair term, both build the same eligibility
+tensors from `ce_pair_eligible_*` ([fragnnet_pl.py:784-800](../../src/fragnnet/pl_model/fragnnet_pl.py#L784),
+[masster_pl.py:1660-1676](../../src/fragnnet/pl_model/masster_pl.py#L1660)), make the same
+`ce_switch_pair_bce` call, and weight and log it the same way
+([fragnnet_pl.py:1016-1043](../../src/fragnnet/pl_model/fragnnet_pl.py#L1016),
+[masster_pl.py:2185-2226](../../src/fragnnet/pl_model/masster_pl.py#L2185)). `SpectrumPL`
+already prepares the `ce_pair_*` batch fields
+([spectrum_pl.py:1460](../../src/fragnnet/pl_model/spectrum_pl.py#L1460)).
 
-The order in which terms enter the total differs by model and stage. In MASSter, the spectral
-terms and the CE-pair term are added first; then, during proposal-only training, the total is
-**replaced** by the proposal loss (plus the ion-mode proposal loss), and only afterwards are the
-RT/CCS losses added ([masster_pl.py:2227-2250](../../src/fragnnet/pl_model/masster_pl.py#L2227)).
-The spectral terms are still computed and logged in that stage but carry no gradient. Any
-extraction must preserve this.
+The spectral-leak and spectral-CE-auxiliary terms are **not** copies:
+
+- **FraGNNet** applies the leak to `exp(pred_logprobs)` and adds an OOS CE term when `oos_loss` is on (fragnnet_pl.py:949-987).
+- **MASSter** applies both to raw pathway intensities, renormalizes them in the closure (with clamps) for the CE, and passes a zero OOS vector (masster_pl.py:1830-1881).
+
+The terms enter the total in different orders:
+
+- **FraGNNet:** primary, leak, auxiliary, formula support, CE-pair, precursor pair, null loss, entropies, edge, nb, pairwise (fragnnet_pl.py:938-1089+). There is no epoch-dependent branch; `ce_pair_enabled` is train-only.
+- **MASSter:** primary, entropy match, leak, auxiliary, ion-H support, ion-mode proposal, proposal, cross-EV, base CE, CE-pair. During proposal-only training the total is then **replaced** by the proposal loss (plus the ion-mode proposal loss), discarding all of those. Only afterwards are the RT/CCS losses added ([masster_pl.py:2227-2250](../../src/fragnnet/pl_model/masster_pl.py#L2227)). The spectral terms are still computed and logged in that stage but carry no gradient.
 
 ### Annotation output contract
 
-FraGNNet defines the formula/node/joint index outputs (`pred_formula_*`, `pred_node_*`,
-`pred_joint_*`). MASSter's annotations are exported under those names, and `SpectrumPL` metrics
-(`pred_node_count`, `pred_formula_count`) read them. The key list `EXPLAINABILITY_OUTPUT_KEYS`
-lives in `fragnnet_model.py`. The schema has no home of its own. Because core (`SpectrumPL`,
-inference export) consumes it, it belongs in core, not in `fragmentation/`.
+- **`EXPLAINABILITY_OUTPUT_KEYS`** lives in `fragnnet_model.py`. It is the set of FraGNNet outputs that become `None` when `return_explainability_tensors=False`, not the full annotation schema: it excludes `pred_formula_batch_idxs` and `pred_node_batch_idxs`, which the metrics also read. Only `SpectrumPL` (`spectrum_pl.py:23`, `:609`) and two tests import it.
+- **The exporter** spells the annotation key names as string literals (script_utils.py:645-657, 703-706, 783-844).
+- **MASSter** emits none of these names from its model or Lightning module; the exporter synthesizes them.
+- **The shared interface** also includes the batch switch `return_explainability_tensors`. Core sets it (spectrum_pl.py:1720-1722, script_utils.py:1111 and :2130), and the two models default it differently: FraGNNet `True` (fragnnet_model.py:1252), MASSter `False` (masster_pl.py:2601).
+
+Because core consumes all of this, it belongs in a core output-schema module, not in `fragmentation/`.
 
 ### `smarts_prepass` is shared
 
-It sits in `frag/` beside the MASSter modules but has two importers: FraGNNet's DAG builder
-([frag_utils.py:34](../../src/fragnnet/utils/frag_utils.py#L34), via
-`_inject_smarts_pairs_into_dag`) and MASSter's templates
-([masster_templates.py:13](../../src/fragnnet/frag/masster_templates.py#L13)). Not running SMARTS
-for FraGNNet (VRAM) is a run-time choice; the code dependency remains.
+It sits in `frag/` beside the MASSter modules, imports nothing from `fragnnet`, and has two
+importers: FraGNNet's `frag_utils` ([frag_utils.py:34](../../src/fragnnet/utils/frag_utils.py#L34);
+the `_apply_smarts_prepass`/`_apply_nl_prepass` calls sit inside `compute_dags`, :1210, :1261,
+:1284) and MASSter's templates ([masster_templates.py:13](../../src/fragnnet/frag/masster_templates.py#L13)).
+Not running SMARTS for FraGNNet (VRAM) is a run-time choice; the code dependency remains.
 
 ### Chemistry implemented more than once
 
 | Rule | Implementations |
 | --- | --- |
-| Hydrogen cap | MASSter torch, `h_transfer_bound="valence"` ([masster_model.py:2441](../../src/fragnnet/model/masster_model.py#L2441)), and `frag_utils.compute_cc_h_cap` ([:394](../../src/fragnnet/utils/frag_utils.py#L394)). [test_masster_model.py:36](../../tests/test_masster_model.py#L36) uses FraGNNet's as the reference |
-| `update_bonds` | Twice inside FraGNNet: [compute_frags.pyx:485](../../src/fragnnet/frag/compute_frags.pyx#L485) and [frag_utils.py:578](../../src/fragnnet/utils/frag_utils.py#L578) |
-| Fragment charge | MASSter `candidate_features._build_charge` ([:312](../../src/fragnnet/model/candidate_features.py#L312)) and FraGNNet's `frag_q` |
-| Element order | `CANONICAL_ELEMENT_ORDER`/`CANONICAL_H_IDX` are defined in `frag_utils` and read by MASSter (`masster_model`, `candidate_features`) **and by core**: the `AtomOneHot` featurizer ([feat_utils.py:335](../../src/fragnnet/utils/feat_utils.py#L335)) |
+| Hydrogen cap | MASSter torch, `h_transfer_bound="valence"` ([masster_model.py:2429](../../src/fragnnet/model/masster_model.py#L2429)), and `frag_utils.compute_cc_h_cap` ([:394](../../src/fragnnet/utils/frag_utils.py#L394), NumPy). The production DAG builder calls the latter at :523, :647 and :1554. [test_masster_model.py:36](../../tests/test_masster_model.py#L36) uses it as MASSter's reference |
+| `update_bonds`, `compute_cc_h_floor` | Each exists in Cython ([compute_frags.pyx:485](../../src/fragnnet/frag/compute_frags.pyx#L485), :443) and in Python ([frag_utils.py:578](../../src/fragnnet/utils/frag_utils.py#L578), :420). Only the Cython versions run in production. The Python `update_bonds` has no callers; the Cython one is about 100× faster per call and returns int32/uint8 instead of a bool mask |
+| Fragment charge | MASSter `candidate_features._build_charge` ([:311](../../src/fragnnet/model/candidate_features.py#L311)) and FraGNNet's `frag_q` |
+| Element order | `CANONICAL_ELEMENT_ORDER` (C, H, then sorted heavy elements) is used by MASSter (`masster_model`, `candidate_features`) and by core `AtomOneHot` ([feat_utils.py:335](../../src/fragnnet/utils/feat_utils.py#L335)); `CANONICAL_H_IDX` by `candidate_features` and `frag_utils`. A second order, `ELEMENT_TO_IDX`/`ELEMENTS` (H last), drives DAG formula arrays and the MASSter exporter (script_utils.py:1907-1990). The two orders must stay distinct |
 
 ### Two metadata encoders
 
-FraGNNet uses the `CEModel`/`PrecModel`/`InstModel` mixins, `ContextEmbedding` and four scalers
-from [base_model.py](../../src/fragnnet/model/base_model.py). MASSter has its own
+FraGNNet uses the `CEModel`/`PrecModel`/`InstModel`/`FragModeModel` mixins, `ContextEmbedding`
+and four scalers from [base_model.py](../../src/fragnnet/model/base_model.py). MASSter has its own
 `MassterContextEncoder` ([masster_model.py:675](../../src/fragnnet/model/masster_model.py#L675)),
 reusing only `QETEnergyEncoder` and `get_embedder`. Both read the same `nce_*`, `ace_*` and
-`ce_insert_*` keys. Keeping two encoders is a reasonable design and this plan does not merge them.
-Whether both standardize CE identically is unverified.
+`ce_insert_*` keys and the fragmentation mode. Keeping two encoders is a reasonable design and
+this plan does not merge them. Whether both standardize CE identically is unverified.
 
-### Symbols both models use
+### Placement of shared symbols
 
 | Symbol | Now in | Destination |
 | --- | --- | --- |
 | `SpectrumPL`, `get_sparse_cross_entropy_fn`, `scatter_reduce`, `GNN`, `get_embedder`, `get_mol_feats_sizes` | core | stay |
-| `ce_switch_pair_bce`, `sparse_outside_window_intensity_fraction`, `validate_hellinger_auxiliary_weights` | `model/loss.py` | stay; the calling code moves into `SpectrumPL` |
-| `PREC_TYPE_TO_MASS_DIFF`, `PREC_TYPE_TO_CMF_MASS_DIFF` | `formula_utils.py` | stay |
-| `CutBondEncoder`, `encode_cut_bond_pairs` | `model/base_model.py` | `fragmentation/` |
-| `observational_channel_targets`, `balanced_binary_support_loss` (all of `candidate_support.py`) | `model/` | `fragmentation/`, after `_validate_tensor_condition` moves to core |
-| `_validate_tensor_condition` | `model/bond_fragment_heads.py` (MASSter) | core (a small tensor-validation helper) |
-| `EXPLAINABILITY_OUTPUT_KEYS` and the annotation key names | `model/fragnnet_model.py` | core (an output-schema module); read by `SpectrumPL` and the exporter |
-| `cmf_duplicate_crf_h_shift` | `formula_utils.py` | stay in core: also called by core `formula_row_prec_deltas` ([formula_utils.py:559](../../src/fragnnet/utils/formula_utils.py#L559)), which the inference exporter uses, and by `masster_has_valid_ion` ([:188](../../src/fragnnet/utils/formula_utils.py#L188)) |
-| `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX` | `utils/frag_utils.py` | core `formula_utils.py`: read by the core featurizer |
+| `ce_switch_pair_bce`, `sparse_outside_window_intensity_fraction`, `validate_hellinger_auxiliary_weights` | `model/loss.py` | stay; per-term helpers in `SpectrumPL` call them (Phase 2) |
+| `PREC_TYPE_TO_MASS_DIFF`, `PREC_TYPE_TO_CMF_MASS_DIFF`, `cmf_duplicate_crf_h_shift` | `formula_utils.py` | stay in core: core `formula_row_prec_deltas` ([formula_utils.py:559](../../src/fragnnet/utils/formula_utils.py#L559)) calls `cmf_duplicate_crf_h_shift`, and the exporter uses it |
+| `masster_has_valid_ion` | `formula_utils.py` | MASSter (Phase 4), together with `_filter_masster_spectra`; no re-export in core |
+| `CutBondEncoder`, `encode_cut_bond_pairs` | `model/base_model.py` | `fragmentation/`; used only by `fragnnet_model` and `masster_model`; importers retargeted, no re-export in `base_model` |
+| `candidate_support.py` (all) | `model/` | `fragmentation/`, after `_validate_tensor_condition` moves to core |
+| `_validate_tensor_condition` | `model/bond_fragment_heads.py` (MASSter) | core (tensor-validation helper) |
+| `EXPLAINABILITY_OUTPUT_KEYS`, annotation key names, `return_explainability_tensors` defaults | `fragnnet_model.py`, exporter literals | core output-schema module |
+| `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX`, the other element tables | `utils/frag_utils.py` | core `formula_utils.py` (see [the split](#frag_utils-is-split-not-moved)) |
+| `MAX_NUM_NODES`, `MAX_NUM_EDGES`, `MASK_SIZE` | Cython `compute_frags` / `frag_utils` | core `formula_utils.py` (see [Phase 3](#phase-3--fragmentation-core-constants-and-the-frag_utils-split)) |
 
-Rule for code one model uses today: place it by what it is, not by who calls it. Thirteen losses
-are FraGNNet-only today (Hungarian JSD, entropies, Hellinger, pairwise similarity). They are
-generic spectrum math and stay in `model/loss.py`. The same applies to `QETEnergyEncoder`, the
-nominal isotope tables in `formula_utils`, and the peak aggregation in `spec_utils`.
+Placement rules:
 
-Second rule: anything core reads stays in core, whatever its subject. A temporary re-export at
-the old path does not hide such a dependency; it only moves it.
+1. **Place code by what it is, not by who calls it.** Twelve losses are imported only by `fragnnet_pl` today (Hungarian JSD, entropies, Hellinger, pairwise similarity, edge loss, contender BCE), and `sparse_peak_list_distance` and `conditional_in_support_cross_entropy` are MASSter-only. All are generic spectrum math and stay in `model/loss.py`. The same applies to the nominal isotope tables in `formula_utils` and the peak aggregation in `spec_utils`, which only MASSter uses today. `QETEnergyEncoder` is already shared through `CEModel` and stays in `base_model`.
+2. **Anything core reads stays in core**, whatever its subject.
+3. **Core files get no re-exports**, eager or lazy. A re-export only moves a dependency, and the boundary check counts function-level imports. When a name leaves a core file, its importers are retargeted in the same PR. Re-exports are allowed only in files that belong to the destination's layer or a higher one, such as the FraGNNet remnant of `frag_utils` re-exporting names that moved to core. The Phase 1 package-initializer `__getattr__` is the one listed exception (`COMPAT_SHIMS`), removed in Phase 6.
+4. **String module paths are not covered by re-exports.** This covers `patch(...)` and `monkeypatch.setattr("pkg.mod.name")` targets, `sys.modules[...]` stubs, `find_spec` and `import_module`. Retarget them in the PR that moves the code; see [String module paths](#string-module-paths).
 
 ### Every core import of code the plan moves
 
 An AST check of every `src/` import (module-level and function-level) against the planned
-destinations lists all edges from a lower layer to a higher one. Each needs a resolution before
-the moves:
+destinations lists these edges from a lower layer to a higher one:
 
 | Importer (layer) | Imports from (destination) | Names | Resolution |
 | --- | --- | --- | --- |
-| `model/__init__`, `pl_model/__init__`, `dataset/__init__` (core) | FraGNNet, MASSter | model, PL, dataset and sampler classes | Package initializers; see below |
+| `model/__init__`, `pl_model/__init__`, `dataset/__init__` (core) | FraGNNet, MASSter (and NEIMS) | model, PL, dataset and sampler classes | [Package initializers](#package-initializers) (Phase 1) |
+| `utils.setup_utils` (core) | FraGNNet, MASSter, NEIMS, baselines | PL and dataset classes | Lazy registry for every model type (Phase 1) |
+| `utils.proc_utils` (core) | `frag.compute_frags` (FraGNNet) | `MAX_NUM_NODES`, `MAX_NUM_EDGES` | Core size constants (Phase 3) |
+| `dataset.base_dataset` (core) | `utils.frag_utils` | `load_frag_d` | Core DAG-format module (Phase 3); shared isotope cleaning reads DAG formulas ([base_dataset.py:744](../../src/fragnnet/dataset/base_dataset.py#L744)) |
+| `dataset.spec_mol_dataset` (core) | `massformer.data_utils` | `mf_data_utils` | `SpecMolMFDataset` (Phase 1) |
 | `pl_model.spectrum_pl` (core) | `model.fragnnet_model` | `EXPLAINABILITY_OUTPUT_KEYS` | Core output-schema module (Phase 3) |
-| `utils.feat_utils` (core) | `utils.frag_utils` | `CANONICAL_ELEMENT_ORDER`, `NODE_FEAT_TO_IDX`, `EDGE_FEAT_TO_IDX`, `get_node_feats`, `get_edge_feats`, `th_long_to_mask` | Element order to core; `get_frag_graph`/`batch_mols_frags` and the DAG feature indexing move to FraGNNet together, in Phase 3 (in place); `frag_utils` itself loads the Cython builders when imported |
-| `dataset.base_dataset` (core) | `utils.frag_utils` | `load_frag_d` | DAG file reader stays in core: shared isotope cleaning reads DAG formulas ([base_dataset.py:744](../../src/fragnnet/dataset/base_dataset.py#L744)) |
-| `utils.script_utils` (core) | `utils.frag_utils` | `ELEMENT_TO_IDX`, `MASK_SIZE`, `NUM_ELEMENTS`, `PACKED_DAG_INDEX_DATASET`, `formula_arr_to_str`, `get_node_feats`, `th_mask_to_long` | Formula and DAG-format names to core; `get_node_feats` use to FraGNNet's export hook |
-| `utils.script_utils` (core) | `frag.masster_templates` | `MASSTER_RULE_VOCABULARY` | MASSter's `annotation_tables` hook |
-| `utils.script_utils`, `utils.setup_utils` (core) | baselines | PL and dataset classes | ICEBERG imports removed with ICEBERG; GRAFF and MassFormer through the registry and hooks (Phase 1) |
-| `utils.misc_utils` (core) | `utils.dgl_compat_utils` | `DGLGraph` | Remove DGL checks and the shim when retiring ICEBERG (Phase 1) |
+| `utils.feat_utils` (core) | `utils.frag_utils` | `CANONICAL_ELEMENT_ORDER`, `NODE_FEAT_TO_IDX`, `EDGE_FEAT_TO_IDX`, `get_node_feats`, `get_edge_feats`, `th_long_to_mask` | Element tables and mask packing to core; `get_frag_graph`, `batch_mols_frags` and DAG feature indexing to a FraGNNet-owned module (Phase 3); 12 importers retargeted |
+| `utils.script_utils` (core) | `utils.frag_utils` | `ELEMENT_TO_IDX`, `MASK_SIZE`, `NUM_ELEMENTS`, `PACKED_DAG_INDEX_DATASET`, `formula_arr_to_str`, `th_mask_to_long`, `get_node_feats` | Formula and DAG-format names to core (Phase 3); `get_node_feats` use goes to FraGNNet's export hook (Phase 4) |
+| `utils.script_utils` (core) | `frag.masster_templates`; `pl_model` | `MASSTER_RULE_VOCABULARY`; `FraGNNetPL`, `MassterPL` | Export hooks (Phase 4) |
+| `utils.script_utils` (core) | `iceberg.pl_model` | `IcebergIntenPL` | Removed with ICEBERG (Phase 1). `script_utils` imports no GRAFF or MassFormer class; GRAFF's `ann_params` overlay becomes a hook |
+| `runner` (core) | FraGNNet and MASSter samplers, `validate_dag_size_curriculum` (via `dataset.data_sampler`) | sampler classes, validator | `build_batch_sampler`, `validate_config` hooks (Phase 4) |
+| `utils.misc_utils` (core) | `utils.dgl_compat_utils` | `DGLGraph` | DGL checks and the shim deleted (Phase 1) |
 | `model.candidate_support` (`fragmentation/`) | `model.bond_fragment_heads` (MASSter) | `_validate_tensor_condition` | Validator to core (Phase 3) |
-| `model.masster_model`, `model.candidate_features` (MASSter) | `utils.frag_utils` (FraGNNet) | `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX` | Element order to core |
+| `model.masster_model`, `model.candidate_features` (MASSter) | `utils.frag_utils` (FraGNNet) | `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX` | Element tables to core (Phase 3) |
 
-So `frag_utils` is split, not moved:
+### `frag_utils` is split, not moved
 
-- **To core `formula_utils`:** element tables and formula representation (`CANONICAL_ELEMENT_ORDER`,
-  `CANONICAL_H_IDX`, `ELEMENT_TO_IDX`, `NUM_ELEMENTS`, `HEAVY_ELEMENTS`, `ELEMENT_TO_VE`,
-  `formula_arr_to_str`) and the mask packing helpers (`th_mask_to_long`, `th_long_to_mask`,
-  `MASK_SIZE`).
-- **To a core DAG-format module:** the `dags.h5`/pickle readers and writers and their layout
-  constants (`load_frag_d`, `load_dag_hdf5`, `PACKED_DAG_INDEX_DATASET`, path helpers). The
-  shared isotope cleaning and the exporter read this format, and keeping reader and writer
-  together keeps the format in one place.
-- **To `models/fragnnet`:** DAG generation (`compute_dags` and the Cython builders), DAG node and
-  edge feature indexing (`NODE_FEAT_TO_IDX`, `get_node_feats`, …) with `feat_utils.get_frag_graph`
-  and `batch_mols_frags`.
-- **To `fragmentation/`:** the reference `compute_cc_h_cap` and `update_bonds`.
+Only some `frag_utils` functions need the Cython builders, `compute_frags` constants or
+`smarts_prepass`:
+
+- `compute_dags`, `timed_get_dags` and `run_frag_gen_hdf5`;
+- `get_fraggen_input_arrays`, `compute_approximate_formula` and `compute_approximate_cchs`;
+- `_inject_smarts_pairs_into_dag` and `_inject_nl_masks_into_dag`;
+- `cc_bitmask_to_formula_arr` and `convert_cc_int_to_np_mask`.
+
+The reader, format code, mask packing, element tables and `compute_cc_h_cap` do not.
+
+| Destination | Symbols |
+| --- | --- |
+| Core `formula_utils` | `ELEMENT_TO_VE`, `HEAVY_ELEMENTS`, `NUM_HEAVY_ELEMENTS`, `ELEMENTS`, `NUM_ELEMENTS`, `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX`, `ELEMENT_TO_IDX`, `IDX_TO_ELEMENT`, `formula_arr_to_str`, `th_mask_to_long`, `th_long_to_mask`, and the size constants `MASK_SIZE = 128`, `MAX_NUM_NODES = 128`, `MAX_NUM_EDGES = 512`, with the asserts `MASK_SIZE >= MAX_NUM_NODES` and `MASK_SIZE % 64 == 0` |
+| Core DAG-format module | every `PACKED_DAG_*` constant, `get_frag_name`, `get_frag_fp`, `_legacy_frag_names`, `get_dag_output_path`, `_dump_pickle_file`, `_load_pickle_file`, `dump_dag_pickle`, `dump_dag_hdf5`, `initialize_packed_dag_hdf5`, `dump_dag_hdf5_packed`, `_load_dag_hdf5_packed`, `load_dag_hdf5`, `load_dag_hdf5_from_group`, `save_frag_d`, `load_frag_d`. Reader and writer stay together so the format lives in one place |
+| `fragmentation/` | `compute_cc_h_cap` (FraGNNet's DAG builder imports it from there) |
+| FraGNNet-owned (`frag_utils` remnant) | Everything else, including `extract_mol_info`, `get_fraggen_input_arrays`, `compute_cc_h_floor` and `compute_approximate_*`; the `cc_*` and `convert_cc_*` helpers, `wl_hash` and `get_subgraph_hashes`; the `_inject_*` helpers, `compute_dags`, `timed_get_dags` and `run_frag_gen_hdf5`; `compute_frag_peak_stats`, `compute_boundary_mask` and `compute_boundary_pair_idxs`; and the dtype and DAG feature-index constants with `get_node_feats`/`get_edge_feats`.It asserts the core size constants equal `compute_frags.MAX_NUM_NODES/EDGES` and re-exports moved core names until Phase 6 |
+| Deleted | The Python `update_bonds` (no callers). Also no callers anywhere: `convert_cc_mask_to_int`, `convert_cc_int_to_mask`, `convert_cc_int_to_np_mask` and `compute_approximate_cchs` (delete or keep, decided in the Phase 3 PR) |
+
+The `.pyx` files keep their literal 128/512, because Cython needs compile-time sizes. A test
+asserts they equal the core constants.
 
 ### Package initializers
 
 `model/__init__.py`, `pl_model/__init__.py` and `dataset/__init__.py` import model-specific
-classes when imported: `FraGNNetModel`, `MassterModel`, `FraGNNetPL`, `MassterPL`,
-`SpecMolFragDataset`, `IterableSpecMolFragDataset`, and the FraGNNet and MASSter samplers.
-Python runs a package's `__init__` before any of its submodules, so importing a shared module
-such as `fragnnet.pl_model.spectrum_pl` loads every model. A lazy registry alone cannot isolate
-core while these exports exist. 48 files import from these three packages; the model-specific
-names are used by 1–13 files each (`MassterPL` 13, `FraGNNetPL` 10, `SpecMolFragDataset` 6).
+classes when imported: `FraGNNetModel`, `MassterModel`, `NeimsModel`, `FraGNNetPL`,
+`MassterPL`, `NeimsPL`, `SpecMolFragDataset`, `IterableSpecMolFragDataset`, and the FraGNNet and
+MASSter samplers. Python runs a package's `__init__` before any of its submodules, so importing a
+shared module such as `fragnnet.pl_model.spectrum_pl` loads every model. A lazy registry alone
+cannot isolate core while these exports exist.
+
+About 48 files import from these three packages. Nothing star-imports them, and
+`dataset/__init__.py` is the only one with an `__all__`. The repo uses three import forms, and all
+three work with a PEP 562 `__getattr__` that raises `AttributeError` for unknown names:
+
+- `from pkg import Class`;
+- `from pkg import submodule` (for example `from fragnnet.model import MassterModel, bond_fragment_heads`);
+- `import pkg.sub as alias`.
 
 ### Config keys
 
-`config/template.yml` has 474 top-level keys. A regex classification of which code reads each
-key (approximate):
+`config/template.yml` has 474 top-level keys, already grouped by per-model section banners. Those
+banners are enforced by `MODEL_SECTIONS` in `tests/test_config_templates.py`:
 
-| Read by | Keys | Notes |
-| --- | --- | --- |
-| MASSter only | 117 | All but 3 prefixed `masster_` (`gnn_residual_activation`, `ce_pair_min_endpoint_reliability`, `cross_ev_fragment_loss_weight`) |
-| FraGNNet only | 111 | About 80 unprefixed: entropy weights, `nb_*`, `edge_*`, `null_loss`, `candidate_ion_*`, `ion_channel_*`, `finetune_*`, `context_embedding*`, `*_scale`. The count includes a few generic training keys the regex misattributes |
-| Both | 45 | `mol_*` encoder keys, loss/output shape, CE statistics, `ce_pair_*`, leak and auxiliary weights, `predict_oos`/`oos_loss` (MASSter reads these only to force them off) |
-| Baselines only | 35 | `iceberg_*`, `mf_*`, `graff_*`, `magma_params` |
+| Section | Keys |
+| --- | --- |
+| shared core | 201 |
+| MASSter only | 123 (all `masster_*`) |
+| FraGNNet only | 95 (mostly unprefixed: entropy weights, `nb_*`, `edge_*`, `null_loss`, `candidate_ion_*`, `ion_channel_*`, `finetune_*`, `context_embedding*`, `*_scale`) |
+| ICEBERG only | 15 (`iceberg_*`, `magma_params`, `magma_dp`) |
+| GrAFF only | 11 |
+| MassFormer only | 10 |
+| MCES / CLIP / ChemLM / NEIMS | 7 / 6 / 5 / 1 |
 
 `template.yml` stays one file (recorded decision). FraGNNet keys are not renamed, because that
-would be a schema change. Instead each model package declares the keys it owns. That generalizes
-`MASSTER_SAMPLER_KEYS` ([runner.py:97](../../src/fragnnet/runner.py#L97)), so the runner can flag
-a key set for a model that ignores it, for every model.
+would be a schema change. Each model package declares `owned_config_keys`, seeded from these
+section banners. That generalizes `MASSTER_SAMPLER_KEYS`
+([runner.py:97](../../src/fragnnet/runner.py#L97)), so the runner can flag a key that is set for a
+model that ignores it. After ICEBERG retirement, its 15 keys stay inert and unowned (see
+[Unchanged](#unchanged)), and the owned-keys check accepts them. ChemLM reads the
+`neims_bottleneck_factor` key, so the `neims_*` keys stay in core whatever happens to NEIMS.
 
 ### Baselines
 
-Core reaches into the baselines in five places (listed in the coupling table above:
-`setup_utils`, `spec_mol_dataset`, two spots in `script_utils`, `VALID_MODEL_TYPES`). In the other
-direction, baselines subclass `SpectrumPL`/`BinnedPL`/`BaseDataset` and use loss, scatter and
-formula utilities, which is allowed. No baseline has its own test; only
-`tests/test_config_templates.py` touches them. Outside callers:
+Core reaches into the baselines through `setup_utils`, `spec_mol_dataset`, `script_utils` (ICEBERG
+only) and `VALID_MODEL_TYPES`. In the other direction, baselines subclass
+`SpectrumPL`/`BinnedPL`/`BaseDataset` and use loss, scatter and formula utilities, which is
+allowed.
 
-- [run_save_inference.py](../../scripts/eval/run_save_inference.py)
-- `scripts/stats_scripts/calculate_formula_stats.py`
-- `scripts/ms2c/run_iceberg_ms2c_predict_val.py`
-- `preproc_scripts/05_prepare_magma_feats.py`, `06_predict_magma_dags.py` (ICEBERG-only)
+- **Tests.** No ICEBERG, GRAFF or MassFormer module has its own test. `tests/test_neims_model.py` covers NEIMS, and `tests/test_config_templates.py` touches the others.
+- **ICEBERG callers.** All outside callers of ICEBERG code are inventoried in [Phase 1 step 2](#phase-1--registry-retire-iceberg-decouple-retained-baselines).
+- **Retained-baseline callers that need Phase 6 path updates:**
+  - `scripts/eval/run_save_inference.py` (also edited in Phase 1);
+  - `notebooks/param_counts.ipynb`;
+  - `notebooks/test_notebooks/test_fit_anns.ipynb`;
+  - `notebooks/test_notebooks/test_graff_ckpts.ipynb`.
+- **Local checkpoints.** NEIMS has two (`saved_ckpts/spectraverse/fragnnet_neims_original/`). GRAFF and MassFormer have none locally; their W&B runs use the prefixes `graff3_long` and `massformer_long`.
 
-### Change frequency and tests
+### String module paths
 
-- Commits in the 30 days before 2026-10-11: `runner.py` 20, `script_utils.py` 20,
-  `spectrum_pl.py` 19. These are the files carrying the cross-model branches.
-- `fragnnet_model.py` had 11 commits in 30 days (`CutBondEncoder`, CMF fixes, `feiw_v2` merges).
-  FraGNNet code is not frozen, and `feiw_v2` is live.
-- 17 test files import code from both models: prepass, DAG storage, hparam migration, config
-  templates, and MASSter tests using FraGNNet as a reference.
-- Callers to update when model files move: MASSter-specific modules are imported by 71 files
-  (14 src, 18 scripts, 39 tests); FraGNNet-specific ones by about 113 (15 src, 36 scripts,
-  49 tests, 13 preprocessing scripts).
+Import counts miss module and file paths held as strings. Known sites:
+
+- **Patch targets:**
+  - `tests/test_masster_pl.py:717-720` patches `fragnnet.model.candidate_support.linear_sum_assignment` (moves in Phase 3);
+  - `tests/test_masster_pl.py:1775` and `:2332` patch `fragnnet.pl_model.masster_pl.<name>`;
+  - `tests/test_hdf5_dag_storage.py:222` patches `fragnnet.utils.frag_utils.par_apply` (`run_frag_gen_hdf5` stays in the `frag_utils` remnant).
+- **Module stubs and lookups:**
+  - `tests/test_spectrum_pl_utils.py:23-27` stubs `sys.modules["fragnnet.frag.multi_cut_bfs"]` (can be dropped after Phase 3);
+  - `tests/test_masster_full_training_benchmark.py:114` calls `find_spec("fragnnet.frag.masster_core")` and has an embedded script at :134;
+  - `scripts/debug/bench/benchmark_masster_full_training.py:60-103` and `:489-509` use `importlib`, `sys.modules` and a `masster_core*.so` glob.
+- **File paths:**
+  - `tools/build_compute_frags_setup.py:6-7` and `scripts/profile_compute_frags.py:12`, `:82` (`src/fragnnet/frag/compute_frags.pyx`);
+  - `scripts/debug/ei/debug_masster_ei_smarts_screen.py:269-270`.
+- **Untracked slash command:** `.claude/commands/add-smarts-rule.md` names `fragnnet.frag.smarts_prepass` and `frag_utils` helpers.
+
+Each moving PR runs `git grep -nE "[\"']fragnnet\."` and `git grep -n "src/fragnnet/"` outside
+import statements and retargets what it finds.
+
+### Callers and tests
+
+Counts come from an AST scan of import statements on 2026-10-11:
+
+- **MASSter-specific code** (the Sizes-table MASSter modules plus `MassterPL`/`MassterModel` through the packages): about 65 files (13 src, 18 scripts, 34 tests).
+- **FraGNNet-specific code or `frag_utils`:** about 120 files (12 src, 39 scripts, 15 preprocessing scripts, 51 tests, 1 notebook).
+- **Both models by module:** 5–8 test files, depending on whether `smarts_prepass` and `candidate_support` count. More touch both through `model_type` or config strings (hparam migration, config templates, DAG storage).
+
+Re-run the scan before Phase 6.
+
+Commits in the 30 days before 2026-10-11 were heaviest in the files carrying the cross-model
+branches: `runner.py` 20, `script_utils.py` 20, `spectrum_pl.py` 19. `fragnnet_model.py` had 11
+(`CutBondEncoder`, CMF fixes, `feiw_v2` merges), so FraGNNet code is not frozen and `feiw_v2` is
+live.
 
 ## Plugin interface
 
-Each retained model and baseline registers a `model_type` with these hooks. Core models use
-defaults. External ICEBERG is not registered; its predictions enter through file-based evaluation.
+Each retained model and baseline registers a `model_type` with these hooks; core models use
+defaults. External ICEBERG is not registered; its predictions enter through file-based
+evaluation.
 
-| Hook | Replaces |
-| --- | --- |
-| `model_cls`, `dataset_cls` | `setup_utils.get_model_cls` / `get_dataset_cls` |
-| `migrate_config`, `default_config` | `pl_utils` MASSter migrations; runner 215-226 |
-| `validate_config` | runner 515-560, 806 |
-| `owned_config_keys` | `MASSTER_SAMPLER_KEYS` (generalized) |
-| `build_batch_sampler` | runner 331-470 |
-| `dataloader_options` | runner 345 (persistent workers), 1267 (`num_workers` workaround exemption) |
-| `filter_dataset` | `spec_mol_dataset` 57 |
-| `sampler_needs_epoch_reset` | `spectrum_pl` 2469 |
-| `apply_inference_config` | `script_utils` 481-515 |
-| `export_index_vars` | `script_utils` 850-940 |
-| `annotation_tables` | `script_utils` 1754-2063 |
-| `log_resolved_settings` | runner 1069 |
+**Resolved in core, before any hook runs.** The registry owns three things:
+
+- the alias table: `mass_shatter` → `masster` plus the `mass_shatter_*` key prefix, `frag_gnn`/`fragnnet`, and `clip`/`spec_mol_clip_pretraining`;
+- `RETIRED_MODEL_TYPES` (`iceberg_gen`, `iceberg_inten`, with a message naming ms-pred and the archive SHA);
+- the model-type list.
+
+Alias resolution runs at the existing call sites: runner.py:190-245, `get_pl_hparams` at
+pl_utils.py:499, runner.py:1028 for the saved W&B config, and `MassterPL.__init__`. Alias pairs
+get identical behavior from every hook. The string-keyed legacy default tables in
+`migrate_legacy_hparams` (FraGNNet, CLIP, MCES) stay in core `pl_utils`: they import nothing, so
+the dependency rule allows them.
+
+| Hook | Replaces | Phase |
+| --- | --- | --- |
+| `model_cls`, `dataset_cls` | `setup_utils.get_model_cls`/`get_dataset_cls`. Thin wrappers stay importable as `setup_utils.get_*` and `runner.get_*`, because tests patch and assert them | 1 |
+| `migrate_template_config` | MASSter backfills in `runner.load_config` 218-227 | 4 |
+| `migrate_checkpoint_hparams` | MASSter backfills in `get_pl_hparams` 507-539 and `migrate_masster_rt_ccs_hparams` | 4 |
+| `validate_config` | runner 515-560, 609-631, 773-808. `validate_dag_size_curriculum` moves with the FraGNNet samplers; `validate_bond_size_curriculum` stays core | 4 |
+| `uses_ce_context_sampler` (capability) | model names in the shared CE-pair checks (runner 588, 640) and the sweep-schedule key list (924) | 4 |
+| `owned_config_keys` | `MASSTER_SAMPLER_KEYS` (generalized) | 4 |
+| `build_batch_sampler` | runner 331-470 and the module-level sampler imports (20-34) | 4 |
+| `dataloader_options` | runner 345 (persistent workers), 1267 (`num_workers` workaround exemption) | 4 |
+| `filter_dataset` | `spec_mol_dataset` 57-62. Called from **inside** `SpecMolDataset.__init__` through the registry, after `_base_init` and before preprocessing, so the 27 scripts that build datasets through `get_dataset_cls` directly keep the filter | 4 |
+| `sampler_epoch_reset` | `spectrum_pl` 2454-2500, both branches: `set_epoch` with the Lightning batch-count refresh, and `_pre_compute_batches` | 4 |
+| `apply_inference_config` | script_utils 462-471, 477-486, 509-515 (FraGNNet `frag_params`, GRAFF `ann_params`). `prec_type_str` stays core | 1 (GRAFF), 4 (FraGNNet) |
+| `export_index_vars` | script_utils 850-870 and 893-978 | 4 |
+| `inference_batch_options` | explainability switch at script_utils 1075/1107-1111 and 2127 | 4 |
+| `supports_rule_provenance` | script_utils 2112 | 4 |
+| `postprocess_export_peaks` | script_utils 2149-2200, including the `annotation_tables` call at 2167; MASSter's `annotation_tables` body is 1754-2063 | 4 |
+| `formula_row_deltas` | script_utils 2414 | 4 |
+| `node_hash_features` | script_utils 2586 (`get_node_feats` for the cc hash) | 4 |
+| `log_resolved_settings` | runner 1069 | 4 |
+
+The imports at script_utils.py:20-22 disappear only when every export hook has landed.
 
 ## Phases
 
-Each phase is one or more small PRs. Every phase must leave the tests passing and retained-model golden
-outputs identical; ICEBERG retirement is the explicit exception.
+Each phase is one or more small PRs, committed one plan step at a time on
+`refactor/fragnnet-masster-reorg` (user decision, 2026-10-11). Every phase must leave the tests
+passing and the retained-model records identical. ICEBERG retirement is the explicit exception.
 
 ### Phase 0 — Safety net
 
-Each later phase moves a specific behavior, so the safety net must exercise that behavior, not
-just run a default batch. The three shared loss weights (`ce_pair_loss_weight`,
-`spectral_leak_loss_weight`, `spectral_ce_auxiliary_weight`) default to `0.0` in
-`template.yml`, so a default-config smoke test would never touch them.
+Each later phase moves a specific behavior, so the safety net exercises that behavior rather than
+a default batch.
 
-1. **Registry coverage.** For every `model_type` the runner accepts today — `frag_gnn`,
-   `fragnnet`, `masster`, `neims`, `chemlm`, `massformer`, `iceberg_gen`, `iceberg_inten`,
-   `graff`, `precursor`, `gnn`, `mces_pretraining`, `clip`, `spec_mol_clip_pretraining` — plus a
-   legacy `mass_shatter` config, assert the resolved model and dataset classes match an
-   expected-mapping table kept in the test. The table starts as today's
-   `get_model_cls`/`get_dataset_cls` and changes only deliberately, in the same PR as the code:
-   - Phase 1: retire `iceberg_gen` and `iceberg_inten`; replace class-resolution checks with
-     explicit retirement-error checks for config loading and model/dataset selection.
-   - Phase 1: `massformer` → `SpecMolMFDataset` instead of `SpecMolDataset`. That PR must also
-     show the new class is equivalent: identical per-item `mol_mf` preprocessing, an identical
-     collated batch (keys, shapes, dtypes, values) through the runner's DataLoader, and identical
-     MassFormer forward outputs and loss against the Phase 0 records.
-   - Phase 6: module paths change with the directory moves; class names and behavior do not.
-   Any other difference fails the test.
-2. **Smoke test per retained model type.** Build from template plus a tiny config; run one
-   forward pass and one training step on a fixture. ICEBERG requires retirement-error tests,
-   not an executable DGL fixture in the main environment.
-3. **Enabled-loss fixtures.** For FraGNNet and MASSter, configs with the three shared weights
-   non-zero, on a fixture batch that contains CE-pair-eligible spectra. Assert
-   `ce_pair_eligible_endpoints > 0`, so the CE-pair term is actually exercised. Record every named
-   loss term, the total, the gradients and the parameters after one optimizer step.
-4. **MASSter stages.** `MassterPL` rejects RT/CCS heads combined with proposal-only warmup
-   ([masster_pl.py:901-903](../../src/fragnnet/pl_model/masster_pl.py#L901)), so three cases:
-   - proposal-only training with property heads off: the same records, plus an assertion that
-     the spectral terms contribute no gradient;
-   - joint training with RT/CCS heads on: the same records;
-   - a rejection test: RT/CCS heads with `masster_proposal_only_until_epoch` set must still raise.
-5. **Samplers.** For each sampler that Phase 4 moves (FraGNNet dynamic, dual-group and curriculum
-   samplers; MASSter's CE-context sampler), record the batch-index sequence across at least two
-   epoch transitions (`set_epoch`) and after resuming from a mid-training checkpoint.
-6. **Export.** For FraGNNet and MASSter, record the schema (columns, dtypes, HDF5 dataset names)
-   and values of the pkl, tabular and HDF5 inference exports on a fixture. Before using external
-   ICEBERG predictions, validate their adapter as specified in the decision above.
-7. **Import boundary.** An AST check of the dependency rule. It starts in report-only mode and
-   becomes enforcing once a phase removes the violations it covers.
+**Determinism.** Records are generated and compared under these settings:
 
-Later phases compare retained-model records exactly: values bit-for-bit, schemas field-for-field.
+- CPU only, in the same environment: `accelerator: cpu`, `precision: 32`, `compile: false`, `num_workers: 0`;
+- `seed_everything`/`th.manual_seed` before every step, `th.use_deterministic_algorithms(True, warn_only=True)` and `th.set_num_threads(1)`; a non-deterministic-op warning counts as a failure;
+- MASSter uses `masster_candidate_backend: cpu` and `masster_proposal_method: cut_masks`.
 
-### Phase 1 — Retire ICEBERG and decouple retained baselines
+Records are regenerated deliberately when the torch or numpy build changes. GPU parity (the CUDA
+backend, `connected_fragment_beam`) is checked separately with a stated tolerance, not
+bit-for-bit. Records are stored under `tests/` and built from in-code synthetic fixtures, so they
+do not depend on the untracked `data/` directory.
 
-1. Lazy registry in `registry.py` for **every retained** model type, FraGNNet and MASSter included, so
-   `runner` → `setup_utils` no longer imports any model at load time. `VALID_MODEL_TYPES` is
-   derived from it.
-2. Record the recoverable pre-removal revision and inventory ICEBERG callers/configs. Remove
-   `src/fragnnet/iceberg`, its model/dataset imports, `isinstance(IcebergIntenPL)` branches and
-   MAGMA inference-config edits. Retire ICEBERG-only preprocessing/ms2c entry points and configs
-   with archive/replacement pointers. Preserve shared chemistry or data utilities used elsewhere.
-   Old model types get the explicit retirement error. Move only GRAFF inference edits into hooks.
-   Callers outside `src/fragnnet/iceberg` (checked at `4180d267`) that must be edited, not
-   deleted with it:
-   - `scripts/stats_scripts/calculate_formula_stats.py` imports `vec_to_formula` and
-     `element_to_ind` from `iceberg.common.chem_utils`; port it to core formula utilities.
-   - [run_save_inference.py](../../scripts/eval/run_save_inference.py) imports ICEBERG alongside
-     GRAFF and MassFormer; remove only the ICEBERG paths.
-   - `scripts/ms2c/setup_ms2c_scripts.py` generates MAGMA/ICEBERG ms2c jobs; drop those
-     targets.
-   - `notebooks/param_counts.ipynb` imports ICEBERG; update or mark it historical.
-   - `tests/test_config_templates.py` covers the `magma_params` template block, which stays inert
-     (see [Unchanged](#unchanged)).
+1. **Registry coverage.** Assert the resolved model and dataset classes against an expected-mapping table kept in the test.
+   - **Inputs covered:** every `model_type` the runner accepts today (`frag_gnn`, `fragnnet`, `masster`, `neims`, `chemlm`, `massformer`, `iceberg_gen`, `iceberg_inten`, `graff`, `precursor`, `gnn`, `mces_pretraining`, `clip`, `spec_mol_clip_pretraining`) plus a legacy `mass_shatter` config.
+   - **How the table changes:** it starts as today's `get_model_cls`/`get_dataset_cls` and changes only deliberately, in the same PR as the code:
+     - Phase 1 replaces the ICEBERG rows with retirement-error checks for every path in Phase 1 step 1;
+     - Phase 1 maps `massformer` to `SpecMolMFDataset`, with the equivalence shown against item 3;
+     - Phase 6 changes module paths only.
+   - **Alias pairs** also get identical `validate_config` and migration results.
+2. **Smoke test per retained model type.** Build from the template plus a tiny config; run one forward pass and one training step.
+3. **Baseline records (MassFormer, GRAFF)**, captured before any Phase 1 change:
+   - per-item `mol_mf`/`mol_graff` preprocessing output;
+   - the collated batch through the runner's `init_dataloader` (keys, shapes, dtypes, values);
+   - forward outputs, loss and post-step parameters.
 
-   ICEBERG-only and removed with it: `preproc_scripts/05_prepare_magma_feats.py`,
-   `06_predict_magma_dags.py`, `scripts/ms2c/run_iceberg_ms2c_predict_val.py`.
-3. Move the MassFormer and GRAFF molecule handling out of `SpecMolDataset`. The
-   `mol_params.mf`/`graff` keys stay.
-   - Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()`
-     returns `SpecMolDataset.collate_fn`, which calls `SpecMolDataset._special_collate` by name
-     ([spec_mol_dataset.py:242-298](../../src/fragnnet/dataset/spec_mol_dataset.py#L242)).
-     Overriding `_special_collate` or the preprocessing in a subclass is therefore not enough.
-   - MassFormer: a new `SpecMolMFDataset(SpecMolDataset)` defines its own `get_collate_fn`,
-     `collate_fn` and `_special_collate` (the last calling `SpecMolDataset._special_collate`),
-     following the existing GRAFF pattern ([graff/dataset.py:264-306](../../src/fragnnet/graff/dataset.py#L264)).
-     ICEBERG followed the same pattern but is removed in step 2.
-     The registry maps `massformer` to it.
-   - GRAFF: `SpecMolAnnDataset` already has that chain; move the `mol_graff` block into its
-     `_special_collate`.
-   - Test through the DataLoader that the runner's `init_dataloader` builds, not by calling the
-     collate function directly.
+   The fixture builds the compiled `algos` extension for MassFormer and a small `ann_fp` library for GRAFF.
+4. **Enabled-loss records (FraGNNet, MASSter).**
+   - **Required config:**
+     - `loss_type: hellinger_distance` (leak and auxiliary are rejected otherwise, loss.py:83-84);
+     - the three shared weights above zero;
+     - `ce_pair_min_endpoint_confidence` in (0, 1] and `target_rel_ints_thresh` in (0, 1);
+     - `inst_type_loss_tol` set for each eligible instrument type, `train_sample_weight: none`, `devices: 1` (runner.py:588-690);
+     - a CE-context sampler: for MASSter, `masster_batch_sampler: true` with `masster_batch_sampler_max`; for FraGNNet, `batch_sampler_type: ce_context`, `dynamic_batch_sampler: true`, `dynamic_batch_sampler_mode: frag_edge` and `automatic_optimization: false`, so the optimizer step is `_manual_opt`.
+   - **Fixture.** In the train split, at least two spectra of one molecule, adduct and instrument share `group_id` and differ in CE. Their top peaks A ≠ B are both observed at both CEs, above the intensity floor and the confidence threshold. Predicted peaks lie within tolerance of A and B; build the fixture after a forward pass, or pin wide tolerances (eligibility rules: loss.py:3139-3248).
+   - **Assert** `ce_pair_eligible_endpoints.sum() > 0`.
+   - **Record** every named loss term, the total, the gradients and the parameters after one optimizer step.
+5. **MASSter stages.** `MassterPL` rejects RT/CCS heads combined with proposal-only warmup ([masster_pl.py:901-903](../../src/fragnnet/pl_model/masster_pl.py#L901)), so three cases:
+   - proposal-only training with property heads off: the item 4 records, plus an assertion that the spectral terms contribute no gradient;
+   - joint training with RT/CCS heads on: the item 4 records;
+   - a rejection test: RT/CCS heads with `masster_proposal_only_until_epoch` set still raise.
+6. **Samplers.**
+   - **Coverage:** FraGNNet's dynamic, dual-group and CE-context samplers; the bond-count curriculum; MASSter's CE-context sampler; and the generic group samplers.
+   - **Recording:** record the batch-index sequence per epoch by driving `SpectrumPL._seed_dataloader(epoch)` through a stub trainer that exposes `train_dataloader`. Calling `set_epoch` directly bypasses the reseed.
+   - **Resume check:** build a fresh dataloader, call `_seed_dataloader(N)` as a resumed run would, and require epochs N and N+1 to equal the uninterrupted run. Samplers hold no checkpointed state; this guards the `(hparams.seed, current_epoch)` derivation.
+7. **Export.** For FraGNNet and MASSter, record the schema (columns, dtypes, HDF5 dataset names) and values of the pkl, tabular and HDF5 inference exports on a fixture, including the explainability-switch and rule-provenance paths.
+8. **Migrations.** For one stub old checkpoint and one template per model family (including legacy `mass_shatter`), record the backfilled hparams after `get_pl_hparams` and `load_config`. Take the stub hparams from `saved_ckpts/c0_control_vcpho5qm.ckpt` into a small JSON fixture, so the test does not need the untracked file.
+9. **Dataset construction path.** A dataset built through `get_dataset_cls("masster")(**config)`, bypassing `runner.init_dataset`, still applies the MASSter spectrum filter.
+10. **Import boundary.**
+    - **AST check:** the dependency rule, using the module-to-layer table and a `COMPAT_SHIMS` allowlist.
+    - **`sys.modules` gate:** runs in fresh subprocesses.
 
-   The Phase 0 records guard retained-baseline preprocessing and collation equivalence.
-4. Remove DGL. Delete the `DGLGraph` cases from `misc_utils.to_device` and `print_shapes`, then
-   delete `dgl_compat_utils.py`. Remove DGL installation from `pyproject.toml`, `env/`,
-   `install_lib.py`, `containers/apptainer/fragnnet_cuda128.def`, `scripts/setup_job_cc.py` and
-   `scripts/manual_slurm/`; update install checks/docs (INSTALL.md) and stale DGL examples (the
-   `dgl.random_walk_pe` docstring in `feat_utils.py`). The prebuilt `.sif` images cannot be
-   edited; note that they still contain DGL. Test core imports and retained-model smoke fixtures with DGL imports blocked
-   in fresh subprocesses. Check setup commands as well as `sys.modules`: a missing runtime
-   import does not prove the installation no longer requires DGL.
+    Both start report-only and enforce what each phase resolves (gate table below).
 
-5. Package initializers. Reduce `model/__init__.py`, `pl_model/__init__.py` and
-   `dataset/__init__.py` to core exports. During the transition, the model-specific names stay
-   reachable through a module-level `__getattr__` (PEP 562) that imports the class only when the
-   name is accessed. Importing a shared submodule then no longer loads any model. Update the
-   callers to import from the defining module (later the model package), then delete the lazy
-   names in Phase 6.
+### Phase 1 — Registry, retire ICEBERG, decouple retained baselines
 
-Gate: an isolation test runs in fresh subprocesses. It imports core alone (`fragnnet.runner`,
-`fragnnet.pl_model.spectrum_pl`, `fragnnet.dataset.spec_mol_dataset`,
-`fragnnet.utils.script_utils`) and checks `sys.modules`. It then selects each model through the
-registry and checks that only that model's code has loaded. DGL imports are blocked in these
-subprocesses (an import hook that raises), so any remaining DGL import fails loudly instead of
-being missed.
+Phase 1 delivers `model_cls`, `dataset_cls`, the alias table, `RETIRED_MODEL_TYPES` and GRAFF's
+`apply_inference_config`. Phase 4 delivers the remaining hooks.
 
-The test enforces only boundaries that have actually been resolved; the rest stay report-only.
-Assertions are made per entry module, because `script_utils` keeps its FraGNNet and MASSter
-imports (`FraGNNetPL`, `MassterPL`, `masster_templates`, `frag_utils.get_node_feats`) until its
-export hooks land in Phase 4:
+1. **Lazy registry** in `registry.py` for **every** retained model type, FraGNNet and MASSter included, so `runner` → `setup_utils` no longer imports any model at load time. `VALID_MODEL_TYPES` is derived from it and excludes retired types. The retirement message is raised in two places:
+   - `load_config`, after the custom/checkpoint/template resolution (runner.py:203-208) and before the membership check (:209). This covers custom configs, the template and the `model_type` argument that `get_config_from_ckpt` passes.
+   - The registry's `get_model_cls`/`get_dataset_cls`, which covers `init_model_from_ckpt` and every script.
+2. **Retire ICEBERG.** Record the archive SHA (see the decision section), then delete `src/fragnnet/iceberg`, its imports in `setup_utils` and `script_utils`, the `isinstance(IcebergIntenPL)` branches and the MAGMA inference overlays (script_utils 481-483, 514-515; the `magma` entry of the 465 loop is harmless and goes too).
+   - **Configs:** delete the 51 config and sweep files: 45 per-seed configs under `config/{massspecgym_merged,nist20_merged_inchikey,nist20_merged_scaffold}/{iceberg_gen,iceberg_inten,iceberg_inten_opt}/`, 3 `config/sweeps_merged/iceberg_*` templates and 3 `sweep/merged/iceberg_*` files. Git history at the archive SHA is the pointer.
+   - **ICEBERG-only files, deleted:**
+     - `preproc_scripts/05_prepare_magma_feats.py`, `06_predict_magma_dags.py`;
+     - `scripts/ms2c/run_iceberg_ms2c_predict_val.py` (already unimportable: it imports functions `script_utils` no longer defines);
+     - `notebooks/test_notebooks/test_iceberg_formula.py`.
+   - **Importers edited:**
+     - `scripts/eval/run_save_inference.py`: remove the ICEBERG imports (10-11), the `iceberg_inten`/`iceberg_inten_opt` entries in its four tables (35-36, 109-110, 120-121, 131-132) and the default `--wandb_model_types`. It already fails at HEAD for unrelated reasons: `load_config` is called without `override`, and `apply_inference_config` is passed a `model_type` argument it does not have. Repairing that is out of scope.
+     - `scripts/stats_scripts/calculate_formula_stats.py`: delete the unused import (5), the `iceberg_inten` default (29) and the ICEBERG branch (181-185). No port to core is needed.
+     - `notebooks/param_counts.ipynb`: drop the ICEBERG cell or mark the notebook historical.
+   - **Files that only name ICEBERG:**
+     - `scripts/setup_job_cc.py:538-539`: drop the ICEBERG branch; the `magma_dp` keyword at 501 stays while the template key stays;
+     - `scripts/ms2c/setup_ms2c_scripts.py`: drop the ICEBERG targets;
+     - `scripts/stats_scripts/calculate_similarity_stats.py:17-18`: drop the ICEBERG labels;
+     - `scripts/debug/dag/debug_global_cutoff_recall_eval.py`: the docstring cites the archive revision;
+     - `.pre-commit-config.yaml`: drop `iceberg` from the comment at :7 and the regex at :15;
+     - `config/template.yml:213-216` and `:1225-1226`: annotate as retired and point the stale `TEMPLATE_STEM_BY_MODEL_TYPE` comment at the registry.
+   - **Tests:** `tests/test_config_templates.py::test_every_model_type_is_accounted_for` drops `iceberg_gen`/`iceberg_inten` from `owned` and asserts `RETIRED_MODEL_TYPES` is disjoint from `VALID_MODEL_TYPES`. Retired configs are deleted, so `test_every_tracked_config_still_resolves` keeps its 18 known failures. The `ICEBERG only` section, `magma_params` and `iceberg_*` template assertions stay.
+   - **Docs:**
+     - `docs/architecture.md:21`;
+     - `docs/guides/run_msgym_retrieval.md:112-113`;
+     - `config/README.md:114-120` (already-dead ICEBERG links → retirement note and ms-pred pointer);
+     - `preproc_scripts/README.md` Steps 5-6 (mark retired, point to the archive SHA, renumber if needed);
+     - `INSTALL.md:99` and `:207`;
+     - `docs/findings/masster/masster_channel_selection_findings.md:191`: repoint to a permalink at the archive SHA. Path-only citations in plans stay as historical.
+   - **Local checkpoints:** the two local ICEBERG checkpoints get a provenance note naming the archive SHA and are not loaded in the main environment.
+3. **Move MassFormer and GRAFF molecule handling out of `SpecMolDataset`.** The `mol_params.mf`/`graff` keys stay.
+   - **Why a subclass override is not enough.** Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()` returns `SpecMolDataset.collate_fn`, which calls `SpecMolDataset._special_collate` by name ([spec_mol_dataset.py:242-298](../../src/fragnnet/dataset/spec_mol_dataset.py#L242)).
+   - **MassFormer:** a new `SpecMolMFDataset(SpecMolDataset)` defines its own `get_collate_fn`, `collate_fn` and `_special_collate` (the last calling `SpecMolDataset._special_collate`), following GRAFF's pattern ([graff/dataset.py:264-306](../../src/fragnnet/graff/dataset.py#L264)). The registry maps `massformer` to it.
+   - **GRAFF:** `SpecMolAnnDataset` already has that chain; the `mol_graff` block moves into its `_special_collate`.
+   - **Callers to retarget:** `scripts/eval/run_save_inference.py:117` maps `massformer` to `SpecMolDataset`; change it to `SpecMolMFDataset`. A grep check asserts no module hard-codes `SpecMolDataset` for `massformer`. Its table keys are W&B labels, not registry types, so it keeps its own tables.
+   - **Testing:** test through the DataLoader the runner's `init_dataloader` builds, against the Phase 0 item 3 records.
+4. **Remove DGL.**
+   - **Code:** delete the `DGLGraph` cases from `misc_utils.to_device` and `print_shapes`, then delete `dgl_compat_utils.py`.
+   - **Tracked install sites:**
+     - `pyproject.toml:24`;
+     - `env/env_cc_setup_py310.sh:25`, `env_cc_setup_py311.sh:25`, `env_setup_gpu_py312_cu121_251105.sh:32-33`;
+     - `install_lib.py:85`, `:100` and the `"dgl==1.0.4"` list element at `:104`;
+     - `scripts/setup_job_cc.py:395`;
+     - the `scripts/manual_slurm/` files (six under `fir/`, `vulcan/inference_mas.sh:41`);
+     - `INSTALL.md:99`, `:207`;
+     - the `dgl.random_walk_pe` docstring in `feat_utils.py:1156-1158`.
+   - **Shell-continuation trap.** In `env/env_setup_gpu_py311_cu121_250602.sh`, line 27 starts a second `pip install` that also installs omegaconf through h5py. Change it to `pip install \` rather than deleting it, and drop the commented line 26.
+   - **Shell checks:** check each edited shell script with `bash -n` and a stubbed-pip dry run that shows the same package set minus dgl.
+   - **Untracked files:** these are not part of the PR: `containers/apptainer/*.def` (gitignored), generated `slurm_scripts/` and `jobs/`. Mark the `.def` stale locally and regenerate job scripts from `setup_job_cc.py`. The prebuilt `.sif` images still contain DGL.
+   - **DGL-free check:** parse `pyproject.toml` (tomllib) and grep the tracked install files for `dgl`. Do not check the live environment: the editable install's metadata and the gitignored `src/fragnnet.egg-info` still report `dgl==1.0.4` until the user chooses to re-run `pip install --no-deps -e .`, which the refactor does not do.
+5. **Package initializers.**
+   - **Reduce to core exports.** Reduce `model/__init__.py`, `pl_model/__init__.py` and `dataset/__init__.py` to core exports. NEIMS stays a core export through Phase 5 (open decision 2). Remove the lazy names from `dataset/__init__.py`'s `__all__`.
+   - **Transition.** The model-specific names stay reachable through a module-level `__getattr__` (PEP 562) that maps only the known lazy names, caches each result in `globals()` and raises `AttributeError` for anything else, so submodule imports keep working. These `__getattr__` functions are the `COMPAT_SHIMS` the boundary check exempts until Phase 6.
+   - **Tests:** one case per import form (`from pkg import LazyClass`, `from pkg import submodule`, `import pkg.sub as m`, `monkeypatch.setattr(pkg, "LazyClass", fake)`).
+   - **What it achieves:** importing a shared submodule then no longer loads any baseline. FraGNNet and MASSter loading through `spectrum_pl`, `feat_utils`, `proc_utils`, `script_utils` and `data_sampler` is removed in Phases 3-4.
 
-| After phase | Entry modules checked | Enforced: importing them does not load | Report-only |
-| --- | --- | --- | --- |
-| 1 | `runner`, `script_utils`, `spectrum_pl`, `spec_mol_dataset` | any baseline module, `dgl*` | FraGNNet and MASSter modules |
-| 3 | `runner`, `spectrum_pl`, `spec_mol_dataset`, `base_dataset`, `feat_utils`, `data_sampler`, `pl_utils` | additionally `frag_utils`, `compute_frags`, `multi_cut_bfs`, `smarts_prepass`, `fragnnet_model`, `bond_fragment_heads` | `script_utils` |
-| 4 | all of the above, plus `script_utils` | any FraGNNet or MASSter module | none |
+**Isolation gate.** Fresh subprocesses import core entry modules and select models through the
+registry, then check `sys.modules`. DGL imports are blocked by an import hook that raises. The
+gate enforces only what has been resolved; the rest is report-only:
 
-The Phase 3 row was checked with a transitive import calculation at `13b1599d`: package
-initializers treated as lazy (Phase 1), the registry lazy for every model (Phase 1), and the
-Phase 3 edges removed. Every Phase 3 entry module came out clean; `script_utils` still reaches
-`fragnnet_model`, `bond_fragment_heads`, `frag_utils` and `smarts_prepass`.
+| After phase | Entry modules checked | Importing them must not load | Selecting a model must not load | Report-only |
+| --- | --- | --- | --- | --- |
+| 1 | `runner`, `script_utils`, `spectrum_pl`, `spec_mol_dataset` | any baseline module, `dgl*` | another baseline, `dgl*` | FraGNNet and MASSter modules |
+| 3 | `runner`, `spectrum_pl`, `spec_mol_dataset`, `base_dataset`, `feat_utils`, `proc_utils`, `data_sampler`, `pl_utils` | additionally `frag_utils`, `compute_frags`, `multi_cut_bfs`, `smarts_prepass`, `fragnnet_model`, `bond_fragment_heads` | another model's modules; FraGNNet and MASSter may load `fragmentation/` | `script_utils` |
+| 4 | all of the above plus `script_utils` | any FraGNNet or MASSter module | as above | none |
 
-Phase 6 then moves files without changing what this test enforces.
+The Phase 3 row was checked with a transitive import calculation at `13b1599d`. It assumed lazy
+initializers, a lazy registry and the Phase 3 edges removed, including the `proc_utils` →
+`compute_frags` edge. Without that edge's removal, `runner`, `spec_mol_dataset`, `base_dataset`
+and `data_sampler` still load `compute_frags`. With it removed, every Phase 3 entry module is
+clean. Selection after Phase 3 behaves as follows:
+
+- NEIMS loads no fragmentation or model-specific module.
+- MassFormer and GRAFF load only their own packages.
+- MASSter loads `smarts_prepass`, `candidate_support`, `bond_fragment_heads` and its own modules, but no FraGNNet module.
+- FraGNNet loads `candidate_support`, `smarts_prepass`, `frag_utils` and no MASSter module.
+
+The AST boundary check becomes enforcing at the end of Phase 4, with the `COMPAT_SHIMS` allowlist.
+Phase 6 moves files without changing what either check enforces.
 
 ### Phase 2 — Shared spectrum objectives into `SpectrumPL`
 
 Composition contract:
 
-- `SpectrumPL` provides a helper that **computes** the shared terms (CE-pair, spectral leak,
-  spectral CE auxiliary, with the Hellinger weight validation) and returns their values and
-  eligibility counts. It never adds anything to the total loss, and there is no base-class
-  aggregation step after the model's loss function.
-- Each model's loss function calls the helper and keeps deciding which terms enter the total, in
-  which order, and in which training stage. MASSter keeps its current order: spectral and CE-pair
-  terms added; total replaced in proposal-only training; RT/CCS added after.
-- Logged names (`ce_pair_loss`, `ce_pair_eligible_endpoints`, `spectral_leak_loss`,
-  `spectral_ce_auxiliary`) and the `loss_names` lists stay unchanged.
+- **Separate helpers.** `SpectrumPL` provides one helper per term: CE-pair, spectral leak and spectral-CE auxiliary, plus the Hellinger weight validation. There is no single call that evaluates all three. The helpers never add anything to the total loss, and there is no base-class aggregation step after the model's loss function. Setup-time CE-pair eligibility tensors live in the CE-pair helper.
+- **Inputs prepared by the caller.** Each helper takes prediction m/z, probabilities or intensities, an explicit OOS argument and the tolerances, so each model keeps its own preparation: FraGNNet's `exp(pred_logprobs)` and OOS handling, MASSter's renormalization and zero OOS.
+- **Current call sites.** Each model calls the helpers where the inlined code sits today, in its current order (see [Lightning modules](#lightning-modules-and-their-loss-terms)). MASSter keeps the proposal-only replacement and the RT/CCS additions after it.
+- **Names unchanged.** Logged names (`ce_pair_loss`, `ce_pair_eligible_endpoints`, `spectral_leak_loss`, `spectral_ce_auxiliary`) and the `loss_names` lists stay the same.
 
-Gate: the Phase 0 enabled-loss records match exactly for FraGNNet, MASSter proposal-only and
-MASSter joint training: per-term values, totals, gradients and post-step parameters.
+Gate: the Phase 0 item 4-5 records match exactly for FraGNNet, MASSter proposal-only and MASSter
+joint training: per-term values, totals, gradients and post-step parameters. Because the call
+sites and operation order are unchanged, gradients are expected to be bit-identical. If a combined
+helper is ever preferred, values stay bit-for-bit, and gradients get a stated tolerance, because
+backward accumulation order changes.
 
-### Phase 3 — `fragmentation/` and the core output schema
+### Phase 3 — `fragmentation/`, core constants and the `frag_utils` split
 
-1. Move `_validate_tensor_condition` from `bond_fragment_heads` to core first. Until then,
-   `candidate_support` cannot move without carrying a dependency on MASSter.
-2. Create a core output-schema module holding `EXPLAINABILITY_OUTPUT_KEYS` and the annotation
-   key names. Point `SpectrumPL` and the exporter at it, removing `spectrum_pl.py`'s import of
-   `fragnnet_model`.
-3. Move into `fragmentation/`: `smarts_prepass`, `CutBondEncoder`/`encode_cut_bond_pairs`,
-   `candidate_support`, the reference `compute_cc_h_cap` and a single `update_bonds`. Parity tests
-   move here and check each model's fast implementation against the reference.
-4. Split `frag_utils` in place, as described in
-   [Every core import of code the plan moves](#every-core-import-of-code-the-plan-moves). Only
-   `compute_dags` depends on the Cython builders and `smarts_prepass`; the reader, format, mask
-   packing, feature indexing and reference chemistry do not, so they can be separated cleanly:
-   - element tables, formula representation and mask packing to core `formula_utils`;
-     `cmf_duplicate_crf_h_shift` stays there;
-   - the DAG file format (readers, writers, layout constants) to a core module;
-   - DAG generation (`compute_dags` and its helpers) and DAG feature indexing
-     (`NODE_FEAT_TO_IDX`, `get_node_feats`, …) to FraGNNet-owned modules in the current tree,
-     together with `get_frag_graph` and `batch_mols_frags` taken out of core `feat_utils`.
+1. **Validator to core.** Move `_validate_tensor_condition` from `bond_fragment_heads` to core; MASSter and `candidate_support` import it from there.
+2. **Core output-schema module**, holding `EXPLAINABILITY_OUTPUT_KEYS` (documented as the gated set), the annotation key names and the `return_explainability_tensors` per-model defaults.
+   - Point `SpectrumPL` (spectrum_pl.py:23, :609) at it.
+   - `fragnnet_model` may keep a re-export, since it is FraGNNet-owned. Otherwise retarget `tests/test_explainability_demand.py` and `tests/test_skip_train_explainability.py`.
+   - Optionally derive the exporter's ColumnSpec names (script_utils.py:640-660) from it.
+3. **Core size constants.**
+   - Define `MAX_NUM_NODES`, `MAX_NUM_EDGES` and `MASK_SIZE`, with their asserts, in core `formula_utils`.
+   - Point `proc_utils.py:6` at them.
+   - The FraGNNet `frag_utils` remnant asserts they equal `compute_frags.MAX_NUM_NODES/EDGES`, and a test asserts the `multi_cut_bfs.pyx` copies match.
+   - Retarget `preproc_scripts/inference/01_inf_prepare_mol_df.py:31` and `preproc_scripts/ms2c_pubchem/02_prepare_ms2c_candidates.py:11`, which import `MAX_NUM_NODES` from `compute_frags`.
+4. **`fragmentation/`.** Move `smarts_prepass`, `CutBondEncoder`/`encode_cut_bond_pairs`, `candidate_support` and `compute_cc_h_cap`.
+   - **No re-exports** in `base_model` or the old `candidate_support` path. Retarget their importers in the same PR: `fragnnet_model.py`, `masster_model.py`, `pl_model/fragnnet_pl.py:18`, `pl_model/masster_pl.py:32-38`, `tests/test_cut_bond.py:28`, `test_masster_candidate_features.py:29`, `test_masster_memorization_route.py:21`, and the patch string at `tests/test_masster_pl.py:717-720`.
+   - **`update_bonds`.** Delete the dead Python copy. The Cython `update_bonds`/`compute_cc_h_floor` stay in FraGNNet as the production implementation. Optionally add a NumPy reference `update_bonds`/`compute_cc_h_floor` (normalized to int32/uint8) in `fragmentation/` with a Cython-versus-reference parity test. Never make the Python version the production one: it is about 100× slower on the `compute_dags` hot path and returns a bool mask.
+   - **MASSter parity test.** It keeps using `compute_cc_h_cap` and the Cython `update_bonds` as its oracle; a test may import FraGNNet.
+5. **Split `frag_utils`** as described in [the split](#frag_utils-is-split-not-moved). The FraGNNet remnant re-exports the names that moved to core until Phase 6. Core gets none.
+6. **`feat_utils`.** Move `get_frag_graph`, `batch_mols_frags` and the DAG feature indexing (`NODE_FEAT_TO_IDX`, `EDGE_FEAT_TO_IDX`, `get_node_feats`, `get_edge_feats`) to a FraGNNet-owned module in the current tree. There is no re-export in `feat_utils`. Retarget the 12 importers in the same PR:
+   - nine tests: `test_fragnnet_audit_regressions`, `test_cc_atom_dropout`, `test_rdbe`, `test_num_cut_bonds`, `test_frag_q_feature`, `test_skip_train_explainability`, `test_dag_scalar_features`, `test_fragnnet_audit_fixes`, `test_feat_utils`;
+   - three scripts: `scripts/debug/fragnnet/debug_cut_pair_large_stats.py`, `scripts/eval/build_cut_pair_targets.py`, `scripts/eval/branching_headroom.py`;
+   - `spec_mol_frag_dataset.py:16`, which is FraGNNet-owned.
 
-   After this step core `feat_utils` and `base_dataset` no longer import `frag_utils`, and
-   importing core no longer loads `compute_frags`, `multi_cut_bfs` or `smarts_prepass`.
-
-Leave temporary re-exports at the old import paths so `feiw_v2` merges keep working. Remove them
-in Phase 6.
+After this phase, core `feat_utils`, `base_dataset` and `proc_utils` import neither `frag_utils`
+nor `compute_frags`. The string-path audit runs and the Phase 3 gate row becomes enforcing. Drop
+the `multi_cut_bfs` stub in `tests/test_spectrum_pl_utils.py:23-27` once `spectrum_pl` no longer
+loads the extension.
 
 ### Phase 4 — Hooks for FraGNNet and MASSter
 
-Implement the remaining hooks and delete the branches from `runner.py`, `script_utils.py`,
-`spec_mol_dataset.py`, `data_sampler.py` (model samplers move to their owners) and `pl_utils.py`.
-These are the most frequently changed files, so use small PRs merged quickly.
+Implement the remaining hooks and delete the model branches from:
+
+- `runner.py` (including its sampler and validator imports);
+- `script_utils.py` (every site in the coupling table);
+- `spec_mol_dataset.py` (`_filter_masster_spectra` and the `masster_*` kwargs become MASSter's `filter_dataset`);
+- `data_sampler.py`: the FraGNNet samplers and `validate_dag_size_curriculum` move to FraGNNet, and MASSter's sampler to MASSter. The generic samplers and the bond curriculum stay.
+- `spectrum_pl.py` (`_seed_dataloader` checks become `sampler_epoch_reset`);
+- `pl_utils.py` (MASSter backfills become `migrate_checkpoint_hparams`).
+
+Move `masster_has_valid_ion` from core `formula_utils` into MASSter and retarget
+`tests/test_masster_dataset.py:8`. These are the most frequently changed files, so use small PRs
+merged quickly.
+
+Gate:
+
+- **Legacy checkpoint:** resolving the config of a legacy `mass_shatter` checkpoint (the Phase 0 item 8 fixture) gives identical hparams before and after.
+- **Isolation:** the Phase 4 gate row and the AST boundary check enforce.
 
 ### Phase 5 — Packaging
 
-- DGL removal is completed in Phase 1; do not add an `iceberg` extra. Drop the unused `omegaconf`.
-  **Keep `torch_scatter`.** No repo code imports it, but PyG 2.6.1 routes CUDA `max`/`min`
-  scatter with gradients through it when it is installed (`torch_geometric/utils/_scatter.py`,
-  lines 89-119), and 154 configs set `frag_pool_type: max` (`aggr.MaxAggregation`,
-  [nn_blocks.py:2360](../../src/fragnnet/model/nn_blocks.py#L2360)). For tied maxima the gradients
-  differ: `torch_scatter` routes all gradient to one element (`[1, 0]`), native PyTorch splits it
-  (`[0.5, 0.5]`), as a reviewer's probe in FRAGNNET-GPU showed. Removing it would break the
-  behavior-preservation requirement; evaluate that separately, with a tied-maximum gradient test.
-  [env_setup_gpu_py312_cu121_251105.sh](../../env/env_setup_gpu_py312_cu121_251105.sh) does not
-  install `torch_scatter`, so an environment built from it already takes the native path.
-  Declare `pyyaml`, `networkx`, `pillow`, which core imports at module level but
-  which today arrive only through other packages. Move `scikit-learn` to a scripts/dev extra. Fix
-  `requires-python` (`<=3.13` excludes 3.13.x; use `<3.14`).
-- Verify that maintained setup paths stay DGL-free; external ms-pred manages its own environment.
-- Note: every install path runs `pip install --no-deps -e .`, so `pyproject.toml` dependencies are
-  never resolved. Commit a lock (freeze) of FRAGNNET-GPU if `pyproject.toml` is to describe a real
-  environment.
+- **Who resolves `pyproject.toml`.** The scripted installs (`env/*.sh`, `setup_job_cc.py:424`, most `scripts/manual_slurm` scripts) use `--no-deps`, so there `pyproject.toml` is metadata only. Other paths do resolve it: `INSTALL.md` (67, 72, 80, 137, 157, 187), `README.md` (45, 57) and `scripts/manual_slurm/fir/msgym_ms2c_{formula,mass}_pred_arr.sh:36` run plain `pip install -e .` and `.[dev]`/`.[chemlm]`. The edits below therefore change what those users get, so update `INSTALL.md` and `README.md` in the same PR.
+- **DGL:** removal is completed in Phase 1; no `iceberg` extra.
+- **Drop `omegaconf`**, which nothing imports, from `pyproject.toml` and from the install lists in `scripts/setup_job_cc.py:396`, the `env/` scripts and `scripts/manual_slurm/*`.
+- **Move `scikit-learn` into the `dev` extra.** Six tests load scripts that import it; optionally also list it in a `scripts` extra.
+- **Declare `pyyaml`, `networkx` and `pillow`.** Core imports them at module level, but today they arrive only through other packages; torch also requires networkx.
+- **Keep `torch_scatter`.**
+  - **Why:** no repo code imports it, but PyG 2.6.1 routes CUDA `max`/`min` scatter with gradients through it when installed (`torch_geometric/utils/_scatter.py:89-119`), and 154 configs set `frag_pool_type: max` (`aggr.MaxAggregation`, [nn_blocks.py:2361](../../src/fragnnet/model/nn_blocks.py#L2361)).
+  - **What changes without it:** for tied maxima, `torch_scatter` routes all gradient to one element (`[1, 0]`) while native PyTorch splits it (`[0.5, 0.5]`), as a reviewer's probe in FRAGNNET-GPU showed. Removing it would break behavior preservation; evaluate it separately, with a tied-maximum gradient test.
+  - **The other environment:** `env/env_setup_gpu_py312_cu121_251105.sh` installs PyG 2.7.0 and torch 2.6.0 without `torch_scatter`, so an environment built from it already takes the native path and can differ on tied maxima.
+- **`requires-python`:** `<=3.13` excludes 3.13.x patch releases. The pinned torch 2.4.1 and rdkit ≤2023.09.5, and the compiled extensions (cp311, cp312 only), do not support 3.13 anyway. Recommended: declare the supported range, `>=3.10,<3.13`.
+- **Lock file:** commit a lock (freeze) of FRAGNNET-GPU if `pyproject.toml` is to describe a real environment.
 
-### Phase 6 — Directory moves
+### Phase 6 — Directory moves (deferred)
 
-1. Retained baselines → `src/fragnnet/baselines/`. Move `algos.pyx` in [setup.py](../../setup.py)
-   and rebuild the `.so` files. Update the `.pre-commit-config.yaml` exclude regex. ICEBERG and
-   its dedicated scripts have already been retired in Phase 1.
-2. MASSter and FraGNNet → `models/masster`, `models/fragnnet`, including `.pyx`/`.cu` paths in
-   `setup.py` and package-data. Every module that moves was already separated in Phases 3–4:
-   FraGNNet's DAG generation, DAG feature indexing and fragment graph construction,
-   `fragment_competition`, its samplers and curricula. This step only renames. The DAG file format
-   stays in core.
-3. Remove the Phase 3 re-exports and the lazy `__getattr__` names in the package initializers.
+Runs after the diverged branches (`feiw_v2`, `spectraverse`, others in use) are merged or retired,
+and after open decisions 1-2.
 
-Rules:
+1. **Per move, one PR with two commits.**
+   - **Commit 1:** a pure `git mv`. The no-edits rule applies to this commit only, so git rename detection works across merges.
+   - **Commit 2:** a mechanical rewrite of imports across `src`, `tests`, `scripts`, `preproc_scripts`, `tools` and notebooks, plus every string and dynamic module name (see [String module paths](#string-module-paths)).
 
-- Pure-rename commits with no edits mixed in, so git rename detection works across merges.
-- Only after the diverged branches (`feiw_v2`, `spectraverse`, others in use) are merged or retired.
-- Only when no cluster jobs are queued. A generated job copies `src/` from the checkout when its
-  script starts running, not when it is submitted
-  ([setup_job_cc.py:419](../../scripts/setup_job_cc.py#L419)), so a job queued before the move
-  would run whatever layout the checkout has when it starts.
+   Gate: grep for the old dotted paths returns nothing outside `docs/history` and frozen findings.
+2. **Build.**
+   - Create `__init__.py` in every new package directory (`models/`, `models/masster/`, `models/fragnnet/`, `baselines/`, `baselines/graff/`, `baselines/massformer/`, `fragmentation/`) before building: cythonize derives extension names from `__init__.py` files, and `packages = find` skips directories without one.
+   - Update the `.pyx` paths in `setup.py` and the package-data keys in `pyproject.toml`. The `.cu` files are declared only there, under `"fragnnet.frag"`, and each `.py`/`.cu` pair moves together because `masster_cuda_*.py` load `Path(__file__).with_suffix(".cu")`.
+   - Verify that `python -m build --wheel` contains both `.cu` files next to their `.py`, and that a non-editable `pip install -I --no-deps .` imports and compiles the CUDA modules. Cluster installs are non-editable.
+3. **Stale binaries.** Gitignored `.so`/`.c` files stay at the old paths after a move and keep old imports working locally, because extension suffixes win over `.py`. After each move:
+   - hand the user a cleanup script for `src/fragnnet/**/*.so`, `*.c` (including the stale `mass_shatter_core` build) and the root `build/`; agent `rm -rf` is blocked;
+   - rebuild;
+   - run the gate, import tests and smoke fixtures from a fresh `git worktree`.
 
-### Phase 7 — Docs
+   Change the cleanup command at `INSTALL.md:127-131` to cover subdirectories.
+4. **Hard-coded paths:** `tools/build_compute_frags_setup.py`, `scripts/profile_compute_frags.py`, the benchmark script and its test, the `.pre-commit-config.yaml` comment and regex, the `.gitignore` entries for generated `.c` files, `.claude/commands/add-smarts-rule.md` (untracked), and the notebooks listed under [Baselines](#baselines).
+5. **Checkpoints.** Load one existing checkpoint per retained model type that has one locally, through `get_pl_hparams` and `load_state_dict(strict=True)`, before and after each move:
+   - `frag_gnn`/`fragnnet`;
+   - `masster`, including legacy `mass_shatter` (`saved_ckpts/c0_control_vcpho5qm.ckpt`);
+   - `neims`.
 
-Update [architecture.md](../architecture.md) with the dependency rule and plugin interface;
-update INSTALL.md (extras, the missing `env_setup_gpu_py310_cu118.sh` reference). Add
-`docs/reference/baselines.md`: running retained baselines, config keys, and external ICEBERG
-through ms-pred, including archive provenance and the evaluation-file contract. Update ICEBERG
-retirement and DGL installation documentation in Phase 1 rather than waiting for this phase.
+   For GRAFF and MassFormer, fetch one checkpoint each from W&B (`graff3_long`, `massformer_long`) with `init_wandb_ckpt`. Where none is available (chemlm, precursor, gnn, clip, mces), record the `state_dict` key names and shapes of a randomly initialized model before the move and assert them afterwards. That proves less than loading a legacy checkpoint, and the plan says so.
+6. **Remove shims.** Remove the `frag_utils` remnant's re-exports and the package-initializer `__getattr__` names, and retarget the scripts, preprocessing scripts and tests that still import moved names from old paths.
+
+### Phase 7 — Docs (path sweep after Phase 6)
+
+- **`docs/architecture.md`:** add the dependency rule, the plugin interface and a note that frozen records cite the old layout.
+- **`INSTALL.md`:** extras, and the missing `env_setup_gpu_py310_cu118.sh` reference.
+- **`docs/reference/baselines.md`:** REFERENCE banner and a row in `docs/README.md`. It covers running the retained baselines, their config keys, and external ICEBERG through ms-pred, including archive provenance and the evaluation-file contract.
+- **Path and link sweep.** After each phase that moves or deletes a module, run a relative-link and path check over the live docs:
+  - `README.md`, `docs/README.md`, `docs/architecture.md`;
+  - `docs/reference/` (including `dataloader_data.md` after the MassFormer dataset change), `docs/guides/`, `docs/workstreams/`, `docs/notes/`;
+  - the `config/template.yml` comments at :215 and :872.
+
+  Repoint what is live. Frozen findings, plans and history keep their links; add one line to `docs/rules/documentation.md`: "paths in frozen records are as of `13b1599d`; use git history to resolve them".
+- **Phase 1 docs** are done in Phase 1, not here.
 
 ## Unchanged
 
-- Retained-model `model_type` strings, config keys, config paths, sweep files and W&B runs.
-  ICEBERG types and dedicated configs are the explicit retirement exception above. Keep legacy
-  `iceberg_*`/`magma_params` template fields inert during this refactor so retained-model config
-  and checkpoint loading is not broken by a separate schema cleanup.
+- Retained-model `model_type` strings, config keys, config paths, sweep files and W&B runs. ICEBERG types and configs are the explicit retirement exception. The `iceberg_*`/`magma_params`/`magma_dp` template fields stay inert, so retained-model config and checkpoint loading is not broken by a separate schema cleanup.
 - `config/template.yml` stays a single file.
-- Checkpoints: Lightning checkpoints keep state dict and hparams, not class paths. No `pickle.dump`
-  or `torch.save` was found in baseline code or MAGMA preprocessing. Before Phase 6 merges, load
-  at least one existing checkpoint per retained model type; there are no baseline checkpoints
-  locally. Old ICEBERG checkpoints are reproducible through the recorded archive, not migrated
-  to ms-pred implicitly.
+- **Checkpoints store no class or module paths.** A scan of all 166 local `*.ckpt` files under `ckpts/` and `saved_ckpts/` found only torch storages, numpy and `collections` globals. `hyper_parameters` values are plain types, and the custom writers (`spectrum_pl.py:2502`, `pl_utils.py:408-422`) add only RNG state, metrics and EMA tensors. No `pickle.dump`, `torch.save` or `to_pickle` exists in baseline code or MAGMA preprocessing.
 
 ## Risks
 
-- Phase 1 step 3 and Phase 2 change which code computes a value. Golden outputs must be identical,
-  not merely close.
-- Phase 2 can silently put gradient back into a stage that excludes it (MASSter proposal-only
-  training). The composition contract and the per-stage gradient checks exist for this.
-- Phases 2-4 edit the three most-changed files; long-lived PRs will conflict.
-- Phase 6 breaks cluster jobs that were generated for the old layout but start after the move,
-  and conflicts with any branch that edited a moved file.
-- Local ICEBERG results and ms-pred ICEBERG results come from different implementations and
-  checkpoints. Label which one a number came from; do not mix them in one comparison without
-  saying so.
-- All coupling counts come from static import analysis and a config-key regex. Classes selected
-  by name at runtime (the `nn_blocks` GNN types, featurizer registries) are invisible to it.
+- **Changed computation paths.** Phase 1 step 3 and Phase 2 change which code computes a value. The records must be identical, not merely close, under the Phase 0 determinism settings.
+- **Gradient leaking into proposal-only training.** Phase 2 could silently put gradient back into MASSter's proposal-only stage. The composition contract and the per-stage gradient checks exist for this.
+- **Merge conflicts.** Phases 2-4 edit the three most-changed files, so long-lived PRs will conflict.
+- **Phase 6 renames.**
+  - Jobs that were generated for the old layout but start after the move break: a generated job copies `src/` when its script starts running ([setup_job_cc.py:419](../../scripts/setup_job_cc.py#L419)), not when it is submitted.
+  - Any branch that edited a moved file will conflict.
+  - Stale local binaries can hide a missed import.
+- **Mixing ICEBERG implementations.** Local ICEBERG results and ms-pred ICEBERG results come from different implementations and checkpoints. Label which one a number came from.
+- **Limits of the analysis.** Coupling counts come from static import analysis and config-banner and regex classification. Classes selected by name at runtime (the `nn_blocks` GNN types, featurizer registries) and string module paths are invisible to it; the string-path audit covers the latter.
 
 ## Open decisions
 
-1. **Layout.** Recommended: `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`.
-   Alternative: separate top-level packages or pip distributions for retained baselines; only
-   worth it if they will be published or installed separately. ICEBERG is already external.
-2. **NEIMS.** It is a baseline but lives in core `model/` and `pl_model/`. Recommended: move it
-   with the baselines. Keep `chemlm`, `gnn`, `precursor`, MCES and CLIP in core; they share
-   encoders, and the MSGYM workstream uses them.
-3. **Baseline config directories.** Recommended: do not move them into `config/baselines/`, since
-   sweeps and W&B runs point at the current paths.
+1. **Layout.** Recommended: `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`. The alternative, separate top-level packages or pip distributions for the retained baselines, is only worth it if they will be published or installed separately. Gates Phase 6 only.
+2. **NEIMS.** It is a baseline but lives in core `model/` and `pl_model/`. It stays a core export, and is not a "baseline module" for the Phase 1 gate, through Phase 5. Phase 6 moves it to `baselines/neims` only if this decision says so. The `neims_*` keys stay in core either way, because ChemLM reads them. `chemlm`, `gnn`, `precursor`, MCES and CLIP stay in core.
+3. **Baseline config directories.** Recommended: do not move them into `config/baselines/`, since sweeps and W&B runs point at the current paths.
 4. **Live branches.** Which diverged branches are still in use; this sets when Phase 6 can run.
 
-ICEBERG ownership is settled: use external ms-pred; archive the local fork through Git provenance.
+ICEBERG ownership is settled: use external ms-pred and archive the local fork through Git
+provenance.
 
 ## Progress
 
-- 2026-10-11: plan written from a static coupling analysis at `13b1599d`. No code changed.
-- 2026-10-11: revised after review, with each point checked against the code:
-  - The output schema stays in core; `fragmentation/` would otherwise be imported by core.
-  - Added the `_validate_tensor_condition` dependency (FraGNNet → MASSter through
-    `candidate_support`).
-  - Phase 2 gained a composition contract and per-stage gradient checks.
-  - `misc_utils` uses `DGLGraph`; added a core batch-type registry and a `sys.modules` gate.
-  - Phase 0 now exercises enabled losses, samplers across epochs and resume, export schemas, and
-    every accepted model type and alias.
-  - MassFormer collation follows the explicit GRAFF/ICEBERG collate chain.
-- 2026-10-11: second review, each point checked against the code:
-  - Phase 0 MASSter cases split: RT/CCS heads cannot be combined with proposal-only warmup.
-  - Element order and `cmf_duplicate_crf_h_shift` stay in core, because core reads them.
-  - A full AST check of core imports found more edges than the review named: core `feat_utils`,
-    `base_dataset` (isotope cleaning reads DAG files) and `script_utils` depend on `frag_utils`,
-    and `script_utils` on `masster_templates`. `frag_utils` is now split, not moved.
-  - Package initializers get a lazy `__getattr__` transition and a core-only import gate.
-  - Corrected: cluster jobs copy `src/` when the job starts, not at submission.
-- 2026-10-11: third review, both points checked against the code:
-  - `torch_scatter` is kept: PyG 2.6.1 uses it for CUDA max scatter with gradients, and
-    `frag_pool_type: max` is common. The earlier "unused" claim counted only direct imports.
-  - The `frag_utils` split and the `get_frag_graph`/`batch_mols_frags` extraction moved from
-    Phase 6 to Phase 3, done in place. The isolation gate is now staged by phase, and Phase 6
-    only renames.
-- 2026-10-11: fourth review, both points checked:
-  - The isolation gate is now per entry module; `script_utils` is report-only until Phase 4. A
-    transitive import calculation confirmed the Phase 3 entry modules are clean. The Phase 1
-    registry is now explicitly lazy for every model type, which that result depends on.
-  - The registry check uses an expected-mapping table. The MassFormer dataset change in Phase 1
-    is a declared change, with an equivalence check.
-- 2026-10-11: user chose external ms-pred for ICEBERG. Revised the target layout, Phase 1,
-  compatibility exceptions, validation and packaging accordingly. This supersedes the earlier
-  optional-DGL extra and batch-type-registry proposals in the review log above. Implementation
-  and environment changes have not started.
-- 2026-10-11: re-read after the ICEBERG decision; fixed:
-  - the stale DGL-shim sentence in the Phase 1 gate;
-  - an ICEBERG pattern reference that outlived its removal;
-  - the coupling-table resolution for the baselines.
-  Added the concrete non-ICEBERG callers of ICEBERG code, the missing DGL install sites
-  (`install_lib.py`, the Apptainer definition) and a comparability risk.
+Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_reorg_plan_log.md).
+
+- 2026-10-11: a 12-agent verification (six finders, six adversarial verifiers) checked every claim against the code: 99 findings, 98 confirmed or partly confirmed, 1 refuted. This revision applies them. The main changes:
+  - The `proc_utils` → `compute_frags` edge and the core size constants.
+  - A full `frag_utils` placement table.
+  - The sampler classification.
+  - The re-export policy (none in core files).
+  - The string-path audit.
+  - Phase 0 determinism, baseline records and the CE-pair fixture recipe.
+  - Retirement-error placement.
+  - Per-term Phase 2 helpers.
+  - Exporter hook coverage.
+  - The alias table in core.
+  - Phase 6 build hazards.
+  - Packaging facts.
+
+  The user approved implementing Phases 0–5 with one commit per step.

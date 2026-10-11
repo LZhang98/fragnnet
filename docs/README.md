@@ -95,6 +95,7 @@ these are records, not current guidance.
 | [masster_plan_log.md](history/masster_plan_log.md) | [MASSter plan](plans/masster/masster_plan.md) |
 | [masster_ion_h_channel_selection_plan_log.md](history/masster_ion_h_channel_selection_plan_log.md) | [ion-H channel selection plan](plans/masster/masster_ion_h_channel_selection_plan.md) |
 | [global_fragment_intensity_ranking_experiment_plan_log.md](history/global_fragment_intensity_ranking_experiment_plan_log.md) | [global intensity ranking plan](plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) |
+| [repo_reorg_plan_log.md](history/repo_reorg_plan_log.md) | [repository reorganization plan](plans/repo_reorg_plan.md) |
 
 ### Removed historical plans
 

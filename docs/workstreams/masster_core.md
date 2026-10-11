@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **Reorganization proposed:** [retire local ICEBERG for external ms-pred and remove DGL from the main environment](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment); implementation not started.
+- **Reorganization active:** [plan](../plans/repo_reorg_plan.md) (ICEBERG external via ms-pred; [DGL-free main environment](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment)). Phases 0–5 are being implemented on `refactor/fragnnet-masster-reorg`.
 - **RT/CCS:** [RTHead and CCSHead](../plans/masster/masster_rt_ccs_plan.md) with independent label sets completed a new 10-epoch GPU debug run; full Enveda arm remains prepared, heads default off.
 - Matched 128-epoch screen on the merged MA/MI base: control `c4a_base_s1` = **0.7270** `val_cos_sim` (tail mean epochs 118-127, replicate spread 0.0007, gate +-0.005), config `config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml`.
 - Real levers: `a1_prenorm` (`q4t4udee`) **+0.0056**, the only clean single-key architecture pass; cosine LR decay with 1000-step warmup `d3` (`rcfzf67p`) 0.7357 (+0.0072 at epoch 121, n=1); the 2026-09-20 feature bundle is worth about +0.006/+0.007; EMA gained +0.0102 on `i1` (see generalization hub).
@@ -67,7 +67,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | Shared heads, label evidence, completed GPU debug training and full experiment |
-| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model ownership and shared fragmentation; retire local ICEBERG for external ms-pred, DGL-free main environment |
+| [repo_reorg_plan](../plans/repo_reorg_plan.md) | ACTIVE (2026-10-11) | Cross-model reorg: registry and hooks, `fragmentation/`, `frag_utils` split, external ICEBERG via ms-pred, DGL-free env; Phases 0–5 in progress on `refactor/fragnnet-masster-reorg` |
 | [masster_plan](../plans/masster/masster_plan.md) | LANDED (2026-10-06) | Core design record: one-pass bond-set model, mask enumeration, ion/H channels; snapshot of shipped behavior |
 | [masster_ion_h_channel_selection_plan](../plans/masster/masster_ion_h_channel_selection_plan.md) | DEFERRED (2026-10-06) | Ion-mode / H-support / channel selection hierarchy; no trained arm exercised selection; Phase 2 blocked on a checkpoint |
 | [masster_architecture_review_todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED (2026-10-06) | Open items from the 2026-09-19 code-vs-literature review (a4, a5, b4, RWSE, a1 replicate) |
