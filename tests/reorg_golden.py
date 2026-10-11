@@ -62,3 +62,36 @@ def ratchet_json(name: str, key: str, current: dict) -> None:
         message.append(f"{name}:{key} no longer present (lock in with REORG_UPDATE_GOLDEN=1):")
         message += [f"  {k}" for k in gone]
     assert not message, "\n".join(message)
+
+
+def environment_meta() -> dict:
+    """Builds and CPU dispatch that bit-exact tensor records depend on."""
+    import lightning
+    import numpy
+    import torch
+
+    return {
+        "torch": str(torch.__version__),
+        "numpy": numpy.__version__,
+        "lightning": lightning.__version__,
+        "cpu_capability": torch.backends.cpu.get_cpu_capability(),
+    }
+
+
+def ratchet_records(name: str, key: str, record: dict) -> None:
+    """Exact comparison of a tensor-digest record, pinned to the environment that made it.
+
+    Bit-exact records hold only for the same torch/numpy build and CPU instruction set (plan,
+    Phase 0 determinism). On a different environment the comparison is skipped, not loosened;
+    regenerate the records deliberately there.
+    """
+    import pytest
+
+    meta = environment_meta()
+    if not UPDATE:
+        stored = load_json(name).get(f"{key}:env")
+        if stored is not None and stored != meta:
+            pytest.skip(f"{name}:{key} recorded on {stored}, running on {meta}; regenerate")
+    else:
+        write_json(name, f"{key}:env", meta)
+    ratchet_json(name, key, record)
