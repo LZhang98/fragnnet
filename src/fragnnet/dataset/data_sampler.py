@@ -7,6 +7,7 @@ Includes:
 - MassterCEContextDynamicBatchSampler: Adjacent-CE batching by molecular edges
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
+- MoleculeAcquisitionSampler: Molecule, then acquisition key, then spectrum
 """
 
 import logging
@@ -1463,3 +1464,105 @@ def get_group_sampler(
         sample_weights, num_samples=num_samples, replacement=False, generator=generator
     )
     return sampler
+
+
+class MoleculeAcquisitionSampler(Sampler[int]):
+    """Draw a molecule, then one of its acquisition keys, then one of that key's spectra.
+
+    Each of ``num_samples`` draws is independent and with replacement. A molecule is drawn
+    from ``mol_probs``; one of its acquisition keys is chosen uniformly; one spectrum carrying
+    that key is chosen uniformly. A spectrum's probability is therefore
+    ``q(m) / (keys of m) / (spectra of its key)``, independent of how many spectra the molecule
+    has in total.
+
+    The training loop replaces ``generator`` with a freshly seeded one every epoch.
+    """
+
+    def __init__(
+        self,
+        mol_codes: np.ndarray,
+        acq_codes: np.ndarray,
+        mol_probs: np.ndarray,
+        num_samples: int,
+        generator: th.Generator | None = None,
+    ) -> None:
+        """Index spectra by molecule and acquisition key.
+
+        Args:
+            mol_codes: Molecule code ``0..M-1`` of each spectrum, shape ``(num_spectra,)``.
+            acq_codes: Molecule-acquisition key code of each spectrum, shape
+                ``(num_spectra,)``. Every key must belong to exactly one molecule.
+            mol_probs: Probability of drawing each molecule, shape ``(M,)``.
+            num_samples: Spectrum indices yielded per epoch.
+            generator: Random generator; the training loop reseeds it per epoch.
+
+        Raises:
+            ValueError: If codes or probabilities are inconsistent.
+        """
+        mol_codes = np.asarray(mol_codes, dtype=np.int64)
+        acq_codes = np.asarray(acq_codes, dtype=np.int64)
+        mol_probs = np.asarray(mol_probs, dtype=np.float64)
+        if mol_codes.shape != acq_codes.shape or mol_codes.ndim != 1 or len(mol_codes) == 0:
+            raise ValueError("mol_codes and acq_codes must be equal-length nonempty vectors")
+        num_mols = int(mol_codes.max()) + 1
+        if mol_probs.shape != (num_mols,) or not np.all(mol_probs > 0):
+            raise ValueError("mol_probs needs one positive probability per molecule code")
+        if not np.isclose(mol_probs.sum(), 1.0):
+            raise ValueError("mol_probs must sum to one")
+        if num_samples <= 0:
+            raise ValueError("num_samples must be positive")
+
+        # 1. Spectra grouped by key: key k owns spec_order[spec_start[k]:spec_start[k + 1]].
+        spec_order = np.argsort(acq_codes, kind="stable")
+        num_keys = int(acq_codes.max()) + 1
+        spec_counts = np.bincount(acq_codes, minlength=num_keys)
+        if np.any(spec_counts == 0):
+            raise ValueError("acq_codes must be contiguous from zero")
+        key_mol = np.full(num_keys, -1, dtype=np.int64)
+        key_mol[acq_codes] = mol_codes
+        if np.any(key_mol[acq_codes] != mol_codes):
+            raise ValueError("an acquisition key spans more than one molecule")
+
+        # 2. Keys grouped by molecule: molecule m owns key_order[key_start[m]:key_start[m + 1]].
+        key_order = np.argsort(key_mol, kind="stable")
+        key_counts = np.bincount(key_mol, minlength=num_mols)
+        if np.any(key_counts == 0):
+            raise ValueError("mol_codes must be contiguous from zero")
+
+        self.spec_order = th.from_numpy(spec_order)
+        self.spec_start = th.from_numpy(np.concatenate([[0], np.cumsum(spec_counts)[:-1]]))
+        self.spec_counts = th.from_numpy(spec_counts)
+        self.key_order = th.from_numpy(key_order)
+        self.key_start = th.from_numpy(np.concatenate([[0], np.cumsum(key_counts)[:-1]]))
+        self.key_counts = th.from_numpy(key_counts)
+        self.mol_probs = th.from_numpy(mol_probs)
+        self.num_samples = num_samples
+        self.generator = generator
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __iter__(self) -> Iterator[int]:
+        generator = self.generator
+        n = self.num_samples
+        # Draw molecule, then key and spectrum by flooring scaled uniforms in [0, 1).
+        mols = th.multinomial(self.mol_probs, n, replacement=True, generator=generator)
+        key_pick = (
+            th.rand(n, dtype=th.float64, generator=generator) * self.key_counts[mols]
+        ).long()
+        keys = self.key_order[self.key_start[mols] + key_pick]
+        spec_pick = (
+            th.rand(n, dtype=th.float64, generator=generator) * self.spec_counts[keys]
+        ).long()
+        indices = self.spec_order[self.spec_start[keys] + spec_pick]
+        num_unique_mols = int(th.unique(mols).numel())
+        logger.info(
+            "MoleculeAcquisitionSampler epoch draw: %d spectra, %d/%d molecules drawn, "
+            "%d distinct spectra, max draws of one molecule %d",
+            n,
+            num_unique_mols,
+            len(self.mol_probs),
+            int(th.unique(indices).numel()),
+            int(th.bincount(mols).max()),
+        )
+        return iter(indices.tolist())

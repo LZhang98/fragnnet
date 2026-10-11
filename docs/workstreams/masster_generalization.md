@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **Proposed:** [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) for NIST20 and MSGYM; measured edit-effect transfer with partial ratio labels proposed; training-only rarity/edge census first, no code or runs.
+- **Prepared, not submitted:** [rare chemistry sampling](../plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3 on `i1` (`config/masster/rare_chemistry_2026_10_10/`, branch `rare-chemistry-sampling`, uncommitted). [Rare chemistry census](../findings/masster/rare_chemistry_class_census_2026_10_10.md): A1 shifts molecule exposure by total variation 0.109; A3 barely differs from A1 and fails the support gate, so submit A0 and A1 unless the user redesigns A3.
 - **Best recipe:** `i4` = `i1` (instrument input on `ORB`/`ORB_F`) + `k1` dropout 0.2 + weight EMA 0.999 + intensity pre-norm. Tail mean of `val_cos_sim_0.01_epoch/mean`, epochs 54-63: **0.7729** (W&B `rd9rsdqx`), +0.0019 over `i3` (`xypkkfti`, 0.7710) and +0.0102 / +0.0122 over `i1` (`i50ig7rf`, 0.7607). Seed spread 0.0042; single-seed gate +0.005. Configs: `config/masster/mh_ft_memorization_route_2026_09_24/{i1,i3,i4}_*_ob_obf.yml`.
 - **Open problem:** the validation floor, not the average. 330 spectra / 119 molecules score below 0.05 at instrument tolerance (train sample: 4); 88% are ranking failures with the candidates present. No tested arm (`fa1`, `i3`, cut probe, peak-ranking loss, fragment connectivity) moves a floor chosen by an independent checkpoint.
 - **Single next action:** the computed-energetics information gate. Formal floor coverage is 97% but only 14 / 24 harder channels keep a distance-preserved product pair, so first fix a bounded, target-independent state/calculation policy and a train/calibration/confirmation protocol ([plan](../plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed)).
@@ -17,7 +17,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PROPOSED | Rarity and matched-edit census with preregistered coverage gate before fitting |
+| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED | A0/A1 ready to submit; A3 needs a user redesign decision; edit-effect census not started |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) (dated log: [history](../history/masster_memorization_route_plan_log.md)) | ACTIVE | Energetics gate protocol (above); coverage run `so1` when the user decides |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING | State/calculation policy, missing-feature handling, independent selector, effect size, before any fit |
 | [Transfer-oriented (MLDG-style) training](../plans/masster/masster_memorization_route_plan.md#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred) | DEFERRED | Only a cheap head-gradient conflict check on training-only batches, if revived |
@@ -86,7 +86,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PROPOSED (2026-10-10) | Shared NIST20/MSGYM rarity census, capped sampling, conditional replicate augmentation and confirmation gates |
+| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED (2026-10-10) | Shared NIST20/MSGYM rarity census, capped sampling, conditional replicate augmentation and confirmation gates; A1/A3 sampler built |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) | ACTIVE (2026-10-06) | Route-removal arm queue, gates, current summary; open energetics and MLDG designs |
 | [Memorization-route log](../history/masster_memorization_route_plan_log.md) | REFERENCE (2026-10-06) | Verbatim dated log of every arm, read and build (batches 1-5, `i1` stack, ladders, `ce1`/`ce2`) |
 | [Intensity displacement plan](../plans/masster/masster_intensity_displacement_plan.md) | DEFERRED (2026-10-06) | Phase 0 / 1.4b on retired `f0`/`f1`; arm 2A not submitted |
@@ -104,6 +104,7 @@
 | [Bond-local learner](../findings/masster/masster_bond_local_learner_2026_09_24.md) | SUPERSEDED (2026-09-30) | `f0`/`f1`-era identity-blind learner; +0.002 |
 | [Candidate correspondence](../findings/masster/masster_candidate_correspondence_2026_09_29.md) | FINDING (2026-09-29) | Endpoint and NCE-band coverage audits |
 | [Cross-molecule gate](../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md) | FINDING (2026-09-29) | Training-only census of transferable spectral relationships |
+| [Rare chemistry census](../findings/masster/rare_chemistry_class_census_2026_10_10.md) | FINDING (2026-10-10) | Shared NIST20/MSGYM class-rarity census; A1 exposure shift, A3 fails support gate |
 | [Cut-intensity probe](../findings/masster/masster_cut_intensity_probe_2026_10_01.md) | CLOSED NULL (2026-10-01) | Additive cut-score correction selects zero |
 | [Dropout-view disagreement](../findings/masster/masster_dropout_view_disagreement_2026_09_27.md) | FINDING (2026-09-28) | R-Drop and logit-penalty pricing; 8-view averaging |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING (2026-10-02) | xTB feasibility, joint-state coverage 97%, geometry limits |

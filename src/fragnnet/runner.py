@@ -32,6 +32,11 @@ from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
     validate_dag_size_curriculum,
 )
+from fragnnet.dataset.rarity_sampling import (
+    CLASS_PANELS,
+    WEIGHTING_MODES,
+    build_molecule_acquisition_sampler,
+)
 from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
@@ -387,6 +392,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 curriculum_epochs=config_d["bond_size_curriculum_epochs"],
                 generator=generator,
             )
+        elif config_d["molecule_acquisition_sampler"]:
+            sampler = build_molecule_acquisition_sampler(ds, config_d, generator)
         else:
             sampler = RandomSampler(ds, False, generator=generator)
     else:
@@ -823,6 +830,43 @@ def validate_sampler_config(config_d: dict) -> None:
             raise ValueError(
                 "Dual-group dynamic batch sampler requires dual_group_dynamic_batch_sampler_max to be set"
             )
+
+    if config_d["molecule_acquisition_sampler"]:
+        conflicting = [
+            key
+            for key in (
+                "group_sampler",
+                "simple_group_sampler",
+                "formula_prec_type_group_sampler",
+                "bond_size_curriculum",
+                "dag_size_curriculum",
+                "dynamic_batch_sampler",
+                "dual_group_dynamic_batch_sampler",
+            )
+            if config_d[key]
+        ]
+        if use_masster_batch_sampler:
+            conflicting.append("masster_batch_sampler")
+        if conflicting:
+            raise ValueError(f"molecule_acquisition_sampler excludes {conflicting}")
+        if config_d["spec_params"]["merge"] or config_d["spec_params"]["merge_train_only"]:
+            raise ValueError("molecule_acquisition_sampler requires unmerged training spectra")
+        if config_d["train_sample_weight"] != "none":
+            raise ValueError("molecule_acquisition_sampler requires train_sample_weight='none'")
+        if config_d["molecule_acquisition_sampler_weighting"] not in WEIGHTING_MODES:
+            raise ValueError(
+                f"molecule_acquisition_sampler_weighting must be one of {sorted(WEIGHTING_MODES)}"
+            )
+        if config_d["molecule_acquisition_sampler_class_panel"] not in CLASS_PANELS:
+            raise ValueError(
+                f"molecule_acquisition_sampler_class_panel must be one of {sorted(CLASS_PANELS)}"
+            )
+        if not config_d["molecule_acquisition_sampler_ref_count"] > 0:
+            raise ValueError("molecule_acquisition_sampler_ref_count must be positive")
+        if not config_d["molecule_acquisition_sampler_weight_cap"] >= 1:
+            raise ValueError("molecule_acquisition_sampler_weight_cap must be at least 1")
+        if not 0 <= config_d["molecule_acquisition_sampler_uniform_mix"] <= 1:
+            raise ValueError("molecule_acquisition_sampler_uniform_mix must be in [0, 1]")
 
 
 def log_cuda_info() -> None:

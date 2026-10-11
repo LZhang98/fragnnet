@@ -506,6 +506,21 @@ simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, mol, group_mol, adduct_inst_type, adduct_inst_type_group, adduct_inst_type_frag_mode, adduct_inst_type_frag_mode_group]
 formula_prec_type_group_sampler: False
 formula_prec_type_group_sampler_max_per_group: 5
+# Rare chemistry sampling arms A1/A3 (docs/plans/masster/rare_chemistry_augmentation_plan.md).
+# Each of len(train) draws per epoch picks a molecule (2D InChIKey block), then one of its
+# recorded acquisition keys (adduct, instrument, frag mode, raw CE signature) uniformly, then a
+# spectrum with that key uniformly; draws are with replacement. Requires unmerged spectra,
+# fixed-size batches and train_sample_weight none; excludes every other train sampler.
+molecule_acquisition_sampler: False
+# uniform = A1 (q(m) = 1/M). class = A3: w(m) = max over matched panel classes of
+# min(cap, max(1, sqrt(ref_count / n_class))), n_class = distinct training molecules; molecules
+# with no matched class get 1; q(m) = mix / M + (1 - mix) * w(m) / sum(w).
+molecule_acquisition_sampler_weighting: uniform  # [uniform, class]
+# Frozen SMARTS panel name in fragnnet/dataset/rarity_sampling.py CLASS_PANELS.
+molecule_acquisition_sampler_class_panel: functional_groups_v1
+molecule_acquisition_sampler_ref_count: 20
+molecule_acquisition_sampler_weight_cap: 4.0
+molecule_acquisition_sampler_uniform_mix: 0.5
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False

@@ -31,7 +31,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy
   and a train/calibration/confirmation protocol.
-- **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), shared with MSGYM; rarity/edge census, then one-family edit-effect transfer test before implementation.
+- **Prepared:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3 on `i1`; [census](findings/masster/rare_chemistry_class_census_2026_10_10.md) says submit A0/A1, A3 needs a redesign decision.
 
 ## MASSter core
 
@@ -52,7 +52,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   5 U256/E1024 configs, sweep `tiwhun9q`
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
 - **Next:** re-select `loglik_cal` on val for `pow075`/`wd10`; a second `pow075` seed.
-- **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), benchmark subset retained; matched-edit census and partial-label feasibility proposed.
+- **Prepared:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3; A1 shifts exposure strongly here, A3 fails the support gate ([census](findings/masster/rare_chemistry_class_census_2026_10_10.md)).
 
 ## Spectraverse
 
@@ -87,11 +87,10 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
   after the 2026-09-26 sampler fix before submitting.
 
-## Uncommitted working tree (2026-10-10)
+## Uncommitted working tree (2026-10-10, branch `rare-chemistry-sampling`)
 
-- RT/CCS heads, scalar-label join, metrics/export, compatibility tests, and Enveda arm;
-  validation and remaining experiment checks are in the [RT/CCS plan](plans/masster/masster_rt_ccs_plan.md).
-- MASSter rare chemistry augmentation plan: reviewed sampler/key definitions, citation checks and pre-fit coverage gate; planning only.
+- Rare chemistry A1/A3 sampler, census script, six configs, tests and docs; not submitted.
+  State and verification are in the [plan handoff](plans/masster/rare_chemistry_augmentation_plan.md#implementation-handoff-and-current-state).
 
 ## Standing cross-workstream rules
 

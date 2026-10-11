@@ -1,7 +1,7 @@
 # Rare chemistry augmentation for NIST20 and MassSpecGym
 
-> **Status:** PROPOSED · **Updated:** 2026-10-10
-> Proposed pilot: learn edit effects from measured molecular pairs, test transfer to rare chemistry, then augment with partial intensity constraints. No implementation or training started.
+> **Status:** PREPARED · **Updated:** 2026-10-10
+> A1/A3 sampler, census and A0/A1/A3 configs built on branch `rare-chemistry-sampling`; not submitted. Census: A1 ready on both datasets; A3 fails the support gate. Edit-effect branch not started.
 
 ## Objective and scope
 
@@ -460,7 +460,7 @@ relevant donors. This branch is proposed; no network, pseudo-labels or trainer h
 | Arm | Change | Main comparison |
 | --- | --- | --- |
 | A0 | Uniform per-spectrum shuffle; fixed batch 512; optional samplers off | Reference |
-| A1 | Uniform molecule and acquisition-group sampling | A1 vs A0: spectrum multiplicity |
+| A1 | Uniform molecule and acquisition-group sampling | A1 vs A0: molecule and within-molecule condition exposure |
 | A2 | Capped rare-scaffold mixture; NIST first, MSGYM conditional on census | A2 vs A1: scaffold exposure |
 | A3 | Capped rare-class mixture | A3 vs A1: class exposure |
 | A4, conditional | Winning sampling policy plus validated replicate interpolation | A4 vs its exact sampling parent: synthetic variation |
@@ -518,9 +518,25 @@ retain measured spectra. Report each dataset independently.
 - Completed: reviewed workstream constraints, current sampler semantics and related
   reliability work; specified the census, arms, validity checks and evaluation gates. Refined
   the network branch to measured edit effects, family-held-out tests and partial ratio intervals.
-- Not started: data census, sampler changes, configs, augmentation or training.
-- First concrete check: training-only scaffold/class census, matched-edit coverage and replicate
-  eligibility. For the network branch, select one supported edit family for hidden-analogue tests.
+- **Built 2026-10-10 (branch `rare-chemistry-sampling`, uncommitted):** the A1/A3 sampler
+  `MoleculeAcquisitionSampler` in [data_sampler.py](../../../src/fragnnet/dataset/data_sampler.py);
+  molecule key, raw-CE acquisition key, frozen `functional_groups_v1` panel and class weights in
+  [rarity_sampling.py](../../../src/fragnnet/dataset/rarity_sampling.py); default-off
+  `molecule_acquisition_sampler*` template keys and runner validation; tests in
+  `tests/test_rarity_sampling.py` and `tests/test_runner_config.py`. Every arm draws `len(train)`
+  spectra per epoch at fixed batch 512, matching A0's steps.
+- **Configs:** `config/masster/rare_chemistry_2026_10_10/`, A0/A1/A3 for NIST20 (from `i1`) and
+  MSGYM (from the k1/EMA/Fourier control), seed 397623. A0 reruns each control on current code.
+- **Census ([finding](../../findings/masster/rare_chemistry_class_census_2026_10_10.md)):** A1 moves
+  molecule exposure (total variation from A0: NIST20 0.109, MSGYM 0.479). A3 with this panel is
+  nearly identical to A1 and has under 30 held-out rare molecules per split; it fails the census
+  gate. Submit A0 and A1 only unless the user picks an A3 redesign from the finding.
+- **Verified:** 25 sampler/panel tests and 109 runner-config tests pass; two-epoch GPU smokes on
+  512 spectra exit 0 for MSGYM A1 and NIST20 A3 and redraw each epoch. The full suite has 17
+  failures in export-schema, MASSter export and post-cut gate tests that also fail on clean HEAD.
+- Not started: scaffold arm A2, replicate arm A4, matched-edit census, and any job submission.
+- Next concrete check: user decision on A3, then submit A0 and A1 on both datasets. For the
+  network branch, the matched-edit census is still the first step.
 - Future code belongs in the dataset/sampler layer and focused analysis scripts; expose
   default-off config keys only after reading the Python/ML rules. Tests must verify training-only
   counts, split isolation, reproducible draws, actual update budgets and unmodified evaluation.
