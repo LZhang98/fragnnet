@@ -1,10 +1,11 @@
 # MASSter core model on NIST20
 
-> **Status:** HUB · **Updated:** 2026-10-10
+> **Status:** HUB · **Updated:** 2026-10-11
 > Architecture, training recipe, regularization, losses, candidate/proposal machinery, speed/GPU, the 128-epoch screens and campaign reads, ion-H channel selection, and feature/information audits for MASSter on NIST20.
 
 ## Where it stands
 
+- **Reorganization proposed:** [retire local ICEBERG for external ms-pred and remove DGL from the main environment](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment); implementation not started.
 - **RT/CCS:** [RTHead and CCSHead](../plans/masster/masster_rt_ccs_plan.md) with independent label sets completed a new 10-epoch GPU debug run; full Enveda arm remains prepared, heads default off.
 - Matched 128-epoch screen on the merged MA/MI base: control `c4a_base_s1` = **0.7270** `val_cos_sim` (tail mean epochs 118-127, replicate spread 0.0007, gate +-0.005), config `config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml`.
 - Real levers: `a1_prenorm` (`q4t4udee`) **+0.0056**, the only clean single-key architecture pass; cosine LR decay with 1000-step warmup `d3` (`rcfzf67p`) 0.7357 (+0.0072 at epoch 121, n=1); the 2026-09-20 feature bundle is worth about +0.006/+0.007; EMA gained +0.0102 on `i1` (see generalization hub).
@@ -12,7 +13,7 @@
 - The train/val gap (0.151 cosine) is intensity allocation among peaks the model already proposes, not coverage; capacity is not the bottleneck. Work on that gap lives in the generalization hub.
 - Prepared, not submitted: full-length `wd10` arm and matched `c4a_base_s1_trainaux` control (`fir:h100-80gb`); `a4`, `a5_ce_pair_bias`, `b4` (`config/masster/ma_mi_merged/attention_2026_09_21/`).
 - Blocked: ion-H Phase 2 selection sweep needs a recoverable trained checkpoint.
-- Working-tree changes are tracked in [project state](../project-state.md#uncommitted-working-tree-2026-10-08).
+- Working-tree changes are tracked in [project state](../project-state.md#uncommitted-working-tree-2026-10-11).
 - Next action: none scheduled here; new core levers go through the `a1_prenorm` + LR-decay stack on `i1` ([generalization hub](masster_generalization.md)), and an `a1_prenorm` seed replicate is the cheapest open confirmation.
 
 ## Open threads
@@ -66,7 +67,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | Shared heads, label evidence, completed GPU debug training and full experiment |
-| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model: models/baselines subpackages, shared `fragmentation/` layer, plugin hooks out of runner/script_utils |
+| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model ownership and shared fragmentation; retire local ICEBERG for external ms-pred, DGL-free main environment |
 | [masster_plan](../plans/masster/masster_plan.md) | LANDED (2026-10-06) | Core design record: one-pass bond-set model, mask enumeration, ion/H channels; snapshot of shipped behavior |
 | [masster_ion_h_channel_selection_plan](../plans/masster/masster_ion_h_channel_selection_plan.md) | DEFERRED (2026-10-06) | Ion-mode / H-support / channel selection hierarchy; no trained arm exercised selection; Phase 2 blocked on a checkpoint |
 | [masster_architecture_review_todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED (2026-10-06) | Open items from the 2026-09-19 code-vs-literature review (a4, a5, b4, RWSE, a1 replicate) |

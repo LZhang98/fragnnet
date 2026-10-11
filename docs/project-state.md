@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-10
+> **Status:** REFERENCE · **Updated:** 2026-10-11
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -34,6 +34,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), shared with MSGYM; rarity/edge census, then one-family edit-effect transfer test before implementation.
 
 ## MASSter core
+
+- **Reorganization proposed:** [external ICEBERG via ms-pred; DGL-free main environment](plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment). Implementation not started.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
@@ -82,16 +84,18 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## FraGNNet
 
+- **Shared reorganization:** [plan](plans/repo_reorg_plan.md); ICEBERG ownership decided, implementation not started.
+
 - **Dormant since September.** Best `pqx7ywc9` 0.7555 `cos_hun_inst_tol` (NIST20 test). The DAG
   oracle is 0.937, so the gap is intensity ranking, not coverage.
 - **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
   after the 2026-09-26 sampler fix before submitting.
 
-## Uncommitted working tree (2026-10-10)
+## Uncommitted working tree (2026-10-11)
 
-- RT/CCS heads, scalar-label join, metrics/export, compatibility tests, and Enveda arm;
-  validation and remaining experiment checks are in the [RT/CCS plan](plans/masster/masster_rt_ccs_plan.md).
-- MASSter rare chemistry augmentation plan: reviewed sampler/key definitions, citation checks and pre-fit coverage gate; planning only.
+- Reorganization plan and hub/dashboard updates record the external ICEBERG/ms-pred decision;
+  source code and environment are unchanged. Prior RT/CCS and augmentation entries are no
+  longer working-tree changes according to the current Git status.
 
 ## Standing cross-workstream rules
 

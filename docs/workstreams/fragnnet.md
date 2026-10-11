@@ -1,9 +1,10 @@
 # FraGNNet and the DAG
 
-> **Status:** HUB · **Updated:** 2026-10-06
+> **Status:** HUB · **Updated:** 2026-10-11
 > FraGNNet (NodeMLP over the bond-cut fragmentation DAG): DAG generation, recall and pruning, oracle ceilings, intensity ranking, FluxMPNN, contender-pair training, GLACIER gap, and the cross-model conditioning and reranking plans.
 
 ## Where it stands
+- **Reorganization proposed:** [retire local ICEBERG for external ms-pred and remove DGL from the main environment](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment); implementation not started.
 - **No active FraGNNet work.** project-state shows all work since September 2026 on MASSter (see [MASSter core](masster_core.md)); Stage A is PREPARED; the other plans are deferred, proposed, landed or closed.
 - **Best FraGNNet numbers cited in docs:** `pqx7ywc9` scores 0.7555 `cos_hun_inst_tol` on the NIST20 test split (`nist20_ma_mi_inchikey`, 96,128 spectra) and 0.7612 on FT `[M+H]+` at 0.1 Da bins, 0.077 below GLACIER's 0.838 ([gap finding](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)). The DAG oracle ceiling is 0.937 cos_hun (0.959 at instrument tolerance), so the gap is intensity ranking and allocation, not coverage ([ceiling](../findings/fragnnet/dag_oracle_ceiling_nist20.md)).
 - **Prepared, not submitted:** FT contender-pair Stage A, four Fir arms `c0`/`c1`/`p1`/`p2` under `config/exp_fraggnn_ma_mi/ce_pair_2026_09_23/`, generator `scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh` ([plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md)). The `ce_context` sampler packing fix (2026-09-26) is committed and post-dates the budget, so re-measure steps per epoch before submitting.
@@ -66,7 +67,7 @@
 | [unexplainable_spectra_analysis](../findings/fragnnet/unexplainable_spectra_analysis.md) | REFERENCE (2026-07-21) | Workflow for spectra the DAG cannot explain |
 | [conditioning_refactor_plan](../plans/conditioning_refactor_plan.md) | DEFERRED (2026-10-06) | Audit of 3 conditioning mechanisms; MASSter GNN context |
 | [energy_based_spectrum_reranking_plan](../plans/energy_based_spectrum_reranking_plan.md) | PROPOSED (2026-09-13) | Energy head reranking, oracle-vs-null Gate A |
-| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model: models/baselines subpackages, shared `fragmentation/` layer, plugin hooks out of runner/script_utils |
+| [repo_reorg_plan](../plans/repo_reorg_plan.md) | PROPOSED (2026-10-11) | Cross-model ownership and shared fragmentation; retire local ICEBERG for external ms-pred, DGL-free main environment |
 | [bond_breakability_mask_plan](../plans/fragnnet/bond_breakability_mask_plan.md) | STOPPED (2026-07-03) | Hard bond mask; bucket table source |
 | [classyfire_atom_pretraining_plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md) | PROPOSED (2026-07-25) | ClassyFire pretraining |
 | [complementary_cut_supervision_experiment_plan](../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) | PROPOSED (2026-08-10) | Complementary-cut KL supervision |

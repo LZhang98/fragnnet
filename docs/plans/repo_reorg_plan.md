@@ -1,17 +1,47 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
 > **Status:** PROPOSED · **Updated:** 2026-10-11
-> Written up, not started. Layout and scope decisions are open (see [Open decisions](#open-decisions)).
+> Implementation not started. ICEBERG will be retired locally in favor of external ms-pred; the main environment will be DGL-free. Remaining decisions are in [Open decisions](#open-decisions).
 > Line references below were measured at commit `13b1599d` on branch `masster`.
 
 ## Goal
 
-Center the repository on FraGNNet and MASSter. Each model, and each baseline (GRAFF, ICEBERG,
-MassFormer), becomes its own subpackage. The shared layer stops naming any specific model.
+Center the repository on FraGNNet and MASSter. Each retained model and baseline (GRAFF,
+MassFormer) becomes its own subpackage. The shared layer stops naming any specific model.
+Retire the local ICEBERG implementation and use external ms-pred for that baseline.
 
 The folders are the smaller part of this. Most of the work is removing the model-specific branches
 from the shared runner, inference export, dataset and sampler code. A directory move without that
 step changes paths and leaves the coupling in place.
+
+### Decided: external ICEBERG, DGL-free main environment
+
+User decision, 2026-10-11: stop maintaining this repository's ICEBERG fork; use
+[coleygroup/ms-pred](https://github.com/coleygroup/ms-pred) for future ICEBERG runs.
+
+- Preserve the fork through a recorded full Git revision before removal, including its configs,
+  scripts and environment definitions; retain any uncommitted changes in that provenance.
+  Git history is the archive. Do not keep an importable archive under `src/` or put source code
+  in `docs/history/`. No commit or tag is created by this plan.
+- Remove the local implementation, its integration branches and ICEBERG-only entry points.
+  Retain historical findings and run references. Existing local ICEBERG checkpoints remain
+  associated with the archived revision; do not claim that ms-pred can load them.
+- Run ms-pred from a separate checkout and environment, outside artifact stores. Pin the
+  upstream commit, model version, config and checkpoint identity for each comparison. Its
+  dependency requirements belong to that environment, not `FRAGNNET-GPU`.
+- Exchange prediction files with this repository's evaluation tools. Validate sample identity,
+  split, adduct, collision energy, m/z units, intensity transformation and binning before scoring.
+  Existing GLACIER/ms-pred readers are candidates for reuse, not proof of ICEBERG compatibility.
+  A small fixture must demonstrate the adapter's values and schema. No training or upstream
+  installation is required for the retirement itself.
+- Remove DGL requirements from package metadata, maintained environment and cluster scripts,
+  shared utilities and installation docs. No `iceberg` extra, DGL shim or batch-type registry
+  is needed in the target repository. Do not uninstall packages from the current environment
+  as part of a source reorganization.
+
+This is an intentional retirement exception to behavior preservation: `iceberg_gen` and
+`iceberg_inten` must fail with an actionable message directing users to ms-pred and the archived
+revision, rather than silently selecting another model. Other models retain their behavior.
 
 ## Target layout
 
@@ -24,7 +54,7 @@ src/fragnnet/
     fragnnet/                                  # DAG model
     masster/                                   # MASSter
   baselines/
-    graff/ iceberg/ massformer/
+    graff/ massformer/
 ```
 
 Dependency rule, enforced by a test:
@@ -171,7 +201,7 @@ the moves:
 | `utils.script_utils` (core) | `utils.frag_utils` | `ELEMENT_TO_IDX`, `MASK_SIZE`, `NUM_ELEMENTS`, `PACKED_DAG_INDEX_DATASET`, `formula_arr_to_str`, `get_node_feats`, `th_mask_to_long` | Formula and DAG-format names to core; `get_node_feats` use to FraGNNet's export hook |
 | `utils.script_utils` (core) | `frag.masster_templates` | `MASSTER_RULE_VOCABULARY` | MASSter's `annotation_tables` hook |
 | `utils.script_utils`, `utils.setup_utils` (core) | baselines | PL and dataset classes | Registry and hooks (Phase 1) |
-| `utils.misc_utils` (core) | `utils.dgl_compat_utils` (to ICEBERG) | `DGLGraph` | Core batch-type registry (Phase 1) |
+| `utils.misc_utils` (core) | `utils.dgl_compat_utils` | `DGLGraph` | Remove DGL checks and the shim when retiring ICEBERG (Phase 1) |
 | `model.candidate_support` (`fragmentation/`) | `model.bond_fragment_heads` (MASSter) | `_validate_tensor_condition` | Validator to core (Phase 3) |
 | `model.masster_model`, `model.candidate_features` (MASSter) | `utils.frag_utils` (FraGNNet) | `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX` | Element order to core |
 
@@ -244,7 +274,8 @@ formula utilities, which is allowed. No baseline has its own test; only
 
 ## Plugin interface
 
-Each model and baseline registers a `model_type` with these hooks. Core models use defaults.
+Each retained model and baseline registers a `model_type` with these hooks. Core models use
+defaults. External ICEBERG is not registered; its predictions enter through file-based evaluation.
 
 | Hook | Replaces |
 | --- | --- |
@@ -263,8 +294,8 @@ Each model and baseline registers a `model_type` with these hooks. Core models u
 
 ## Phases
 
-Each phase is one or more small PRs. Every phase must leave the tests passing and the golden
-outputs identical.
+Each phase is one or more small PRs. Every phase must leave the tests passing and retained-model golden
+outputs identical; ICEBERG retirement is the explicit exception.
 
 ### Phase 0 — Safety net
 
@@ -279,14 +310,17 @@ just run a default batch. The three shared loss weights (`ce_pair_loss_weight`,
    legacy `mass_shatter` config, assert the resolved model and dataset classes match an
    expected-mapping table kept in the test. The table starts as today's
    `get_model_cls`/`get_dataset_cls` and changes only deliberately, in the same PR as the code:
+   - Phase 1: retire `iceberg_gen` and `iceberg_inten`; replace class-resolution checks with
+     explicit retirement-error checks for config loading and model/dataset selection.
    - Phase 1: `massformer` → `SpecMolMFDataset` instead of `SpecMolDataset`. That PR must also
      show the new class is equivalent: identical per-item `mol_mf` preprocessing, an identical
      collated batch (keys, shapes, dtypes, values) through the runner's DataLoader, and identical
      MassFormer forward outputs and loss against the Phase 0 records.
    - Phase 6: module paths change with the directory moves; class names and behavior do not.
    Any other difference fails the test.
-2. **Smoke test per model type.** Build from template plus a tiny config; run one forward pass
-   and one training step on a fixture.
+2. **Smoke test per retained model type.** Build from template plus a tiny config; run one
+   forward pass and one training step on a fixture. ICEBERG requires retirement-error tests,
+   not an executable DGL fixture in the main environment.
 3. **Enabled-loss fixtures.** For FraGNNet and MASSter, configs with the three shared weights
    non-zero, on a fixture batch that contains CE-pair-eligible spectra. Assert
    `ce_pair_eligible_endpoints > 0`, so the CE-pair term is actually exercised. Record every named
@@ -300,19 +334,24 @@ just run a default batch. The three shared loss weights (`ce_pair_loss_weight`,
 5. **Samplers.** For each sampler that Phase 4 moves (FraGNNet dynamic, dual-group and curriculum
    samplers; MASSter's CE-context sampler), record the batch-index sequence across at least two
    epoch transitions (`set_epoch`) and after resuming from a mid-training checkpoint.
-6. **Export.** For FraGNNet, MASSter and ICEBERG, record the schema (columns, dtypes, HDF5 dataset
-   names) and values of the pkl, tabular and HDF5 inference exports on a fixture.
+6. **Export.** For FraGNNet and MASSter, record the schema (columns, dtypes, HDF5 dataset names)
+   and values of the pkl, tabular and HDF5 inference exports on a fixture. Before using external
+   ICEBERG predictions, validate their adapter as specified in the decision above.
 7. **Import boundary.** An AST check of the dependency rule. It starts in report-only mode and
    becomes enforcing once a phase removes the violations it covers.
 
-Later phases compare these records exactly: values bit-for-bit, schemas field-for-field.
+Later phases compare retained-model records exactly: values bit-for-bit, schemas field-for-field.
 
-### Phase 1 — Baselines decoupled in place
+### Phase 1 — Retire ICEBERG and decouple retained baselines
 
-1. Lazy registry in `registry.py` for **every** model type, FraGNNet and MASSter included, so
+1. Lazy registry in `registry.py` for **every retained** model type, FraGNNet and MASSter included, so
    `runner` → `setup_utils` no longer imports any model at load time. `VALID_MODEL_TYPES` is
    derived from it.
-2. Replace the `isinstance(IcebergIntenPL)` checks and the MAGMA/GRAFF inference edits with hooks.
+2. Record the recoverable pre-removal revision and inventory ICEBERG callers/configs. Remove
+   `src/fragnnet/iceberg`, its model/dataset imports, `isinstance(IcebergIntenPL)` branches and
+   MAGMA inference-config edits. Retire ICEBERG-only preprocessing/ms2c entry points and configs
+   with archive/replacement pointers. Preserve shared chemistry or data utilities used elsewhere.
+   Old model types get the explicit retirement error. Move only GRAFF inference edits into hooks.
 3. Move the MassFormer and GRAFF molecule handling out of `SpecMolDataset`. The
    `mol_params.mf`/`graff` keys stay.
    - Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()`
@@ -328,14 +367,13 @@ Later phases compare these records exactly: values bit-for-bit, schemas field-fo
    - Test through the DataLoader that the runner's `init_dataloader` builds, not by calling the
      collate function directly.
 
-   This is the only step of the phase that changes which code computes a value; the Phase 0
-   records guard it.
-4. Decouple DGL. `misc_utils.to_device` and `print_shapes` check `isinstance(v, DGLGraph)`
-   through the shim ([misc_utils.py:42](../../src/fragnnet/utils/misc_utils.py#L42)), so moving the
-   shim alone would either break core or make core import ICEBERG. Replace those checks with a
-   core-owned registry of extra batch types (how to move one to a device, how to report its
-   size). ICEBERG registers `DGLGraph` when its package is imported. Then move
-   `dgl_compat_utils.py` into ICEBERG.
+   The Phase 0 records guard retained-baseline preprocessing and collation equivalence.
+4. Remove DGL. Delete the `DGLGraph` cases from `misc_utils.to_device` and `print_shapes`, then
+   delete `dgl_compat_utils.py`. Remove DGL installation from `pyproject.toml`, `env/`,
+   `scripts/setup_job_cc.py` and `scripts/manual_slurm/`; update install checks/docs and stale
+   DGL examples. Test core imports and retained-model smoke fixtures with DGL imports blocked
+   in fresh subprocesses. Check setup commands as well as `sys.modules`: a missing runtime
+   import does not prove the installation no longer requires DGL.
 
 5. Package initializers. Reduce `model/__init__.py`, `pl_model/__init__.py` and
    `dataset/__init__.py` to core exports. During the transition, the model-specific names stay
@@ -420,7 +458,7 @@ These are the most frequently changed files, so use small PRs merged quickly.
 
 ### Phase 5 — Packaging
 
-- `pyproject.toml`: drop `dgl` from core; add an `iceberg` extra. Drop the unused `omegaconf`.
+- DGL removal is completed in Phase 1; do not add an `iceberg` extra. Drop the unused `omegaconf`.
   **Keep `torch_scatter`.** No repo code imports it, but PyG 2.6.1 routes CUDA `max`/`min`
   scatter with gradients through it when it is installed (`torch_geometric/utils/_scatter.py`,
   lines 89-119), and 154 configs set `frag_pool_type: max` (`aggr.MaxAggregation`,
@@ -433,17 +471,16 @@ These are the most frequently changed files, so use small PRs merged quickly.
   Declare `pyyaml`, `networkx`, `pillow`, which core imports at module level but
   which today arrive only through other packages. Move `scikit-learn` to a scripts/dev extra. Fix
   `requires-python` (`<=3.13` excludes 3.13.x; use `<3.14`).
-- [setup_job_cc.py:384](../../scripts/setup_job_cc.py#L384): install dgl only for ICEBERG model
-  types, as it already does for `chemlm`. It currently installs dgl 2.4.0 for every job.
+- Verify that maintained setup paths stay DGL-free; external ms-pred manages its own environment.
 - Note: every install path runs `pip install --no-deps -e .`, so `pyproject.toml` dependencies are
   never resolved. Commit a lock (freeze) of FRAGNNET-GPU if `pyproject.toml` is to describe a real
   environment.
 
 ### Phase 6 — Directory moves
 
-1. Baselines → `src/fragnnet/baselines/`. Move `algos.pyx` in [setup.py](../../setup.py) and
-   rebuild the `.so` files. Update the `.pre-commit-config.yaml` exclude regex. Move the MAGMA
-   preprocessing and ms2c scripts with ICEBERG and renumber the preprocessing README.
+1. Retained baselines → `src/fragnnet/baselines/`. Move `algos.pyx` in [setup.py](../../setup.py)
+   and rebuild the `.so` files. Update the `.pre-commit-config.yaml` exclude regex. ICEBERG and
+   its dedicated scripts have already been retired in Phase 1.
 2. MASSter and FraGNNet → `models/masster`, `models/fragnnet`, including `.pyx`/`.cu` paths in
    `setup.py` and package-data. Every module that moves was already separated in Phases 3–4:
    FraGNNet's DAG generation, DAG feature indexing and fragment graph construction,
@@ -464,16 +501,22 @@ Rules:
 
 Update [architecture.md](../architecture.md) with the dependency rule and plugin interface;
 update INSTALL.md (extras, the missing `env_setup_gpu_py310_cu118.sh` reference). Add
-`docs/reference/baselines.md`: running each baseline, data prerequisites (MAGMA for ICEBERG),
-config keys.
+`docs/reference/baselines.md`: running retained baselines, config keys, and external ICEBERG
+through ms-pred, including archive provenance and the evaluation-file contract. Update ICEBERG
+retirement and DGL installation documentation in Phase 1 rather than waiting for this phase.
 
 ## Unchanged
 
-- `model_type` strings, config key names, config file paths, sweep files and W&B runs.
+- Retained-model `model_type` strings, config keys, config paths, sweep files and W&B runs.
+  ICEBERG types and dedicated configs are the explicit retirement exception above. Keep legacy
+  `iceberg_*`/`magma_params` template fields inert during this refactor so retained-model config
+  and checkpoint loading is not broken by a separate schema cleanup.
 - `config/template.yml` stays a single file.
 - Checkpoints: Lightning checkpoints keep state dict and hparams, not class paths. No `pickle.dump`
   or `torch.save` was found in baseline code or MAGMA preprocessing. Before Phase 6 merges, load
-  at least one existing checkpoint per model type; there are no baseline checkpoints locally.
+  at least one existing checkpoint per retained model type; there are no baseline checkpoints
+  locally. Old ICEBERG checkpoints are reproducible through the recorded archive, not migrated
+  to ms-pred implicitly.
 
 ## Risks
 
@@ -490,8 +533,8 @@ config keys.
 ## Open decisions
 
 1. **Layout.** Recommended: `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`.
-   Alternative: separate top-level packages or pip distributions (`fragnnet_iceberg`, …); only
-   worth it if the baselines will be published or installed separately.
+   Alternative: separate top-level packages or pip distributions for retained baselines; only
+   worth it if they will be published or installed separately. ICEBERG is already external.
 2. **NEIMS.** It is a baseline but lives in core `model/` and `pl_model/`. Recommended: move it
    with the baselines. Keep `chemlm`, `gnn`, `precursor`, MCES and CLIP in core; they share
    encoders, and the MSGYM workstream uses them.
@@ -499,7 +542,14 @@ config keys.
    sweeps and W&B runs point at the current paths.
 4. **Live branches.** Which diverged branches are still in use; this sets when Phase 6 can run.
 
+ICEBERG ownership is settled: use external ms-pred; archive the local fork through Git provenance.
+
 ## Progress
+
+- 2026-10-11: user chose external ms-pred for ICEBERG. Revised the target layout, Phase 1,
+  compatibility exceptions, validation and packaging accordingly. This supersedes the earlier
+  optional-DGL extra and batch-type-registry proposals in the review log below. Implementation
+  and environment changes have not started.
 
 - 2026-10-11: plan written from a static coupling analysis at `13b1599d`. No code changed.
 - 2026-10-11: revised after review, with each point checked against the code:
