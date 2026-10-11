@@ -200,7 +200,7 @@ the moves:
 | `dataset.base_dataset` (core) | `utils.frag_utils` | `load_frag_d` | DAG file reader stays in core: shared isotope cleaning reads DAG formulas ([base_dataset.py:744](../../src/fragnnet/dataset/base_dataset.py#L744)) |
 | `utils.script_utils` (core) | `utils.frag_utils` | `ELEMENT_TO_IDX`, `MASK_SIZE`, `NUM_ELEMENTS`, `PACKED_DAG_INDEX_DATASET`, `formula_arr_to_str`, `get_node_feats`, `th_mask_to_long` | Formula and DAG-format names to core; `get_node_feats` use to FraGNNet's export hook |
 | `utils.script_utils` (core) | `frag.masster_templates` | `MASSTER_RULE_VOCABULARY` | MASSter's `annotation_tables` hook |
-| `utils.script_utils`, `utils.setup_utils` (core) | baselines | PL and dataset classes | Registry and hooks (Phase 1) |
+| `utils.script_utils`, `utils.setup_utils` (core) | baselines | PL and dataset classes | ICEBERG imports removed with ICEBERG; GRAFF and MassFormer through the registry and hooks (Phase 1) |
 | `utils.misc_utils` (core) | `utils.dgl_compat_utils` | `DGLGraph` | Remove DGL checks and the shim when retiring ICEBERG (Phase 1) |
 | `model.candidate_support` (`fragmentation/`) | `model.bond_fragment_heads` (MASSter) | `_validate_tensor_condition` | Validator to core (Phase 3) |
 | `model.masster_model`, `model.candidate_features` (MASSter) | `utils.frag_utils` (FraGNNet) | `CANONICAL_ELEMENT_ORDER`, `CANONICAL_H_IDX` | Element order to core |
@@ -352,6 +352,20 @@ Later phases compare retained-model records exactly: values bit-for-bit, schemas
    MAGMA inference-config edits. Retire ICEBERG-only preprocessing/ms2c entry points and configs
    with archive/replacement pointers. Preserve shared chemistry or data utilities used elsewhere.
    Old model types get the explicit retirement error. Move only GRAFF inference edits into hooks.
+   Callers outside `src/fragnnet/iceberg` (checked at `4180d267`) that must be edited, not
+   deleted with it:
+   - `scripts/stats_scripts/calculate_formula_stats.py` imports `vec_to_formula` and
+     `element_to_ind` from `iceberg.common.chem_utils`; port it to core formula utilities.
+   - [run_save_inference.py](../../scripts/eval/run_save_inference.py) imports ICEBERG alongside
+     GRAFF and MassFormer; remove only the ICEBERG paths.
+   - `scripts/ms2c/setup_ms2c_scripts.py` generates MAGMA/ICEBERG ms2c jobs; drop those
+     targets.
+   - `notebooks/param_counts.ipynb` imports ICEBERG; update or mark it historical.
+   - `tests/test_config_templates.py` covers the `magma_params` template block, which stays inert
+     (see [Unchanged](#unchanged)).
+
+   ICEBERG-only and removed with it: `preproc_scripts/05_prepare_magma_feats.py`,
+   `06_predict_magma_dags.py`, `scripts/ms2c/run_iceberg_ms2c_predict_val.py`.
 3. Move the MassFormer and GRAFF molecule handling out of `SpecMolDataset`. The
    `mol_params.mf`/`graff` keys stay.
    - Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()`
@@ -360,7 +374,8 @@ Later phases compare retained-model records exactly: values bit-for-bit, schemas
      Overriding `_special_collate` or the preprocessing in a subclass is therefore not enough.
    - MassFormer: a new `SpecMolMFDataset(SpecMolDataset)` defines its own `get_collate_fn`,
      `collate_fn` and `_special_collate` (the last calling `SpecMolDataset._special_collate`),
-     following the existing GRAFF and ICEBERG pattern ([graff/dataset.py:264-306](../../src/fragnnet/graff/dataset.py#L264)).
+     following the existing GRAFF pattern ([graff/dataset.py:264-306](../../src/fragnnet/graff/dataset.py#L264)).
+     ICEBERG followed the same pattern but is removed in step 2.
      The registry maps `massformer` to it.
    - GRAFF: `SpecMolAnnDataset` already has that chain; move the `mol_graff` block into its
      `_special_collate`.
@@ -370,8 +385,10 @@ Later phases compare retained-model records exactly: values bit-for-bit, schemas
    The Phase 0 records guard retained-baseline preprocessing and collation equivalence.
 4. Remove DGL. Delete the `DGLGraph` cases from `misc_utils.to_device` and `print_shapes`, then
    delete `dgl_compat_utils.py`. Remove DGL installation from `pyproject.toml`, `env/`,
-   `scripts/setup_job_cc.py` and `scripts/manual_slurm/`; update install checks/docs and stale
-   DGL examples. Test core imports and retained-model smoke fixtures with DGL imports blocked
+   `install_lib.py`, `containers/apptainer/fragnnet_cuda128.def`, `scripts/setup_job_cc.py` and
+   `scripts/manual_slurm/`; update install checks/docs (INSTALL.md) and stale DGL examples (the
+   `dgl.random_walk_pe` docstring in `feat_utils.py`). The prebuilt `.sif` images cannot be
+   edited; note that they still contain DGL. Test core imports and retained-model smoke fixtures with DGL imports blocked
    in fresh subprocesses. Check setup commands as well as `sys.modules`: a missing runtime
    import does not prove the installation no longer requires DGL.
 
@@ -385,8 +402,9 @@ Later phases compare retained-model records exactly: values bit-for-bit, schemas
 Gate: an isolation test runs in fresh subprocesses. It imports core alone (`fragnnet.runner`,
 `fragnnet.pl_model.spectrum_pl`, `fragnnet.dataset.spec_mol_dataset`,
 `fragnnet.utils.script_utils`) and checks `sys.modules`. It then selects each model through the
-registry and checks that only that model's code has loaded. Successful import with dgl absent is
-not enough on its own, because the shim already swallows import failures.
+registry and checks that only that model's code has loaded. DGL imports are blocked in these
+subprocesses (an import hook that raises), so any remaining DGL import fails loudly instead of
+being missed.
 
 The test enforces only boundaries that have actually been resolved; the rest stay report-only.
 Assertions are made per entry module, because `script_utils` keeps its FraGNNet and MASSter
@@ -527,6 +545,9 @@ retirement and DGL installation documentation in Phase 1 rather than waiting for
 - Phases 2-4 edit the three most-changed files; long-lived PRs will conflict.
 - Phase 6 breaks cluster jobs that were generated for the old layout but start after the move,
   and conflicts with any branch that edited a moved file.
+- Local ICEBERG results and ms-pred ICEBERG results come from different implementations and
+  checkpoints. Label which one a number came from; do not mix them in one comparison without
+  saying so.
 - All coupling counts come from static import analysis and a config-key regex. Classes selected
   by name at runtime (the `nn_blocks` GNN types, featurizer registries) are invisible to it.
 
@@ -545,11 +566,6 @@ retirement and DGL installation documentation in Phase 1 rather than waiting for
 ICEBERG ownership is settled: use external ms-pred; archive the local fork through Git provenance.
 
 ## Progress
-
-- 2026-10-11: user chose external ms-pred for ICEBERG. Revised the target layout, Phase 1,
-  compatibility exceptions, validation and packaging accordingly. This supersedes the earlier
-  optional-DGL extra and batch-type-registry proposals in the review log below. Implementation
-  and environment changes have not started.
 
 - 2026-10-11: plan written from a static coupling analysis at `13b1599d`. No code changed.
 - 2026-10-11: revised after review, with each point checked against the code:
@@ -581,3 +597,13 @@ ICEBERG ownership is settled: use external ms-pred; archive the local fork throu
     registry is now explicitly lazy for every model type, which that result depends on.
   - The registry check uses an expected-mapping table. The MassFormer dataset change in Phase 1
     is a declared change, with an equivalence check.
+- 2026-10-11: user chose external ms-pred for ICEBERG. Revised the target layout, Phase 1,
+  compatibility exceptions, validation and packaging accordingly. This supersedes the earlier
+  optional-DGL extra and batch-type-registry proposals in the review log above. Implementation
+  and environment changes have not started.
+- 2026-10-11: re-read after the ICEBERG decision; fixed:
+  - the stale DGL-shim sentence in the Phase 1 gate;
+  - an ICEBERG pattern reference that outlived its removal;
+  - the coupling-table resolution for the baselines.
+  Added the concrete non-ICEBERG callers of ICEBERG code, the missing DGL install sites
+  (`install_lib.py`, the Apptainer definition) and a comparability risk.
