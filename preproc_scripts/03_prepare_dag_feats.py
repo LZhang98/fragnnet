@@ -7,6 +7,7 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
+from fragnnet.models.fragnnet.dag import storage
 from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5, timed_get_dags
 from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
 from fragnnet.utils import dag_format_utils, formula_utils, parallel_utils
@@ -336,7 +337,7 @@ def main(args):
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
-        dag_format_utils.initialize_packed_dag_hdf5(h5_file)
+        storage.initialize_packed_dag_hdf5(h5_file)
     else:
         h5_file = None
     frag_results_gen = parallel_utils.par_apply(
@@ -385,7 +386,7 @@ def main(args):
                 if args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
-                    dag_format_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+                    storage.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
                     # Write one artifact per molecule when HDF5 storage is disabled.
                     fp = dag_format_utils.get_dag_output_path(

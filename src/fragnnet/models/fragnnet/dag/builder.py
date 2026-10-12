@@ -43,7 +43,7 @@ from fragnnet.models.fragnnet.dag.multi_cut_bfs import (
 from fragnnet.models.fragnnet.dag.multi_cut_bfs import (
     get_ring_edge_mask,
 )
-from fragnnet.utils.dag_format_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
+from fragnnet.models.fragnnet.dag.storage import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
 from fragnnet.utils.formula_utils import (
     CANONICAL_H_IDX,
     ELEMENT_TO_IDX,

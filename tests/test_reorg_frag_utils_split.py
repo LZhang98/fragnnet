@@ -5,7 +5,8 @@ format to core ``dag_format_utils``. The FraGNNet-owned ``frag_utils`` remnant r
 until Phase 6 (step 6), which retargeted every importer to core: the remnant now imports only the
 core names it uses itself, and nothing imports a moved name through it. Phase 9 split the remnant
 into ``models/fragnnet/dag/`` (builder, layout, formula, hashing, stats; graph was
-``frag_feat_utils``), so these checks cover every module there.
+``frag_feat_utils``), so these checks cover every module there; the packed HDF5 DAG layer then
+moved from ``dag_format_utils`` to ``models/fragnnet/dag/storage.py``.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from fragnnet.models.fragnnet.dag import storage as dag_storage
 from fragnnet.utils import dag_format_utils, formula_utils
 
 MOVED = {
@@ -37,6 +39,18 @@ MOVED = {
         "th_mask_to_long",
     ),
     dag_format_utils: (
+        "_dump_pickle_file",
+        "_legacy_frag_names",
+        "_load_pickle_file",
+        "dump_dag_pickle",
+        "get_dag_output_path",
+        "get_frag_fp",
+        "get_frag_name",
+        "load_frag_d",
+        "save_frag_d",
+    ),
+    # The packed HDF5 layer moved on to FraGNNet's DAG package (Phase 9 follow-up).
+    dag_storage: (
         "PACKED_DAG_BYTES_CHUNK_SIZE",
         "PACKED_DAG_BYTES_DATASET",
         "PACKED_DAG_FORMAT",
@@ -45,20 +59,11 @@ MOVED = {
         "PACKED_DAG_INDEX_DATASET",
         "PACKED_DAG_INDEX_DTYPE",
         "PACKED_DAG_ZLIB_LEVEL",
-        "_dump_pickle_file",
-        "_legacy_frag_names",
         "_load_dag_hdf5_packed",
-        "_load_pickle_file",
         "dump_dag_hdf5_packed",
-        "dump_dag_pickle",
-        "get_dag_output_path",
-        "get_frag_fp",
-        "get_frag_name",
         "initialize_packed_dag_hdf5",
         "load_dag_hdf5",
         "load_dag_hdf5_from_group",
-        "load_frag_d",
-        "save_frag_d",
     ),
 }
 PAIRS = [(module, name) for module, names in MOVED.items() for name in names]
@@ -99,7 +104,9 @@ def test_nothing_imports_a_moved_name_through_the_remnant() -> None:
             if isinstance(node, ast.ImportFrom) and node.module in REMNANTS:
                 found += [f"{f}: from-import {a.name}" for a in node.names if a.name in MOVED_NAMES]
             elif isinstance(node, ast.ImportFrom) and node.module == DAG_PACKAGE:
-                aliases |= {a.asname or a.name for a in node.names}
+                aliases |= {
+                    a.asname or a.name for a in node.names if f"{DAG_PACKAGE}.{a.name}" in REMNANTS
+                }
             elif isinstance(node, ast.Import):
                 aliases |= {a.asname for a in node.names if a.name in REMNANTS and a.asname}
         for node in ast.walk(tree):

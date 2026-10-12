@@ -19,16 +19,12 @@ from tqdm import tqdm
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
 from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
+from fragnnet.models.fragnnet.dag.storage import load_dag_hdf5
 from fragnnet.models.fragnnet.fragnnet_adducts import (
     prec_type_removed_counts,
     tracked_element_counts,
 )
-from fragnnet.utils.dag_format_utils import (
-    _legacy_frag_names,
-    get_frag_fp,
-    load_dag_hdf5,
-    load_frag_d,
-)
+from fragnnet.utils.dag_format_utils import _legacy_frag_names, get_frag_fp, load_frag_d
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,

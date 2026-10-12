@@ -762,8 +762,9 @@ models/fragnnet/
     graph.py     DAG as a PyG graph, and batching (was frag_feat_utils.py)
 ```
 
-`dag/` stays inside the FraGNNet layer (the layer is the first package under `models/`). The DAG
-storage format (`utils/dag_format_utils.py`) stays core. Class names and the Cython module names
+`dag/` stays inside the FraGNNet layer (the layer is the first package under `models/`). The
+per-molecule DAG file layout (`utils/dag_format_utils.py`) stays core, because `base_dataset`
+reads it; the packed `dags.h5` layer later moved to `dag/storage.py`. Class names and the Cython module names
 are unchanged.
 
 ## Unchanged

@@ -1,5 +1,4 @@
 import gc
-import json
 import logging
 import multiprocessing
 import os
@@ -18,7 +17,6 @@ from tqdm import tqdm
 from fragnnet import registry
 from fragnnet.export_adapter import ExportAdapter
 from fragnnet.runner import load_config
-from fragnnet.utils.dag_format_utils import PACKED_DAG_INDEX_DATASET
 from fragnnet.utils.formula_utils import (
     formula_delta_to_signed_str,
 )
@@ -2224,34 +2222,3 @@ def batch_filter_by_peak_intensity(
     )
 
 
-def available_frag_mol_ids(frag_dp: str) -> set[str]:
-    """Return the mol_ids (as strings) that have a DAG in ``frag_dp``.
-
-    ``frag_dp`` is either a directory of per-molecule pickles (the folder backend,
-    ``<name>/dags/``) or a packed ``dags.h5`` (the HDF5 backend). Both layouts skip
-    molecules whose fragmentation failed or timed out, so the caller must drop those
-    rows from mol_df / spec_df before building the dataset — the HDF5 backend does no
-    missing-file check of its own and raises a KeyError on the first absent mol_id.
-
-    For the HDF5 backend the ids come from the ``meta_info.json`` written next to the
-    .h5 when available (its keys are exactly the successfully fragmented molecules),
-    and otherwise from the packed index: it is dense in mol_id, so an entry with
-    ``length == 0`` means "no DAG stored".
-
-    Args:
-        frag_dp: Directory of DAG files, or path to a packed ``dags.h5``.
-
-    Returns:
-        Set of mol_ids, as strings, for which a DAG can be loaded.
-    """
-    if not frag_dp.endswith(".h5"):
-        return {f.split(".")[0] for f in os.listdir(frag_dp)}
-
-    meta_info_fp = os.path.join(os.path.dirname(os.path.abspath(frag_dp)), "meta_info.json")
-    if os.path.exists(meta_info_fp):
-        with open(meta_info_fp) as f:
-            return {str(mol_id) for mol_id in json.load(f)}
-
-    with h5py.File(frag_dp, "r") as h5_file:
-        index = h5_file[PACKED_DAG_INDEX_DATASET][:]
-    return {str(mol_id) for mol_id in np.nonzero(index["length"])[0]}

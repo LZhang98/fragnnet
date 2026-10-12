@@ -11,7 +11,7 @@ import torch
 import torch_geometric as pyg
 
 from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5
-from fragnnet.utils.dag_format_utils import (
+from fragnnet.models.fragnnet.dag.storage import (
     PACKED_DAG_BYTES_DATASET,
     PACKED_DAG_FORMAT,
     PACKED_DAG_FORMAT_ATTR,

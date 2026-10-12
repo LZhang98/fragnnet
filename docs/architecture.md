@@ -92,8 +92,10 @@ src/fragnnet/
   `MassterPL` for the inference exporters' annotation columns.
   Hook modules import nothing model-specific at module level, so validating a config loads no
   model or compiled extension.
-- Anything core reads, such as the annotation output keys, the size constants and the DAG
-  storage format, stays in core even when only the fragment models produce it.
+- Anything core reads, such as the annotation output keys, the size constants and the
+  per-molecule DAG file layout (`utils/dag_format_utils.py`, read by `base_dataset`), stays in
+  core even when only the fragment models produce it. The packed `dags.h5` format, which only
+  FraGNNet reads and writes, is in `models/fragnnet/dag/storage.py`.
 - Frozen records (findings, plans, `docs/history/`) cite the pre-reorganization paths
   (`src/fragnnet/frag/`, `src/fragnnet/graff/`, `model/nn_blocks.py`, `model/loss.py`,
   `model/base_model.py` and the model files under `model/` and `pl_model/`). Resolve them in git
@@ -109,7 +111,8 @@ src/fragnnet/
 - Fragment generation: FraGNNet's DAG code is in
   [models/fragnnet/dag/](../src/fragnnet/models/fragnnet/dag/): `builder.py` with the Cython
   `compute_frags.pyx` and `multi_cut_bfs.pyx`, the DAG layout the model reads (`layout.py`),
-  formulas, hashing, statistics and the PyG graph (`graph.py`);
+  formulas, hashing, statistics, the PyG graph (`graph.py`) and the packed `dags.h5` storage
+  (`storage.py`);
   MASSter's candidate construction (Cython `masster_core.pyx`, the CUDA `.cu` kernels next to the
   modules that load them) in [models/masster/](../src/fragnnet/models/masster/); the shared
   SMARTS prepass and hydrogen capping in [fragmentation/](../src/fragnnet/fragmentation/). The
@@ -125,7 +128,7 @@ src/fragnnet/
   binning, CE and batch helpers), `spec_similarity` (peak matching, Hungarian assignment,
   similarity metrics), `scatter_utils` (grouped reductions), `ce_utils` (NCE/ACE),
   `clean_spectra_utils` and `spec_parse_utils` (preprocessing), `parallel_utils`, `migrations`
-  (config and checkpoint migrations), `dag_format_utils` (DAG storage), `script_utils` (inference
+  (config and checkpoint migrations), `dag_format_utils` (per-molecule DAG files), `script_utils` (inference
   exporters), `misc_utils` (constants, seeding, progress). The dataset's isotope-peak cleanup is
   `dataset/isotope_cleanup.py`.
   Scientific assumptions must be checked against code and the relevant findings or references.
