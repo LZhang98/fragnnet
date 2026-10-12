@@ -1,5 +1,5 @@
-"""
-land of feature embedders
+"""Featurizers for integers and scalars (counts, indices, values), selected with
+``get_embedder`` (was ``model/form_embedder.py``).
 """
 
 import logging

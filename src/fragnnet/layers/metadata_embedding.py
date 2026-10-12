@@ -1,9 +1,6 @@
-"""
-base_model.py
-
-Base classes for embedding collision energy (CE), precursor type(Prec), instrument type (Inst),
-and fragmentation mode (FragMode) for FragGNN models. Intended to be used as base classes for
-more complex model architectures.
+"""Metadata embedding mixins: collision energy (CE), precursor type (Prec), instrument type
+(Inst) and fragmentation mode (FragMode), shared by the models that condition on them (was
+``model/base_model.py``).
 
 - CEModel: Handles collision energy embedding and transformation.
 - QETEnergyEncoder: Smooth CE embedding on the breakdown-curve axis 1 / (CE + offset).

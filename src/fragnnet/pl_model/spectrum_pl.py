@@ -8,6 +8,7 @@ It is intended to be subclassed for specific model architectures and tasks.
 
 import inspect
 import logging
+import math
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -316,11 +317,15 @@ class SpectrumPL(L.LightningModule):
             ValueError: If a weight is not finite and nonnegative, or if a positive weight is
                 paired with a ``loss_type`` other than ``hellinger_distance``.
         """
-        validate_hellinger_auxiliary_weights(
-            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
-            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
-            loss_type=self.hparams.loss_type,
-        )
+        weights = {
+            "spectral_leak_loss_weight": self.hparams.spectral_leak_loss_weight,
+            "spectral_ce_auxiliary_weight": self.hparams.spectral_ce_auxiliary_weight,
+        }
+        for name, weight in weights.items():
+            if not math.isfinite(weight) or weight < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+            if weight > 0.0 and self.hparams.loss_type != "hellinger_distance":
+                raise ValueError(f"{name} is supported only with hellinger_distance")
 
     def _spectral_leak_loss(
         self,

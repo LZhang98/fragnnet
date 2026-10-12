@@ -601,6 +601,11 @@ def safelog(x: th.Tensor, eps: float = EPS) -> th.Tensor:
     return th.log(th.clamp(x, min=eps))
 
 
+def x_log_x(values: th.Tensor) -> th.Tensor:
+    """Return ``x log x`` with the ``x = 0`` limit, so padded entries contribute nothing."""
+    return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
+
+
 def batchwise_max(xs: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
     """Compute max per batch index (debug helper)."""
 
