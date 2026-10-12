@@ -9,12 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fragnnet.dataset.data_sampler import validate_dag_size_curriculum
 from fragnnet.hooks import ModelHooks
 
 
 class FraGNNetHooks(ModelHooks):
-    """FraGNNet's fragment-DAG batch samplers and curriculum: validation."""
+    """FraGNNet's fragment-DAG batch samplers and curriculum."""
 
     def validate_config(self, config_d: dict[str, Any]) -> None:
         num_enabled_batch_samplers = sum(
@@ -64,6 +63,8 @@ class FraGNNetHooks(ModelHooks):
         if config_d["dag_size_curriculum"]:
             if not config_d["dynamic_batch_sampler"]:
                 raise ValueError("DAG-size curriculum requires dynamic_batch_sampler=True")
+            from fragnnet.dataset.frag_data_sampler import validate_dag_size_curriculum
+
             validate_dag_size_curriculum(
                 config_d["dag_size_curriculum_start_fraction"],
                 config_d["dag_size_curriculum_epochs"],
@@ -104,3 +105,98 @@ class FraGNNetHooks(ModelHooks):
             raise ValueError(
                 "Dual-group dynamic batch sampler can only be used with frag_gnn model"
             )
+
+    def build_batch_sampler(
+        self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
+    ) -> Any | None:
+        from fragnnet.dataset.frag_data_sampler import (
+            CEContextDynamicBatchSampler,
+            DualGroupDynamicBatchSampler,
+            SpecMolFragDynamicBatchSampler,
+        )
+
+        split = ds.split
+        if config_d["dynamic_batch_sampler"]:
+            if split == "train":
+                return_batch_at = config_d["train_batch_size"]
+                if not config_d["automatic_optimization"]:
+                    return_batch_at *= config_d["accumulate_grad_batches"]
+            else:
+                return_batch_at = config_d["eval_batch_size"]
+            if config_d["batch_sampler_type"] == "ce_context":
+                return CEContextDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dynamic_batch_sampler_max"],
+                    ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
+                    limited_by=config_d["dynamic_batch_sampler_mode"],
+                    spectra_per_context=config_d["ce_context_spectra_per_context"],
+                    return_batch_at=return_batch_at,
+                    seed=config_d["seed"],
+                    skip_too_big=split == "train",
+                )
+            if split == "train":
+                return SpecMolFragDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dynamic_batch_sampler_max"],
+                    limited_by=config_d["dynamic_batch_sampler_mode"],
+                    skip_too_big=True,
+                    return_batch_at=return_batch_at,
+                    sampler=sampler,
+                    dag_size_curriculum=config_d["dag_size_curriculum"],
+                    dag_size_curriculum_start_fraction=config_d[
+                        "dag_size_curriculum_start_fraction"
+                    ],
+                    dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
+                )
+            return SpecMolFragDynamicBatchSampler(
+                ds,
+                max_num=config_d["dynamic_batch_sampler_max"],
+                limited_by=config_d["dynamic_batch_sampler_mode"],
+                skip_too_big=False,
+                return_batch_at=return_batch_at,
+                sampler=sampler,
+            )
+        if config_d["dual_group_dynamic_batch_sampler"]:
+            if split == "train":
+                return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+                return DualGroupDynamicBatchSampler(
+                    ds,
+                    max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                    limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                    skip_too_big=True,
+                    return_batch_at=return_batch_at,
+                    sample_k1=config_d["dual_group_sampler_k1"],
+                    sample_k2=config_d["dual_group_sampler_k2"],
+                    sample_k1_per_key=config_d["dual_group_sampler_k1_per_key"],
+                    sample_k2_per_key=config_d["dual_group_sampler_k2_per_key"],
+                    generator=generator,
+                )
+            return_batch_at = config_d["eval_batch_size"]
+            return SpecMolFragDynamicBatchSampler(
+                ds,
+                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                skip_too_big=False,
+                return_batch_at=return_batch_at,
+                sampler=sampler,
+            )
+        return None
+
+    def trainer_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
+        if config_d["automatic_optimization"]:
+            return super().trainer_options(config_d)
+        if config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
+            # with out this progress will not track dataset length change
+            # this will call train_dataloader and val_dataloader before every epoch
+            # not sure why this fixed our problem but it works
+            # Use per-epoch batch indices for validation checks. DAG curriculum training also
+            # refreshes Lightning's cached train/validation batch counts after sampler updates.
+            return {"reload_dataloaders_every_n_epochs": 1, "check_val_every_n_epoch": 1}
+        return {}
+
+    def advances_sampler_each_epoch(self, hparams: Any) -> bool:
+        return (
+            hparams.dag_size_curriculum
+            or hparams.bond_size_curriculum
+            or hparams.batch_sampler_type == "ce_context"
+        )

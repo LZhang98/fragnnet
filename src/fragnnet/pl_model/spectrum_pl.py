@@ -20,6 +20,7 @@ import torch as th
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
+from fragnnet import registry
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
     sparse_entropy_fn,
@@ -2646,16 +2647,10 @@ class SpectrumPL(L.LightningModule):
             if hasattr(obj, "generator"):
                 obj.generator = generator
 
-        if (
-            self.hparams.dag_size_curriculum
-            or self.hparams.bond_size_curriculum
-            or self.hparams.batch_sampler_type == "ce_context"
-            # Declared only by the MASSter template; other model templates omit it.
-            or (
-                hasattr(self.hparams, "masster_batch_sampler")
-                and self.hparams.masster_batch_sampler
-            )
-        ):
+        model_hooks = registry.get_model_hooks(
+            getattr(self.hparams, "model_type", None), strict=False
+        )
+        if model_hooks.advances_sampler_each_epoch(self.hparams):
             # Advance the sampler owning curriculum or CE-window state before Lightning
             # reads the epoch's batch count.
             epoch_sampler = batch_sampler if hasattr(batch_sampler, "set_epoch") else inner

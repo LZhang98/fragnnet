@@ -8,10 +8,12 @@ dispatch itself.
 
 from __future__ import annotations
 
+import itertools
 import json
 import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
@@ -85,3 +87,94 @@ def test_migration_and_validation_load_no_model_code() -> None:
         "fragnnet.frag.multi_cut_bfs",
     }
     assert not loaded & heavy
+
+
+# The pre-hook inline logic of runner.run_training (Trainer kwargs), runner.init_dataloader
+# (DataLoader kwargs) and SpectrumPL._seed_dataloader (advance decision), verbatim. Phase 4
+# step 3 moved them into hooks; these tables keep the hooks equal to them.
+def _old_trainer_kwargs(config: dict) -> dict:
+    kwargs = {}
+    if config["automatic_optimization"]:
+        if config["num_workers"] > 0 and config["model_type"] != "masster":
+            kwargs["reload_dataloaders_every_n_epochs"] = 1
+    elif config["dynamic_batch_sampler"] or config["dual_group_dynamic_batch_sampler"]:
+        kwargs["reload_dataloaders_every_n_epochs"] = 1
+        kwargs["check_val_every_n_epoch"] = 1
+    return kwargs
+
+
+def _old_dataloader_kwargs(config: dict) -> dict:
+    if (
+        config["num_workers"] > 0
+        and config["model_type"] == "masster"
+        and config["automatic_optimization"]
+    ):
+        return {"persistent_workers": True}
+    return {}
+
+
+def _old_advances(hparams) -> bool:
+    return bool(
+        hparams.dag_size_curriculum
+        or hparams.bond_size_curriculum
+        or hparams.batch_sampler_type == "ce_context"
+        or (hasattr(hparams, "masster_batch_sampler") and hparams.masster_batch_sampler)
+    )
+
+
+FRAGNNET_TYPES = ("frag_gnn", "fragnnet")
+
+
+def _accepted_by_validation(model_type: str, flags: dict) -> bool:
+    """Combinations ``validate_sampler_config`` lets through (the rest never reach the hooks)."""
+    fragnnet = model_type in FRAGNNET_TYPES
+    if (flags["dynamic"] or flags["dual"]) and (not fragnnet or flags["auto"]):
+        return False
+    if flags["dynamic"] and flags["dual"]:
+        return False
+    if (flags["dag"] or flags["ce_context"]) and not (fragnnet and flags["dynamic"]):
+        return False
+    if flags["dag"] and flags["ce_context"]:
+        return False
+    if flags["masster_sampler"] and (model_type != "masster" or not flags["auto"]):
+        return False
+    return not (flags["bond"] and (flags["dynamic"] or flags["dual"]))
+
+
+FLAG_NAMES = ("auto", "dynamic", "dual", "dag", "bond", "ce_context", "masster_sampler")
+
+
+@pytest.mark.parametrize("model_type", MODEL_TYPES)
+def test_loader_and_epoch_hooks_match_the_pre_hook_logic(model_type: str) -> None:
+    hooks = registry.get_model_hooks(model_type)
+    checked = 0
+    for values in itertools.product([False, True], repeat=len(FLAG_NAMES)):
+        flags = dict(zip(FLAG_NAMES, values))
+        if not _accepted_by_validation(model_type, flags):
+            continue
+        for num_workers in (0, 2):
+            config = {
+                "model_type": model_type,
+                "automatic_optimization": flags["auto"],
+                "num_workers": num_workers,
+                "dynamic_batch_sampler": flags["dynamic"],
+                "dual_group_dynamic_batch_sampler": flags["dual"],
+                "dag_size_curriculum": flags["dag"],
+                "bond_size_curriculum": flags["bond"],
+                "batch_sampler_type": "ce_context" if flags["ce_context"] else "spec_mol_frag",
+                "masster_batch_sampler": flags["masster_sampler"],
+            }
+            assert hooks.trainer_options(config) == _old_trainer_kwargs(config), config
+            assert hooks.dataloader_options(config) == _old_dataloader_kwargs(config), config
+            hparams = types.SimpleNamespace(**config)
+            assert bool(hooks.advances_sampler_each_epoch(hparams)) == _old_advances(hparams)
+            checked += 1
+    assert checked >= 4
+
+
+@pytest.mark.parametrize("model_type", [t for t in MODEL_TYPES if t not in FRAGNNET_TYPES])
+def test_only_fragnnet_and_masster_build_their_own_batch_samplers(model_type: str) -> None:
+    config = {"masster_batch_sampler": False}
+    assert (
+        registry.get_model_hooks(model_type).build_batch_sampler(None, config, None, None) is None
+    )

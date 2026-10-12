@@ -72,6 +72,55 @@ class ModelHooks:
             ValueError: If the config enables one of this model's settings.
         """
 
+    def build_batch_sampler(
+        self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
+    ) -> Any | None:
+        """Return the model's own batch sampler for ``ds``, or None for standard batching.
+
+        ``runner.init_dataloader`` calls it after choosing ``sampler``. A returned batch sampler
+        replaces the DataLoader's ``batch_size``, ``sampler`` and ``drop_last``.
+
+        Args:
+            ds: The dataset; ``ds.split`` is "train", "val", "test" or "predict_only".
+            config_d: Resolved config.
+            sampler: The index sampler core chose: None on the train split when
+                ``uses_ce_context_sampler``, ``SequentialSampler`` on the other splits.
+            generator: The generator the samplers share; SpectrumPL reseeds it each epoch.
+        """
+        return None
+
+    def dataloader_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
+        """Extra DataLoader keyword arguments.
+
+        Args:
+            config_d: Resolved config.
+        """
+        return {}
+
+    def trainer_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
+        """Trainer keyword arguments that depend on how the model loads data.
+
+        Args:
+            config_d: Resolved config.
+        """
+        if config_d["automatic_optimization"] and config_d["num_workers"] > 0:
+            # little hack to prevent memory explosion
+            # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
+            # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
+            return {"reload_dataloaders_every_n_epochs": 1}
+        return {}
+
+    def advances_sampler_each_epoch(self, hparams: Any) -> bool:
+        """Whether the training batches change from epoch to epoch.
+
+        If so, ``SpectrumPL._seed_dataloader`` calls the sampler's ``set_epoch`` and refreshes
+        Lightning's cached batch counts; otherwise it only recomputes batches.
+
+        Args:
+            hparams: The module's hyperparameters (attribute access).
+        """
+        return hparams.bond_size_curriculum or hparams.batch_sampler_type == "ce_context"
+
     def log_resolved_settings(
         self, model: Any, config_d: dict[str, Any], wandb_run: Any | None
     ) -> None:

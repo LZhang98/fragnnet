@@ -135,6 +135,48 @@ class MassterHooks(ModelHooks):
                 "cross_ev_fragment_loss_weight > 0 requires masster_share_proposal_across_ev=True"
             )
 
+    def build_batch_sampler(
+        self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
+    ) -> Any | None:
+        if not config_d["masster_batch_sampler"]:
+            return None
+        from fragnnet.dataset.masster_data_sampler import MassterCEContextDynamicBatchSampler
+
+        split = ds.split
+        return_batch_at = (
+            config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
+        )
+        return MassterCEContextDynamicBatchSampler(
+            ds,
+            max_num=config_d["masster_batch_sampler_max"],
+            ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
+            spectra_per_context=config_d["ce_context_spectra_per_context"],
+            return_batch_at=return_batch_at,
+            seed=config_d["seed"],
+            skip_too_big=split == "train",
+        )
+
+    def dataloader_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
+        if config_d["num_workers"] > 0 and config_d["automatic_optimization"]:
+            # Keep workers and their preprocessing caches alive; matches the exemption from
+            # reload_dataloaders_every_n_epochs, without which workers respawn every epoch anyway.
+            return {"persistent_workers": True}
+        return {}
+
+    def trainer_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
+        # Exempt from the default reload_dataloaders_every_n_epochs: MASSter uses
+        # SpecMolDataset, which has no frag_pl_sd/frag_pp_sd fragment caches, so worker RSS
+        # stays bounded and respawning only discards the spectrum/molecule preprocessing caches.
+        return {}
+
+    def advances_sampler_each_epoch(self, hparams: Any) -> bool:
+        return (
+            hparams.bond_size_curriculum
+            or hparams.batch_sampler_type == "ce_context"
+            # Checkpoints from before the MASSter sampler lack the key.
+            or getattr(hparams, "masster_batch_sampler", False)
+        )
+
     def log_resolved_settings(
         self, model: Any, config_d: dict[str, Any], wandb_run: Any | None
     ) -> None:

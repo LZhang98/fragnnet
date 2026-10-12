@@ -33,6 +33,7 @@ FRAGMENTATION = {
     "fragnnet.fragmentation.smarts_prepass",
 }
 FRAGNNET = {
+    "fragnnet.dataset.frag_data_sampler",
     "fragnnet.dataset.iterable_spec_mol_frag_dataset",
     "fragnnet.dataset.spec_mol_frag_dataset",
     "fragnnet.frag.compute_frags",
@@ -46,6 +47,7 @@ FRAGNNET = {
     "fragnnet.utils.frag_utils",
 }
 MASSTER = {
+    "fragnnet.dataset.masster_data_sampler",
     "fragnnet.frag.bond_mask_generator",
     "fragnnet.model.bond_fragment_heads",
     "fragnnet.model.candidate_features",
@@ -67,8 +69,12 @@ BASELINE_PACKAGES = {
 # the owner classes out of these packages. Must match each package's ``_LAZY_EXPORTS``.
 COMPAT_SHIMS: dict[str, dict[str, str]] = {
     "fragnnet.dataset": {
+        "CEContextDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
+        "DualGroupDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
         "IterableSpecMolFragDataset": "fragnnet.dataset.iterable_spec_mol_frag_dataset",
+        "MassterCEContextDynamicBatchSampler": "fragnnet.dataset.masster_data_sampler",
         "SpecMolFragDataset": "fragnnet.dataset.spec_mol_frag_dataset",
+        "SpecMolFragDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
     },
     "fragnnet.model": {
         "FraGNNetModel": "fragnnet.model.fragnnet_model",

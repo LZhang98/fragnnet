@@ -21,12 +21,8 @@ import fragnnet.utils.misc_utils as misc_utils
 from fragnnet import registry
 from fragnnet.dataset import (
     BondCountCurriculumSampler,
-    CEContextDynamicBatchSampler,
-    DualGroupDynamicBatchSampler,
     FormulaPrecTypeGroupSampler,
     GroupSampler,
-    MassterCEContextDynamicBatchSampler,
-    SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
 from fragnnet.dataset.data_sampler import (
@@ -295,11 +291,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         DataLoader: Configured PyTorch DataLoader for the dataset.
     """
     split = ds.split
-    # `masster_batch_sampler` is MASSter's; gating on the model type keeps a historical
-    # config that still carries the key from selecting a sampler the model cannot use.
-    use_masster_batch_sampler = (
-        config_d["model_type"] == "masster" and config_d["masster_batch_sampler"]
-    )
+    # Model-specific batching lives in the model's hooks (fragnnet.hooks.ModelHooks).
+    model_hooks = registry.get_model_hooks(config_d["model_type"], strict=False)
     assert not (
         config_d["group_sampler"] and config_d["simple_group_sampler"]
     ), "Cannot use both group_sampler and simple_group_sampler"
@@ -310,14 +303,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         "collate_fn": ds.get_collate_fn(),
         "pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu"),
     }
-    if (
-        config_d["num_workers"] > 0
-        and config_d["model_type"] == "masster"
-        and config_d["automatic_optimization"]
-    ):
-        # Keep workers and their preprocessing caches alive; matches the exemption from
-        # reload_dataloaders_every_n_epochs, without which workers respawn every epoch anyway.
-        dl_param_d["persistent_workers"] = True
+    dl_param_d.update(model_hooks.dataloader_options(config_d))
 
     # Set up a generator for reproducible sampling (will be overwritten each epoch)
     generator = th.Generator()
@@ -327,7 +313,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     if split == "train":
         # Choose sampler for training
-        if use_masster_batch_sampler or config_d["batch_sampler_type"] == "ce_context":
+        if model_hooks.uses_ce_context_sampler(config_d):
             sampler = None
         elif config_d["group_sampler"]:
             sampler = GroupSampler(
@@ -363,88 +349,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         # Use sequential sampler for validation/test/predict_only
         sampler = SequentialSampler(ds)
 
-    # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
-    # Prefer formula-based hard negative dynamic sampler when enabled (train only)
-
-    if use_masster_batch_sampler:
-        return_batch_at = (
-            config_d["train_batch_size"] if split == "train" else config_d["eval_batch_size"]
-        )
-        batch_sampler = MassterCEContextDynamicBatchSampler(
-            ds,
-            max_num=config_d["masster_batch_sampler_max"],
-            ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
-            spectra_per_context=config_d["ce_context_spectra_per_context"],
-            return_batch_at=return_batch_at,
-            seed=config_d["seed"],
-            skip_too_big=split == "train",
-        )
-        dl_param_d["batch_sampler"] = batch_sampler
-    elif config_d["dynamic_batch_sampler"]:
-        if split == "train":
-            return_batch_at = config_d["train_batch_size"]
-            if not config_d["automatic_optimization"]:
-                return_batch_at *= config_d["accumulate_grad_batches"]
-        else:
-            return_batch_at = config_d["eval_batch_size"]
-        if config_d["batch_sampler_type"] == "ce_context":
-            batch_sampler = CEContextDynamicBatchSampler(
-                ds,
-                max_num=config_d["dynamic_batch_sampler_max"],
-                ce_key_by_inst=config_d["ce_context_ce_key_by_inst"],
-                limited_by=config_d["dynamic_batch_sampler_mode"],
-                spectra_per_context=config_d["ce_context_spectra_per_context"],
-                return_batch_at=return_batch_at,
-                seed=config_d["seed"],
-                skip_too_big=split == "train",
-            )
-        elif split == "train":
-            batch_sampler = SpecMolFragDynamicBatchSampler(
-                ds,
-                max_num=config_d["dynamic_batch_sampler_max"],
-                limited_by=config_d["dynamic_batch_sampler_mode"],
-                skip_too_big=True,
-                return_batch_at=return_batch_at,
-                sampler=sampler,
-                dag_size_curriculum=config_d["dag_size_curriculum"],
-                dag_size_curriculum_start_fraction=config_d["dag_size_curriculum_start_fraction"],
-                dag_size_curriculum_epochs=config_d["dag_size_curriculum_epochs"],
-            )
-        else:
-            batch_sampler = SpecMolFragDynamicBatchSampler(
-                ds,
-                max_num=config_d["dynamic_batch_sampler_max"],
-                limited_by=config_d["dynamic_batch_sampler_mode"],
-                skip_too_big=False,
-                return_batch_at=return_batch_at,
-                sampler=sampler,
-            )
-        dl_param_d["batch_sampler"] = batch_sampler
-    elif config_d["dual_group_dynamic_batch_sampler"]:
-        if split == "train":
-            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-            batch_sampler = DualGroupDynamicBatchSampler(
-                ds,
-                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
-                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
-                skip_too_big=True,
-                return_batch_at=return_batch_at,
-                sample_k1=config_d["dual_group_sampler_k1"],
-                sample_k2=config_d["dual_group_sampler_k2"],
-                sample_k1_per_key=config_d["dual_group_sampler_k1_per_key"],
-                sample_k2_per_key=config_d["dual_group_sampler_k2_per_key"],
-                generator=generator,
-            )
-        else:
-            return_batch_at = config_d["eval_batch_size"]
-            batch_sampler = SpecMolFragDynamicBatchSampler(
-                ds,
-                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
-                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
-                skip_too_big=False,
-                return_batch_at=return_batch_at,
-                sampler=sampler,
-            )
+    batch_sampler = model_hooks.build_batch_sampler(ds, config_d, sampler, generator)
+    if batch_sampler is not None:
         dl_param_d["batch_sampler"] = batch_sampler
     else:
         # Standard batching
@@ -1114,22 +1020,9 @@ def run_training(
         trainer_param_d["accumulate_grad_batches"] = config_d["accumulate_grad_batches"]
         trainer_param_d["gradient_clip_val"] = config_d["gradient_clip_val"]
         trainer_param_d["gradient_clip_algorithm"] = config_d["gradient_clip_algorithm"]
-        if config_d["num_workers"] > 0 and config_d["model_type"] != "masster":
-            # little hack to prevent memory explosion
-            # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
-            # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
-            # MASSter is exempt: it uses SpecMolDataset, which has no frag_pl_sd/frag_pp_sd
-            # fragment caches, so worker RSS stays bounded and respawning only discards the
-            # spectrum/molecule preprocessing caches.
-            trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
-    elif config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
-        # with out this progress will not track dataset length change
-        # this will call train_dataloader and val_dataloader before every epoch
-        # not sure why this fixed our problem but it works
-        trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
-        # Use per-epoch batch indices for validation checks. DAG curriculum training also
-        # refreshes Lightning's cached train/validation batch counts after sampler updates.
-        trainer_param_d["check_val_every_n_epoch"] = 1
+    # Dataloader reloading and validation cadence depend on the model's batching.
+    model_hooks = registry.get_model_hooks(config_d["model_type"])
+    trainer_param_d.update(model_hooks.trainer_options(config_d))
 
     trainer = L.Trainer(**trainer_param_d)
 

@@ -92,7 +92,9 @@ EPOCHS = tuple(range(6))
 RESUME_AT = (1, 4)  # each resume check replays epochs N and N + 1
 # Everything SpectrumPL._setup_sampler and SpectrumPL._seed_dataloader read from hparams. The
 # stub carries only these, so a hook that starts reading another hyperparameter fails the test.
+# model_type joined in Phase 4: _seed_dataloader asks the model's hooks whether to advance.
 HOOK_HPARAMS = (
+    "model_type",
     "seed",
     "max_epochs",
     "train_batch_size",
