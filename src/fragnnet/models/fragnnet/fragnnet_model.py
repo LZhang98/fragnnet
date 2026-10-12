@@ -1413,11 +1413,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_node_mask = th_long_to_mask(
                 get_node_feats(frag_x, frag_node_feat_idxs, "cc").to(device)
             )
+            # Bits at or beyond the owning molecule's atom count are padding. Once offset to
+            # global atom indices they would address atoms of later molecules in the batch,
+            # so every derived mask (complement, corruption flips) must stay within these bits.
+            frag_mol_num_atoms = mol_batch_counts[frag_batch].unsqueeze(1)
+            frag_atom_bits = th.arange(frag_node_mask.shape[1], device=device) < frag_mol_num_atoms
         if "cc" in self.frag_node_feats:
             cc_mask = frag_node_mask
             if self.cc_corruption_frac > 0.0:
                 flip = th.rand_like(cc_mask, dtype=float_dtype) < self.cc_corruption_frac
-                cc_mask = cc_mask ^ flip
+                cc_mask = (cc_mask ^ flip) & frag_atom_bits
             if self.training and self.cc_atom_dropout > 0.0:
                 # per-atom dropout: independently drop atoms from each fragment's membership set
                 drop = th.rand_like(cc_mask, dtype=float_dtype) < self.cc_atom_dropout
@@ -1477,18 +1482,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # 6. direct: No fusion, use fragment embedding only
 
             if self.cc_interstage_use_rest:
-                # compute rest node idxs (non-CC atoms per fragment)
-                # NOTE: ~frag_node_mask includes padding zeros (bits beyond mol size) so
-                # bounds-filtering is required to exclude them.
-                rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
+                # compute rest node idxs (non-CC atoms per fragment); a full-molecule fragment
+                # has an empty rest, so dim_size keeps one output row per fragment
+                rest_node_mask_idx = th.nonzero(~frag_node_mask & frag_atom_bits).long()
                 rest_node_offsets = mol_num_nodes[
                     th.bucketize(rest_node_mask_idx[:, 0], frag_num_nodes, right=True) - 1
                 ]
                 rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
-                valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
-                rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
                 rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
-                mol_pool_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
+                mol_pool_embed = self.mol_pool(
+                    rest_node_embed, rest_node_mask_idx[:, 0], dim_size=batch_frag_num_nodes
+                )
             else:
                 mol_pool_embed = mol_embed_gnn_pool[frag_batch]
 

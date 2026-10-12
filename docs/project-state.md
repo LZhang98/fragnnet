@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-11
+> **Status:** REFERENCE · **Updated:** 2026-10-12
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -84,6 +84,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## FraGNNet
 
+- **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed in the working tree with a regression test; probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
 - **Shared reorganization done** (branch, not merged; [progress](plans/repo_reorg_plan.md#progress)): FraGNNet is in `src/fragnnet/models/fragnnet/`. MCES pretraining (and fine-tuning from it), ChemLM and CLIP were retired 2026-10-12.
 
 - **Dormant since September.** Best `pqx7ywc9` 0.7555 `cos_hun_inst_tol` (NIST20 test). The DAG
@@ -91,8 +92,9 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
   after the 2026-09-26 sampler fix before submitting.
 
-## Uncommitted working tree (2026-10-11)
+## Uncommitted working tree (2026-10-12)
 
+- FraGNNet cc-mask padding fix in `fragnnet_model.py` + `tests/test_fragnnet_mask_padding.py`; audit and probe-caveat doc edits.
 - Reorganization plan and hub/dashboard updates record the external ICEBERG/ms-pred decision;
   source code and environment are unchanged. Prior RT/CCS and augmentation entries are no
   longer working-tree changes according to the current Git status.

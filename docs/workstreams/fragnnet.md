@@ -4,7 +4,8 @@
 > FraGNNet (NodeMLP over the bond-cut fragmentation DAG): DAG generation, recall and pruning, oracle ceilings, intensity ranking, FluxMPNN, contender-pair training, GLACIER gap, and the cross-model conditioning and reranking plans.
 
 ## Where it stands
-- **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–7 are committed on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
+- **Simplification audit complete:** [findings](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). Its cc-mask padding leak (rest pooling and the cc-corruption probe pulled atoms from other molecules in the batch) is fixed in the working tree, not committed, with a regression test. Next: remove dead loss branches, then deduplicate DAG insertion and head conditioning.
+- **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–9 are committed on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
 - **No active FraGNNet work.** project-state shows all work since September 2026 on MASSter (see [MASSter core](masster_core.md)); Stage A is PREPARED; the other plans are deferred, proposed, landed or closed.
 - **Best FraGNNet numbers cited in docs:** `pqx7ywc9` scores 0.7555 `cos_hun_inst_tol` on the NIST20 test split (`nist20_ma_mi_inchikey`, 96,128 spectra) and 0.7612 on FT `[M+H]+` at 0.1 Da bins, 0.077 below GLACIER's 0.838 ([gap finding](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)). The DAG oracle ceiling is 0.937 cos_hun (0.959 at instrument tolerance), so the gap is intensity ranking and allocation, not coverage ([ceiling](../findings/fragnnet/dag_oracle_ceiling_nist20.md)).
 - **Prepared, not submitted:** FT contender-pair Stage A, four Fir arms `c0`/`c1`/`p1`/`p2` under `config/exp_fraggnn_ma_mi/ce_pair_2026_09_23/`, generator `scripts/manual_slurm/fir/submit_fraggnn_ce_pair.sh` ([plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md)). The `ce_context` sampler packing fix (2026-09-26) is committed and post-dates the budget, so re-measure steps per epoch before submitting.
@@ -14,6 +15,7 @@
 ## Open threads
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Code simplification audit](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md) | FINDING | Padding leak fixed (uncommitted); remove dead loss branches, then deduplicate operations |
 | [FT contender-pair training](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md) | PREPARED | Re-measure sampler budget post-fix, submit Stage A on Fir, read p1/p2 vs c1 |
 | [Global fragment intensity ranking](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) | PROPOSED | Phase 2 gates on an unfiltered matched NodeMLP export; after Stage A |
 | [Complementary-cut supervision](../plans/fragnnet/complementary_cut_supervision_experiment_plan.md) | PROPOSED | Matched GINE-1 gates; lower priority than global ranking |
@@ -39,7 +41,7 @@
 - [Ranking findings](../findings/fragnnet/fragment_intensity_ranking_findings.md) — base-peak accuracy 57.4%; model follows CE winner switches in only 38.5% of cases.
 - [CE-extent null](../findings/fragnnet/ce_extent_headroom_finding.md) — CE -> deeper-fragmentation prior has no headroom; kills CFM stop head and `depth_ce_bias`.
 - [GLACIER gap](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) — 0.077 gap all at high CE; allocation not coverage; uniform low-CE rate would give 0.835.
-- [cc-corruption probe](../findings/fragnnet/cc_corruption_probe_finding.md) — fragment identity IS used (cos 0.82 -> 0.61); gap is comparative scoring.
+- [cc-corruption probe](../findings/fragnnet/cc_corruption_probe_finding.md) — fragment identity IS used (cos 0.82 -> 0.61); gap is comparative scoring. Magnitudes unverified: the corruption leaked atoms across molecules (fixed 2026-10-12, not rerun).
 
 **Models and losses**
 - [FluxMPNN STOPPED](../plans/fragnnet/fluxmpnn_plan.md#stage-3-trained-verdict-and-ceilings-from-local-memory-verified-2026-10-06) — conserved DAG flow null-to-harmful (`replace` 0.6244 vs control 0.7118; `residual` exactly neutral); learned beta explains 72% of itself, 18% of real branching; edge-beta identifiability needs an arborescence (87.7% multi-parent after min-depth pruning).
@@ -55,7 +57,8 @@
 ## All documents
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [cc_corruption_probe_finding](../findings/fragnnet/cc_corruption_probe_finding.md) | FINDING (2026-07-16) | Fragment identity representation is used |
+| [fragnnet_simplification_audit_2026_10_12](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | cc-mask padding leak (fixed) and prioritized behavior-preserving cleanup |
+| [cc_corruption_probe_finding](../findings/fragnnet/cc_corruption_probe_finding.md) | FINDING (2026-10-12) | Fragment identity representation is used |
 | [ce_extent_headroom_finding](../findings/fragnnet/ce_extent_headroom_finding.md) | CLOSED NULL (2026-07-16) | CE -> extent prior has no headroom |
 | [dag_oracle_ceiling_nist20](../findings/fragnnet/dag_oracle_ceiling_nist20.md) | FINDING (2026-08-28) | Model-free DAG ceiling 0.937 |
 | [dominant_peak_outcome_decomposition](../findings/fragnnet/dominant_peak_outcome_decomposition.md) | FINDING (2026-08-13) | Base-peak failure ~7:1 ranking |
