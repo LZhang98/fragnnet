@@ -16,13 +16,16 @@ from __future__ import annotations
 
 import logging
 import math
+import warnings
 from functools import lru_cache
 from typing import Any
 
+import numpy as np
 import torch as th
 from rdkit import Chem
 
 from fragnnet.frag.masster_candidates import MassterStaticGraph
+from fragnnet.frag.masster_export import masster_annotation_tables
 from fragnnet.frag.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.frag.masster_templates import (
     MassterTemplate,
@@ -37,6 +40,7 @@ from fragnnet.fragmentation.candidate_support import (
 from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
+from fragnnet.hooks import ExportHooks
 from fragnnet.model import MassterModel
 from fragnnet.model.candidate_features import describe_candidate_features
 from fragnnet.model.loss import (
@@ -54,6 +58,7 @@ from fragnnet.utils.pl_utils import (
     migrate_masster_proposal_method,
 )
 from fragnnet.utils.spec_utils import (
+    aggregate_peaks_exact_mz,
     calculate_match_mzs,
     get_ints_transform_func,
 )
@@ -825,7 +830,7 @@ def _cross_ev_fragment_delta_loss(
     return losses, eligible_endpoints
 
 
-class MassterPL(SpectrumPL):
+class MassterPL(SpectrumPL, ExportHooks):
     """Train MASSter with SpectrumPL and FraGNNet's CE-pair objective.
 
     Attributes:
@@ -2617,3 +2622,137 @@ class MassterPL(SpectrumPL):
         transferred = super().transfer_batch_to_device(batch, device, dataloader_idx)
         transferred["masster_static_graph"] = static_graph
         return transferred
+
+    # Inference export hooks (fragnnet.hooks.ExportHooks). The tabular exporters build MASSter's
+    # formula, node and joint annotation per batch under FraGNNet's index names.
+    exports_annotation_axes = True
+    supports_rule_provenance = True
+
+    def inference_batch_options(self, exporter: str, need_annotation: bool) -> dict[str, Any]:
+        # The tabular and HDF5 exports ask for the per-pathway annotation tensors, which default
+        # off; the pickle export never does.
+        if exporter == "tabular":
+            return {"return_explainability_tensors": need_annotation}
+        return {}
+
+    def postprocess_export_peaks(
+        self,
+        batch_input: dict[str, Any],
+        batch_result: dict[str, Any],
+        peaks: tuple[Any, Any, Any],
+        *,
+        need_annotation: bool,
+        return_cc_hash: bool,
+        return_rule_provenance: bool,
+    ) -> tuple[tuple[Any, Any, Any], Any]:
+        # MASSter returns one row per candidate fragment, and the connected fragments that share
+        # a formula (about 4.5 per peak at the 0.1% cut) sit at one m/z. Every score sums them before
+        # matching (`round_aggregate_peaks` in `calculate_all_auxiliary_metrics`), so the export
+        # does the same: one row per peak, `min_peak_int` below filters peaks rather than
+        # candidates, and the base peak rescale is taken over peaks. The exact m/z is kept (not the
+        # 4-decimal key), so a 0.01 Da rebinning of the export matches the model's `cos_sim_0.01`.
+        pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = peaks
+        masster_annotation = None
+        pathway_ints = pred_ints_raw
+        aggregated = aggregate_peaks_exact_mz(
+            pred_mzs_batched,
+            pred_ints_raw,
+            pred_batch_idxs_batched,
+            agg="sum" if self.hparams.sum_ints else "amax",
+            return_inverse=need_annotation,
+        )
+        pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregated[:3]
+        if need_annotation and "pred_pathway_isotope_offsets" in batch_result:
+            # The tables would give an isotope row its monoisotopic formula at m/z + offset.
+            raise NotImplementedError(
+                "MASSter annotation export does not label isotope rows "
+                "(masster_isotope_envelope: natural); export without explanations"
+            )
+        if need_annotation:
+            mol_pyg = batch_input["mol_pyg"]
+            masster_annotation = masster_annotation_tables(
+                pathway_peak_idxs=aggregated[3],
+                peak_batch_idxs=pred_batch_idxs_batched,
+                pathway_ints=pathway_ints,
+                pathway_fragment_idxs=batch_result["pred_pathway_fragment_idxs"],
+                pathway_ion_mode_idxs=batch_result["pred_pathway_ion_mode_idxs"],
+                pathway_h_shifts=batch_result["pred_pathway_h_shifts"],
+                fragment_batch_idxs=batch_result["ion_h_fragment_batch_idxs"],
+                fragment_atom_indices=batch_result["fragment_atom_indices"],
+                fragment_atom_fragment_idxs=batch_result["fragment_atom_fragment_idxs"],
+                atom_atomic_numbers=mol_pyg.atom_atomic_numbers,
+                atom_hydrogen_counts=mol_pyg.atom_hydrogen_counts,
+                atom_ptr=mol_pyg.ptr,
+                precursor_types=[
+                    self.model.precursor_types[i]
+                    for i in batch_input["spec_prec_type"].reshape(-1).tolist()
+                ],
+                return_node_ccs=return_cc_hash,
+                fragment_rule_fragment_idxs=(
+                    batch_result["fragment_rule_fragment_idxs"] if return_rule_provenance else None
+                ),
+                fragment_rule_idxs=(
+                    batch_result["fragment_rule_idxs"] if return_rule_provenance else None
+                ),
+            )
+            if masster_annotation.num_multi_formula_peaks:
+                warnings.warn(
+                    f"{masster_annotation.num_multi_formula_peaks} MASSter peaks hold more than "
+                    "one formula row; frag_formula_peak_idxs links each to its most intense "
+                    "one, and min_peak_int > 0 prunes the others with their joint cells.",
+                    stacklevel=3,
+                )
+            # The code below reads these where FraGNNet's model output and DAG dataset put
+            # them, so from here on the MASSter annotation takes FraGNNet's path unchanged.
+            batch_result.update(
+                {
+                    "pred_formula_batch_idxs": masster_annotation.formula_batch_idxs,
+                    "pred_formula_formula_idxs": th.arange(
+                        len(masster_annotation.formula_batch_idxs), device=pathway_ints.device
+                    ),
+                    "pred_formula_logprobs": masster_annotation.formula_logprobs,
+                    "pred_joint_batch_idxs": masster_annotation.joint_batch_idxs,
+                    "pred_joint_formula_idxs": masster_annotation.joint_formula_idxs,
+                    "pred_joint_node_idxs": masster_annotation.joint_node_idxs,
+                    "pred_formula_node_logprobs": masster_annotation.formula_node_logprobs,
+                    "pred_node_formula_logprobs": masster_annotation.node_formula_logprobs,
+                    "pred_node_batch_idxs": masster_annotation.node_batch_idxs,
+                    "pred_node_node_idxs": th.arange(
+                        len(masster_annotation.node_batch_idxs), device=pathway_ints.device
+                    ),
+                    "pred_node_logprobs": masster_annotation.node_logprobs,
+                }
+            )
+            batch_input.update(
+                {
+                    "frag_formula_peak_idxs": masster_annotation.frag_formula_peak_idxs,
+                    "frag_formula_cumsizes": masster_annotation.formula_cumsizes,
+                    "frag_num_nodes": masster_annotation.node_cumsizes,
+                    "frag_formula_str": masster_annotation.formula_strs,
+                }
+            )
+        return (pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched), masster_annotation
+
+    def export_formula_row_deltas(
+        self, batch_input: dict[str, Any], formula_cumsizes: Any, annotation: Any
+    ) -> Any:
+        # MASSter builds its deltas with its formula rows (`masster_annotation_tables`).
+        return annotation.formula_deltas if annotation is not None else None
+
+    def export_node_ccs(self, frag_pyg: Any, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
+        if annotation is None or annotation.node_ccs is None:
+            return np.nan
+        # One batch-wide table, so the spectrum's node offset turns its per-molecule
+        # indices back into rows of it.
+        n_offset = annotation.node_cumsizes[b_idx]
+        if node_idxs is None:
+            return np.nan
+        return annotation.node_ccs[node_idxs.long() + n_offset].detach().cpu()
+
+    def export_node_rules(self, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
+        # Same batch-wide node table and lookup as the cc bitmasks above.
+        if annotation is None or annotation.node_rules is None or node_idxs is None:
+            return np.nan
+        n_offset = annotation.node_cumsizes[b_idx]
+        return annotation.node_rules[(node_idxs.long() + n_offset).cpu().numpy()].tolist()
+

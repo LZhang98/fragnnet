@@ -1,18 +1,5 @@
 {
-  "ast_violations": {
-    "fragnnet.utils.script_utils -> fragnnet.frag.masster_templates": [
-      "MASSTER_RULE_VOCABULARY"
-    ],
-    "fragnnet.utils.script_utils -> fragnnet.pl_model.fragnnet_pl": [
-      "FraGNNetPL"
-    ],
-    "fragnnet.utils.script_utils -> fragnnet.pl_model.masster_pl": [
-      "MassterPL"
-    ],
-    "fragnnet.utils.script_utils -> fragnnet.utils.frag_utils": [
-      "get_node_feats"
-    ]
-  },
+  "ast_violations": {},
   "isolation_entry_modules": {
     "fragnnet.dataset.base_dataset": {},
     "fragnnet.dataset.data_sampler": {},
@@ -22,34 +9,7 @@
     "fragnnet.utils.feat_utils": {},
     "fragnnet.utils.pl_utils": {},
     "fragnnet.utils.proc_utils": {},
-    "fragnnet.utils.script_utils": {
-      "fragmentation": [
-        "fragnnet.fragmentation",
-        "fragnnet.fragmentation.candidate_support",
-        "fragnnet.fragmentation.cut_bond_encoder",
-        "fragnnet.fragmentation.hydrogen_cap",
-        "fragnnet.fragmentation.smarts_prepass"
-      ],
-      "fragnnet": [
-        "fragnnet.frag.compute_frags",
-        "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
-        "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_hooks",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
-      ]
-    }
+    "fragnnet.utils.script_utils": {}
   },
   "isolation_model_selection": {
     "chemlm": {},
@@ -123,6 +83,7 @@
       ],
       "masster": [
         "fragnnet.frag.masster_candidates",
+        "fragnnet.frag.masster_export",
         "fragnnet.frag.masster_fast_gnn",
         "fragnnet.frag.masster_hooks",
         "fragnnet.frag.masster_templates",

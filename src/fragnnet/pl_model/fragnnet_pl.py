@@ -1,7 +1,9 @@
 import logging
 import math
+import warnings
 from typing import Any, Literal
 
+import numpy as np
 import torch as th
 import torch._dynamo as th_dynamo
 import torch.nn.functional as F
@@ -18,6 +20,7 @@ from fragnnet.fragmentation.candidate_support import (
     balanced_binary_support_loss,
     observational_channel_targets,
 )
+from fragnnet.hooks import ExportHooks
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import (
     get_cross_jss_contrastive,
@@ -37,6 +40,8 @@ from fragnnet.model.loss import (
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
 from fragnnet.pl_model import SpectrumPL
+from fragnnet.utils.formula_utils import formula_row_prec_deltas
+from fragnnet.utils.frag_utils import get_node_feats
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
 from fragnnet.utils.nn_utils import (
     build_lr_scheduler,
@@ -91,7 +96,20 @@ def _formula_support_targets(
     ).detach()
 
 
-class FraGNNetPL(SpectrumPL):
+# Index variables of the nb_iso (isomorphic-neighbourhood) outputs, rebatched by the exporter.
+_NB_BATCH_IDX_VARS = (
+    "pred_nb_node_batch_idxs",
+    "pred_nb_joint_batch_idxs",
+    "pred_nb_node_node_batch_idxs",
+)
+_NB_FORMULA_IDX_VARS = ("pred_nb_joint_formula_idxs",)
+_NB_NODE_IDX_VARS = (
+    "pred_nb_node_node_idxs",
+    "pred_nb_joint_node_idxs",
+    "pred_nb_node_node_node_idxs",
+)
+
+class FraGNNetPL(SpectrumPL, ExportHooks):
     hparams: Any
 
     def _setup_model(self):
@@ -1590,3 +1608,70 @@ class FraGNNetPL(SpectrumPL):
         super().optimizer_step(*args, **kwargs)
         opt = self.optimizers()
         self.on_after_optimizer_step(opt)
+
+    # Inference export hooks (fragnnet.hooks.ExportHooks). FraGNNet's model emits the formula,
+    # node and joint annotation, plus the nb_iso outputs when that head is on.
+    exports_annotation_axes = True
+
+    def export_index_vars(
+        self, nb_iso: bool
+    ) -> tuple[list[str], list[str], list[str], list[str]]:
+        batch, node, formula, nb_node = super().export_index_vars(False)
+        if nb_iso:
+            batch.extend(_NB_BATCH_IDX_VARS)
+            formula.extend(_NB_FORMULA_IDX_VARS)
+            nb_node.extend(_NB_NODE_IDX_VARS)
+        return batch, node, formula, nb_node
+
+    def nb_index_vars(self) -> tuple[set[str], set[str], set[str]]:
+        return set(_NB_BATCH_IDX_VARS), set(_NB_FORMULA_IDX_VARS), set(_NB_NODE_IDX_VARS)
+
+    def inference_batch_options(self, exporter: str, need_annotation: bool) -> dict[str, Any]:
+        # Single switch: tell the model whether this export will read the marginals. Passing
+        # it either way is the point - the model defaults to True, so only an explicit False
+        # buys the skip.
+        return {"return_explainability_tensors": need_annotation}
+
+    def export_formula_row_deltas(
+        self, batch_input: dict[str, Any], formula_cumsizes: Any, annotation: Any
+    ) -> Any:
+        # The dataset lays formula rows out as NULL, CRF[1:F], CMF[1:F], so the delta a row
+        # carries depends on which half it is in; `formula_row_prec_deltas` is the same split
+        # the model applies when it builds ion formula strings.
+        # Degrade to NaN like every sibling field rather than raising: `spec_prec_type_str`
+        # exists only when spec_params.prec_type_str is on (False in config/template.yml and
+        # in nearly every experiment config), and it is `apply_inference_config` that forces
+        # it on. A caller reaching this function another way - a notebook, a future script, a
+        # unit-level call - would otherwise get a KeyError mid-export instead of a column of
+        # NaN. Warned rather than silent, because a missing adduct makes the neutral
+        # `pred_formula_strs` ambiguous, which is the whole reason this column exists.
+        # `frag_formula_cumsizes` needs no such guard: an annotation flag forces the
+        # formula axis into the index vars, and batch_filter_by_peak_intensity above
+        prec_type_strs = batch_input.get("spec_prec_type_str")
+        if prec_type_strs is None:
+            warnings.warn(
+                "formula annotation was requested but the batch has no "
+                "'spec_prec_type_str' (spec_params.prec_type_str is off); "
+                "pred_formula_adducts will be NaN. Build the config with "
+                "apply_inference_config, which turns that key on.",
+                stacklevel=3,
+            )
+            return None
+        return formula_row_prec_deltas(
+            prec_type_strs,
+            formula_cumsizes.cpu().tolist(),
+            include_cmf="cmf_h_formulae_idx" in self.model.frag_node_feats,
+            max_h_transfer=self.model.num_hs,
+        )
+
+    def export_node_ccs(self, frag_pyg: Any, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
+        # The DAG dataset's per-node cc bitmasks, at the spectrum's (pre-rebase) node indices.
+        if frag_pyg is None:
+            return np.nan
+        i_frag_pyg = frag_pyg[b_idx]
+        node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
+        all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
+        if node_idxs is None:
+            return np.nan
+        return all_node_ccs[node_idxs.long()].detach().cpu()
+
