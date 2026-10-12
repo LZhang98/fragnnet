@@ -16,7 +16,7 @@ except ImportError:
     profiler_available = False
 import os
 
-from fragnnet.hooks import ExportHooks
+from fragnnet.export_adapter import ExportAdapter
 from fragnnet.loss.channel_support import (
     balanced_binary_support_loss,
     observational_channel_targets,
@@ -110,7 +110,7 @@ _NB_NODE_IDX_VARS = (
     "pred_nb_node_node_node_idxs",
 )
 
-class FraGNNetPL(SpectrumPL, ExportHooks):
+class FraGNNetPL(SpectrumPL, ExportAdapter):
     hparams: Any
 
     def _setup_model(self):
@@ -1610,8 +1610,8 @@ class FraGNNetPL(SpectrumPL, ExportHooks):
         opt = self.optimizers()
         self.on_after_optimizer_step(opt)
 
-    # Inference export hooks (fragnnet.hooks.ExportHooks). FraGNNet's model emits the formula,
-    # node and joint annotation, plus the nb_iso outputs when that head is on.
+    # Inference export adapter (fragnnet.export_adapter.ExportAdapter). FraGNNet's model emits
+    # the formula, node and joint annotation, plus the nb_iso outputs when that head is on.
     exports_annotation_axes = True
 
     def export_index_vars(

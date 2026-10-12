@@ -1,17 +1,19 @@
-"""Export hooks (reorganization plan Phase 4 step 5b).
+"""Export adapter (reorganization plan Phase 4 step 5b; ``ExportHooks`` until Phase 8
+follow-ups, now ``fragnnet.export_adapter.ExportAdapter``).
 
-The inference exporters in ``fragnnet.utils.script_utils`` call ``fragnnet.hooks.ExportHooks``
-methods on the model they hold instead of branching on ``FraGNNetPL``/``MassterPL``. The export
+The inference exporters in ``fragnnet.utils.script_utils`` call
+``fragnnet.export_adapter.ExportAdapter`` methods on the model they hold instead of branching on
+``FraGNNetPL``/``MassterPL``. The export
 records in ``test_reorg_export.py`` pin the behavior; this file covers what they do not reach:
 the nb_iso index variables (no export fixture turns nb_iso on), the per-exporter explainability
-switch, and the fallback for objects that are not export-hook models.
+switch, and the fallback for objects that are not export-adapter models.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from fragnnet.hooks import ExportHooks
+from fragnnet.export_adapter import ExportAdapter
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils import script_utils
@@ -89,11 +91,11 @@ def test_required_index_vars_add_the_nb_iso_names_for_fragnnet_only() -> None:
 )
 def test_explainability_switch_per_model_and_exporter(model, exporter, expected) -> None:
     """FraGNNet gets the switch from both exporters; MASSter only from the tabular ones."""
-    hooks = {"plain": ExportHooks(), "fragnnet": _stub(FraGNNetPL), "masster": _stub(MassterPL)}
+    hooks = {"plain": ExportAdapter(), "fragnnet": _stub(FraGNNetPL), "masster": _stub(MassterPL)}
     assert hooks[model].inference_batch_options(exporter, False) == expected
 
 
 def test_capability_flags() -> None:
-    assert not ExportHooks.exports_annotation_axes and not ExportHooks.supports_rule_provenance
+    assert not ExportAdapter.exports_annotation_axes and not ExportAdapter.supports_rule_provenance
     assert FraGNNetPL.exports_annotation_axes and not FraGNNetPL.supports_rule_provenance
     assert MassterPL.exports_annotation_axes and MassterPL.supports_rule_provenance

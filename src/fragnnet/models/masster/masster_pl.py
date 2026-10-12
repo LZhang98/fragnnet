@@ -24,7 +24,7 @@ import numpy as np
 import torch as th
 from rdkit import Chem
 
-from fragnnet.hooks import ExportHooks
+from fragnnet.export_adapter import ExportAdapter
 from fragnnet.loss.channel_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
@@ -831,7 +831,7 @@ def _cross_ev_fragment_delta_loss(
     return losses, eligible_endpoints
 
 
-class MassterPL(SpectrumPL, ExportHooks):
+class MassterPL(SpectrumPL, ExportAdapter):
     """Train MASSter with SpectrumPL and FraGNNet's CE-pair objective.
 
     Attributes:
@@ -2624,8 +2624,8 @@ class MassterPL(SpectrumPL, ExportHooks):
         transferred["masster_static_graph"] = static_graph
         return transferred
 
-    # Inference export hooks (fragnnet.hooks.ExportHooks). The tabular exporters build MASSter's
-    # formula, node and joint annotation per batch under FraGNNet's index names.
+    # Inference export adapter (fragnnet.export_adapter.ExportAdapter). The tabular exporters
+    # build MASSter's formula, node and joint annotation per batch under FraGNNet's index names.
     exports_annotation_axes = True
     supports_rule_provenance = True
 

@@ -16,7 +16,7 @@ import torch as th
 from tqdm import tqdm
 
 from fragnnet import registry
-from fragnnet.hooks import ExportHooks
+from fragnnet.export_adapter import ExportAdapter
 from fragnnet.runner import load_config
 from fragnnet.utils.dag_format_utils import PACKED_DAG_INDEX_DATASET
 from fragnnet.utils.formula_utils import (
@@ -816,7 +816,7 @@ def required_index_vars_for_outputs(
 
     # Model-specific adjustments: the nb_iso outputs' index vars, for models that have them
     if nb_iso:
-        nb_batch, nb_formula, nb_node = _export_hooks(model).nb_index_vars()
+        nb_batch, nb_formula, nb_node = _export_adapter(model).nb_index_vars()
         req_batch |= nb_batch
         req_formula |= nb_formula
         req_nb_node |= nb_node
@@ -841,12 +841,12 @@ def get_required_config_indices(
     )
 
 
-_DEFAULT_EXPORT_HOOKS = ExportHooks()
+_DEFAULT_EXPORT_ADAPTER = ExportAdapter()
 
 
-def _export_hooks(model: Any) -> ExportHooks:
-    """The model's export hooks; any other object (or None) gets the defaults."""
-    return model if isinstance(model, ExportHooks) else _DEFAULT_EXPORT_HOOKS
+def _export_adapter(model: Any) -> ExportAdapter:
+    """The model's export adapter; any other object (or None) gets the defaults."""
+    return model if isinstance(model, ExportAdapter) else _DEFAULT_EXPORT_ADAPTER
 
 
 def get_idx_vars(
@@ -867,7 +867,7 @@ def get_idx_vars(
             Final set of output keys
     """
     # Determine which index variables to track
-    BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = _export_hooks(
+    BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = _export_adapter(
         model
     ).export_index_vars(nb_iso)
 
@@ -977,7 +977,7 @@ def run_inference_pkl(
     cum_num_formulas = 0
     cum_num_nb_nodes = 0
 
-    export_hooks = _export_hooks(model)
+    export_adapter = _export_adapter(model)
     BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = get_idx_vars(
         output_set,
         model,
@@ -1009,7 +1009,7 @@ def run_inference_pkl(
                 {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
                 or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
             )
-            batch_input.update(export_hooks.inference_batch_options("pkl", _need_expl))
+            batch_input.update(export_adapter.inference_batch_options("pkl", _need_expl))
 
             # Run inference. `evaluate` only adds ground-truth scoring; the predicted
             # intensities have the same meaning either way.
@@ -1698,8 +1698,8 @@ def process_batch_to_tabular_row(
     selected_columns = selected_column_specs(
         return_formula_str, return_cc_hash, return_rule_provenance
     )
-    export_hooks = _export_hooks(model)
-    if return_rule_provenance and not export_hooks.supports_rule_provenance:
+    export_adapter = _export_adapter(model)
+    if return_rule_provenance and not export_adapter.supports_rule_provenance:
         raise ValueError("return_rule_provenance is a MASSter SMARTS annotation")
     spec_ids = batch_input["spec_unique_id"]
     mol_ids = batch_input["mol_id"]
@@ -1714,7 +1714,7 @@ def process_batch_to_tabular_row(
         {"pred_formula_formula_idxs"} & set(FORMULA_IDX_VARS)
         or {"pred_node_node_idxs"} & set(NODE_IDX_VARS)
     )
-    batch_input.update(export_hooks.inference_batch_options("tabular", _need_expl))
+    batch_input.update(export_adapter.inference_batch_options("tabular", _need_expl))
     with th.inference_mode():
         # `evaluate` only adds ground-truth scoring; the predicted intensities have the
         # same meaning either way.
@@ -1729,7 +1729,7 @@ def process_batch_to_tabular_row(
     # The model may rewrite the peaks it exports (MASSter sums its candidate rows per peak) and
     # build its annotation tables (MASSter), which the steps below read.
     (pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched), annotation = (
-        export_hooks.postprocess_export_peaks(
+        export_adapter.postprocess_export_peaks(
             batch_input,
             batch_result,
             (pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched),
@@ -1921,7 +1921,7 @@ def process_batch_to_tabular_row(
     # annotation tables.
     formula_row_deltas = None
     if return_formula_str or return_cc_hash:
-        formula_row_deltas = export_hooks.export_formula_row_deltas(
+        formula_row_deltas = export_adapter.export_formula_row_deltas(
             batch_input, frag_formula_cumsizes, annotation
         )
 
@@ -2067,12 +2067,12 @@ def process_batch_to_tabular_row(
         if return_cc_hash or return_rule_provenance:
             b_node_idxs = orig_node_idxs_for_lookup if rebase_indices else b_pred_node_node_idxs
         if return_cc_hash:
-            row_d["pred_node_ccs"] = export_hooks.export_node_ccs(
+            row_d["pred_node_ccs"] = export_adapter.export_node_ccs(
                 frag_pyg, b_idx, b_node_idxs, annotation
             )
 
         if return_rule_provenance:
-            row_d["pred_node_rules"] = export_hooks.export_node_rules(
+            row_d["pred_node_rules"] = export_adapter.export_node_rules(
                 b_idx, b_node_idxs, annotation
             )
 
