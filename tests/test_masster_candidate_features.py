@@ -28,7 +28,6 @@ from torch_geometric.data import Batch
 
 import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder
-from fragnnet.models.fragnnet.frag_utils import CANONICAL_ELEMENT_ORDER
 from fragnnet.models.masster.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     boundary_bond_endpoint_orientation,
@@ -46,6 +45,7 @@ from fragnnet.models.masster.candidate_features import (
     resolve_candidate_features,
 )
 from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER
 from tests.test_masster_model import _build_batch, _build_model
 
 

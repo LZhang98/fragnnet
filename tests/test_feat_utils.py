@@ -1265,14 +1265,14 @@ class TestSharedElementOrder:
         return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
 
     def test_featurizing_does_not_grow_the_shared_element_list(self, aspirin_mol):
-        from fragnnet.models.fragnnet import frag_utils
+        from fragnnet.utils import formula_utils
 
-        before = list(frag_utils.CANONICAL_ELEMENT_ORDER)
+        before = list(formula_utils.CANONICAL_ELEMENT_ORDER)
         AtomOneHot.featurize(aspirin_mol.GetAtomWithIdx(0))
 
-        assert before == frag_utils.CANONICAL_ELEMENT_ORDER
-        assert None not in frag_utils.CANONICAL_ELEMENT_ORDER
-        assert AtomOneHot.allowable_set is not frag_utils.CANONICAL_ELEMENT_ORDER
+        assert before == formula_utils.CANONICAL_ELEMENT_ORDER
+        assert None not in formula_utils.CANONICAL_ELEMENT_ORDER
+        assert AtomOneHot.allowable_set is not formula_utils.CANONICAL_ELEMENT_ORDER
 
 
 class TestGasteigerGraphField:

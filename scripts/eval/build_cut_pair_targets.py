@@ -61,13 +61,14 @@ import torch as th
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.models.fragnnet.frag_utils import MAX_H_TRANSFER, get_node_feats, th_long_to_mask
+from fragnnet.models.fragnnet.frag_utils import MAX_H_TRANSFER, get_node_feats
 from fragnnet.utils.data_utils import CHARGE_FACTOR_MAP, get_charge
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
     prec_type_removed_counts,
+    th_long_to_mask,
     tracked_element_counts,
 )
 from fragnnet.utils.spec_utils import calculate_match_mzs
@@ -709,13 +710,13 @@ def _process_mol_group(
     lod_tables: tuple[dict, dict, float],
 ) -> dict:
     """Build cut-pair target arrays for every spectrum of one molecule."""
-    import fragnnet.models.fragnnet.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
     by_inst_bin, by_inst, global_floor = lod_tables
     result = _empty_mol_result(group_rows)
     audit = result["audit"]
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return result
 

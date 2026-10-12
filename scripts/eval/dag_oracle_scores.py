@@ -64,7 +64,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 import fragnnet.utils.data_utils as data_utils
-import fragnnet.models.fragnnet.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper, jss_hun_helper
 
@@ -404,7 +404,7 @@ def _process_mol_group(
 ) -> list[dict]:
     """Load one molecule's DAG and score every one of its spectra against it."""
     try:
-        dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+        dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     except FileNotFoundError:
         dag_d = None  # molecule has no DAG on disk (folder backend raises rather than None)
     if dag_d is None:

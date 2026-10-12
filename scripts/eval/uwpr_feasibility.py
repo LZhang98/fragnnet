@@ -41,8 +41,8 @@ from dag_oracle_scores import (  # noqa: E402  (local script import)
 )
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
@@ -75,7 +75,7 @@ def _feasibility_for_mol(
     verdict = pd.Series("no_dag_file", index=rows.index, dtype=object)
 
     try:
-        dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+        dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     except FileNotFoundError:
         dag_d = None
     if dag_d is None:

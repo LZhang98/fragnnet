@@ -41,7 +41,7 @@ def test_metal_not_disconnected():
 
 def test_element_whitelist_contains_metals():
     """ELEMENT_TO_VE must include all three Tier-1 metals."""
-    from fragnnet.models.fragnnet.frag_utils import ELEMENT_TO_VE
+    from fragnnet.utils.formula_utils import ELEMENT_TO_VE
 
     for metal in ("Hg", "Sn", "Pb"):
         assert metal in ELEMENT_TO_VE, f"{metal} missing from ELEMENT_TO_VE"
@@ -49,6 +49,6 @@ def test_element_whitelist_contains_metals():
 
 def test_num_heavy_elements_matches_whitelist():
     """NUM_HEAVY_ELEMENTS must equal len(ELEMENT_TO_VE)."""
-    from fragnnet.models.fragnnet.frag_utils import ELEMENT_TO_VE, NUM_HEAVY_ELEMENTS
+    from fragnnet.utils.formula_utils import ELEMENT_TO_VE, NUM_HEAVY_ELEMENTS
 
     assert len(ELEMENT_TO_VE) == NUM_HEAVY_ELEMENTS

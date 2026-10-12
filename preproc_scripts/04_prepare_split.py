@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from fragnnet.models.fragnnet import frag_utils
+from fragnnet.utils import formula_utils
 from fragnnet.utils.misc_utils import booltype, np_temp_seed
 from fragnnet.utils.proc_utils import filter_spec_mol
 
@@ -511,7 +511,7 @@ if __name__ == "__main__":
         "--elements",
         type=str,
         nargs="+",
-        default=frag_utils.ELEMENTS,
+        default=formula_utils.ELEMENTS,
         help="Allowed elements for spectra/molecules",
     )
     parser.add_argument(

@@ -28,55 +28,22 @@ from fragnnet.models.fragnnet.multi_cut_bfs import (
     compute_ccs_multi_cut as _compute_ccs_multi_cut_cy,
 )
 from fragnnet.models.fragnnet.multi_cut_bfs import get_ring_edge_mask
-
-# The element tables, formula/mask helpers and size limits (core formula_utils) and the DAG
-# storage format (core dag_format_utils) moved out of this module in the reorganization
-# (docs/plans/repo_reorg_plan.md, Phase 3). The two imports marked noqa bring them back for use
-# here and re-export them for existing importers until Phase 6.
-from fragnnet.utils.dag_format_utils import (  # noqa: F401
-    PACKED_DAG_BYTES_CHUNK_SIZE,
-    PACKED_DAG_BYTES_DATASET,
-    PACKED_DAG_FORMAT,
-    PACKED_DAG_FORMAT_ATTR,
-    PACKED_DAG_INDEX_CHUNK_SIZE,
-    PACKED_DAG_INDEX_DATASET,
-    PACKED_DAG_INDEX_DTYPE,
-    PACKED_DAG_ZLIB_LEVEL,
-    _dump_pickle_file,
-    _legacy_frag_names,
-    _load_dag_hdf5_packed,
-    _load_pickle_file,
-    dump_dag_hdf5,
+from fragnnet.utils.dag_format_utils import (
     dump_dag_hdf5_packed,
-    dump_dag_pickle,
-    get_dag_output_path,
-    get_frag_fp,
-    get_frag_name,
     initialize_packed_dag_hdf5,
-    load_dag_hdf5,
-    load_dag_hdf5_from_group,
-    load_frag_d,
-    save_frag_d,
 )
 from fragnnet.utils.data_utils import mol_from_smiles, par_apply
-from fragnnet.utils.formula_utils import (  # noqa: F401
-    CANONICAL_ELEMENT_ORDER,
+from fragnnet.utils.formula_utils import (
     CANONICAL_H_IDX,
     ELEMENT_TO_IDX,
     ELEMENT_TO_VE,
-    ELEMENTS,
-    HEAVY_ELEMENTS,
-    IDX_TO_ELEMENT,
     MASK_SIZE,
     MAX_NUM_EDGES,
     MAX_NUM_NODES,
-    NUM_ELEMENTS,
-    NUM_HEAVY_ELEMENTS,
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     formula_arr_to_str,
     formula_to_peak_mzs,
-    th_long_to_mask,
     th_mask_to_long,
 )
 from fragnnet.utils.misc_utils import PPM, ProgressLogger, progress_wrapper

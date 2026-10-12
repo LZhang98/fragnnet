@@ -30,12 +30,14 @@ def test_ast_boundary_violations_match_golden() -> None:
 
 
 def test_layer_table_covers_every_module() -> None:
-    """Every src module classifies to a known layer, and the shared layers are not empty."""
-    files = reorg_layers._module_files()
-    layers = {reorg_layers.layer_of(m) for m in files}
-    assert {"core", "fragmentation", "fragnnet", "masster"} <= layers
-    for module in reorg_layers.FRAGMENTATION | reorg_layers.FRAGNNET | reorg_layers.MASSTER:
-        assert module in files or module in reorg_layers._compiled_modules(), module
+    """Every src module classifies to a known layer, and each layer package exists."""
+    modules = set(reorg_layers._module_files()) | reorg_layers._compiled_modules()
+    layers = {m: reorg_layers.layer_of(m) for m in modules}
+    assert not [m for m, layer in layers.items() if layer == "unclassified"]
+    assert {"core", "fragmentation", "fragnnet", "masster"} <= set(layers.values())
+    for package, layer in reorg_layers.LAYER_PACKAGES.items():
+        if layer != "baseline:iceberg":
+            assert package in modules, package
 
 
 def _probe_all(targets: tuple[str, ...]) -> dict:

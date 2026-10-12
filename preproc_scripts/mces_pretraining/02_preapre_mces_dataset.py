@@ -5,9 +5,8 @@ import h5py
 import pandas as pd
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.models.fragnnet.frag_utils import ELEMENTS
 from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
-from fragnnet.utils.formula_utils import parse_formula
+from fragnnet.utils.formula_utils import ELEMENTS, parse_formula
 
 # from scipy.spatial.distance import squareform
 

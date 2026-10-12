@@ -269,9 +269,9 @@ def _process_mol_group(
     Returns a dict of running sums for both brackets plus coverage counts, or None if the
     molecule's DAG explains no competable parent in any spectrum.
     """
-    import fragnnet.models.fragnnet.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]

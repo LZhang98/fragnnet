@@ -68,7 +68,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 import fragnnet.utils.data_utils as data_utils
-import fragnnet.models.fragnnet.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
@@ -203,7 +203,7 @@ def _process_mol_group(
     identical DAG-ion attribution as the true spectrum, so the two retained fractions are
     directly comparable.
     """
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return []
 

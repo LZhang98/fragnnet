@@ -10,9 +10,10 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 from tqdm import tqdm
 
-from fragnnet.models.fragnnet.frag_utils import get_node_feats, th_long_to_mask
+from fragnnet.models.fragnnet.frag_utils import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.formula_utils import th_long_to_mask
 from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
 from fragnnet.utils.spec_utils import calculate_match_mzs
 

@@ -1,14 +1,13 @@
 """Module-to-layer table and import-graph helpers for the repository reorganization.
 
-See docs/plans/repo_reorg_plan.md ("Target layout", Phase 0 item 10). Until Phase 6 the owner
-modules still live in core directories, so the dependency rule is checked against this explicit
-table rather than against directory names. Each module is assigned the layer it belongs to after
-the reorganization:
+See docs/plans/repo_reorg_plan.md ("Target layout", Phase 0 item 10). Phase 6 moved the owner
+modules into their own packages, so each module's layer follows from its directory:
 
-- ``core``: model-agnostic code (dataset/, model/, pl_model/, utils/, runner, registry).
-- ``fragmentation``: bond-cut chemistry shared by both fragment models.
-- ``fragnnet``, ``masster``: the two owner models.
-- ``baseline:<name>``: retained (graff, massformer) and retired (iceberg) baselines.
+- ``core``: model-agnostic code (dataset/, model/, pl_model/, utils/, runner, registry, hooks).
+- ``fragmentation``: bond-cut chemistry shared by both fragment models (fragmentation/).
+- ``fragnnet``, ``masster``: the two owner models (models/fragnnet/, models/masster/).
+- ``baseline:<name>``: retained baselines (baselines/graff/, baselines/massformer/) and the
+  retired ICEBERG.
 
 Allowed edges: a layer may import itself and core; owner models and baselines may also import
 ``fragmentation``. Everything else is a violation. Tests are exempt and are not scanned.
@@ -25,42 +24,19 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
-FRAGMENTATION = {
-    "fragnnet.fragmentation",
-    "fragnnet.fragmentation.candidate_support",
-    "fragnnet.fragmentation.cut_bond_encoder",
-    "fragnnet.fragmentation.hydrogen_cap",
-    "fragnnet.fragmentation.smarts_prepass",
-}
-FRAGNNET = {
-    "fragnnet.models.fragnnet.frag_data_sampler",
-    "fragnnet.models.fragnnet.iterable_spec_mol_frag_dataset",
-    "fragnnet.models.fragnnet.spec_mol_frag_dataset",
-    "fragnnet.models.fragnnet.compute_frags",
-    "fragnnet.models.fragnnet.fragnnet_hooks",
-    "fragnnet.models.fragnnet.multi_cut_bfs",
-    "fragnnet.models.fragnnet.fragment_competition",
-    "fragnnet.models.fragnnet.fragnnet_model",
-    "fragnnet.models.fragnnet.fragnnet_pl",
-    "fragnnet.models.fragnnet.frag_feat_utils",
-    # The remnant after the Phase 3 split; the element tables and DAG format are in core.
-    "fragnnet.models.fragnnet.frag_utils",
-}
-MASSTER = {
-    "fragnnet.models.masster.masster_data_sampler",
-    "fragnnet.models.masster.bond_mask_generator",
-    "fragnnet.models.masster.bond_fragment_heads",
-    "fragnnet.models.masster.candidate_features",
-    "fragnnet.models.masster.masster_model",
-    "fragnnet.models.masster.rt_ccs",
-    "fragnnet.models.masster.masster_pl",
-}
-MASSTER_PREFIXES = ("fragnnet.models.masster.",)
-BASELINE_PACKAGES = {
+# Since Phase 6 the directories encode the layers: {package: layer}. A module belongs to the
+# layer of the longest package that contains it; anything else under fragnnet.models or
+# fragnnet.baselines is unclassified, which the boundary tests reject.
+LAYER_PACKAGES = {
+    "fragnnet.fragmentation": "fragmentation",
+    "fragnnet.models.fragnnet": "fragnnet",
+    "fragnnet.models.masster": "masster",
     "fragnnet.baselines.graff": "baseline:graff",
     "fragnnet.baselines.massformer": "baseline:massformer",
+    # Retired in Phase 1; listed so a stray import is still classified as a baseline.
     "fragnnet.iceberg": "baseline:iceberg",
 }
+MODEL_ROOTS = ("fragnnet.models", "fragnnet.baselines")
 
 OWNER_LAYERS = ("fragnnet", "masster")
 
@@ -99,16 +75,16 @@ ENTRY_MODULES = (
 
 
 def layer_of(module: str) -> str:
-    """Return the post-reorganization layer of a ``fragnnet`` module."""
-    if module in FRAGMENTATION:
-        return "fragmentation"
-    if module in FRAGNNET:
-        return "fragnnet"
-    if module in MASSTER or module.startswith(MASSTER_PREFIXES):
-        return "masster"
-    for package, layer in BASELINE_PACKAGES.items():
+    """Return the layer of a ``fragnnet`` module, from the package that contains it.
+
+    The bare ``fragnnet.models`` and ``fragnnet.baselines`` packages are core (they import
+    nothing); any other module under them outside LAYER_PACKAGES is ``"unclassified"``.
+    """
+    for package, layer in LAYER_PACKAGES.items():
         if module == package or module.startswith(package + "."):
             return layer
+    if any(module.startswith(root + ".") for root in MODEL_ROOTS):
+        return "unclassified"
     return "core"
 
 

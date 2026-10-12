@@ -19,8 +19,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
-from fragnnet.models.fragnnet.frag_utils import PREC_TYPE_TO_CMF_MASS_DIFF
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 
 DAG_DP = "/home/feiw/gitRepos/frag-gnn/data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags"
 SPEC_DF_FP = "/home/feiw/gitRepos/frag-gnn/data/proc/nist20/spec_df.pkl"

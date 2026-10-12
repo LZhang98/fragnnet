@@ -24,9 +24,9 @@ from fragnnet.models.fragnnet.frag_utils import (
     extract_mol_info,
     get_fraggen_input_arrays,
     get_node_feats,
-    th_long_to_mask,
 )
 from fragnnet.utils import data_utils
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 
 @pytest.mark.parametrize("multi_cut_bfs", [False, True])

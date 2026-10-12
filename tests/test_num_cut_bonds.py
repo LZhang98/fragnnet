@@ -29,8 +29,8 @@ from fragnnet.models.fragnnet.frag_utils import (
     compute_dags,
     extract_mol_info,
     get_node_feats,
-    th_long_to_mask,
 )
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 BASE = ["cc", "base_formula", "depth", "h_formulae_idx"]
 

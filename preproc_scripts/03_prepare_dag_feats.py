@@ -10,6 +10,7 @@ import pandas as pd
 import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.models.fragnnet.frag_utils import run_frag_gen_hdf5
+from fragnnet.utils import dag_format_utils, formula_utils
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
@@ -336,7 +337,7 @@ def main(args):
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
-        frag_utils.initialize_packed_dag_hdf5(h5_file)
+        dag_format_utils.initialize_packed_dag_hdf5(h5_file)
     else:
         h5_file = None
     frag_results_gen = data_utils.par_apply(
@@ -385,16 +386,16 @@ def main(args):
                 if args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
-                    frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+                    dag_format_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
                     # Write one artifact per molecule when HDF5 storage is disabled.
-                    fp = frag_utils.get_dag_output_path(
+                    fp = dag_format_utils.get_dag_output_path(
                         dag_dp=dag_dp,
                         mol_id=mol_id,
                         compress_dags=args.compress_dags,
                         compress_format=args.compress_format,
                     )
-                    frag_utils.dump_dag_pickle(fp, dag_d)
+                    dag_format_utils.dump_dag_pickle(fp, dag_d)
             except MemoryError:
                 logging.error(f"OOM (MemoryError) writing DAG for mol_id={mol_id} — skipping")
                 oom_mol_ids.append(mol_id)
@@ -728,7 +729,7 @@ if __name__ == "__main__":
         "--elements",
         type=str,
         nargs="+",
-        default=frag_utils.ELEMENTS,
+        default=formula_utils.ELEMENTS,
         help="Allowed chemical elements for molecules",
     )
     parser.add_argument(

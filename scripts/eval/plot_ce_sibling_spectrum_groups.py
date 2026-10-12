@@ -33,7 +33,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-from fragnnet.models.fragnnet import frag_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
@@ -155,7 +155,7 @@ def compute_peak_match_masks(
 
     for mol_id, mol_group in plot_df.groupby("mol_id", observed=True):
         try:
-            dag_d = frag_utils.load_frag_d(int(mol_id), frag_dp, is_compressed=is_compressed)
+            dag_d = dag_format_utils.load_frag_d(int(mol_id), frag_dp, is_compressed=is_compressed)
         except FileNotFoundError:
             dag_d = None
         if dag_d is None:

@@ -20,12 +20,12 @@ import torch as th
 
 from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
 from fragnnet.models.fragnnet.frag_utils import (
-    ELEMENT_TO_IDX,
     NODE_FEAT_TO_IDX,
     compute_dags,
     extract_mol_info,
     get_node_feats,
 )
+from fragnnet.utils.formula_utils import ELEMENT_TO_IDX
 
 # ---------------------------------------------------------------------------
 # Helpers

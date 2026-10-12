@@ -23,6 +23,7 @@
         "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
+        "fragnnet.models.fragnnet",
         "fragnnet.models.fragnnet.compute_frags",
         "fragnnet.models.fragnnet.frag_feat_utils",
         "fragnnet.models.fragnnet.frag_utils",
@@ -42,6 +43,7 @@
         "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
+        "fragnnet.models.fragnnet",
         "fragnnet.models.fragnnet.compute_frags",
         "fragnnet.models.fragnnet.frag_feat_utils",
         "fragnnet.models.fragnnet.frag_utils",
@@ -82,6 +84,7 @@
         "fragnnet.fragmentation.smarts_prepass"
       ],
       "masster": [
+        "fragnnet.models.masster",
         "fragnnet.models.masster.bond_fragment_heads",
         "fragnnet.models.masster.candidate_features",
         "fragnnet.models.masster.masster_candidates",

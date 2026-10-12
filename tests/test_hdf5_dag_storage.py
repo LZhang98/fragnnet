@@ -9,7 +9,8 @@ import pytest
 import torch
 import torch_geometric as pyg
 
-from fragnnet.models.fragnnet.frag_utils import (
+from fragnnet.models.fragnnet.frag_utils import run_frag_gen_hdf5
+from fragnnet.utils.dag_format_utils import (
     PACKED_DAG_BYTES_DATASET,
     PACKED_DAG_FORMAT,
     PACKED_DAG_FORMAT_ATTR,
@@ -19,7 +20,6 @@ from fragnnet.models.fragnnet.frag_utils import (
     initialize_packed_dag_hdf5,
     load_dag_hdf5,
     load_dag_hdf5_from_group,
-    run_frag_gen_hdf5,
 )
 
 

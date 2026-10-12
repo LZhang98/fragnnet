@@ -29,7 +29,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, "src")
-from fragnnet.models.fragnnet.frag_utils import th_long_to_mask
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 
 def decode_cc(cc_row: torch.Tensor, num_atoms: int) -> frozenset:

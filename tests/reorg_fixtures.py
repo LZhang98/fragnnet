@@ -48,7 +48,8 @@ from rdkit.Chem.rdMolDescriptors import CalcMolFormula  # noqa: E402
 from torch.utils.data import BatchSampler, DataLoader, Dataset  # noqa: E402
 
 from fragnnet import runner  # noqa: E402
-from fragnnet.models.fragnnet import frag_utils  # noqa: E402
+from fragnnet.models.fragnnet import frag_utils
+from fragnnet.utils import dag_format_utils  # noqa: E402
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF  # noqa: E402
 
 RDLogger.DisableLog("rdApp.*")
@@ -178,14 +179,14 @@ def write_dags(dags: dict[int, dict], frag_root: Path, backend: str, meta_info: 
     if backend == "h5":
         frag_dp = str(frag_root / "dags.h5")
         with h5py.File(frag_dp, "w") as h5_file:
-            frag_utils.initialize_packed_dag_hdf5(h5_file)
+            dag_format_utils.initialize_packed_dag_hdf5(h5_file)
             for mol_id, dag_d in dags.items():
-                frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+                dag_format_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
     elif backend == "folder":
         frag_dp = str(frag_root / "dags")
         os.makedirs(frag_dp, exist_ok=True)
         for mol_id, dag_d in dags.items():
-            frag_utils.save_frag_d(dag_d, mol_id, frag_dp, is_compressed=False)
+            dag_format_utils.save_frag_d(dag_d, mol_id, frag_dp, is_compressed=False)
     else:
         raise ValueError(f"unknown DAG backend {backend!r}")
     if meta_info:

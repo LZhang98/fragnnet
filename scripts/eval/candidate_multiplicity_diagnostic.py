@@ -50,7 +50,7 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -137,7 +137,7 @@ def count_multiplicity(
 
 def process_mol(mol_id: int, rows: list[dict], frag_dp: str, is_compressed: bool) -> list[dict]:
     """Count multiplicity for every observed peak of every spectrum of one molecule."""
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return []
 

@@ -34,8 +34,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
-from fragnnet.utils import data_utils
+from fragnnet.utils import dag_format_utils, data_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -806,7 +805,7 @@ def _dag_weighted_recall_for_mol(
     recalls = {int(spec_id): dict.fromkeys(dag_paths, math.nan) for spec_id in group["spec_id"]}
     for label, dag_path in dag_paths.items():
         try:
-            dag = frag_utils.load_frag_d(
+            dag = dag_format_utils.load_frag_d(
                 mol_id,
                 dag_path,
                 is_compressed=is_compressed_by_label[label],

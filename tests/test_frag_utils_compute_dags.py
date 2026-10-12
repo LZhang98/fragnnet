@@ -48,16 +48,19 @@ import pytest
 
 from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
 from fragnnet.models.fragnnet.frag_utils import (
-    ELEMENT_TO_IDX,
     FRAG_INDEX_DTYPE,
     NODE_FEAT_TO_IDX,
     cc_bit_mask_to_atom_idx,
     compute_dags,
     extract_mol_info,
     get_node_feats,
+)
+from fragnnet.utils.formula_utils import (
+    ELEMENT_TO_IDX,
+    PERIODIC_TABLE,
+    parse_formula,
     th_long_to_mask,
 )
-from fragnnet.utils.formula_utils import PERIODIC_TABLE, parse_formula
 
 # ---------------------------------------------------------------------------
 # Helpers

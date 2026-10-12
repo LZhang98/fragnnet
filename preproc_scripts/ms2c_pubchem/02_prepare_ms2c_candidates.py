@@ -5,7 +5,6 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 from tqdm import tqdm
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.formula_utils as formula_utils
 from fragnnet.utils.formula_utils import MAX_NUM_NODES
@@ -60,7 +59,7 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k=None, morg
         )
     )
 
-    allowed_elements = set(frag_utils.ELEMENTS)
+    allowed_elements = set(formula_utils.ELEMENTS)
 
     case_cdf = pd.DataFrame(db_results, columns=["mol_id", "inchikey", "smiles", "formula", "mw"])
     case_cdf = case_cdf[["mol_id", "smiles", "formula", "mw"]]

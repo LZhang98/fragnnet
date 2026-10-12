@@ -50,8 +50,8 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import dag_format_utils
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ def _bfs_depth(edge_index: np.ndarray, num_nodes: int) -> np.ndarray:
 
 def _process_mol(mol_id: int, frag_dp: str, is_compressed: bool) -> dict | None:
     """Per-molecule multi-parent and branching-parent counts for the three structures."""
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]

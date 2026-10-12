@@ -28,7 +28,7 @@ Usage:
 import numpy as np
 import pandas as pd
 
-from fragnnet.models.fragnnet.frag_utils import load_frag_d
+from fragnnet.utils.dag_format_utils import load_frag_d
 from fragnnet.utils.formula_utils import parse_formula
 
 FRAG_DP = "data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags"

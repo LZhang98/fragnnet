@@ -5,7 +5,7 @@ import random
 
 import pandas as pd
 
-from fragnnet.models.fragnnet import frag_utils
+from fragnnet.utils import formula_utils
 
 
 def make_splits(args):
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--split_type", type=str, choices=["random"], default="random")
     parser.add_argument("--split_key", type=str, choices=["inchikey_s"], default="inchikey_s")
-    parser.add_argument("--elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
+    parser.add_argument("--elements", type=str, nargs="+", default=formula_utils.ELEMENTS)
 
     # non-filtering args
     parser.add_argument("--meta_rseed", type=int, default=42)

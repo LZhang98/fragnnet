@@ -43,8 +43,8 @@ import torch as th
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import _detect_is_compressed  # noqa: E402
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils  # noqa: E402
-from fragnnet.models.fragnnet.frag_utils import th_long_to_mask  # noqa: E402
+from fragnnet.utils import dag_format_utils  # noqa: E402
+from fragnnet.utils.formula_utils import th_long_to_mask  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ def collect(
         for mi, (mol_id, rows) in enumerate(rows_by_mol.items()):
             if mi % 50 == 0:
                 log.info("  %d/%d mols", mi, len(rows_by_mol))
-            dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+            dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
             mol = mol_by_id.get(mol_id)
             if dag_d is None or mol is None:
                 n_skip_mol += 1

@@ -25,7 +25,7 @@ import os
 import h5py
 import numpy as np
 
-from fragnnet.models.fragnnet.frag_utils import (
+from fragnnet.utils.dag_format_utils import (
     PACKED_DAG_BYTES_DATASET,
     PACKED_DAG_INDEX_DATASET,
     initialize_packed_dag_hdf5,

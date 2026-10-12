@@ -118,9 +118,9 @@ def _process_mol_group(
     over this molecule's DAG nodes (aligned so ``pn[k]`` == P(DAG node k)). Returns a dict of
     running sums over NCE bins and alias brackets, or None if no competable parent is explained.
     """
-    import fragnnet.models.fragnnet.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]

@@ -26,7 +26,6 @@ import numpy as np
 import pandas as pd
 from rdkit import RDLogger
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.formula_utils as formula_utils
 from fragnnet.utils import data_utils
 from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
@@ -87,7 +86,7 @@ def create_mol_df(
     )
 
     # filter by out_set_elements
-    allowed_elements = set(frag_utils.ELEMENTS)
+    allowed_elements = set(formula_utils.ELEMENTS)
     mol_df.loc[:, "num_out_set_elements"] = mol_df["formula"].apply(
         lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements)
     )

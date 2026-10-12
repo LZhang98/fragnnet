@@ -13,13 +13,12 @@ from pyteomics.mass import Composition
 from rdkit import Chem
 from test_masster_model import _build_batch, _build_model
 
-from fragnnet.models.fragnnet.frag_utils import th_long_to_mask
 from fragnnet.models.masster import masster_export
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.models.masster.masster_templates import build_masster_templates
 from fragnnet.utils import script_utils
-from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE
+from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE, th_long_to_mask
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz
 
 
