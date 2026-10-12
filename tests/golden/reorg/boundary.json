@@ -40,7 +40,9 @@
   "isolation_entry_modules": {
     "fragnnet.dataset.base_dataset": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -50,7 +52,9 @@
     },
     "fragnnet.dataset.data_sampler": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -60,7 +64,9 @@
     },
     "fragnnet.dataset.spec_mol_dataset": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -70,7 +76,9 @@
     },
     "fragnnet.pl_model.spectrum_pl": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -80,7 +88,9 @@
     },
     "fragnnet.runner": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -90,7 +100,9 @@
     },
     "fragnnet.utils.feat_utils": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -102,8 +114,11 @@
     "fragnnet.utils.proc_utils": {},
     "fragnnet.utils.script_utils": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.candidate_support",
+        "fragnnet.fragmentation.cut_bond_encoder",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -128,7 +143,9 @@
   "isolation_model_selection": {
     "chemlm": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -138,7 +155,9 @@
     },
     "clip": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -148,8 +167,11 @@
     },
     "frag_gnn": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.candidate_support",
+        "fragnnet.fragmentation.cut_bond_encoder",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.dataset.spec_mol_frag_dataset",
@@ -163,8 +185,11 @@
     },
     "fragnnet": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.candidate_support",
+        "fragnnet.fragmentation.cut_bond_encoder",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.dataset.spec_mol_frag_dataset",
@@ -178,7 +203,9 @@
     },
     "gnn": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -196,7 +223,9 @@
         "fragnnet.graff.pl_model"
       ],
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -215,7 +244,9 @@
         "fragnnet.massformer.pl_model"
       ],
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -225,8 +256,11 @@
     },
     "masster": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.candidate_support",
+        "fragnnet.fragmentation.cut_bond_encoder",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -246,7 +280,9 @@
     },
     "mces_pretraining": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -256,7 +292,9 @@
     },
     "neims": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -266,7 +304,9 @@
     },
     "precursor": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
@@ -276,7 +316,9 @@
     },
     "spec_mol_clip_pretraining": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass"
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.hydrogen_cap",
+        "fragnnet.fragmentation.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",

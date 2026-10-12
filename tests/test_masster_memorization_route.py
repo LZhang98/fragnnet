@@ -18,7 +18,7 @@ import pytest
 import torch as th
 
 from fragnnet import runner
-from fragnnet.model.base_model import CutBondEncoder
+from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder
 from fragnnet.model.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     _drop_set_keys,

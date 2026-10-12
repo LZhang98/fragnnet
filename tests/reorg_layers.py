@@ -26,8 +26,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
 FRAGMENTATION = {
-    "fragnnet.frag.smarts_prepass",
-    "fragnnet.model.candidate_support",
+    "fragnnet.fragmentation",
+    "fragnnet.fragmentation.candidate_support",
+    "fragnnet.fragmentation.cut_bond_encoder",
+    "fragnnet.fragmentation.hydrogen_cap",
+    "fragnnet.fragmentation.smarts_prepass",
 }
 FRAGNNET = {
     "fragnnet.dataset.iterable_spec_mol_frag_dataset",

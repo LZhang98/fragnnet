@@ -21,7 +21,7 @@ from fragnnet.frag.masster_templates import (
     build_masster_templates,
     filter_masster_templates,
 )
-from fragnnet.frag.smarts_prepass import FRAG_RULES, NL_RULES, NeutralLossRule
+from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, NL_RULES, NeutralLossRule
 from fragnnet.utils import data_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)

@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
+from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
 from fragnnet.utils.frag_utils import (
     NODE_FEAT_TO_IDX,
     compute_dags,

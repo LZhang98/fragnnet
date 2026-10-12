@@ -109,7 +109,7 @@ history only; do not treat references to them as current guidance.
 [missing_peak_findings_m-h.md](findings/fragnnet/missing_peak_findings_m-h.md) (FT `[M-H]-`)
 are append-only. Add sections with `/analyze-subclass` and `/analyze-subclass-mh`; the
 measurement comes from `scripts/eval/find_missing_peaks.py`.
-`src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
+`src/fragnnet/fragmentation/smarts_prepass.py` cites the first one by path.
 
 Spectrum cleanup is implemented in
 [`clean_spectra_utils.py`](../src/fragnnet/utils/clean_spectra_utils.py); measured effects are in

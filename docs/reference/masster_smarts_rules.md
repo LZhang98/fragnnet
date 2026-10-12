@@ -71,7 +71,7 @@ recorded trained run has turned it on.
 The curated registry is
 [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
 It selects shared definitions from
-[`smarts_prepass.py`](../../src/fragnnet/frag/smarts_prepass.py) but owns a separate
+[`smarts_prepass.py`](../../src/fragnnet/fragmentation/smarts_prepass.py) but owns a separate
 allowlist.
 
 - Rule index `0` is the ordinary connected-component mechanism.

@@ -13,18 +13,17 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as th_checkpoint
 import torch_geometric as pyg
 
+from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.model.base_model import (
     AdductScaler,
     CEModel,
     CEScaler,
     ContextEmbedding,
-    CutBondEncoder,
     FragModeModel,
     FragModeScaler,
     InstModel,
     PrecModel,
     StratumScaler,
-    encode_cut_bond_pairs,
 )
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.fragment_competition import TopKFragmentTransformer

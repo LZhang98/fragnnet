@@ -26,7 +26,7 @@ import torch
 from rdkit import Chem, RDLogger, rdBase
 
 from fragnnet.frag.masster_templates import _is_connected, formed_bond_count
-from fragnnet.frag.smarts_prepass import NeutralLossRule, SmartsFragRule
+from fragnnet.fragmentation.smarts_prepass import NeutralLossRule, SmartsFragRule
 from fragnnet.utils.formula_utils import nominal_isotope_pattern
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))

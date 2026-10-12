@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from fragnnet.frag.compute_frags import MASK_DTYPE
-from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
+from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
 from fragnnet.utils.frag_utils import (
     _inject_smarts_pairs_into_dag,
     compute_dags,

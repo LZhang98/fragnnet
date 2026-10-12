@@ -3,7 +3,7 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.candidate_support import balanced_binary_support_loss
+from fragnnet.fragmentation.candidate_support import balanced_binary_support_loss
 from fragnnet.model.fragnnet_model import (
     _aggregate_formula_support,
     _apply_formula_support_gate,

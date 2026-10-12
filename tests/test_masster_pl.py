@@ -715,7 +715,7 @@ def test_hungarian_channel_attribution_drops_infeasible_channels(
         return th.tensor([0]), th.tensor([0])
 
     monkeypatch.setattr(
-        "fragnnet.model.candidate_support.linear_sum_assignment",
+        "fragnnet.fragmentation.candidate_support.linear_sum_assignment",
         assignment,
     )
     targets = _observational_channel_targets(

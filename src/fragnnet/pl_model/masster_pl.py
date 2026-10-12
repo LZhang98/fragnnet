@@ -27,17 +27,17 @@ from fragnnet.frag.masster_templates import (
     MassterTemplate,
     build_masster_templates,
 )
-from fragnnet.model import MassterModel
-from fragnnet.model.candidate_features import describe_candidate_features
-from fragnnet.model.candidate_support import (
+from fragnnet.fragmentation.candidate_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
-from fragnnet.model.candidate_support import (
+from fragnnet.fragmentation.candidate_support import (
     matched_peak_candidate_pairs,
 )
-from fragnnet.model.candidate_support import (
+from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
+from fragnnet.model import MassterModel
+from fragnnet.model.candidate_features import describe_candidate_features
 from fragnnet.model.loss import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,

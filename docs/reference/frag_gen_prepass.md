@@ -150,7 +150,7 @@ so the one-hot vector remains valid.
 ## Rule design notes (from local memory, verified 2026-10-06)
 
 Per-rule scaffolds and counts for `FRAG_RULES` / `NL_RULES` in
-[smarts_prepass.py](../../src/fragnnet/frag/smarts_prepass.py). Usage statistics are in
+[smarts_prepass.py](../../src/fragnnet/fragmentation/smarts_prepass.py). Usage statistics are in
 [smarts_usage_audit_2026_09_23.md](../findings/smarts_usage_audit_2026_09_23.md); MASSter's
 adopted rules are in [masster_smarts_rules.md](masster_smarts_rules.md).
 

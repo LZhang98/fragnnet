@@ -37,7 +37,7 @@ from fragnnet.frag.masster_templates import (  # noqa: E402
     MASSTER_NL_RULES,
     _is_connected,
 )
-from fragnnet.frag.smarts_prepass import (  # noqa: E402
+from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     NeutralLossRule,
     SmartsFragRule,
     _apply_nl_prepass,

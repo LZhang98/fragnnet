@@ -10,7 +10,7 @@ from typing import TypeVar
 import numpy as np
 from rdkit import Chem
 
-from fragnnet.frag.smarts_prepass import (
+from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
     NL_RULES,
     NeutralLossRule,

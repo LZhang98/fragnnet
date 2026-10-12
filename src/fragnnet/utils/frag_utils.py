@@ -27,7 +27,8 @@ import fragnnet.frag.compute_frags as compute_frags
 from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
 from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
-from fragnnet.frag.smarts_prepass import (
+from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
+from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
     NL_RULES,
     _apply_nl_prepass,
@@ -390,32 +391,6 @@ def extract_mol_info(
     return mol_d
 
 
-def compute_cc_h_cap(
-    cc_atom_ids: np.ndarray, ve_arr: np.ndarray, sbond_arr: np.ndarray, num_radicals: int
-) -> int:
-    """compute max amount of Hs a cc can have.
-        For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
-        And all the atom has max amount of Hs
-    Args:
-        cc (list|np.ndarray): cc mask in list form
-        ve_arr (list|np.ndarray): max velance each atom can have
-        sbond_arr (_type_): _description_
-        num_radicals (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-
-    assert num_radicals == 0
-    if not isinstance(cc_atom_ids, np.ndarray):
-        cc_atom_ids = np.array(list(cc_atom_ids))
-    cap_sbond_arr = sbond_arr[cc_atom_ids]
-    cap_ve_arr = ve_arr[cc_atom_ids]
-    cap_ve_mask = cap_ve_arr < cap_sbond_arr
-    cap_ve_arr[cap_ve_mask] = cap_sbond_arr[cap_ve_mask]
-    return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
-
-
 def compute_cc_h_floor(
     cc_atom_ids: np.ndarray,
     ve_arr: np.ndarray,
@@ -572,42 +547,6 @@ def compute_approximate_formula(
             formula = formula_str
         delta_h_to_formula[delta_h] = formula
     return delta_h_to_formula, delta_h_to_h_count
-
-
-def update_bonds(
-    cc_atom_ids: np.ndarray,
-    sbond_arr: np.ndarray,
-    bond_mask_arr: np.ndarray,
-    bonds: np.ndarray,
-    atoms_to_bonds: dict,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Update the single bond array and bond mask array for a given fragment (connected component).
-    Only bonds where both atoms are in the fragment are considered.
-
-    Args:
-        cc_atom_ids (np.ndarray): Atom indices in the fragment.
-        sbond_arr (np.ndarray): Array of single bond counts per atom (will be overwritten).
-        bond_mask_arr (np.ndarray): Boolean mask for bonds (will be overwritten).
-        bonds (np.ndarray): Array of bond pairs (atom indices).
-        atoms_to_bonds (dict): Mapping from atom index to list of bond indices.
-
-    Returns:
-        tuple:
-            - sbond_arr (np.ndarray): Updated single bond counts for fragment atoms.
-            - bond_mask_arr (np.ndarray): Updated mask indicating which bonds are within the fragment.
-    """
-    # Reset arrays for fragment
-    sbond_arr = np.zeros_like(sbond_arr, dtype=sbond_arr.dtype)
-    bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=bool)
-    # For each atom, count bonds to other atoms in fragment
-    for atom in cc_atom_ids:
-        for bond_idx in atoms_to_bonds[atom]:
-            bond = bonds[bond_idx]
-            if bond[0] in cc_atom_ids and bond[1] in cc_atom_ids:
-                sbond_arr[atom] += 1
-                bond_mask_arr[bond_idx] = True
-    return sbond_arr, bond_mask_arr
 
 
 def compute_approximate_cchs(

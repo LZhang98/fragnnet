@@ -33,7 +33,7 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 
 from fragnnet.frag import masster_templates as mst
-from fragnnet.frag.smarts_prepass import (
+from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
     NL_RULES,
     NeutralLossRule,

@@ -25,7 +25,7 @@ from test_ce_multi_location import _build as _build_fragnnet
 from torch_geometric.nn import global_mean_pool
 
 import fragnnet.model.fragnnet_model as fragnnet_model_module
-from fragnnet.model.base_model import CutBondEncoder, encode_cut_bond_pairs
+from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.utils.frag_utils import (
     compute_boundary_pair_idxs,
     get_node_feats,

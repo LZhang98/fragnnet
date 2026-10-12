@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from fragnnet.frag.smarts_prepass import (
+from fragnnet.fragmentation.smarts_prepass import (
     NL_RULES,
     NeutralLossRule,
     _apply_nl_prepass,

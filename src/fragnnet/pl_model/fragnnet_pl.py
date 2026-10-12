@@ -14,11 +14,11 @@ except ImportError:
     profiler_available = False
 import os
 
-from fragnnet.model import FraGNNetModel
-from fragnnet.model.candidate_support import (
+from fragnnet.fragmentation.candidate_support import (
     balanced_binary_support_loss,
     observational_channel_targets,
 )
+from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import (
     get_cross_jss_contrastive,
     get_edge_loss_fn,

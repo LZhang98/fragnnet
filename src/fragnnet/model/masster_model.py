@@ -52,12 +52,8 @@ from fragnnet.frag.masster_templates import (
     MassterTemplate,
     filter_masster_templates,
 )
-from fragnnet.model.base_model import (
-    QET_ACE_OFFSET,
-    CutBondEncoder,
-    QETEnergyEncoder,
-    encode_cut_bond_pairs,
-)
+from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
+from fragnnet.model.base_model import QET_ACE_OFFSET, QETEnergyEncoder
 from fragnnet.model.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
