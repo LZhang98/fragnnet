@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     _build_cpu_candidates,
     _score_mask_log_probabilities,
 )
-from fragnnet.models.masster.path_selection.cuda_full import _expand_topology_views
+from fragnnet.models.masster.path_selection.cuda_candidates import _expand_topology_views
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.candidates import _TopologyInput
+    from fragnnet.models.masster.path_selection.candidate_builder import _TopologyInput
 
 
 def _validate_grouped_topology(

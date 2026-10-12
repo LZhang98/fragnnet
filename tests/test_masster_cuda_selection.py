@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidates import _merge_forced_masks
+from fragnnet.models.masster.path_selection.candidate_builder import _merge_forced_masks
 from fragnnet.models.masster.path_selection.core import (
     build_component_arrays_raw,
     top_mixture_bond_sets_raw,

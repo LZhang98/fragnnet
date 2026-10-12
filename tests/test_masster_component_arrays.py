@@ -10,9 +10,9 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.path_selection.candidates import build_masster_candidates
+from fragnnet.models.masster.path_selection.candidate_builder import build_masster_candidates
 from fragnnet.models.masster.path_selection.core import build_component_arrays_raw
-from fragnnet.models.masster.path_selection.masks import (
+from fragnnet.models.masster.path_selection.cut_masks import (
     connected_component_atom_masks,
     iter_ranked_cut_masks,
 )

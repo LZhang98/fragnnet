@@ -27,7 +27,9 @@ if [[ -f setup.cfg ]]; then cp setup.cfg "$FRAGNNET_RUN_ROOT/current/"; fi
 git archive "$FRAGNNET_BASE" | tar -x -C "$FRAGNNET_RUN_ROOT/baseline"
 # Explicit historical candidate sources; no branch switching or checkout changes.
 # $FRAGNNET_BASE predates reorg Phase 6, so its MASSter sources are under src/fragnnet/frag/
-# (src/fragnnet/models/masster/ in later revisions).
+# (src/fragnnet/models/masster/ in later revisions, and path_selection/core.pyx and
+# path_selection/candidates.py since 2026-10-12; candidates.py became candidate_builder.py the
+# same day).
 for file in masster_core.pyx masster_candidates.py; do
   git show "$FRAGNNET_BASE:src/fragnnet/frag/$file" \
     > "$FRAGNNET_RUN_ROOT/baseline/src/fragnnet/frag/$file"

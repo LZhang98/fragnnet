@@ -43,8 +43,8 @@ from fragnnet.models.masster.candidate_features import describe_candidate_featur
 from fragnnet.models.masster.masster_export import masster_annotation_tables
 from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.models.masster.masster_model import MassterModel
-from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
-from fragnnet.models.masster.path_selection.templates import (
+from fragnnet.models.masster.path_selection.candidate_builder import MassterStaticGraph
+from fragnnet.models.masster.path_selection.smarts_templates import (
     MassterTemplate,
     build_masster_templates,
 )

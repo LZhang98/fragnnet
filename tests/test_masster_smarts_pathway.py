@@ -17,11 +17,11 @@ from rdkit import Chem
 from fragnnet import runner
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.models.masster.path_selection.templates import (
+from fragnnet.models.masster.path_selection.smarts_templates import (
     _MASSTER_RULE_INDEX,
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,

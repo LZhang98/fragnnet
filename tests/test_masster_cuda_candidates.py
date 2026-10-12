@@ -8,7 +8,7 @@ import pytest
 import torch as th
 
 from fragnnet.models.masster.path_selection import cuda_topology
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterStaticGraph,
     _build_local_topology,
     _merge_forced_masks,

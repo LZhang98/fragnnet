@@ -7,7 +7,9 @@ import torch as th
 import torch.nn.functional as F
 from test_masster_model import _build_batch, _build_model
 
-from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+    build_connected_fragment_beam_candidates,
+)
 from fragnnet.runner import load_config
 
 
@@ -15,7 +17,7 @@ def _graph(n, edges, logits=None, device="cpu", **kwargs):
     edges = th.tensor(edges, dtype=th.long, device=device).reshape(-1, 2).T.contiguous()
     if logits is None:
         logits = th.linspace(-0.8, 0.6, edges.shape[1], device=device, requires_grad=True)
-    return build_fast_gnn_candidates(
+    return build_connected_fragment_beam_candidates(
         logits,
         edges,
         th.zeros(n, dtype=th.long, device=device),
@@ -108,7 +110,7 @@ def test_multiword_memberships_and_deterministic_ties():
 def test_batched_unsorted_bonds_map_back_to_original_ids():
     logits = th.tensor([0.7, -0.2, 0.1], requires_grad=True)
     edges = th.tensor([[3, 0, 1], [4, 1, 2]])
-    candidates = build_fast_gnn_candidates(
+    candidates = build_connected_fragment_beam_candidates(
         logits,
         edges,
         th.tensor([0, 0, 0, 1, 1]),
@@ -169,11 +171,11 @@ def test_cuda_matches_cpu_memberships_and_gradients():
     "overrides,match",
     [
         ({"masster_proposal_method": "unknown"}, "unknown proposal_method"),
-        ({"masster_unique_fragment_mode": False}, "fast_gnn requires"),
-        ({"masster_proposal_num_mixtures": 2}, "fast_gnn requires"),
-        ({"masster_smarts_templates": True}, "fast_gnn requires"),
-        ({"masster_share_proposal_across_ev": True}, "fast_gnn requires"),
-        ({"masster_min_mask_relative_probability": 0.1}, "fast_gnn requires"),
+        ({"masster_unique_fragment_mode": False}, "connected_fragment_beam requires"),
+        ({"masster_proposal_num_mixtures": 2}, "connected_fragment_beam requires"),
+        ({"masster_smarts_templates": True}, "connected_fragment_beam requires"),
+        ({"masster_share_proposal_across_ev": True}, "connected_fragment_beam requires"),
+        ({"masster_min_mask_relative_probability": 0.1}, "connected_fragment_beam requires"),
         ({"masster_fast_gnn_beam_width": 0}, "beam width"),
         ({"masster_fast_gnn_max_boundary_cuts": -1}, "boundary cuts"),
         ({"masster_fast_gnn_beam_width": 1.5}, "integers"),
@@ -503,7 +505,7 @@ def test_batch_padding_does_not_change_proposals():
     )
     long_edges = [(i, i + 1) for i in range(4, 14)]
     edges = th.tensor(short_edges + long_edges).T
-    batched = build_fast_gnn_candidates(
+    batched = build_connected_fragment_beam_candidates(
         th.cat([th.tensor([-0.4, 0.2, 0.8]), th.zeros(10)]),
         edges,
         th.tensor([0] * 4 + [1] * 11),
@@ -528,7 +530,7 @@ def test_tied_beam_is_independent_of_batch_padding(padding_atoms, device):
         beam_width=1, max_fragments=8,
     )
     padded_edges = edges + [(i, i + 1) for i in range(5, 5 + padding_atoms - 1)]
-    batched = build_fast_gnn_candidates(
+    batched = build_connected_fragment_beam_candidates(
         th.zeros(len(padded_edges), device=device),
         th.tensor(padded_edges, device=device).T.contiguous(),
         th.tensor([0] * 5 + [1] * padding_atoms, device=device),
@@ -588,7 +590,7 @@ def test_budget_matches_exhaustive_reachable_fragment_scores(seed, max_fragments
 def test_large_growth_round_preserves_batched_memberships_and_budget():
     # A wide beam on K11 visits >256 unique seeds in a round, spanning workspace chunks.
     edges = list(combinations(range(11), 2)) + [(11, 12), (12, 13)]
-    candidates = build_fast_gnn_candidates(
+    candidates = build_connected_fragment_beam_candidates(
         -th.ones(len(edges)), th.tensor(edges).T.contiguous(),
         th.tensor([0] * 11 + [1] * 3), th.tensor([0, 11, 14]),
         max_fragments=5, beam_width=512, max_boundary_cuts=30,

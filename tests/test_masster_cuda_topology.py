@@ -9,7 +9,7 @@ import pytest
 import torch as th
 
 from fragnnet.models.masster.path_selection import cuda_build as cuda_utils
-from fragnnet.models.masster.path_selection.candidates import _TopologyInput
+from fragnnet.models.masster.path_selection.candidate_builder import _TopologyInput
 from fragnnet.models.masster.path_selection.core import build_component_arrays_raw
 from fragnnet.models.masster.path_selection.cuda_topology import (
     CudaTopologyGraph,

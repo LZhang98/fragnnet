@@ -81,14 +81,14 @@
         "fragnnet.models.masster.bond_fragment_heads",
         "fragnnet.models.masster.candidate_features",
         "fragnnet.models.masster.masster_export",
-        "fragnnet.models.masster.masster_fast_gnn",
         "fragnnet.models.masster.masster_hooks",
         "fragnnet.models.masster.masster_isotopes",
         "fragnnet.models.masster.masster_model",
         "fragnnet.models.masster.masster_pl",
         "fragnnet.models.masster.path_selection",
-        "fragnnet.models.masster.path_selection.candidates",
-        "fragnnet.models.masster.path_selection.templates",
+        "fragnnet.models.masster.path_selection.candidate_builder",
+        "fragnnet.models.masster.path_selection.connected_fragment_beam",
+        "fragnnet.models.masster.path_selection.smarts_templates",
         "fragnnet.models.masster.rt_ccs"
       ]
     },

@@ -17,7 +17,7 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     MassterStaticGraph,
@@ -29,7 +29,10 @@ from fragnnet.models.masster.path_selection.cuda_topology import (
     CudaTopologyCounts,
     CudaTopologyGraph,
 )
-from fragnnet.models.masster.path_selection.templates import MassterTemplate, _connected_piece_count
+from fragnnet.models.masster.path_selection.smarts_templates import (
+    MassterTemplate,
+    _connected_piece_count,
+)
 
 
 def _expand_topology_views(

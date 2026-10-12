@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster.path_selection import candidates
-from fragnnet.models.masster.path_selection.templates import MassterTemplate
+from fragnnet.models.masster.path_selection import candidate_builder
+from fragnnet.models.masster.path_selection.smarts_templates import MassterTemplate
 
 
 def _pack_masks(masks: Sequence[Sequence[int]]) -> tuple[np.ndarray, np.ndarray]:
@@ -63,7 +63,7 @@ def _run_merge(
     original_mask_ptr = mask_ptr.copy()
     original_broken_bonds = broken_bonds.copy()
 
-    actual = candidates._merge_forced_masks(
+    actual = candidate_builder._merge_forced_masks(
         mask_ptr,
         broken_bonds,
         forced_masks,
@@ -187,7 +187,7 @@ def test_grouped_views_reuse_forced_merge_by_signature(
     unique_fragment_mode: bool,
     with_smarts: bool,
 ) -> None:
-    original_merge = candidates._merge_forced_masks
+    original_merge = candidate_builder._merge_forced_masks
     calls = 0
 
     def counted_merge(*args, **kwargs):
@@ -195,7 +195,7 @@ def test_grouped_views_reuse_forced_merge_by_signature(
         calls += 1
         return original_merge(*args, **kwargs)
 
-    monkeypatch.setattr(candidates, "_merge_forced_masks", counted_merge)
+    monkeypatch.setattr(candidate_builder, "_merge_forced_masks", counted_merge)
     chemical_bond_index = th.tensor(
         [[0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14],
          [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15]],
@@ -220,7 +220,7 @@ def test_grouped_views_reuse_forced_merge_by_signature(
     if candidate_groups is not None:
         kwargs["candidate_group_ids"] = th.tensor(candidate_groups, dtype=th.long)
 
-    candidates.build_masster_candidates(
+    candidate_builder.build_masster_candidates(
         th.tensor([0.6, -0.2, 0.1] * 4),
         **kwargs,
     )

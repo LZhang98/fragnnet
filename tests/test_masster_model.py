@@ -32,8 +32,8 @@ from fragnnet.models.masster.masster_model import (
     _top_k_fragment_keep_mask,
 )
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
-from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
-from fragnnet.models.masster.path_selection.templates import (
+from fragnnet.models.masster.path_selection.candidate_builder import MassterStaticGraph
+from fragnnet.models.masster.path_selection.smarts_templates import (
     MassterTemplate,
     build_masster_templates,
 )

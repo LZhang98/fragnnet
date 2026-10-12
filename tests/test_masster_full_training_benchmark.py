@@ -114,7 +114,7 @@ def test_reference_import_uses_frozen_python_and_extension_and_records_adapter(t
     core_spec = importlib.util.find_spec("fragnnet.models.masster.path_selection.core")
     core_path = Path(core_spec.origin)
     (tmp_path / core_path.name).symlink_to(core_path)
-    (tmp_path / "candidates.py").write_text(
+    (tmp_path / "candidate_builder.py").write_text(
         "from dataclasses import dataclass\n"
         "MARKER = 'frozen reference'\n"
         "@dataclass(frozen=True)\n"
@@ -131,15 +131,15 @@ spec = importlib.util.spec_from_file_location('benchmark', sys.argv[1])
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 report = benchmark._install_reference(Path(sys.argv[2]))
-from fragnnet.models.masster.path_selection import core, candidates
-report['marker'] = candidates.MARKER
-report['combined_ms'] = candidates.MassterCandidateTimings(2, 3).topology_assembly_ms
+from fragnnet.models.masster.path_selection import core, candidate_builder
+report['marker'] = candidate_builder.MARKER
+report['combined_ms'] = candidate_builder.MassterCandidateTimings(2, 3).topology_assembly_ms
 report['core_file'] = core.__file__
-report['python_file'] = candidates.__file__
-report['candidate_identity'] = candidates.build_masster_candidates(
+report['python_file'] = candidate_builder.__file__
+report['candidate_identity'] = candidate_builder.build_masster_candidates(
     [1, 2, 3], candidate_backend='cpu')
 try:
-    candidates.build_masster_candidates([], candidate_backend='cuda')
+    candidate_builder.build_masster_candidates([], candidate_backend='cuda')
 except ValueError:
     report['cuda_reference_rejected'] = True
 try:

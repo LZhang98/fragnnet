@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster.path_selection import candidates as masster_candidates
+from fragnnet.models.masster.path_selection import candidate_builder as masster_candidates
 from fragnnet.models.masster.path_selection import core as masster_core
 
 MassterStaticGraph = masster_candidates.MassterStaticGraph
@@ -806,7 +806,7 @@ def test_parallel_topology_fields_and_gradients(
     threads: int, unique: bool, mixtures: int, smarts: bool
 ) -> None:
     """Concurrent representatives preserve every pathway, including grouped SMARTS."""
-    from fragnnet.models.masster.path_selection.templates import MassterTemplate
+    from fragnnet.models.masster.path_selection.smarts_templates import MassterTemplate
 
     # Two distinct groups with two views each; one ring plus one disconnected atom.
     endpoints = [(0, 1), (1, 2), (2, 0), (2, 3)]

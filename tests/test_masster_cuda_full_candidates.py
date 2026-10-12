@@ -5,16 +5,16 @@ import torch as th
 from rdkit import Chem
 from test_masster_cuda_candidates import _assert_candidates_match, _fixture
 
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.models.masster.path_selection.cuda_full import (
+from fragnnet.models.masster.path_selection.cuda_candidates import (
     _prepare_graph_batch,
     _template_forced_masks,
     build_masster_candidates_cuda,
 )
-from fragnnet.models.masster.path_selection.templates import (
+from fragnnet.models.masster.path_selection.smarts_templates import (
     MassterTemplate,
     build_masster_templates,
 )

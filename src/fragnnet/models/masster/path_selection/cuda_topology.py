@@ -27,7 +27,7 @@ from fragnnet.models.masster.path_selection.cuda_build import (
 )
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.candidates import _TopologyInput
+    from fragnnet.models.masster.path_selection.candidate_builder import _TopologyInput
 
 _BUILD_LOCK = Lock()
 _META_WIDTH = 15

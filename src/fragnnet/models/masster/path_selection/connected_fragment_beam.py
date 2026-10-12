@@ -13,7 +13,7 @@ from time import perf_counter
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
 )
@@ -375,7 +375,7 @@ def _search(
     return g_mol, flat_global, flat_owner, frag_edge_id, frag_edge_owner, internal_id, internal_owner
 
 
-def build_fast_gnn_candidates(
+def build_connected_fragment_beam_candidates(
     bond_logits: th.Tensor,
     chemical_bond_index: th.Tensor,
     atom_batch_indices: th.Tensor,
@@ -417,7 +417,7 @@ def build_fast_gnn_candidates(
     if min(max_fragments, beam_width) < 1 or max_boundary_cuts < 0:
         raise ValueError("fragment/beam budgets must be positive and boundary cuts nonnegative")
     if bond_logits.ndim != 1 or not bond_logits.is_floating_point():
-        raise ValueError("fast_gnn requires one floating-point logit per bond")
+        raise ValueError("connected_fragment_beam requires one floating-point logit per bond")
     if chemical_bond_index.shape != (2, bond_logits.numel()):
         raise ValueError("chemical_bond_index must have shape (2, num_bonds)")
     for value in (chemical_bond_index, atom_batch_indices, atom_ptr):
@@ -433,7 +433,9 @@ def build_fast_gnn_candidates(
         or (counts <= 0).any()
         or not th.isfinite(bond_logits).all()
     ):
-        raise ValueError("fast_gnn requires nonempty molecules and finite bond logits")
+        raise ValueError(
+            "connected_fragment_beam requires nonempty molecules and finite bond logits"
+        )
     expected_batch = th.repeat_interleave(th.arange(batch_size, device=counts.device), counts)
     if not th.equal(atom_batch_indices, expected_batch):
         raise ValueError("atoms must be contiguous within each molecule")
@@ -447,7 +449,7 @@ def build_fast_gnn_candidates(
         raise ValueError("bonds must join distinct atoms in the same molecule")
     canonical = chemical_bond_index.sort(dim=0).values.T
     if th.unique(canonical, dim=0).shape[0] != bond_logits.numel():
-        raise ValueError("fast_gnn requires unique chemical bonds")
+        raise ValueError("connected_fragment_beam requires unique chemical bonds")
     # Search expects bond rows grouped by molecule; map memberships back afterwards.
     order = bond_batch.argsort(stable=True)
     max_atoms = int(counts.max().item())

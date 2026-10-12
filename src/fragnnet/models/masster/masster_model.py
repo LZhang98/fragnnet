@@ -74,18 +74,20 @@ from fragnnet.models.masster.candidate_features import (
     element_counts_by_group,
     resolve_candidate_features,
 )
-from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.models.masster.masster_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
     nominal_isotope_power_table,
 )
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterCandidateBatch,
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.models.masster.path_selection.templates import (
+from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+    build_connected_fragment_beam_candidates,
+)
+from fragnnet.models.masster.path_selection.smarts_templates import (
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,
     MassterTemplate,
@@ -1261,7 +1263,7 @@ class MassterModel(nn.Module):
             fast_gnn_beam_width: States retained per connected-set growth round.
             fast_gnn_max_boundary_cuts: Maximum boundary size for proper fragments.
             candidate_backend: Exact cut-mask construction on CPU or opt-in CUDA.
-                Ignored by fast_gnn, which runs PyTorch search on the model device.
+                Ignored by connected_fragment_beam, which runs PyTorch search on the model device.
                 CUDA requires FP32, one mixture, unique mode and zero mask floors; it
                 supports SMARTS templates. The model can be constructed before device transfer.
             max_enumerated_masks: Safety cap on latent masks considered while filling
@@ -1662,7 +1664,7 @@ class MassterModel(nn.Module):
             or min_mask_relative_probability != 0.0
         ):
             raise ValueError(
-                "fast_gnn requires unique mode, one mixture, SMARTS off, "
+                "connected_fragment_beam requires unique mode, one mixture, SMARTS off, "
                 "share_proposal_across_ev off and zero mask probability floor"
             )
         if (
@@ -3457,7 +3459,7 @@ class MassterModel(nn.Module):
                 spec_frag_mode,
             )
         if self.proposal_method == "connected_fragment_beam":
-            candidates = build_fast_gnn_candidates(
+            candidates = build_connected_fragment_beam_candidates(
                 bond_logits,
                 mol_pyg.chemical_bond_index,
                 mol_pyg.batch,

@@ -35,8 +35,8 @@ from fragnnet.models.masster.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
-from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
-from fragnnet.models.masster.path_selection.templates import build_masster_templates
+from fragnnet.models.masster.path_selection.candidate_builder import MassterStaticGraph
+from fragnnet.models.masster.path_selection.smarts_templates import build_masster_templates
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams

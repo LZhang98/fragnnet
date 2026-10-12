@@ -14,7 +14,7 @@ objective differs. Three scans are available:
 - ``implementations``: exact emitted-set comparison against an alternative beam module supplied
   with ``--beam-implementation``, for example a historical revision extracted with
   ``git show <rev>:src/fragnnet/frag/masster_fast_gnn.py`` (``src/fragnnet/models/masster/`` for
-  revisions after reorg Phase 6).
+  revisions after reorg Phase 6; ``path_selection/connected_fragment_beam.py`` after the rename).
 
 Bond logits are synthetic by default, so the sweep tests whether *any* learned logits could
 remove the effect. Pass ``--checkpoint`` to capture **trained** bond logits from a MASSter
@@ -41,12 +41,14 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.models.masster.path_selection.candidates import (
+from fragnnet.models.masster.path_selection.candidate_builder import (
     MassterCandidateBatch,
     build_masster_candidates,
+)
+from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+    build_connected_fragment_beam_candidates,
 )
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.migrations import migrate_legacy_masster_name
@@ -186,7 +188,7 @@ def synthetic_bond_logits(batch: MolecularBatch, mu: float, sigma: float, seed: 
 
 def select_beam(batch: MolecularBatch, logits: th.Tensor, budget: int, cuts: int):
     """Run the connected-fragment beam at a matched unique-fragment budget."""
-    return build_fast_gnn_candidates(
+    return build_connected_fragment_beam_candidates(
         logits,
         batch.chemical_bond_index,
         batch.atom_batch_indices,
@@ -572,10 +574,11 @@ class _Absorbing:
 def load_beam_implementation(module_path: Path, max_stubs: int = 8):
     """Import an alternative beam module and return it.
 
-    Accepts either a revision of `masster_fast_gnn` exposing ``build_fast_gnn_candidates``,
-    or the standalone research prototype exposing ``enumerate_node_combos``. Research prototypes
-    often import packages that are not installed here while their search function is pure tensor
-    code, so absent top-level modules are stubbed and the import retried.
+    Accepts either a revision of the beam module exposing
+    ``build_connected_fragment_beam_candidates`` (``build_fast_gnn_candidates`` before the rename,
+    aliased on import), or the standalone research prototype exposing ``enumerate_node_combos``.
+    Research prototypes often import packages that are not installed here while their search
+    function is pure tensor code, so absent top-level modules are stubbed and the import retried.
 
     Args:
         module_path: A Python file exposing one of the two entry points.
@@ -609,11 +612,13 @@ def load_beam_implementation(module_path: Path, max_stubs: int = 8):
             continue
         if stubbed:
             LOGGER.info("stubbed absent imports to load the prototype: %s", ", ".join(stubbed))
-        if not hasattr(module, "build_fast_gnn_candidates") and not hasattr(
+        if hasattr(module, "build_fast_gnn_candidates"):
+            module.build_connected_fragment_beam_candidates = module.build_fast_gnn_candidates
+        if not hasattr(module, "build_connected_fragment_beam_candidates") and not hasattr(
             module, "enumerate_node_combos"
         ):
             raise ValueError(
-                f"{module_path} exposes neither build_fast_gnn_candidates nor "
+                f"{module_path} exposes neither build_connected_fragment_beam_candidates nor "
                 "enumerate_node_combos"
             )
         return module
@@ -668,15 +673,16 @@ def run_implementations(
 ) -> list[dict]:
     """Compare emitted fragments between the installed beam and an alternative implementation.
 
-    Two kinds of alternative are supported. A module exposing ``build_fast_gnn_candidates`` is a
-    revision of the installed search, so the comparison is an exact set difference. The research
-    prototype's ``enumerate_node_combos`` instead ranks by the mask log probability, so it is a
-    different objective and the interesting quantity is how much probability mass each reaches.
+    Two kinds of alternative are supported. A module exposing
+    ``build_connected_fragment_beam_candidates`` is a revision of the installed search, so the
+    comparison is an exact set difference. The research prototype's ``enumerate_node_combos``
+    instead ranks by the mask log probability, so it is a different objective and the interesting
+    quantity is how much probability mass each reaches.
 
     A fixed batch is used, so this does **not** measure invariance to batch composition, which is
     the property the stable-tie ordering exists to provide.
     """
-    is_prototype = not hasattr(alternative_module, "build_fast_gnn_candidates")
+    is_prototype = not hasattr(alternative_module, "build_connected_fragment_beam_candidates")
     scenarios = (
         ((0, 0.0),) if trained_logits is not None else [(s, mu) for s in seeds for mu in (-2.0, -1.0)]
     )
@@ -698,7 +704,7 @@ def run_implementations(
                     )
                     if is_prototype
                     else fragment_table(
-                        alternative_module.build_fast_gnn_candidates(
+                        alternative_module.build_connected_fragment_beam_candidates(
                             logits,
                             batch.chemical_bond_index,
                             batch.atom_batch_indices,

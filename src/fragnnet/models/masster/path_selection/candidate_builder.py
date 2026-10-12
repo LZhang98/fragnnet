@@ -17,7 +17,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.templates import MassterTemplate
+    from fragnnet.models.masster.path_selection.smarts_templates import MassterTemplate
 
 
 _CPU_POOL: ThreadPoolExecutor | None = None
@@ -581,7 +581,7 @@ def build_masster_candidates(
     if candidate_backend not in ("cpu", "cuda"):
         raise ValueError(f"unknown candidate_backend: {candidate_backend!r}; use cpu or cuda")
     if candidate_backend == "cuda":
-        from fragnnet.models.masster.path_selection.cuda_full import (
+        from fragnnet.models.masster.path_selection.cuda_candidates import (
             build_masster_candidates_cuda,
         )
 
@@ -1051,7 +1051,7 @@ def _build_cpu_candidates(
 
         smarts_start = perf_counter()
         if molecule_templates:
-            from fragnnet.models.masster.path_selection.templates import formed_bond_count
+            from fragnnet.models.masster.path_selection.smarts_templates import formed_bond_count
 
             smarts_lookup = (
                 None

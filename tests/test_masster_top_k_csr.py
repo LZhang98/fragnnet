@@ -13,7 +13,7 @@ from fragnnet.models.masster.path_selection.core import (
     top_k_cut_masks_csr_raw,
     top_mixture_bond_sets_raw,
 )
-from fragnnet.models.masster.path_selection.masks import iter_ranked_cut_masks
+from fragnnet.models.masster.path_selection.cut_masks import iter_ranked_cut_masks
 
 
 def _decode_masks(mask_ptr: np.ndarray, broken_bonds: np.ndarray) -> list[tuple[int, ...]]:

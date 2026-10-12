@@ -56,10 +56,12 @@ def _sha256(path: Path) -> str:
 
 
 _CURRENT_PACKAGE = "fragnnet.models.masster.path_selection"
-# (package, extension stem, candidate module) of the current layout and of the layout before
-# the path_selection move. A compiled extension only loads under the name it was built with, so a
-# pre-move reference installs under its own names and the current names alias it.
+# (package, extension stem, candidate module) of the current layout, of the layout before the
+# candidate_builder rename and of the layout before the path_selection move. A compiled extension
+# only loads under the name it was built with, so an older reference installs under its own
+# names and the current names alias it.
 _REFERENCE_LAYOUTS = (
+    (_CURRENT_PACKAGE, "core", "candidate_builder"),
     (_CURRENT_PACKAGE, "core", "candidates"),
     ("fragnnet.models.masster", "masster_core", "masster_candidates"),
 )
@@ -77,25 +79,26 @@ def _install_reference(directory: Path) -> dict:
         (package, core, candidates, extensions)
         for package, core, candidates in _REFERENCE_LAYOUTS
         if (extensions := list(directory.glob(f"{core}.*.so")))
+        and (directory / f"{candidates}.py").is_file()
     ]
     if len(layouts) != 1 or len(layouts[0][3]) != 1:
         raise ValueError(
-            "reference directory must contain exactly one core*.so or masster_core*.so"
+            "reference directory must contain exactly one core*.so or masster_core*.so and one "
+            "candidate_builder.py, candidates.py or masster_candidates.py"
         )
     package_name, core, candidates_name, extensions = layouts[0]
     paths = (extensions[0], directory / f"{candidates_name}.py")
-    if not paths[1].is_file():
-        raise ValueError(f"reference directory must contain {candidates_name}.py")
+    # Older candidate builders import their templates under the old names.
+    templates = importlib.import_module(f"{_CURRENT_PACKAGE}.smarts_templates")
     if package_name != _CURRENT_PACKAGE:
-        # The pre-move candidate builder imports its templates under the old name.
-        sys.modules["fragnnet.models.masster.masster_templates"] = importlib.import_module(
-            f"{_CURRENT_PACKAGE}.templates"
-        )
+        sys.modules["fragnnet.models.masster.masster_templates"] = templates
+    elif candidates_name == "candidates":
+        sys.modules[f"{_CURRENT_PACKAGE}.templates"] = templates
     package = importlib.import_module(package_name)
     current_package = importlib.import_module(_CURRENT_PACKAGE)
     installed = {}
     for name, current_name, path in zip(
-        (core, candidates_name), ("core", "candidates"), paths, strict=True
+        (core, candidates_name), ("core", "candidate_builder"), paths, strict=True
     ):
         module_name = f"{package_name}.{name}"
         spec = importlib.util.spec_from_file_location(module_name, path.resolve())
@@ -108,7 +111,7 @@ def _install_reference(directory: Path) -> dict:
         sys.modules[f"{_CURRENT_PACKAGE}.{current_name}"] = module
         setattr(current_package, current_name, module)
         installed[module_name] = str(path.resolve())
-    candidates = sys.modules[f"{_CURRENT_PACKAGE}.candidates"]
+    candidates = sys.modules[f"{_CURRENT_PACKAGE}.candidate_builder"]
     timings = candidates.MassterCandidateTimings
     adapter = None
     if "topology_assembly_ms" not in timings.__dataclass_fields__:
@@ -521,7 +524,7 @@ def main() -> None:
     }
     for name in (
         "fragnnet.models.masster.path_selection.core",
-        "fragnnet.models.masster.path_selection.candidates",
+        "fragnnet.models.masster.path_selection.candidate_builder",
         "fragnnet.models.masster.masster_model",
         "fragnnet.models.masster.masster_pl",
         "fragnnet.utils.migrations",
@@ -534,7 +537,7 @@ def main() -> None:
             source_paths[name] = Path(module.__file__)
         source_paths["cuda_topology_kernel"] = source_paths["cuda_topology"].with_suffix(".cu")
         if args.candidate_backend == "cuda_full":
-            for name in ("cuda_full", "cuda_selection"):
+            for name in ("cuda_candidates", "cuda_selection"):
                 module = importlib.import_module(f"fragnnet.models.masster.path_selection.{name}")
                 source_paths[name] = Path(module.__file__)
             source_paths["cuda_selection_kernel"] = source_paths["cuda_selection"].with_suffix(
