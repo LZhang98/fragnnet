@@ -28,7 +28,6 @@ from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
 )
 from fragnnet.utils import misc_utils
-from fragnnet.utils.callbacks import ConsoleLogger, ExponentialMovingAverage
 from fragnnet.utils.migrations import (
     RETIRED_INST_TYPE_HELP,
     find_retired_inst_type_refs,
@@ -38,8 +37,8 @@ from fragnnet.utils.migrations import (
 )
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
-from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
+from fragnnet.utils.trainer_utils import ConsoleLogger, ExponentialMovingAverage, MyPyTorchProfiler
 
 # Every model reads the same `config/template.yml`, so shared code can read any key without
 # checking `model_type` first. The registry's set only guards against a typo in `model_type`.

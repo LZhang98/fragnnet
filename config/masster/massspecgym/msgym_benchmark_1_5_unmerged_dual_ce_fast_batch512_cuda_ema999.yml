@@ -7,7 +7,7 @@
 # docs/plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24
 # At 194 steps/epoch, 0.999 gives a mean weight age of ~1,000 steps (~5.2 epochs), the same
 # step age as u2. Validation, best-checkpoint selection, the post-fit test and saved state_dicts
-# all use the average (fragnnet.utils.callbacks.ExponentialMovingAverage).
+# all use the average (fragnnet.utils.trainer_utils.ExponentialMovingAverage).
 # NOT a replay of the NIST result: both NIST wins trained at CONSTANT LR, and this recipe anneals
 # (cosine to 1% after a 1000-step warmup). Annealing also damps late-training weight noise, so
 # the two may overlap; this arm is also the first EMA x LR-decay measurement.
