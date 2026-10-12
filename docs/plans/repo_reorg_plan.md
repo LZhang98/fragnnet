@@ -1,17 +1,16 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
-> **Status:** ACTIVE · **Updated:** 2026-10-11
-> Phases 0–5 approved for implementation on `refactor/fragnnet-masster-reorg`, one commit per step; Phase 6 (directory moves) waits for the live branches and the layout decision. ICEBERG is retired in favor of external ms-pred, and the main environment becomes DGL-free.
-> Line references were measured at commit `13b1599d` (code is unchanged through `d2e3b03e`) and re-verified by a 12-agent review on 2026-10-11.
+> **Status:** ACTIVE · **Updated:** 2026-10-12
+> Phases 0–7 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step; what remains is review and merge. ICEBERG is retired in favor of external ms-pred, and the main environment is DGL-free.
+> Line and path references in the plan body were measured at commit `13b1599d`, before the moves; the [architecture map](../architecture.md#package-layout-and-dependency-rule) describes the current layout.
 
 ## Current summary
 
 - **Goal.** FraGNNet and MASSter become owner packages over a model-agnostic core. GRAFF and MassFormer become baseline subpackages; ICEBERG moves to external ms-pred. The dependency rule below is enforced by tests.
 - **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
-- **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging). Phase 6 (renames) and Phase 7 (doc paths) come later.
-- **Done.** Phase 0 (safety net) is committed: 8 test files under `tests/test_reorg_*.py`, goldens in `tests/golden/reorg/`, all mutation-tested (165 passed, 2 strict xfails for source defects).
-- **Next action.** Phase 1 step 1: the lazy registry.
-- Earlier dated entries are in the [plan log](../history/repo_reorg_plan_log.md).
+- **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging), Phase 6 (directory moves) and Phase 7 (doc paths).
+- **Done.** All eight phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; FraGNNet and MASSter live in `fragnnet.models.{fragnnet,masster}`, GRAFF and MassFormer in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
+- **Next action.** Review and merge the branch; then the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
 
 ## Goal
 
@@ -663,206 +662,77 @@ and after open decisions 1-2.
 
 ## Open decisions
 
-1. **Layout.** Recommended: `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`. The alternative, separate top-level packages or pip distributions for the retained baselines, is only worth it if they will be published or installed separately. Gates Phase 6 only.
-2. **NEIMS.** It is a baseline but lives in core `model/` and `pl_model/`. It stays a core export, and is not a "baseline module" for the Phase 1 gate, through Phase 5. Phase 6 moves it to `baselines/neims` only if this decision says so. The `neims_*` keys stay in core either way, because ChemLM reads them. `chemlm`, `gnn`, `precursor`, MCES and CLIP stay in core.
+1. **Layout.** Decided 2026-10-12 (user): `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`, as recommended. The alternative, separate top-level packages or pip distributions for the retained baselines, is only worth it if they will be published or installed separately.
+2. **NEIMS.** Decided 2026-10-12 (user): NEIMS stays in core `model/` and `pl_model/`. The `neims_*` keys stay in core either way, because ChemLM reads them. `chemlm`, `gnn`, `precursor`, MCES and CLIP stay in core.
 3. **Baseline config directories.** Recommended: do not move them into `config/baselines/`, since sweeps and W&B runs point at the current paths.
-4. **Live branches.** Which diverged branches are still in use; this sets when Phase 6 can run.
+4. **Live branches.** Decided 2026-10-12 (user): no diverged branch is live, so Phase 6 ran without waiting. A branch revived later merges across the pure `git mv` commits with rename detection.
 
 ICEBERG ownership is settled: use external ms-pred and archive the local fork through Git
 provenance.
 
 ## Progress
 
-Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_reorg_plan_log.md).
+All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](../history/repo_reorg_plan_log.md), moved verbatim when the plan passed 600 lines.
 
-- 2026-10-11: a 12-agent verification (six finders, six adversarial verifiers) checked every claim against the code: 99 findings, 98 confirmed or partly confirmed, 1 refuted. This revision applies them. The main changes:
-  - The `proc_utils` → `compute_frags` edge and the core size constants.
-  - A full `frag_utils` placement table.
-  - The sampler classification.
-  - The re-export policy (none in core files).
-  - The string-path audit.
-  - Phase 0 determinism, baseline records and the CE-pair fixture recipe.
-  - Retirement-error placement.
-  - Per-term Phase 2 helpers.
-  - Exporter hook coverage.
-  - The alias table in core.
-  - Phase 6 build hazards.
-  - Packaging facts.
-
-  The user approved implementing Phases 0–5 with one commit per step.
-- 2026-10-11: Phase 0 committed on `refactor/fragnnet-masster-reorg`.
-  - Commits: `7b3437e6` (item 10, boundary ratchet), `69c2eb86` (item 1, registry), `a766b754`
-    (shared fixture `tests/reorg_fixtures.py`), `624a00a9` (items 2, 9), `d5303e0d` (item 3),
-    `c289dc2a` (items 4, 5), `05bf1481` (item 6), `be417637` (item 7), `102400a7` (item 8).
-  - Each test file was written by one agent, then mutation-tested by an independent reviewer
-    (patched behavior through a scratch pytest plugin; the test had to fail), then fixed until
-    every mutation was caught. All eight files: 165 passed, 2 strict xfails, about 85 s, bit-identical
-    across runs.
-  - Two source defects found and pinned as strict xfails, not fixed (behavior preservation):
-    `MCESPL._setup_model` does not pass `use_nce`, `use_ace`, `ace_max`, `ace_mean`, `ace_std` to
-    `SiameseGNNModel`, so `mces_pretraining` cannot be built; `DualGroupDynamicBatchSampler` yields
-    numpy ints that `SpecMolFragDataset.__getitem__` rejects, so the dual-group sampler cannot load
-    a train batch.
-  - Baseline of the existing suite at `13b1599d` code: 28 failed, 4963 passed, 133 skipped. The 28
-    are stale tests in `test_debug_masster_postcut_information_gate.py` (3), `test_export_schema.py`
-    (8, predate the `pred_rt` column), `test_masster_pl.py` (7) and `test_runner_config.py` (10,
-    precursor-pair validation). Later steps must add no failures beyond these.
-  - ICEBERG archive SHA: `13b1599d3cd85ef8f214799894e527adaf3ddd0a` (on `origin/masster`; the
-    ICEBERG paths are unchanged since).
-- 2026-10-11: Phase 1 committed.
-  - Commits: `8f05d1dc` (step 1, lazy registry), `0cca948c` (step 2, ICEBERG retired),
-    `4834b9fc` (step 3, `SpecMolMFDataset` and GRAFF collation), `1df261de` (step 4, DGL removed),
-    `59f6b798` (step 5, lazy package exports).
-  - Every step ran the reorg tests, then the full suite against the Phase 0 baseline: no new
-    failures (the same 28 stale tests). The Phase 0 baseline records did not change.
-  - The Phase 1 gate holds and is asserted directly (`test_phase1_isolation_gate`), not only
-    through the golden: no entry module loads a baseline or DGL, and selecting `graff` or
-    `massformer` loads only its own package. AST violations: 28 at the end of Phase 0, 11 now.
-  - FraGNNet and MASSter loads that remain (report-only until Phases 3-4): every entry module
-    except `pl_utils` and `proc_utils` loads `smarts_prepass`, `compute_frags`, `multi_cut_bfs`
-    and `frag_utils`; `spectrum_pl` also loads `fragnnet_model` (through
-    `EXPLAINABILITY_OUTPUT_KEYS`), and so does every model selection; `script_utils` loads both
-    models; `frag_gnn` selection loads `bond_fragment_heads` through `candidate_support`.
-  - Departures from the step text:
-    - Step 3: the `mol_params.mf` guard sits in `SpecMolDataset._process_mol`, where the removed
-      code read the flag. A check in `__init__` broke a test that builds the dataset with
-      `mol_params={}` and stubbed preprocessing.
-    - Step 4: the shell-continuation fix and the count of `fir/` scripts were corrected in the
-      step text above. Each env script was dry-run with stubbed `pip`/`conda`/`module`, and each
-      slurm script compared as joined logical lines: the same calls, minus dgl.
-    - Step 5: `model/` and `pl_model/` have no `__all__`, so a star import from them returns
-      whichever lazy names were already accessed. Nothing star-imports them.
-  - Left outside the PR:
-    - 49 generated `slurm_scripts/*.sh` still install `dgl==2.4.0` until regenerated.
-    - The gitignored `containers/apptainer/fragnnet_cuda128.def` is marked stale.
-    - The live `FRAGNNET-GPU` environment still has DGL installed, and its editable-install
-      metadata lists it until `pip install --no-deps -e .` is re-run.
-    - Bytecode of the deleted modules (`src/fragnnet/iceberg/`, `dgl_compat_utils*.pyc`) needs a
-      user-run cleanup script, because agent `rm -rf` is blocked.
-- 2026-10-11: Phase 2 committed (`30eb927d`).
-  - The Phase 0 item 4-5 records are bit-identical for FraGNNet, MASSter proposal-only and MASSter
-    joint training. Multiplying any helper's output by 1.001 fails them for both models, so
-    both loss paths run through the helpers.
-  - Full suite: no new failures. Six tests in `test_fragnnet_audit_fixes.py` call
-    `FraGNNetPL._setup_loss_fn` on a `SimpleNamespace` stand-in. They now bind the inherited
-    helpers onto it.
-  - A three-lens review workflow (numerics, config paths, contract) with two skeptics per
-    finding found no behavior change. It flagged two imprecise docstrings, now fixed.
-  - `_spectral_ce_auxiliary` takes the caller's `sparse_ce_fn`, because the models build it
-    with different `oos_tolerance_multiple` values. FraGNNet's `oos_loss` branch, which no
-    record reaches, is covered by `tests/test_reorg_shared_objectives.py`.
-- 2026-10-11: Phase 3 committed.
-  - Commits: `0efe7e28` (step 1, validator to core `misc_utils`), `e0d74390` (step 2, core
-    `model/output_schema.py`), `582a6d12` (step 3, size constants in `formula_utils`), `0bebecd0`
-    (step 4, `fragmentation/` with `smarts_prepass`, `candidate_support`, `cut_bond_encoder`,
-    `hydrogen_cap`), `c5f46353` (step 5, `frag_utils` split into `formula_utils`, the new core
-    `utils/dag_format_utils.py` and the FraGNNet remnant), `9557c48d` (step 6, `get_frag_graph`
-    and `batch_mols_frags` to the FraGNNet-owned `utils/frag_feat_utils.py`).
-  - Checks at each step:
+- 2026-10-12: Phases 6 and 7 committed. The user decided open decisions 1, 2 and 4 (see above).
+  - Commits, each move as a pure `git mv` then a mechanical rewrite:
+    - move 1, baselines: `b61fe30b`, `25486a39`;
+    - move 2, FraGNNet: `39e3e469`, `33f74a1e`;
+    - move 3, MASSter: `714a38b1`, `c21a5f1b` (also removes the lazy package exports);
+    - step 6: `073c3214` (`frag_utils` re-exports, directory-based layer table);
+    - Phase 7: `7839ce3a` (docs).
+  - The rewrites came from a tool: dotted module names and file paths by regex over tracked text
+    files (docs excluded until Phase 7), and an AST pass that splits `from <package> import a, b`
+    when the names now live in different modules. Dynamic names (the CPU benchmark's
+    `f"fragnnet.frag.{name}"` lookups, an import inside a test's subprocess script, a monkeypatch
+    through `dag_oracle_scores.frag_utils`) and the `pyproject.toml` package-data key were edited by
+    hand. Basenames are kept (`models/fragnnet/fragnnet_hooks.py`, `models/masster/masster_pl.py`).
+    The package initializers of `models/`, `models/fragnnet/`, `models/masster/` and `baselines/`
+    hold a docstring only, so importing a hooks module loads nothing else.
+  - Checks after each move:
     - the full suite, with no new failures;
-    - a byte-identity check of every moved definition;
-    - an import audit (all unique `fragnnet` import statements in tracked files resolve, apart
-      from `run_inference` in `scripts/eval/run_save_entropy.py`, which was already broken);
-    - the string-path audit;
-    - an attribute-access audit of removed names.
-  - The Phase 3 gate is enforced by `test_phase3_isolation_gate`, in a stricter form: the eight
-    Phase 3 entry modules load no module outside core. NEIMS, ChemLM, precursor, GNN, MCES and
-    CLIP selections load core only. FraGNNet and MASSter load `fragmentation/` and their own
-    modules, never each other's. AST violations: 11 at the end of Phase 1, now 4, all in
-    `script_utils` (Phase 4).
+    - the reorg tests, with the boundary golden regenerated and compared (identical up to list
+      order, except that step 6 counts the two model package modules in their own layer);
+    - the import audit (only the old `run_save_entropy` failure);
+    - a grep for the old paths outside the docs;
+    - the checkpoint check below.
+  - Checkpoints (step 5): 12 records were identical before and after every move. Real checkpoints:
+    FraGNNet, MASSter, the legacy `mass_shatter` `c0_control_vcpho5qm`, NEIMS, and GRAFF run
+    `61utcpnx` from W&B. Each was loaded through `get_pl_hparams` and
+    `load_state_dict(strict=True)`; the record is hparams, key/shape/dtype lists and a value hash.
+    Random-init key/shape records: ChemLM, precursor, GNN, CLIP, GRAFF and MassFormer.
+    - These checkpoints name the retired `FT`/`OB` instrument labels, which `get_pl_hparams`
+      refuses, so the record relabels them in memory (labels only, same count) and fills keys the
+      checkpoints predate from the template, as inference does.
+    - No `massformer_long` run on W&B kept a checkpoint file (60 runs scanned).
+    - `mces_pretraining` fails identically on both sides (the Phase 0 `MCESPL` defect).
+  - Stale builds: `git mv` of a directory carries its untracked `.so`/`.c`; file moves leave them
+    behind, where they would keep the old imports working. They were moved, not deleted, to
+    `output/p6_quarantine/` (with the moved `__pycache__`). The extensions were regenerated and
+    rebuilt in place for both environments (cp311 and cp312), and the old paths now fail to
+    import. A frozen `masster_core` build of the old layout still loads under its new module name
+    (the CPU benchmark's reference mode).
+  - Build (step 2): a wheel built from a clean export of HEAD holds the four extensions and both
+    `.cu` files next to the modules that load them. Installed with `--target` into a scratch
+    directory (the environments were left alone), every model resolves from that copy. Compiling
+    the CUDA kernels needs a GPU and was not exercised.
   - Departures from the step text:
-    - Step 1: the validator went to `misc_utils` with its name kept, so its 37 call sites in
-      `bond_fragment_heads` are unchanged.
-    - Step 2: the output-schema module holds the gated key set and the per-model switch defaults
-      only. The exporter keeps its annotation-name literals (deriving them was optional), so no
-      unused constants were added.
-    - Step 5: the four functions with no callers were deleted.
-    - Step 6: the DAG feature indexing (`NODE_FEAT_TO_IDX`, `EDGE_FEAT_TO_IDX`,
-      `get_node_feats`, `get_edge_feats`) already sat in the FraGNNet remnant after step 5, so it
-      did not move again.
-    - The `multi_cut_bfs` stub in `tests/test_spectrum_pl_utils.py` was dropped. It could also
-      leak a `MagicMock` module into later tests.
-  - A three-lens review workflow (serialization, equivalence, consumers) with two skeptics per
-    finding found no regression. Real DAG pickles and HDF5 groups load through the moved readers.
-  - Behavior change: Ctrl-C. Importing the compiled `compute_frags` replaces the process SIGINT
-    handler with one that only sets a flag, and only the `compute_frags` loop checks that flag.
-    Before Phase 3 every core entry module imported it, so Ctrl-C was ignored in any training
-    run. Now only processes that load FraGNNet code or `script_utils` ignore it. MASSter, NEIMS
-    and the other core-only runs get a normal `KeyboardInterrupt`.
-  - The untracked `.claude/commands/add-smarts-rule.md` was updated locally to the new
-    `smarts_prepass` path.
-- 2026-10-12: Phase 4 committed.
-  - Commits: `361bc9ab` (step 1, `ModelHooks`, registry dispatch and MASSter's migrations),
-    `2e668262` (step 2, config validation), `fc079022` (step 3, samplers and batching),
-    `c057b136` (step 4, MASSter's dataset filter), `60bc92f6` (step 5a, inference-config
-    overlays), `6057b11e` (step 5b, export hooks), `90d73518` (step 6, gate).
-  - Hook classes: `FraGNNetHooks` (`frag/fragnnet_hooks.py`, registered for `frag_gnn` and
-    `fragnnet`), `MassterHooks` (`frag/masster_hooks.py`) and `GrAFFHooks` (`graff/hooks.py`).
-    Each imports core only at module level, so config validation and checkpoint migration load
-    no model code or compiled extension. Moved modules: FraGNNet samplers to
-    `dataset/frag_data_sampler.py`, MASSter's to `dataset/masster_data_sampler.py`, the MASSter
-    filter to `frag/masster_dataset_filter.py`, its annotation tables to `frag/masster_export.py`.
-    Every moved definition is byte- or AST-identical (the MASSter filter with `self` renamed).
-  - Checks at each step:
-    - the full suite, with no new failures;
-    - the Phase 0 records (migrations, samplers, export, losses), all unchanged;
-    - the import audit, with no new failures;
-    - mutation checks: replacing each hook implementation with a no-op or empty result fails
-      tests.
-  - Validation equivalence against the old `validate_sampler_config`: 0 accept/reject
-    differences over 6000 random configs, and `tests/test_reorg_validation.py` records all 1080
-    single-change outcomes (golden `validation.json`).
-  - The Phase 4 gate is enforced by `test_phase4_isolation_gate`: every entry module, including
-    `script_utils`, loads no module outside core, and the AST boundary check finds no violation
-    (4 at the end of Phase 3). The legacy-checkpoint gate is the Phase 0 migration record,
-    unchanged.
-  - Departures from the hook table:
-    - `owned_config_keys` became `reject_foreign_config`: each model rejects a config that
-      switches on its own settings for another model, with the old messages. A general
-      owned-keys check seeded from the template banners was not built; it would reject configs
-      that load today.
-    - `sampler_epoch_reset` became the capability `advances_sampler_each_epoch`. Both
-      `_seed_dataloader` branches stay in core. `_seed_dataloader` looks hooks up by
-      `hparams.model_type`, so the Phase 0 sampler stubs gained `model_type`.
-    - The export hooks are a class-dispatched `ExportHooks` mixin on `FraGNNetPL` and
-      `MassterPL`, not registry hooks, because the exporters hold a model object, not a
-      `model_type`. Objects without it get the peak-only defaults. `formula_row_deltas` and
-      `node_hash_features` became `export_formula_row_deltas` and `export_node_ccs`; added were
-      `export_node_rules` and `nb_index_vars` (FraGNNet's `nb_iso` index names).
-    - `dataloader_options` covers persistent workers; the `num_workers` reload workaround went
-      to a separate `trainer_options` hook.
-    - The GRAFF `apply_inference_config` hook, planned for Phase 1, landed in step 5a.
-    - The `frag_params.include_cmf` check moved from `run_training` into
-      `FraGNNetHooks.validate_config`.
-    - `match_sweep_schedule` keeps its list of sampler keys (including `masster_batch_sampler`)
-      in core. It reads config keys only and imports nothing.
-  - Behavior changes, all intended:
-    - a config with several problems may report a different first error;
-    - in a MASSter config that uses its own sampler, turning on a FraGNNet sampler reports
-      "can only be used with frag_gnn model" instead of "mutually exclusive";
-    - `apply_inference_config` no longer edits `frag_params` or `ann_params` for models that do
-      not own them;
-    - `include_cmf` is no longer checked for non-FraGNNet models, which never read it.
-  - A four-lens review (config, samplers, export, consumers), each reviewer reproducing at
-    `fa18f7f0` and `90d73518`, found no regression. It covered 5796 validation cases, 78
-    synthetic checkpoints through `get_pl_hparams`, `apply_inference_config` for 10 model types,
-    and the index-variable grid. `README.md` still pointed at `data_sampler.py` for the FraGNNet
-    samplers; it now points at `frag_data_sampler.py`.
-    By design, external code importing the moved samplers from `dataset.data_sampler`, or
-    star-importing them from `fragnnet.dataset`, now fails (no re-exports in core).
-- 2026-10-12: Phase 5 committed (`32e99fea`).
-  - `pyproject.toml`: `requires-python = ">=3.10,<3.13"`; `omegaconf` dropped; `scikit-learn`
-    moved into `dev` and a new `scripts` extra; `pyyaml`, `networkx` and `pillow` declared;
-    `torch_scatter` kept.
-  - `omegaconf` removed from the install lists of the four `env/` scripts, the eight
-    `scripts/manual_slurm` scripts and `scripts/setup_job_cc.py`; each edit removes only that
-    line. `INSTALL.md` and `README.md` describe the extras and the Python range.
-  - Lock: `env/fragnnet_gpu_py311.lock.txt`, a pip freeze of `FRAGNNET-GPU` (Python 3.11.13,
-    torch 2.4.1+cu121) with the PyTorch and PyG wheel indexes. It leaves out the project,
-    ICEBERG's graph library, `omegaconf` with its antlr4 runtime, and pip. The live environment
-    still has those installed.
-  - Full suite: no new failures (28 baseline failures, 5349 passed).
-  - Not done: the stale `env_setup_gpu_py310_cu118.sh` reference in `INSTALL.md` (Phase 7), and
-    the `README.md` section on the formula hard-negative sampler and its
-    `formula_hard_negative_*` keys, which no longer exist in `src/` or the template (stale
-    before this reorg).
+    - Step 6's shim removal happened in move 3, when the last lazy names left; the step 6 commit
+      retired the `frag_utils` re-exports (41 core names, 61 importing files) and made the layer
+      table directory-based (`LAYER_PACKAGES`; a module under `models/` or `baselines/` outside
+      it fails `test_reorg_boundary`).
+    - Step 3: the plan's cleanup script became the quarantine above; `INSTALL.md` now deletes
+      `.so` files in subdirectories.
+  - Phase 7: `architecture.md` gained the layout, the dependency rule and the hook interface;
+    `docs/reference/baselines.md` is new; `rules/documentation.md` says frozen records cite
+    paths as of `13b1599d`. The live-doc sweep repointed 15 references in 10 files and fixed
+    three that were already stale. `docs/project-state.md` and `docs/workstreams/msgym.md` hold
+    another session's uncommitted edits and were not touched; project-state's reorganization
+    block still says "implementation not started".
+  - A four-lens review (leftover references, runtime behavior, build and packaging, docs) with
+    two skeptics per finding found no code regression. It found three errors in the new docs, now
+    fixed. `architecture.md` claimed the registry holds the legacy `mass_shatter` alias (it is
+    renamed by `migrate_legacy_masster_name` before reaching the registry) and that the baselines
+    use the no-op hooks (GRAFF overrides one). A note's `fragnnet_model.py` line range had drifted;
+    the memory review's line anchors, already stale, were re-anchored too. The git-ignored
+    `.github/copilot-instructions.md` still shows an old tree; it is not part of the repository.
