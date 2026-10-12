@@ -41,6 +41,7 @@
       "masster": [
         "fragnnet.frag.masster_candidates",
         "fragnnet.frag.masster_fast_gnn",
+        "fragnnet.frag.masster_hooks",
         "fragnnet.frag.masster_templates",
         "fragnnet.model.bond_fragment_heads",
         "fragnnet.model.candidate_features",
@@ -123,6 +124,7 @@
       "masster": [
         "fragnnet.frag.masster_candidates",
         "fragnnet.frag.masster_fast_gnn",
+        "fragnnet.frag.masster_hooks",
         "fragnnet.frag.masster_templates",
         "fragnnet.model.bond_fragment_heads",
         "fragnnet.model.candidate_features",

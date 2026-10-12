@@ -199,17 +199,7 @@ def load_config(
     config_d["model_type"] = resolved_model_type
 
     migrate_masster_proposal_method(config_d)
-    # Compatibility boundary for templates saved before candidate backends existed.
-    # Add the schema key before custom config validation and CLI overrides.
-    if resolved_model_type == "masster":
-        if "masster_candidate_backend" not in config_d:
-            config_d["masster_candidate_backend"] = "cpu"
-        if "masster_proposal_method" not in config_d:
-            config_d["masster_proposal_method"] = "cut_masks"
-        if "masster_fast_gnn_beam_width" not in config_d:
-            config_d["masster_fast_gnn_beam_width"] = 256
-        if "masster_fast_gnn_max_boundary_cuts" not in config_d:
-            config_d["masster_fast_gnn_max_boundary_cuts"] = 3
+    registry.get_model_hooks(resolved_model_type).migrate_template_config(config_d)
 
     # 2. Validate and merge the custom config. The template declares every model's keys, so a
     # key it does not declare is a typo rather than another model's setting. Validation recurses
@@ -1052,17 +1042,9 @@ def run_training(
     model_cls = get_model_cls(config_d["model_type"])
     model = model_cls(**config_d)
     model.train()
-    if config_d["model_type"] == "masster":
-        resolved_proposal = config_d["masster_proposal_method"]
-        resolved_backend = (
-            "torch_device"
-            if resolved_proposal == "connected_fragment_beam"
-            else model.model.candidate_backend
-        )
-        logging.info("Resolved MASSter candidate backend: %s", resolved_backend)
-        if wandb_mode != "disabled":
-            wandb.run.summary["masster_candidate_backend_resolved"] = resolved_backend
-            wandb.run.summary["masster_proposal_method_resolved"] = resolved_proposal
+    registry.get_model_hooks(config_d["model_type"]).log_resolved_settings(
+        model, config_d, wandb.run if wandb_mode != "disabled" else None
+    )
 
     # setup callbacks
     callbacks = []

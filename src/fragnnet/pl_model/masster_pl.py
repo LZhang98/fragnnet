@@ -23,6 +23,7 @@ import torch as th
 from rdkit import Chem
 
 from fragnnet.frag.masster_candidates import MassterStaticGraph
+from fragnnet.frag.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.frag.masster_templates import (
     MassterTemplate,
     build_masster_templates,
@@ -51,7 +52,6 @@ from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.pl_utils import (
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,
-    migrate_masster_rt_ccs_hparams,
 )
 from fragnnet.utils.spec_utils import (
     calculate_match_mzs,

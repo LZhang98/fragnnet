@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
+from functools import cache
 
 
 @dataclass(frozen=True)
@@ -18,10 +19,12 @@ class ModelEntry:
     Attributes:
         model_cls: The Lightning module.
         dataset_cls: The dataset class that produces its batches.
+        hooks: The ``fragnnet.hooks.ModelHooks`` subclass with its model-specific steps.
     """
 
     model_cls: str
     dataset_cls: str
+    hooks: str = "fragnnet.hooks:ModelHooks"
 
 
 _SPEC_MOL_DATASET = "fragnnet.dataset.spec_mol_dataset:SpecMolDataset"
@@ -34,7 +37,11 @@ _CLIP = ModelEntry("fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL", _
 MODEL_REGISTRY: dict[str, ModelEntry] = {
     "frag_gnn": _FRAGNNET,
     "fragnnet": _FRAGNNET,
-    "masster": ModelEntry("fragnnet.pl_model.masster_pl:MassterPL", _SPEC_MOL_DATASET),
+    "masster": ModelEntry(
+        "fragnnet.pl_model.masster_pl:MassterPL",
+        _SPEC_MOL_DATASET,
+        hooks="fragnnet.frag.masster_hooks:MassterHooks",
+    ),
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),
     "massformer": ModelEntry(
@@ -115,6 +122,31 @@ def get_model_cls(model_type: str) -> type:
         ValueError: If the model type is unknown or retired.
     """
     return _resolve(_entry(model_type).model_cls)
+
+
+@cache
+def _hooks_instance(path: str):
+    return _resolve(path)()
+
+
+def get_model_hooks(model_type: str | None, *, strict: bool = True):
+    """Return the hooks for ``model_type``, importing its hooks module on first use.
+
+    Args:
+        model_type: A model type, already alias-resolved.
+        strict: Raise for an unknown or retired type. With ``strict=False`` such a type (or
+            None) gets the default no-op hooks, for callers such as checkpoint migration that
+            must not fail before the type is validated elsewhere.
+
+    Returns:
+        A ``fragnnet.hooks.ModelHooks`` instance (shared per hooks class).
+
+    Raises:
+        ValueError: If ``strict`` and the model type is unknown or retired.
+    """
+    if not strict and model_type not in MODEL_REGISTRY:
+        return _hooks_instance("fragnnet.hooks:ModelHooks")
+    return _hooks_instance(_entry(model_type).hooks)
 
 
 def get_dataset_cls(model_type: str) -> type:

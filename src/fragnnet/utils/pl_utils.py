@@ -8,6 +8,7 @@ from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.utilities import rank_zero_only
 
+from fragnnet import registry
 from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 
 # MASSter was named MASShatter until 2026-09-25. Configs, checkpoints, W&B runs and sweeps from
@@ -454,25 +455,18 @@ class ExponentialMovingAverage(Callback):
         self._last_switch_epoch = state_dict["last_switch_epoch"]
 
 
-def migrate_masster_rt_ccs_hparams(hparams: dict) -> None:
-    """Explicitly migrate pre-RT/CCS checkpoints to the disabled legacy behavior."""
+def migrate_rt_ccs_spec_params(hparams: dict) -> None:
+    """Disable RT/CCS labels in ``spec_params`` saved before they existed (every model type).
+
+    The datasets read these keys for any model, so the backfill is not tied to MASSter, whose
+    RT/CCS head keys ``MassterHooks.migrate_checkpoint_hparams`` adds.
+    """
     if "spec_params" in hparams:
         for name in ("rt", "ccs"):
             hparams["spec_params"].setdefault(name, False)
             hparams["spec_params"].setdefault(f"{name}_labels_fp", None)
         hparams["spec_params"].setdefault("rt_ccs", False)
         hparams["spec_params"].setdefault("rt_ccs_labels_fp", None)
-    if hparams.get("model_type") == "masster":
-        for key, value in {
-            "masster_predict_rt_ccs": False,
-            "masster_predict_rt": False,
-            "masster_predict_ccs": False,
-            "masster_rt_loss_weight": 0.1,
-            "masster_ccs_loss_weight": 0.1,
-            "masster_rt_scale": 60.0,
-            "masster_ccs_scale": 100.0,
-        }.items():
-            hparams.setdefault(key, value)
 
 
 def get_pl_hparams(ckpt: dict) -> dict:
@@ -497,44 +491,16 @@ def get_pl_hparams(ckpt: dict) -> dict:
             f"{RETIRED_INST_TYPE_HELP}"
         )
     migrate_legacy_masster_name(hyper_parameters)
-    migrate_masster_rt_ccs_hparams(hyper_parameters)
+    migrate_rt_ccs_spec_params(hyper_parameters)
     migrate_legacy_hparams(hyper_parameters)
     # Old checkpoints retain first-replicate CE context unless explicitly migrated.
     if "spec_params" in hyper_parameters:
         spec_params = hyper_parameters["spec_params"]
         if "merge_ce_aggregation" not in spec_params:
             spec_params["merge_ce_aggregation"] = "legacy"
-    # Explicit checkpoint migration: pre-context-input MASSter weights use the
-    # structural-only GNN width. Fresh configs must declare this key via the template.
-    if (
-        hyper_parameters.get("model_type") == "masster"
-        and "masster_context_in_gnn" not in hyper_parameters
-    ):
-        hyper_parameters["masster_context_in_gnn"] = False
-    # Explicit checkpoint migration: pre-attention-topology MASSter weights carry the
-    # induced latent set. Fresh configs must declare this key via the template.
-    if (
-        hyper_parameters.get("model_type") == "masster"
-        and "masster_intensity_transformer_attention" not in hyper_parameters
-    ):
-        hyper_parameters["masster_intensity_transformer_attention"] = "induced"
-    # Backend choice changes construction only; old checkpoints retain CPU semantics.
-    if (
-        hyper_parameters.get("model_type") == "masster"
-        and "masster_candidate_backend" not in hyper_parameters
-    ):
-        hyper_parameters["masster_candidate_backend"] = "cpu"
-    if hyper_parameters.get("model_type") == "masster":
-        migrate_masster_proposal_method(hyper_parameters)
-        if "masster_proposal_method" not in hyper_parameters:
-            hyper_parameters["masster_proposal_method"] = "cut_masks"
-        if "masster_fast_gnn_beam_width" not in hyper_parameters:
-            hyper_parameters["masster_fast_gnn_beam_width"] = 256
-        if "masster_fast_gnn_max_boundary_cuts" not in hyper_parameters:
-            hyper_parameters["masster_fast_gnn_max_boundary_cuts"] = 3
-        # Checkpoints from before marginal fragment selection kept the whole enumerated pool.
-        if "masster_fragment_selection" not in hyper_parameters:
-            hyper_parameters["masster_fragment_selection"] = "mask_order"
-        if "masster_selected_fragment_target" not in hyper_parameters:
-            hyper_parameters["masster_selected_fragment_target"] = None
+    # Model-specific backfills. The type may be missing, unknown or retired here; those get the
+    # default no-op hooks, and load_config reports them.
+    registry.get_model_hooks(
+        hyper_parameters.get("model_type"), strict=False
+    ).migrate_checkpoint_hparams(hyper_parameters)
     return hyper_parameters
