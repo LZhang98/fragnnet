@@ -1,0 +1,4118 @@
+{
+  "masster_filter": {
+    "filtered": {
+      "group_per_mol": {
+        "0": 1,
+        "1": 1,
+        "2": 1,
+        "3": 1
+      },
+      "mol_smiles": [
+        "CC(=O)O",
+        "CCCC",
+        "CCO",
+        "Oc1ccccc1"
+      ],
+      "n_items": 6,
+      "spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        6,
+        7
+      ],
+      "spec_per_group": {
+        "0": 2,
+        "1": 2,
+        "3": 1,
+        "4": 1
+      },
+      "spec_per_mol": {
+        "0": 2,
+        "1": 2,
+        "2": 1,
+        "3": 1
+      },
+      "split_spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        6,
+        7
+      ],
+      "um_spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        6,
+        7
+      ]
+    },
+    "unfiltered": {
+      "group_per_mol": {
+        "0": 1,
+        "1": 1,
+        "2": 2,
+        "3": 1
+      },
+      "mol_smiles": [
+        "CC(=O)O",
+        "CCCC",
+        "CCO",
+        "Oc1ccccc1"
+      ],
+      "n_items": 8,
+      "spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "spec_per_group": {
+        "0": 2,
+        "1": 2,
+        "2": 2,
+        "3": 1,
+        "4": 1
+      },
+      "spec_per_mol": {
+        "0": 2,
+        "1": 2,
+        "2": 3,
+        "3": 1
+      },
+      "split_spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "um_spec_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  },
+  "masster_filter_settings": {
+    "max_h=0,cmf=False,bound=none": {
+      "group_per_mol": {
+        "0": 1
+      },
+      "mol_smiles": [
+        "CCO"
+      ],
+      "n_items": 2,
+      "spec_ids": [
+        0,
+        1
+      ],
+      "spec_per_group": {
+        "0": 2
+      },
+      "spec_per_mol": {
+        "0": 2
+      },
+      "split_spec_ids": [
+        0,
+        1
+      ],
+      "um_spec_ids": [
+        0,
+        1
+      ]
+    },
+    "max_h=0,cmf=True,bound=none": {
+      "group_per_mol": {
+        "0": 1,
+        "1": 1
+      },
+      "mol_smiles": [
+        "CCO",
+        "O=C=O"
+      ],
+      "n_items": 4,
+      "spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "spec_per_group": {
+        "0": 2,
+        "1": 2
+      },
+      "spec_per_mol": {
+        "0": 2,
+        "1": 2
+      },
+      "split_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "um_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "max_h=0,cmf=True,bound=valence": {
+      "group_per_mol": {
+        "0": 1,
+        "1": 1
+      },
+      "mol_smiles": [
+        "CCO",
+        "O=C=O"
+      ],
+      "n_items": 4,
+      "spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "spec_per_group": {
+        "0": 2,
+        "1": 2
+      },
+      "spec_per_mol": {
+        "0": 2,
+        "1": 2
+      },
+      "split_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "um_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "max_h=1,cmf=False,bound=complement": {
+      "group_per_mol": {
+        "0": 1
+      },
+      "mol_smiles": [
+        "CCO"
+      ],
+      "n_items": 2,
+      "spec_ids": [
+        0,
+        1
+      ],
+      "spec_per_group": {
+        "0": 2
+      },
+      "spec_per_mol": {
+        "0": 2
+      },
+      "split_spec_ids": [
+        0,
+        1
+      ],
+      "um_spec_ids": [
+        0,
+        1
+      ]
+    },
+    "max_h=1,cmf=False,bound=none": {
+      "group_per_mol": {
+        "0": 1,
+        "1": 1
+      },
+      "mol_smiles": [
+        "CCO",
+        "O=C=O"
+      ],
+      "n_items": 4,
+      "spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "spec_per_group": {
+        "0": 2,
+        "1": 2
+      },
+      "spec_per_mol": {
+        "0": 2,
+        "1": 2
+      },
+      "split_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "um_spec_ids": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "max_h=1,cmf=False,bound=valence": {
+      "group_per_mol": {
+        "0": 1
+      },
+      "mol_smiles": [
+        "CCO"
+      ],
+      "n_items": 2,
+      "spec_ids": [
+        0,
+        1
+      ],
+      "spec_per_group": {
+        "0": 2
+      },
+      "spec_per_mol": {
+        "0": 2
+      },
+      "split_spec_ids": [
+        0,
+        1
+      ],
+      "um_spec_ids": [
+        0,
+        1
+      ]
+    },
+    "max_h=1,cmf=True,bound=valence": {
+      "group_per_mol": {
+        "0": 1
+      },
+      "mol_smiles": [
+        "CCO"
+      ],
+      "n_items": 2,
+      "spec_ids": [
+        0,
+        1
+      ],
+      "spec_per_group": {
+        "0": 2
+      },
+      "spec_per_mol": {
+        "0": 2
+      },
+      "split_spec_ids": [
+        0,
+        1
+      ],
+      "um_spec_ids": [
+        0,
+        1
+      ]
+    }
+  },
+  "step:chemlm": {
+    "eval/pred_batch_idxs": "int64|(2335,)|55f7c166b0dbb91c",
+    "eval/pred_logprobs": "float32|(2335,)|e18d45ce507db036",
+    "eval/pred_mzs": "float32|(2335,)|1f0b471640e439c8",
+    "eval/pred_specs": "float32|(7, 2000)|9940456635d058fc",
+    "forward/pred_batch_idxs": "int64|(2376,)|4677f8db2ec8e35d",
+    "forward/pred_logprobs": "float32|(2376,)|5bc0d81061356e55",
+    "forward/pred_mzs": "float32|(2376,)|b078583ee36e5967",
+    "forward/pred_specs": "float32|(7, 2000)|37c53979222fae6b",
+    "grad_norm": {
+      "digest": "float64|(1,)|c5c4913fb39fe087",
+      "values": [
+        "0x1.4f2da5728cb3ap-1"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|4d0f4afad357e947",
+      "values": [
+        "0x1.e7d0920000000p-1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|447f783c61b91cac",
+      "values": [
+        "0x1.c7c5940000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.ddf5ec0000000p-1",
+        "0x1.e5e8ee0000000p-1",
+        "0x1.e9961e0000000p-1",
+        "0x1.e1796c0000000p-1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/spec_cd": {
+      "digest": "float32|(7,)|447f783c61b91cac",
+      "values": [
+        "0x1.c7c5940000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.ddf5ec0000000p-1",
+        "0x1.e5e8ee0000000p-1",
+        "0x1.e9961e0000000p-1",
+        "0x1.e1796c0000000p-1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "n_grad_tensors": 58,
+    "n_params_changed": 58,
+    "params_after": "float64|(85464,)|349aecf6d84290d8"
+  },
+  "step:chemlm:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:clip": {
+    "eval/0": "float32|(7, 16)|51d086ffff0e8bbe",
+    "eval/1": "float32|(7, 16)|aa9d45c86a0d6f20",
+    "forward/0": "float32|(7, 16)|51d086ffff0e8bbe",
+    "forward/1": "float32|(7, 16)|aa9d45c86a0d6f20",
+    "grad_norm": {
+      "digest": "float64|(1,)|8fe42656323bc335",
+      "values": [
+        "0x1.c4146d7a5dbcdp-2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|c73cd543c3f1010e",
+      "values": [
+        "0x1.f438cc0000000p+0"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(1,)|c73cd543c3f1010e",
+      "values": [
+        "0x1.f438cc0000000p+0"
+      ]
+    },
+    "n_grad_tensors": 51,
+    "n_params_changed": 51,
+    "params_after": "float64|(12153,)|3f99dedd80093d02"
+  },
+  "step:clip:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:frag_gnn": {
+    "eval/pred_batch_idxs": "int64|(256,)|6fbea8ba89f35494",
+    "eval/pred_edge_batch_idxs": "NoneType",
+    "eval/pred_edge_h_diffs": "NoneType",
+    "eval/pred_edge_h_logprobs": "NoneType",
+    "eval/pred_edge_h_range_masks": "NoneType",
+    "eval/pred_edge_logprobs": "NoneType",
+    "eval/pred_formula_batch_idxs": "int64|(263,)|6e5319d9dd665645",
+    "eval/pred_formula_formula_idxs": "int64|(263,)|e1d14f82d2380e1e",
+    "eval/pred_formula_logprobs": "float32|(263,)|d3076d9bcf9270b6",
+    "eval/pred_formula_node_logprobs": "float32|(551,)|5295676e2a3efda4",
+    "eval/pred_formula_support_batch_idxs": "NoneType",
+    "eval/pred_formula_support_logits": "NoneType",
+    "eval/pred_formula_support_peak_batch_idxs": "NoneType",
+    "eval/pred_formula_support_peak_formula_idxs": "NoneType",
+    "eval/pred_formula_support_peak_mzs": "NoneType",
+    "eval/pred_formula_support_valid_mask": "NoneType",
+    "eval/pred_h_batch_idxs": "int64|(35,)|2ac0ad4caf529670",
+    "eval/pred_h_counts": "int64|(35,)|e17c14efc0999a97",
+    "eval/pred_h_logprobs": "float32|(35,)|1eef91441c94ea3d",
+    "eval/pred_joint_batch_idxs": "int64|(551,)|aab1d487ab3be742",
+    "eval/pred_joint_formula_idxs": "int64|(551,)|7a473b53815a8499",
+    "eval/pred_joint_h_counts": "int64|(551,)|2ad23429c85f935a",
+    "eval/pred_joint_h_idxs": "int64|(551,)|0fc19528d4102abb",
+    "eval/pred_joint_logprobs": "float32|(551,)|55d3ea1d3677e678",
+    "eval/pred_joint_node_idxs": "int64|(551,)|d1074d1d336954a7",
+    "eval/pred_logprobs": "float32|(256,)|66505672e267b215",
+    "eval/pred_mzs": "float32|(256,)|11e60ae21f3ee751",
+    "eval/pred_nb_formula_node_logprobs": "NoneType",
+    "eval/pred_nb_joint_batch_idxs": "NoneType",
+    "eval/pred_nb_joint_formula_idxs": "NoneType",
+    "eval/pred_nb_joint_logprobs": "NoneType",
+    "eval/pred_nb_joint_node_idxs": "NoneType",
+    "eval/pred_nb_node_batch_idxs": "NoneType",
+    "eval/pred_nb_node_formula_logprobs": "NoneType",
+    "eval/pred_nb_node_logprobs": "NoneType",
+    "eval/pred_nb_node_node_batch_idxs": "NoneType",
+    "eval/pred_nb_node_node_idxs": "NoneType",
+    "eval/pred_nb_node_node_logprobs": "NoneType",
+    "eval/pred_nb_node_node_node_idxs": "NoneType",
+    "eval/pred_node_batch_idxs": "int64|(153,)|756bfcf56a3fe31d",
+    "eval/pred_node_formula_logprobs": "float32|(551,)|bc5aed5a4566aecc",
+    "eval/pred_node_logprobs": "float32|(153,)|7592aa543f9153da",
+    "eval/pred_node_node_idxs": "int64|(153,)|b3541d56e2d9d90a",
+    "eval/pred_null_formula_logprob": {
+      "digest": "float32|(7,)|b334a5c3f7914169",
+      "values": [
+        "-0x1.43dce40000000p+0",
+        "-0x1.c978580000000p-1",
+        "-0x1.a3b1f00000000p+0",
+        "-0x1.43dce40000000p+0",
+        "-0x1.f612480000000p-1",
+        "-0x1.a3b1f00000000p+0",
+        "-0x1.c978580000000p-1"
+      ]
+    },
+    "eval/pred_oos_logprobs": {
+      "digest": "float32|(7,)|160db5c6e57a3148",
+      "values": [
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127"
+      ]
+    },
+    "forward/pred_batch_idxs": "int64|(256,)|6fbea8ba89f35494",
+    "forward/pred_edge_batch_idxs": "NoneType",
+    "forward/pred_edge_h_diffs": "NoneType",
+    "forward/pred_edge_h_logprobs": "NoneType",
+    "forward/pred_edge_h_range_masks": "NoneType",
+    "forward/pred_edge_logprobs": "NoneType",
+    "forward/pred_formula_batch_idxs": "int64|(263,)|6e5319d9dd665645",
+    "forward/pred_formula_formula_idxs": "int64|(263,)|e1d14f82d2380e1e",
+    "forward/pred_formula_logprobs": "float32|(263,)|ae44f8af971e1d4a",
+    "forward/pred_formula_node_logprobs": "float32|(551,)|6d38804556f8dccb",
+    "forward/pred_formula_support_batch_idxs": "NoneType",
+    "forward/pred_formula_support_logits": "NoneType",
+    "forward/pred_formula_support_peak_batch_idxs": "NoneType",
+    "forward/pred_formula_support_peak_formula_idxs": "NoneType",
+    "forward/pred_formula_support_peak_mzs": "NoneType",
+    "forward/pred_formula_support_valid_mask": "NoneType",
+    "forward/pred_h_batch_idxs": "int64|(35,)|2ac0ad4caf529670",
+    "forward/pred_h_counts": "int64|(35,)|e17c14efc0999a97",
+    "forward/pred_h_logprobs": "float32|(35,)|4fa6897d431050cc",
+    "forward/pred_joint_batch_idxs": "int64|(551,)|aab1d487ab3be742",
+    "forward/pred_joint_formula_idxs": "int64|(551,)|7a473b53815a8499",
+    "forward/pred_joint_h_counts": "int64|(551,)|2ad23429c85f935a",
+    "forward/pred_joint_h_idxs": "int64|(551,)|0fc19528d4102abb",
+    "forward/pred_joint_logprobs": "float32|(551,)|5f30f36e4dc4337c",
+    "forward/pred_joint_node_idxs": "int64|(551,)|d1074d1d336954a7",
+    "forward/pred_logprobs": "float32|(256,)|f7f90435b3fcfd58",
+    "forward/pred_mzs": "float32|(256,)|11e60ae21f3ee751",
+    "forward/pred_nb_formula_node_logprobs": "NoneType",
+    "forward/pred_nb_joint_batch_idxs": "NoneType",
+    "forward/pred_nb_joint_formula_idxs": "NoneType",
+    "forward/pred_nb_joint_logprobs": "NoneType",
+    "forward/pred_nb_joint_node_idxs": "NoneType",
+    "forward/pred_nb_node_batch_idxs": "NoneType",
+    "forward/pred_nb_node_formula_logprobs": "NoneType",
+    "forward/pred_nb_node_logprobs": "NoneType",
+    "forward/pred_nb_node_node_batch_idxs": "NoneType",
+    "forward/pred_nb_node_node_idxs": "NoneType",
+    "forward/pred_nb_node_node_logprobs": "NoneType",
+    "forward/pred_nb_node_node_node_idxs": "NoneType",
+    "forward/pred_node_batch_idxs": "int64|(153,)|756bfcf56a3fe31d",
+    "forward/pred_node_formula_logprobs": "float32|(551,)|39848e8c35c05ce2",
+    "forward/pred_node_logprobs": "float32|(153,)|88b1349dfef4e25c",
+    "forward/pred_node_node_idxs": "int64|(153,)|b3541d56e2d9d90a",
+    "forward/pred_null_formula_logprob": {
+      "digest": "float32|(7,)|1bd848c880cc71b4",
+      "values": [
+        "-0x1.6868cc0000000p+0",
+        "-0x1.107a6c0000000p+0",
+        "-0x1.b545e80000000p+0",
+        "-0x1.6868cc0000000p+0",
+        "-0x1.1fcaec0000000p+0",
+        "-0x1.b545e80000000p+0",
+        "-0x1.107a6c0000000p+0"
+      ]
+    },
+    "forward/pred_oos_logprobs": {
+      "digest": "float32|(7,)|160db5c6e57a3148",
+      "values": [
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127"
+      ]
+    },
+    "grad_norm": {
+      "digest": "float64|(1,)|c34e3fc6454086b6",
+      "values": [
+        "0x1.2d6ee38441f6fp+2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|da6b1a2805fb6634",
+      "values": [
+        "-0x1.9bf5040000000p+0"
+      ]
+    },
+    "loss/ios_ce": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/null_formula_prob": {
+      "digest": "float32|(7,)|225503a33a8aa527",
+      "values": [
+        "0x1.f515020000000p-3",
+        "0x1.6139780000000p-2",
+        "0x1.731e4e0000000p-3",
+        "0x1.f515020000000p-3",
+        "0x1.4cb6a60000000p-2",
+        "0x1.731e4e0000000p-3",
+        "0x1.6139780000000p-2"
+      ]
+    },
+    "loss/oos_ce": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/oos_prob": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/primary_loss": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/spec_ce": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "n_grad_tensors": 38,
+    "n_params_changed": 38,
+    "params_after": "float64|(38445,)|4d92668b439121dc"
+  },
+  "step:frag_gnn:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:fragnnet": {
+    "eval/pred_batch_idxs": "int64|(256,)|6fbea8ba89f35494",
+    "eval/pred_edge_batch_idxs": "NoneType",
+    "eval/pred_edge_h_diffs": "NoneType",
+    "eval/pred_edge_h_logprobs": "NoneType",
+    "eval/pred_edge_h_range_masks": "NoneType",
+    "eval/pred_edge_logprobs": "NoneType",
+    "eval/pred_formula_batch_idxs": "int64|(263,)|6e5319d9dd665645",
+    "eval/pred_formula_formula_idxs": "int64|(263,)|e1d14f82d2380e1e",
+    "eval/pred_formula_logprobs": "float32|(263,)|d3076d9bcf9270b6",
+    "eval/pred_formula_node_logprobs": "float32|(551,)|5295676e2a3efda4",
+    "eval/pred_formula_support_batch_idxs": "NoneType",
+    "eval/pred_formula_support_logits": "NoneType",
+    "eval/pred_formula_support_peak_batch_idxs": "NoneType",
+    "eval/pred_formula_support_peak_formula_idxs": "NoneType",
+    "eval/pred_formula_support_peak_mzs": "NoneType",
+    "eval/pred_formula_support_valid_mask": "NoneType",
+    "eval/pred_h_batch_idxs": "int64|(35,)|2ac0ad4caf529670",
+    "eval/pred_h_counts": "int64|(35,)|e17c14efc0999a97",
+    "eval/pred_h_logprobs": "float32|(35,)|1eef91441c94ea3d",
+    "eval/pred_joint_batch_idxs": "int64|(551,)|aab1d487ab3be742",
+    "eval/pred_joint_formula_idxs": "int64|(551,)|7a473b53815a8499",
+    "eval/pred_joint_h_counts": "int64|(551,)|2ad23429c85f935a",
+    "eval/pred_joint_h_idxs": "int64|(551,)|0fc19528d4102abb",
+    "eval/pred_joint_logprobs": "float32|(551,)|55d3ea1d3677e678",
+    "eval/pred_joint_node_idxs": "int64|(551,)|d1074d1d336954a7",
+    "eval/pred_logprobs": "float32|(256,)|66505672e267b215",
+    "eval/pred_mzs": "float32|(256,)|11e60ae21f3ee751",
+    "eval/pred_nb_formula_node_logprobs": "NoneType",
+    "eval/pred_nb_joint_batch_idxs": "NoneType",
+    "eval/pred_nb_joint_formula_idxs": "NoneType",
+    "eval/pred_nb_joint_logprobs": "NoneType",
+    "eval/pred_nb_joint_node_idxs": "NoneType",
+    "eval/pred_nb_node_batch_idxs": "NoneType",
+    "eval/pred_nb_node_formula_logprobs": "NoneType",
+    "eval/pred_nb_node_logprobs": "NoneType",
+    "eval/pred_nb_node_node_batch_idxs": "NoneType",
+    "eval/pred_nb_node_node_idxs": "NoneType",
+    "eval/pred_nb_node_node_logprobs": "NoneType",
+    "eval/pred_nb_node_node_node_idxs": "NoneType",
+    "eval/pred_node_batch_idxs": "int64|(153,)|756bfcf56a3fe31d",
+    "eval/pred_node_formula_logprobs": "float32|(551,)|bc5aed5a4566aecc",
+    "eval/pred_node_logprobs": "float32|(153,)|7592aa543f9153da",
+    "eval/pred_node_node_idxs": "int64|(153,)|b3541d56e2d9d90a",
+    "eval/pred_null_formula_logprob": {
+      "digest": "float32|(7,)|b334a5c3f7914169",
+      "values": [
+        "-0x1.43dce40000000p+0",
+        "-0x1.c978580000000p-1",
+        "-0x1.a3b1f00000000p+0",
+        "-0x1.43dce40000000p+0",
+        "-0x1.f612480000000p-1",
+        "-0x1.a3b1f00000000p+0",
+        "-0x1.c978580000000p-1"
+      ]
+    },
+    "eval/pred_oos_logprobs": {
+      "digest": "float32|(7,)|160db5c6e57a3148",
+      "values": [
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127"
+      ]
+    },
+    "forward/pred_batch_idxs": "int64|(256,)|6fbea8ba89f35494",
+    "forward/pred_edge_batch_idxs": "NoneType",
+    "forward/pred_edge_h_diffs": "NoneType",
+    "forward/pred_edge_h_logprobs": "NoneType",
+    "forward/pred_edge_h_range_masks": "NoneType",
+    "forward/pred_edge_logprobs": "NoneType",
+    "forward/pred_formula_batch_idxs": "int64|(263,)|6e5319d9dd665645",
+    "forward/pred_formula_formula_idxs": "int64|(263,)|e1d14f82d2380e1e",
+    "forward/pred_formula_logprobs": "float32|(263,)|ae44f8af971e1d4a",
+    "forward/pred_formula_node_logprobs": "float32|(551,)|6d38804556f8dccb",
+    "forward/pred_formula_support_batch_idxs": "NoneType",
+    "forward/pred_formula_support_logits": "NoneType",
+    "forward/pred_formula_support_peak_batch_idxs": "NoneType",
+    "forward/pred_formula_support_peak_formula_idxs": "NoneType",
+    "forward/pred_formula_support_peak_mzs": "NoneType",
+    "forward/pred_formula_support_valid_mask": "NoneType",
+    "forward/pred_h_batch_idxs": "int64|(35,)|2ac0ad4caf529670",
+    "forward/pred_h_counts": "int64|(35,)|e17c14efc0999a97",
+    "forward/pred_h_logprobs": "float32|(35,)|4fa6897d431050cc",
+    "forward/pred_joint_batch_idxs": "int64|(551,)|aab1d487ab3be742",
+    "forward/pred_joint_formula_idxs": "int64|(551,)|7a473b53815a8499",
+    "forward/pred_joint_h_counts": "int64|(551,)|2ad23429c85f935a",
+    "forward/pred_joint_h_idxs": "int64|(551,)|0fc19528d4102abb",
+    "forward/pred_joint_logprobs": "float32|(551,)|5f30f36e4dc4337c",
+    "forward/pred_joint_node_idxs": "int64|(551,)|d1074d1d336954a7",
+    "forward/pred_logprobs": "float32|(256,)|f7f90435b3fcfd58",
+    "forward/pred_mzs": "float32|(256,)|11e60ae21f3ee751",
+    "forward/pred_nb_formula_node_logprobs": "NoneType",
+    "forward/pred_nb_joint_batch_idxs": "NoneType",
+    "forward/pred_nb_joint_formula_idxs": "NoneType",
+    "forward/pred_nb_joint_logprobs": "NoneType",
+    "forward/pred_nb_joint_node_idxs": "NoneType",
+    "forward/pred_nb_node_batch_idxs": "NoneType",
+    "forward/pred_nb_node_formula_logprobs": "NoneType",
+    "forward/pred_nb_node_logprobs": "NoneType",
+    "forward/pred_nb_node_node_batch_idxs": "NoneType",
+    "forward/pred_nb_node_node_idxs": "NoneType",
+    "forward/pred_nb_node_node_logprobs": "NoneType",
+    "forward/pred_nb_node_node_node_idxs": "NoneType",
+    "forward/pred_node_batch_idxs": "int64|(153,)|756bfcf56a3fe31d",
+    "forward/pred_node_formula_logprobs": "float32|(551,)|39848e8c35c05ce2",
+    "forward/pred_node_logprobs": "float32|(153,)|88b1349dfef4e25c",
+    "forward/pred_node_node_idxs": "int64|(153,)|b3541d56e2d9d90a",
+    "forward/pred_null_formula_logprob": {
+      "digest": "float32|(7,)|1bd848c880cc71b4",
+      "values": [
+        "-0x1.6868cc0000000p+0",
+        "-0x1.107a6c0000000p+0",
+        "-0x1.b545e80000000p+0",
+        "-0x1.6868cc0000000p+0",
+        "-0x1.1fcaec0000000p+0",
+        "-0x1.b545e80000000p+0",
+        "-0x1.107a6c0000000p+0"
+      ]
+    },
+    "forward/pred_oos_logprobs": {
+      "digest": "float32|(7,)|160db5c6e57a3148",
+      "values": [
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127",
+        "-0x1.fffffe0000000p+127"
+      ]
+    },
+    "grad_norm": {
+      "digest": "float64|(1,)|c34e3fc6454086b6",
+      "values": [
+        "0x1.2d6ee38441f6fp+2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|da6b1a2805fb6634",
+      "values": [
+        "-0x1.9bf5040000000p+0"
+      ]
+    },
+    "loss/ios_ce": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/null_formula_prob": {
+      "digest": "float32|(7,)|225503a33a8aa527",
+      "values": [
+        "0x1.f515020000000p-3",
+        "0x1.6139780000000p-2",
+        "0x1.731e4e0000000p-3",
+        "0x1.f515020000000p-3",
+        "0x1.4cb6a60000000p-2",
+        "0x1.731e4e0000000p-3",
+        "0x1.6139780000000p-2"
+      ]
+    },
+    "loss/oos_ce": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/oos_prob": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/primary_loss": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "loss/spec_ce": {
+      "digest": "float32|(7,)|35a0ec64775d8871",
+      "values": [
+        "-0x1.2d3da80000000p+0",
+        "-0x1.17dcb80000000p+1",
+        "-0x1.5d5ffe0000000p+0",
+        "-0x1.03a8880000000p+0",
+        "-0x1.c0692c0000000p+0",
+        "-0x1.9886f80000000p+0",
+        "-0x1.1661a80000000p+1"
+      ]
+    },
+    "n_grad_tensors": 38,
+    "n_params_changed": 38,
+    "params_after": "float64|(38445,)|4d92668b439121dc"
+  },
+  "step:fragnnet:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:gnn": {
+    "eval/pred_batch_idxs": "int64|(2482,)|c76f0ef1256cfcb2",
+    "eval/pred_logprobs": "float32|(2482,)|2922734c8543f404",
+    "eval/pred_mzs": "float32|(2482,)|90d6d337b18f2181",
+    "eval/pred_specs": "float32|(7, 2000)|e17d8beb8ddedd08",
+    "forward/pred_batch_idxs": "int64|(2423,)|82ee1c009da6e69a",
+    "forward/pred_logprobs": "float32|(2423,)|d71dd49ec0bb889b",
+    "forward/pred_mzs": "float32|(2423,)|b85a4ace35d86b4f",
+    "forward/pred_specs": "float32|(7, 2000)|d4e048383f6ad179",
+    "grad_norm": {
+      "digest": "float64|(1,)|f879344ca24570d0",
+      "values": [
+        "0x1.48a6e23ffbcbep-3"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|bc809a4901bfcf1c",
+      "values": [
+        "0x1.e47e4e0000000p-1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|9a9cb43256f2f699",
+      "values": [
+        "0x1.fc9cd00000000p-1",
+        "0x1.f56c920000000p-1",
+        "0x1.e8670e0000000p-1",
+        "0x1.e9b68e0000000p-1",
+        "0x1.d6bffc0000000p-1",
+        "0x1.dcae380000000p-1",
+        "0x1.c7dee60000000p-1"
+      ]
+    },
+    "loss/spec_cd": {
+      "digest": "float32|(7,)|9a9cb43256f2f699",
+      "values": [
+        "0x1.fc9cd00000000p-1",
+        "0x1.f56c920000000p-1",
+        "0x1.e8670e0000000p-1",
+        "0x1.e9b68e0000000p-1",
+        "0x1.d6bffc0000000p-1",
+        "0x1.dcae380000000p-1",
+        "0x1.c7dee60000000p-1"
+      ]
+    },
+    "n_grad_tensors": 21,
+    "n_params_changed": 21,
+    "params_after": "float64|(59208,)|87aa385d9025e145"
+  },
+  "step:gnn:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:graff": {
+    "eval/pred_batch_idxs": "int64|(66,)|3d47d04fdf440021",
+    "eval/pred_logprobs": "float32|(66,)|f3ff8480680c5fa9",
+    "eval/pred_mzs": "float32|(66,)|d39014a1f6a8629a",
+    "forward/pred_batch_idxs": "int64|(66,)|3d47d04fdf440021",
+    "forward/pred_logprobs": "float32|(66,)|f3ff8480680c5fa9",
+    "forward/pred_mzs": "float32|(66,)|d39014a1f6a8629a",
+    "grad_norm": {
+      "digest": "float64|(1,)|2fc6b0880a6a06f8",
+      "values": [
+        "0x1.f24f2d45112b9p+2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|f7d111529f6d6aa4",
+      "values": [
+        "0x1.8e660e0000000p+1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(4,)|b05e7c0f4b231b44",
+      "values": [
+        "0x1.8ec2d60000000p+1",
+        "0x1.8ff6180000000p+1",
+        "0x1.893ca40000000p+1",
+        "0x1.91a2a80000000p+1"
+      ]
+    },
+    "loss/primary_loss": {
+      "digest": "float32|(4,)|b05e7c0f4b231b44",
+      "values": [
+        "0x1.8ec2d60000000p+1",
+        "0x1.8ff6180000000p+1",
+        "0x1.893ca40000000p+1",
+        "0x1.91a2a80000000p+1"
+      ]
+    },
+    "n_grad_tensors": 52,
+    "n_params_changed": 52,
+    "params_after": "float64|(7357,)|6824c1b45cbf4d13"
+  },
+  "step:graff:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:massformer": {
+    "eval/pred_batch_idxs": "int64|(2680,)|1829d93f06123b7a",
+    "eval/pred_logprobs": "float32|(2680,)|ae1119888a645a7d",
+    "eval/pred_mzs": "float32|(2680,)|f2adfb763329d60e",
+    "eval/pred_specs": "float32|(7, 2000)|424a2a0a1912aff2",
+    "forward/pred_batch_idxs": "int64|(2640,)|9bd4fc4890a1c520",
+    "forward/pred_logprobs": "float32|(2640,)|e6d06177cf3a9b44",
+    "forward/pred_mzs": "float32|(2640,)|37e553929f0a4537",
+    "forward/pred_specs": "float32|(7, 2000)|4602bb120586d899",
+    "grad_norm": {
+      "digest": "float64|(1,)|ee500c20c9b4f99a",
+      "values": [
+        "0x1.2370b71242858p-1"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|378364ca518622e1",
+      "values": [
+        "0x1.f06dca0000000p-1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|a0e06c9ce8d89945",
+      "values": [
+        "0x1.fa6a3c0000000p-1",
+        "0x1.e617ca0000000p-1",
+        "0x1.f185100000000p-1",
+        "0x1.f6fd620000000p-1",
+        "0x1.dcd9140000000p-1",
+        "0x1.eee3140000000p-1",
+        "0x1.fe3fea0000000p-1"
+      ]
+    },
+    "loss/spec_cd": {
+      "digest": "float32|(7,)|a0e06c9ce8d89945",
+      "values": [
+        "0x1.fa6a3c0000000p-1",
+        "0x1.e617ca0000000p-1",
+        "0x1.f185100000000p-1",
+        "0x1.f6fd620000000p-1",
+        "0x1.dcd9140000000p-1",
+        "0x1.eee3140000000p-1",
+        "0x1.fe3fea0000000p-1"
+      ]
+    },
+    "n_grad_tensors": 52,
+    "n_params_changed": 47,
+    "params_after": "float64|(251421,)|8554e34654092152"
+  },
+  "step:massformer:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:masster": {
+    "eval/atom_charge_logits": "float32|(34,)|2b6e6d6db51bccd5",
+    "eval/bond_break_logits": "float32|(29,)|64ee99f6bf8d838b",
+    "eval/candidate_batch_idxs_by_cut": "int64|(2168,)|c666a6f61062fdf6",
+    "eval/candidate_cut_counts": "int64|(2168,)|5ec3e1b7aee494a8",
+    "eval/candidate_input_transfer_batch_ms": "torch.float32|(7,)",
+    "eval/candidate_mask_selection_batch_ms": "torch.float32|(7,)",
+    "eval/candidate_mzs_by_cut": "float64|(2168,)|fb75e9559e0660f2",
+    "eval/candidate_output_transfer_batch_ms": "torch.float32|(7,)",
+    "eval/candidate_topology_assembly_batch_ms": "torch.float32|(7,)",
+    "eval/candidate_total_batch_ms": "torch.float32|(7,)",
+    "eval/candidate_total_molecule_ms": "torch.float32|(7,)",
+    "eval/component_pathway_count": {
+      "digest": "int64|(7,)|eb9861f85074aad3",
+      "values": [
+        48,
+        8,
+        299,
+        48,
+        20,
+        299,
+        8
+      ]
+    },
+    "eval/components_per_mask": {
+      "digest": "float32|(7,)|e99824ed2d695a47",
+      "values": [
+        "0x1.8000000000000p+1",
+        "0x1.0000000000000p+1",
+        "0x1.09c71c0000000p+2",
+        "0x1.8000000000000p+1",
+        "0x1.4000000000000p+1",
+        "0x1.09c71c0000000p+2",
+        "0x1.0000000000000p+1"
+      ]
+    },
+    "eval/duplicate_component_pathway_fraction": {
+      "digest": "float32|(7,)|841ebd391eff674f",
+      "values": [
+        "0x1.4aaaac0000000p-1",
+        "0x1.0000000000000p-2",
+        "0x1.c77ddc0000000p-1",
+        "0x1.4aaaac0000000p-1",
+        "0x1.cccccc0000000p-2",
+        "0x1.c77ddc0000000p-1",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "eval/duplicate_pathway_probability_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/fragment_count_after_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/fragment_count_before_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/fragment_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/full_candidate_fragment_idxs": "int64|(2168,)|5b55afd8f008fab8",
+    "eval/ion_h_chemical_valid_channels": "bool|(730, 2, 3)|cd21b8e4da48322e",
+    "eval/ion_h_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/ion_h_dense_log_weights": "float32|(730, 2, 3)|24ddc99596d6d625",
+    "eval/ion_h_dense_mzs": "float64|(730, 2, 3)|5a82455b192fe7ea",
+    "eval/ion_h_fragment_batch_idxs": "int64|(730,)|3a2f309731b0e832",
+    "eval/ion_h_fragment_proposal_logprobs": "float32|(730,)|5d774a8565fa5e4f",
+    "eval/ion_h_support_logits": "float32|(730, 2, 3)|9a874ccd171b914d",
+    "eval/ion_mode_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/ion_mode_proposal_logits": "float32|(730, 2)|45b0eafda25e8bef",
+    "eval/latent_pathways_per_unique_fragment": {
+      "digest": "float32|(7,)|69abca98e8d7704f",
+      "values": [
+        "0x1.69696a0000000p+1",
+        "0x1.5555560000000p+0",
+        "0x1.21f07c0000000p+3",
+        "0x1.69696a0000000p+1",
+        "0x1.d1745e0000000p+0",
+        "0x1.21f07c0000000p+3",
+        "0x1.5555560000000p+0"
+      ]
+    },
+    "eval/mask_cut_fraction_0": {
+      "digest": "float32|(7,)|d7de8ab73919f8f9",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.c71c720000000p-7",
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-3",
+        "0x1.c71c720000000p-7",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "eval/mask_cut_fraction_1": {
+      "digest": "float32|(7,)|8c89269f1a2579c6",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x1.8e38e40000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.8e38e40000000p-4",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "eval/mask_cut_fraction_2": {
+      "digest": "float32|(7,)|87f35822be4312e1",
+      "values": [
+        "0x1.8000000000000p-2",
+        "0x1.0000000000000p-2",
+        "0x0.0p+0",
+        "0x1.8000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x0.0p+0",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "eval/mask_cut_fraction_3": {
+      "digest": "float32|(7,)|9727df83110d8737",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x0.0p+0",
+        "0x1.c71c720000000p-5",
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-3",
+        "0x1.c71c720000000p-5",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/mask_cut_fraction_4": {
+      "digest": "float32|(7,)|178c9a4f2aa17f8c",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.b8e38e0000000p-2",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.b8e38e0000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/mask_cut_fraction_4plus": {
+      "digest": "float32|(7,)|7a6babd5928bc12e",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.aaaaaa0000000p-1",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.aaaaaa0000000p-1",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/mask_cut_fraction_5": {
+      "digest": "float32|(7,)|ebf7d31b415e76b4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.2aaaaa0000000p-2",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.2aaaaa0000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/mask_cut_fraction_6plus": {
+      "digest": "float32|(7,)|d56e4dbd88a50732",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.c71c720000000p-4",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.c71c720000000p-4",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/mean_mask_cut_count": {
+      "digest": "float32|(7,)|d976440adaa49e98",
+      "values": [
+        "0x1.0000000000000p+1",
+        "0x1.0000000000000p+0",
+        "0x1.0800000000000p+2",
+        "0x1.0000000000000p+1",
+        "0x1.8000000000000p+0",
+        "0x1.0800000000000p+2",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/pred_batch_idxs": "int64|(2168,)|c666a6f61062fdf6",
+    "eval/pred_logprobs": "float32|(2168,)|419e80ebfe3fecf4",
+    "eval/pred_mzs": "float64|(2168,)|fb75e9559e0660f2",
+    "eval/productive_mask_fraction": {
+      "digest": "float32|(7,)|6c7e69ba4a10c839",
+      "values": [
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.8000000000000p-2",
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.8000000000000p-2",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/proposal_mixture_effective_count": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/proposal_mixture_entropy": {
+      "digest": "float32|(7,)|85937d3b23601a18",
+      "values": [
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0"
+      ]
+    },
+    "eval/proposal_mixture_log_weights": {
+      "digest": "float32|(7, 1)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/proposal_mixture_top1_weight": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/proposal_single_cut_fraction": {
+      "digest": "float32|(7,)|19649e66125b8a75",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x0.0p+0",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x0.0p+0",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "eval/retained_fragment_probability": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/retained_ion_h_count": {
+      "digest": "float32|(7,)|e4028a34000990f8",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.bd00000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.bd00000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "eval/retained_ion_h_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/retained_ion_mode_count": {
+      "digest": "float32|(7,)|ad52ec25bc1e3d21",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.2b00000000000p+8",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.2b00000000000p+8",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "eval/retained_ion_mode_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/retained_joint_channel_intensity_fraction": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "eval/retained_mask_probability": {
+      "digest": "float32|(7,)|cea2cd3a0ad456d5",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.fffffe0000000p-1",
+        "0x1.29065e0000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.fffffa0000000p-1",
+        "0x1.2969ec0000000p-1",
+        "0x1.fffffe0000000p-1"
+      ]
+    },
+    "eval/selected_mask_count": {
+      "digest": "int64|(7,)|c7bd2cfbe13fe8f6",
+      "values": [
+        16,
+        4,
+        72,
+        16,
+        8,
+        72,
+        4
+      ]
+    },
+    "eval/unique_component_count": {
+      "digest": "float32|(7,)|a1e8149a0f8188b3",
+      "values": [
+        "0x1.1000000000000p+4",
+        "0x1.8000000000000p+2",
+        "0x1.0800000000000p+5",
+        "0x1.1000000000000p+4",
+        "0x1.6000000000000p+3",
+        "0x1.0800000000000p+5",
+        "0x1.8000000000000p+2"
+      ]
+    },
+    "eval/unique_components_per_mask": {
+      "digest": "float32|(7,)|4b8cd88cb42206ed",
+      "values": [
+        "0x1.1000000000000p+0",
+        "0x1.8000000000000p+0",
+        "0x1.d555560000000p-2",
+        "0x1.1000000000000p+0",
+        "0x1.6000000000000p+0",
+        "0x1.d555560000000p-2",
+        "0x1.8000000000000p+0"
+      ]
+    },
+    "eval/unique_fragment_effective_count": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/unique_fragment_target_fill_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/unique_fragment_target_reached": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/unique_fragment_top1_mass_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/valid_ion_h_count": {
+      "digest": "float32|(7,)|e4028a34000990f8",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.bd00000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.bd00000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "eval/valid_ion_mode_count": {
+      "digest": "float32|(7,)|ad52ec25bc1e3d21",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.2b00000000000p+8",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.2b00000000000p+8",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "forward/atom_charge_logits": "float32|(34,)|1df82239886e58dc",
+    "forward/bond_break_logits": "float32|(29,)|09732570520ecfbb",
+    "forward/candidate_batch_idxs_by_cut": "int64|(1472,)|4b808edf1e9e665d",
+    "forward/candidate_cut_counts": "int64|(1472,)|e2a6c52d2520764e",
+    "forward/candidate_input_transfer_batch_ms": "torch.float32|(7,)",
+    "forward/candidate_mask_selection_batch_ms": "torch.float32|(7,)",
+    "forward/candidate_mzs_by_cut": "float64|(1472,)|c624ef1de2904cb6",
+    "forward/candidate_output_transfer_batch_ms": "torch.float32|(7,)",
+    "forward/candidate_topology_assembly_batch_ms": "torch.float32|(7,)",
+    "forward/candidate_total_batch_ms": "torch.float32|(7,)",
+    "forward/candidate_total_molecule_ms": "torch.float32|(7,)",
+    "forward/component_pathway_count": {
+      "digest": "int64|(7,)|7dd63e6a06f3b0a7",
+      "values": [
+        48,
+        8,
+        177,
+        48,
+        20,
+        189,
+        8
+      ]
+    },
+    "forward/components_per_mask": {
+      "digest": "float32|(7,)|53277018e8545f26",
+      "values": [
+        "0x1.8000000000000p+1",
+        "0x1.0000000000000p+1",
+        "0x1.6200000000000p+1",
+        "0x1.8000000000000p+1",
+        "0x1.4000000000000p+1",
+        "0x1.7a00000000000p+1",
+        "0x1.0000000000000p+1"
+      ]
+    },
+    "forward/duplicate_component_pathway_fraction": {
+      "digest": "float32|(7,)|c198ffee6fa70279",
+      "values": [
+        "0x1.4aaaac0000000p-1",
+        "0x1.0000000000000p-2",
+        "0x1.8966b00000000p-1",
+        "0x1.4aaaac0000000p-1",
+        "0x1.cccccc0000000p-2",
+        "0x1.90ee640000000p-1",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "forward/duplicate_pathway_probability_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/fragment_count_after_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/fragment_count_before_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/fragment_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/full_candidate_fragment_idxs": "int64|(1472,)|597533b6fb8c9529",
+    "forward/ion_h_chemical_valid_channels": "bool|(498, 2, 3)|1b9b1c32684b20e3",
+    "forward/ion_h_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/ion_h_dense_log_weights": "float32|(498, 2, 3)|31b23e240f2e1708",
+    "forward/ion_h_dense_mzs": "float64|(498, 2, 3)|59b3673f04c049d5",
+    "forward/ion_h_fragment_batch_idxs": "int64|(498,)|a83d82fb87f8bfe2",
+    "forward/ion_h_fragment_proposal_logprobs": "float32|(498,)|f46e91f813524e5a",
+    "forward/ion_h_support_logits": "float32|(498, 2, 3)|a13f93535b7e386a",
+    "forward/ion_mode_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/ion_mode_proposal_logits": "float32|(498, 2)|0300fb142fae7ba3",
+    "forward/latent_pathways_per_unique_fragment": {
+      "digest": "float32|(7,)|506b9dc10769d36d",
+      "values": [
+        "0x1.69696a0000000p+1",
+        "0x1.5555560000000p+0",
+        "0x1.144aee0000000p+2",
+        "0x1.69696a0000000p+1",
+        "0x1.d1745e0000000p+0",
+        "0x1.27063e0000000p+2",
+        "0x1.5555560000000p+0"
+      ]
+    },
+    "forward/mask_cut_fraction_0": {
+      "digest": "float32|(7,)|7b82f737e60efe99",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-6",
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-3",
+        "0x1.0000000000000p-6",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "forward/mask_cut_fraction_1": {
+      "digest": "float32|(7,)|14887b2f0447152e",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "forward/mask_cut_fraction_2": {
+      "digest": "float32|(7,)|1eab47955ebea00e",
+      "values": [
+        "0x1.8000000000000p-2",
+        "0x1.0000000000000p-2",
+        "0x1.2000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-3",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "forward/mask_cut_fraction_3": {
+      "digest": "float32|(7,)|1b36af2f0d9093ec",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x0.0p+0",
+        "0x1.7000000000000p-2",
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-3",
+        "0x1.7000000000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/mask_cut_fraction_4": {
+      "digest": "float32|(7,)|d727851d92f6be0f",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.8000000000000p-3",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.8000000000000p-3",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/mask_cut_fraction_4plus": {
+      "digest": "float32|(7,)|e69b91382964a2f6",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.e000000000000p-3",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.3000000000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/mask_cut_fraction_5": {
+      "digest": "float32|(7,)|1cba78a63f5dcac1",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.8000000000000p-5",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.c000000000000p-4",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/mask_cut_fraction_6plus": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/mean_mask_cut_count": {
+      "digest": "float32|(7,)|428ccc5f373ac72b",
+      "values": [
+        "0x1.0000000000000p+1",
+        "0x1.0000000000000p+0",
+        "0x1.5e00000000000p+1",
+        "0x1.0000000000000p+1",
+        "0x1.8000000000000p+0",
+        "0x1.7600000000000p+1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/pred_batch_idxs": "int64|(1472,)|4b808edf1e9e665d",
+    "forward/pred_logprobs": "float32|(1472,)|483c3afbd0ffa2b8",
+    "forward/pred_mzs": "float64|(1472,)|c624ef1de2904cb6",
+    "forward/productive_mask_fraction": {
+      "digest": "float32|(7,)|21571735a281b0e3",
+      "values": [
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.1800000000000p-1",
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.1800000000000p-1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/proposal_mixture_effective_count": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/proposal_mixture_entropy": {
+      "digest": "float32|(7,)|85937d3b23601a18",
+      "values": [
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0"
+      ]
+    },
+    "forward/proposal_mixture_log_weights": {
+      "digest": "float32|(7, 1)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/proposal_mixture_top1_weight": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/proposal_single_cut_fraction": {
+      "digest": "float32|(7,)|14887b2f0447152e",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "forward/retained_fragment_probability": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/retained_ion_h_count": {
+      "digest": "float32|(7,)|ac20df94c07ad609",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.0600000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.1800000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "forward/retained_ion_h_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/retained_ion_mode_count": {
+      "digest": "float32|(7,)|2d31275642bff50d",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.6200000000000p+7",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.7a00000000000p+7",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "forward/retained_ion_mode_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/retained_joint_channel_intensity_fraction": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "forward/retained_mask_probability": {
+      "digest": "float32|(7,)|6f71793df9951a31",
+      "values": [
+        "0x1.fffffe0000000p-1",
+        "0x1.fffffe0000000p-1",
+        "0x1.1528920000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.0000020000000p+0",
+        "0x1.14a29c0000000p-1",
+        "0x1.0000020000000p+0"
+      ]
+    },
+    "forward/selected_mask_count": {
+      "digest": "int64|(7,)|48df6cbdd847a529",
+      "values": [
+        16,
+        4,
+        64,
+        16,
+        8,
+        64,
+        4
+      ]
+    },
+    "forward/unique_component_count": {
+      "digest": "float32|(7,)|e5196cb6a08351d3",
+      "values": [
+        "0x1.1000000000000p+4",
+        "0x1.8000000000000p+2",
+        "0x1.4800000000000p+5",
+        "0x1.1000000000000p+4",
+        "0x1.6000000000000p+3",
+        "0x1.4800000000000p+5",
+        "0x1.8000000000000p+2"
+      ]
+    },
+    "forward/unique_components_per_mask": {
+      "digest": "float32|(7,)|671f3bd50c1bfa88",
+      "values": [
+        "0x1.1000000000000p+0",
+        "0x1.8000000000000p+0",
+        "0x1.4800000000000p-1",
+        "0x1.1000000000000p+0",
+        "0x1.6000000000000p+0",
+        "0x1.4800000000000p-1",
+        "0x1.8000000000000p+0"
+      ]
+    },
+    "forward/unique_fragment_effective_count": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/unique_fragment_target_fill_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/unique_fragment_target_reached": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/unique_fragment_top1_mass_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/valid_ion_h_count": {
+      "digest": "float32|(7,)|ac20df94c07ad609",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.0600000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.1800000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "forward/valid_ion_mode_count": {
+      "digest": "float32|(7,)|2d31275642bff50d",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.6200000000000p+7",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.7a00000000000p+7",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "grad_norm": {
+      "digest": "float64|(1,)|c08cc0cad4ed484b",
+      "values": [
+        "0x1.2df6870bbb220p+3"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|ee413b969c98d9e4",
+      "values": [
+        "-0x1.283eca0000000p+0"
+      ]
+    },
+    "loss/component_pathway_count": {
+      "digest": "float32|(7,)|2d31275642bff50d",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.6200000000000p+7",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.7a00000000000p+7",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "loss/components_per_mask": {
+      "digest": "float32|(7,)|53277018e8545f26",
+      "values": [
+        "0x1.8000000000000p+1",
+        "0x1.0000000000000p+1",
+        "0x1.6200000000000p+1",
+        "0x1.8000000000000p+1",
+        "0x1.4000000000000p+1",
+        "0x1.7a00000000000p+1",
+        "0x1.0000000000000p+1"
+      ]
+    },
+    "loss/conditional_spec_ce": {
+      "digest": "float32|(7,)|871a888564f5abcc",
+      "values": [
+        "-0x1.ff81d80000000p+0",
+        "-0x1.dee16e0000000p+0",
+        "-0x1.0b16640000000p-1",
+        "-0x1.5ab91a0000000p-1",
+        "-0x1.84ee2c0000000p+0",
+        "-0x1.6f82540000000p+0",
+        "-0x1.fecc800000000p+0"
+      ]
+    },
+    "loss/coverage_weighted_spec_ce": {
+      "digest": "float32|(7,)|d30d068c51984273",
+      "values": [
+        "-0x1.211cde0000000p+0",
+        "-0x1.dee16e0000000p+0",
+        "-0x1.b735e40000000p-2",
+        "-0x1.813f700000000p-2",
+        "-0x1.1d37300000000p+0",
+        "-0x1.2f982e0000000p+0",
+        "-0x1.fecc800000000p+0"
+      ]
+    },
+    "loss/duplicate_component_pathway_fraction": {
+      "digest": "float32|(7,)|c198ffee6fa70279",
+      "values": [
+        "0x1.4aaaac0000000p-1",
+        "0x1.0000000000000p-2",
+        "0x1.8966b00000000p-1",
+        "0x1.4aaaac0000000p-1",
+        "0x1.cccccc0000000p-2",
+        "0x1.90ee640000000p-1",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "loss/duplicate_pathway_probability_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/fragment_count_after_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/fragment_count_before_cutoff": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/fragment_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/ion_h_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/ion_mode_cutoff_pruned_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/latent_pathways_per_unique_fragment": {
+      "digest": "float32|(7,)|506b9dc10769d36d",
+      "values": [
+        "0x1.69696a0000000p+1",
+        "0x1.5555560000000p+0",
+        "0x1.144aee0000000p+2",
+        "0x1.69696a0000000p+1",
+        "0x1.d1745e0000000p+0",
+        "0x1.27063e0000000p+2",
+        "0x1.5555560000000p+0"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|d30d068c51984273",
+      "values": [
+        "-0x1.211cde0000000p+0",
+        "-0x1.dee16e0000000p+0",
+        "-0x1.b735e40000000p-2",
+        "-0x1.813f700000000p-2",
+        "-0x1.1d37300000000p+0",
+        "-0x1.2f982e0000000p+0",
+        "-0x1.fecc800000000p+0"
+      ]
+    },
+    "loss/mask_cut_fraction_0": {
+      "digest": "float32|(7,)|7b82f737e60efe99",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-6",
+        "0x1.0000000000000p-4",
+        "0x1.0000000000000p-3",
+        "0x1.0000000000000p-6",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "loss/mask_cut_fraction_1": {
+      "digest": "float32|(7,)|14887b2f0447152e",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "loss/mask_cut_fraction_2": {
+      "digest": "float32|(7,)|1eab47955ebea00e",
+      "values": [
+        "0x1.8000000000000p-2",
+        "0x1.0000000000000p-2",
+        "0x1.2000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-3",
+        "0x1.0000000000000p-2"
+      ]
+    },
+    "loss/mask_cut_fraction_3": {
+      "digest": "float32|(7,)|1b36af2f0d9093ec",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x0.0p+0",
+        "0x1.7000000000000p-2",
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-3",
+        "0x1.7000000000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/mask_cut_fraction_4": {
+      "digest": "float32|(7,)|d727851d92f6be0f",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.8000000000000p-3",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.8000000000000p-3",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/mask_cut_fraction_4plus": {
+      "digest": "float32|(7,)|e69b91382964a2f6",
+      "values": [
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.e000000000000p-3",
+        "0x1.0000000000000p-4",
+        "0x0.0p+0",
+        "0x1.3000000000000p-2",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/mask_cut_fraction_5": {
+      "digest": "float32|(7,)|1cba78a63f5dcac1",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.8000000000000p-5",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x1.c000000000000p-4",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/mask_cut_fraction_6plus": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/mean_mask_cut_count": {
+      "digest": "float32|(7,)|428ccc5f373ac72b",
+      "values": [
+        "0x1.0000000000000p+1",
+        "0x1.0000000000000p+0",
+        "0x1.5e00000000000p+1",
+        "0x1.0000000000000p+1",
+        "0x1.8000000000000p+0",
+        "0x1.7600000000000p+1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/primary_loss": {
+      "digest": "float32|(7,)|d30d068c51984273",
+      "values": [
+        "-0x1.211cde0000000p+0",
+        "-0x1.dee16e0000000p+0",
+        "-0x1.b735e40000000p-2",
+        "-0x1.813f700000000p-2",
+        "-0x1.1d37300000000p+0",
+        "-0x1.2f982e0000000p+0",
+        "-0x1.fecc800000000p+0"
+      ]
+    },
+    "loss/productive_mask_fraction": {
+      "digest": "float32|(7,)|21571735a281b0e3",
+      "values": [
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.1800000000000p-1",
+        "0x1.a000000000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.1800000000000p-1",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/proposal_mixture_effective_count": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/proposal_mixture_entropy": {
+      "digest": "float32|(7,)|85937d3b23601a18",
+      "values": [
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0",
+        "-0x0.0p+0"
+      ]
+    },
+    "loss/proposal_mixture_top1_weight": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/proposal_single_cut_fraction": {
+      "digest": "float32|(7,)|14887b2f0447152e",
+      "values": [
+        "0x1.0000000000000p-2",
+        "0x1.0000000000000p-1",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-2",
+        "0x1.8000000000000p-2",
+        "0x1.c000000000000p-4",
+        "0x1.0000000000000p-1"
+      ]
+    },
+    "loss/retained_fragment_probability": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/retained_ion_h_count": {
+      "digest": "float32|(7,)|ac20df94c07ad609",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.0600000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.1800000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "loss/retained_ion_h_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/retained_ion_mode_count": {
+      "digest": "float32|(7,)|2d31275642bff50d",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.6200000000000p+7",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.7a00000000000p+7",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "loss/retained_ion_mode_probability": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/retained_joint_channel_intensity_fraction": {
+      "digest": "float32|(7,)|6f3a1a9d59ae648b",
+      "values": [
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0",
+        "0x1.0000000000000p+0"
+      ]
+    },
+    "loss/retained_mask_probability": {
+      "digest": "float32|(7,)|6f71793df9951a31",
+      "values": [
+        "0x1.fffffe0000000p-1",
+        "0x1.fffffe0000000p-1",
+        "0x1.1528920000000p-1",
+        "0x1.0000000000000p+0",
+        "0x1.0000020000000p+0",
+        "0x1.14a29c0000000p-1",
+        "0x1.0000020000000p+0"
+      ]
+    },
+    "loss/selected_mask_count": {
+      "digest": "float32|(7,)|519d82543ca447bd",
+      "values": [
+        "0x1.0000000000000p+4",
+        "0x1.0000000000000p+2",
+        "0x1.0000000000000p+6",
+        "0x1.0000000000000p+4",
+        "0x1.0000000000000p+3",
+        "0x1.0000000000000p+6",
+        "0x1.0000000000000p+2"
+      ]
+    },
+    "loss/spec_ce": {
+      "digest": "float32|(7,)|d30d068c51984273",
+      "values": [
+        "-0x1.211cde0000000p+0",
+        "-0x1.dee16e0000000p+0",
+        "-0x1.b735e40000000p-2",
+        "-0x1.813f700000000p-2",
+        "-0x1.1d37300000000p+0",
+        "-0x1.2f982e0000000p+0",
+        "-0x1.fecc800000000p+0"
+      ]
+    },
+    "loss/unique_component_count": {
+      "digest": "float32|(7,)|e5196cb6a08351d3",
+      "values": [
+        "0x1.1000000000000p+4",
+        "0x1.8000000000000p+2",
+        "0x1.4800000000000p+5",
+        "0x1.1000000000000p+4",
+        "0x1.6000000000000p+3",
+        "0x1.4800000000000p+5",
+        "0x1.8000000000000p+2"
+      ]
+    },
+    "loss/unique_components_per_mask": {
+      "digest": "float32|(7,)|671f3bd50c1bfa88",
+      "values": [
+        "0x1.1000000000000p+0",
+        "0x1.8000000000000p+0",
+        "0x1.4800000000000p-1",
+        "0x1.1000000000000p+0",
+        "0x1.6000000000000p+0",
+        "0x1.4800000000000p-1",
+        "0x1.8000000000000p+0"
+      ]
+    },
+    "loss/unique_fragment_effective_count": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/unique_fragment_target_fill_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/unique_fragment_target_reached": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/unique_fragment_top1_mass_fraction": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "loss/valid_ion_h_count": {
+      "digest": "float32|(7,)|ac20df94c07ad609",
+      "values": [
+        "0x1.1c00000000000p+7",
+        "0x1.7000000000000p+4",
+        "0x1.0600000000000p+9",
+        "0x1.1c00000000000p+7",
+        "0x1.d000000000000p+5",
+        "0x1.1800000000000p+9",
+        "0x1.7000000000000p+4"
+      ]
+    },
+    "loss/valid_ion_mode_count": {
+      "digest": "float32|(7,)|2d31275642bff50d",
+      "values": [
+        "0x1.8000000000000p+5",
+        "0x1.0000000000000p+3",
+        "0x1.6200000000000p+7",
+        "0x1.8000000000000p+5",
+        "0x1.4000000000000p+4",
+        "0x1.7a00000000000p+7",
+        "0x1.0000000000000p+3"
+      ]
+    },
+    "n_grad_tensors": 93,
+    "n_params_changed": 93,
+    "params_after": "float64|(64666,)|cd65c1fb0b598f61"
+  },
+  "step:masster:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:mces_pretraining_wiring_patched": {
+    "eval/output": "float32|(15,)|0b7b22006fc87cd7",
+    "forward/output": "float32|(15,)|0b7b22006fc87cd7",
+    "grad_norm": {
+      "digest": "float64|(1,)|4ad2aeff56e891fe",
+      "values": [
+        "0x1.de6353b0c66ebp+2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|6f37c2ffb8f2d896",
+      "values": [
+        "0x1.7be2200000000p+3"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(1,)|6f37c2ffb8f2d896",
+      "values": [
+        "0x1.7be2200000000p+3"
+      ]
+    },
+    "n_grad_tensors": 4,
+    "n_params_changed": 4,
+    "params_after": "float64|(2353,)|f188888d0cc61cf4"
+  },
+  "step:mces_pretraining_wiring_patched:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:neims": {
+    "eval/pred_batch_idxs": "int64|(2554,)|3b2a88bebd929c7b",
+    "eval/pred_logprobs": "float32|(2554,)|fa1b5ff6bcd9d085",
+    "eval/pred_mzs": "float32|(2554,)|3d880950b6304d97",
+    "eval/pred_specs": "float32|(7, 2000)|fd89c8d903f469f5",
+    "forward/pred_batch_idxs": "int64|(2567,)|9121db77c78a500e",
+    "forward/pred_logprobs": "float32|(2567,)|24e43afd3030a0b5",
+    "forward/pred_mzs": "float32|(2567,)|4891c22b823dc4f2",
+    "forward/pred_specs": "float32|(7, 2000)|1bc103b5280e50d5",
+    "grad_norm": {
+      "digest": "float64|(1,)|67492a06c09807ae",
+      "values": [
+        "0x1.8fa57905e26f7p-2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|5d15240d517c29a3",
+      "values": [
+        "0x1.e055660000000p-1"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|6e80caa845c86945",
+      "values": [
+        "0x1.d25a6c0000000p-1",
+        "0x1.cbd05e0000000p-1",
+        "0x1.f2cc440000000p-1",
+        "0x1.d2dfd20000000p-1",
+        "0x1.e7a1580000000p-1",
+        "0x1.f8797a0000000p-1",
+        "0x1.de641c0000000p-1"
+      ]
+    },
+    "loss/spec_cd": {
+      "digest": "float32|(7,)|6e80caa845c86945",
+      "values": [
+        "0x1.d25a6c0000000p-1",
+        "0x1.cbd05e0000000p-1",
+        "0x1.f2cc440000000p-1",
+        "0x1.d2dfd20000000p-1",
+        "0x1.e7a1580000000p-1",
+        "0x1.f8797a0000000p-1",
+        "0x1.de641c0000000p-1"
+      ]
+    },
+    "n_grad_tensors": 21,
+    "n_params_changed": 21,
+    "params_after": "float64|(62024,)|91d9087c142ac840"
+  },
+  "step:neims:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:precursor": {
+    "eval/pred_batch_idxs": {
+      "digest": "int64|(7,)|81845a01dafa45c9",
+      "values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "eval/pred_logprobs": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "eval/pred_mzs": {
+      "digest": "float32|(7,)|13bf12342dd9782f",
+      "values": [
+        "0x1.283d7c0000000p+6",
+        "0x1.7864a40000000p+5",
+        "0x1.7c32520000000p+6",
+        "0x1.283d7c0000000p+6",
+        "0x1.e83a2c0000000p+5",
+        "0x1.7c32520000000p+6",
+        "0x1.7864a40000000p+5"
+      ]
+    },
+    "forward/pred_batch_idxs": {
+      "digest": "int64|(7,)|81845a01dafa45c9",
+      "values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "forward/pred_logprobs": {
+      "digest": "float32|(7,)|3addfb141cd7c9c4",
+      "values": [
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0",
+        "0x0.0p+0"
+      ]
+    },
+    "forward/pred_mzs": {
+      "digest": "float32|(7,)|13bf12342dd9782f",
+      "values": [
+        "0x1.283d7c0000000p+6",
+        "0x1.7864a40000000p+5",
+        "0x1.7c32520000000p+6",
+        "0x1.283d7c0000000p+6",
+        "0x1.e83a2c0000000p+5",
+        "0x1.7c32520000000p+6",
+        "0x1.7864a40000000p+5"
+      ]
+    },
+    "grad_norm": {
+      "digest": "float64|(1,)|af5570f5a1810b7a",
+      "values": [
+        "0x0.0p+0"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|c0f07c786c22a429",
+      "values": [
+        "0x1.003d240000000p+27"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(7,)|e01c055fd9a390ef",
+      "values": [
+        "0x1.5283420000000p+26",
+        "0x1.22fe7a0000000p+25",
+        "0x1.4ab8e20000000p+28",
+        "0x1.5120ea0000000p+27",
+        "0x1.75b6c20000000p+26",
+        "0x1.2d41700000000p+27",
+        "0x1.03ed0c0000000p+25"
+      ]
+    },
+    "loss/primary_loss": {
+      "digest": "float32|(7,)|e01c055fd9a390ef",
+      "values": [
+        "0x1.5283420000000p+26",
+        "0x1.22fe7a0000000p+25",
+        "0x1.4ab8e20000000p+28",
+        "0x1.5120ea0000000p+27",
+        "0x1.75b6c20000000p+26",
+        "0x1.2d41700000000p+27",
+        "0x1.03ed0c0000000p+25"
+      ]
+    },
+    "n_grad_tensors": 1,
+    "n_params_changed": 0,
+    "params_after": "float64|(1,)|af5570f5a1810b7a"
+  },
+  "step:precursor:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "step:spec_mol_clip_pretraining": {
+    "eval/0": "float32|(7, 16)|51d086ffff0e8bbe",
+    "eval/1": "float32|(7, 16)|aa9d45c86a0d6f20",
+    "forward/0": "float32|(7, 16)|51d086ffff0e8bbe",
+    "forward/1": "float32|(7, 16)|aa9d45c86a0d6f20",
+    "grad_norm": {
+      "digest": "float64|(1,)|8fe42656323bc335",
+      "values": [
+        "0x1.c4146d7a5dbcdp-2"
+      ]
+    },
+    "loss": {
+      "digest": "float32|(1,)|c73cd543c3f1010e",
+      "values": [
+        "0x1.f438cc0000000p+0"
+      ]
+    },
+    "loss/loss": {
+      "digest": "float32|(1,)|c73cd543c3f1010e",
+      "values": [
+        "0x1.f438cc0000000p+0"
+      ]
+    },
+    "n_grad_tensors": 51,
+    "n_params_changed": 51,
+    "params_after": "float64|(12153,)|3f99dedd80093d02"
+  },
+  "step:spec_mol_clip_pretraining:env": {
+    "cpu_capability": "AVX2",
+    "lightning": "2.4.0",
+    "numpy": "1.26.4",
+    "torch": "2.4.1+cu121"
+  },
+  "structure:chemlm": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "spec_cd"
+    ],
+    "state_dict": {
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.encoder.embeddings.LayerNorm.bias": "torch.float32|(32,)",
+      "model.encoder.embeddings.LayerNorm.weight": "torch.float32|(32,)",
+      "model.encoder.embeddings.position_embeddings.weight": "torch.float32|(66, 32)",
+      "model.encoder.embeddings.token_type_embeddings.weight": "torch.float32|(1, 32)",
+      "model.encoder.embeddings.word_embeddings.weight": "torch.float32|(261, 32)",
+      "model.encoder.encoder.layer.0.attention.output.LayerNorm.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.output.LayerNorm.weight": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.output.dense.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.output.dense.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.0.attention.self.key.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.self.key.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.0.attention.self.query.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.self.query.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.0.attention.self.value.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.attention.self.value.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.0.intermediate.dense.bias": "torch.float32|(64,)",
+      "model.encoder.encoder.layer.0.intermediate.dense.weight": "torch.float32|(64, 32)",
+      "model.encoder.encoder.layer.0.output.LayerNorm.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.output.LayerNorm.weight": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.output.dense.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.0.output.dense.weight": "torch.float32|(32, 64)",
+      "model.encoder.encoder.layer.1.attention.output.LayerNorm.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.output.LayerNorm.weight": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.output.dense.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.output.dense.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.1.attention.self.key.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.self.key.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.1.attention.self.query.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.self.query.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.1.attention.self.value.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.attention.self.value.weight": "torch.float32|(32, 32)",
+      "model.encoder.encoder.layer.1.intermediate.dense.bias": "torch.float32|(64,)",
+      "model.encoder.encoder.layer.1.intermediate.dense.weight": "torch.float32|(64, 32)",
+      "model.encoder.encoder.layer.1.output.LayerNorm.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.output.LayerNorm.weight": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.output.dense.bias": "torch.float32|(32,)",
+      "model.encoder.encoder.layer.1.output.dense.weight": "torch.float32|(32, 64)",
+      "model.ffn.ff_layers.0.in_batch_norm.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.in_batch_norm.running_mean": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.running_var": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.weight": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_linear.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.in_linear.weight": "torch.float32|(8, 16)",
+      "model.ffn.ff_layers.0.out_batch_norm.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.out_batch_norm.running_mean": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.running_var": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.weight": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_linear.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.out_linear.weight": "torch.float32|(16, 8)",
+      "model.ffn.forw_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.forw_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.forw_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.in_layer.bias": "torch.float32|(16,)",
+      "model.ffn.in_layer.weight": "torch.float32|(16, 64)",
+      "model.ffn.out_gate.0.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.out_gate.0.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.out_gate.0.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.rev_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.rev_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.rev_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:clip": {
+    "eval_outputs": {
+      "0": "torch.float32",
+      "1": "torch.float32"
+    },
+    "forward_outputs": {
+      "0": "torch.float32",
+      "1": "torch.float32"
+    },
+    "loss_terms": [
+      "loss"
+    ],
+    "state_dict": {
+      "log_temperature": "torch.float32|()",
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.frag_mode_embedder.weight": "torch.float32|(1, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(16, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(16, 60)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)",
+      "model.projector.input_layer.bias": "torch.float32|(16,)",
+      "model.projector.input_layer.weight": "torch.float32|(16, 48)",
+      "model.projector.output_layer.bias": "torch.float32|(16,)",
+      "model.projector.output_layer.weight": "torch.float32|(16, 16)",
+      "spec_encoder.input_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.input_proj.weight": "torch.float32|(16, 4)",
+      "spec_encoder.model.isab_blocks.0.inducing_points": "torch.float32|(1, 4, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.0.bias": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.0.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.out_proj.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.3.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.pma.mab.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.pma.mab.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.pma.mab.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.pma.mab.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.pma.mab.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.pma.mab.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.pma.mab.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.pma.seeds": "torch.float32|(1, 1, 16)"
+    }
+  },
+  "structure:frag_gnn": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_edge_batch_idxs": "NoneType",
+      "pred_edge_h_diffs": "NoneType",
+      "pred_edge_h_logprobs": "NoneType",
+      "pred_edge_h_range_masks": "NoneType",
+      "pred_edge_logprobs": "NoneType",
+      "pred_formula_batch_idxs": "torch.int64",
+      "pred_formula_formula_idxs": "torch.int64",
+      "pred_formula_logprobs": "torch.float32",
+      "pred_formula_node_logprobs": "torch.float32",
+      "pred_formula_support_batch_idxs": "NoneType",
+      "pred_formula_support_logits": "NoneType",
+      "pred_formula_support_peak_batch_idxs": "NoneType",
+      "pred_formula_support_peak_formula_idxs": "NoneType",
+      "pred_formula_support_peak_mzs": "NoneType",
+      "pred_formula_support_valid_mask": "NoneType",
+      "pred_h_batch_idxs": "torch.int64",
+      "pred_h_counts": "torch.int64",
+      "pred_h_logprobs": "torch.float32",
+      "pred_joint_batch_idxs": "torch.int64",
+      "pred_joint_formula_idxs": "torch.int64",
+      "pred_joint_h_counts": "torch.int64",
+      "pred_joint_h_idxs": "torch.int64",
+      "pred_joint_logprobs": "torch.float32",
+      "pred_joint_node_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_nb_formula_node_logprobs": "NoneType",
+      "pred_nb_joint_batch_idxs": "NoneType",
+      "pred_nb_joint_formula_idxs": "NoneType",
+      "pred_nb_joint_logprobs": "NoneType",
+      "pred_nb_joint_node_idxs": "NoneType",
+      "pred_nb_node_batch_idxs": "NoneType",
+      "pred_nb_node_formula_logprobs": "NoneType",
+      "pred_nb_node_logprobs": "NoneType",
+      "pred_nb_node_node_batch_idxs": "NoneType",
+      "pred_nb_node_node_idxs": "NoneType",
+      "pred_nb_node_node_logprobs": "NoneType",
+      "pred_nb_node_node_node_idxs": "NoneType",
+      "pred_node_batch_idxs": "torch.int64",
+      "pred_node_formula_logprobs": "torch.float32",
+      "pred_node_logprobs": "torch.float32",
+      "pred_node_node_idxs": "torch.int64",
+      "pred_null_formula_logprob": "torch.float32",
+      "pred_oos_logprobs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_edge_batch_idxs": "NoneType",
+      "pred_edge_h_diffs": "NoneType",
+      "pred_edge_h_logprobs": "NoneType",
+      "pred_edge_h_range_masks": "NoneType",
+      "pred_edge_logprobs": "NoneType",
+      "pred_formula_batch_idxs": "torch.int64",
+      "pred_formula_formula_idxs": "torch.int64",
+      "pred_formula_logprobs": "torch.float32",
+      "pred_formula_node_logprobs": "torch.float32",
+      "pred_formula_support_batch_idxs": "NoneType",
+      "pred_formula_support_logits": "NoneType",
+      "pred_formula_support_peak_batch_idxs": "NoneType",
+      "pred_formula_support_peak_formula_idxs": "NoneType",
+      "pred_formula_support_peak_mzs": "NoneType",
+      "pred_formula_support_valid_mask": "NoneType",
+      "pred_h_batch_idxs": "torch.int64",
+      "pred_h_counts": "torch.int64",
+      "pred_h_logprobs": "torch.float32",
+      "pred_joint_batch_idxs": "torch.int64",
+      "pred_joint_formula_idxs": "torch.int64",
+      "pred_joint_h_counts": "torch.int64",
+      "pred_joint_h_idxs": "torch.int64",
+      "pred_joint_logprobs": "torch.float32",
+      "pred_joint_node_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_nb_formula_node_logprobs": "NoneType",
+      "pred_nb_joint_batch_idxs": "NoneType",
+      "pred_nb_joint_formula_idxs": "NoneType",
+      "pred_nb_joint_logprobs": "NoneType",
+      "pred_nb_joint_node_idxs": "NoneType",
+      "pred_nb_node_batch_idxs": "NoneType",
+      "pred_nb_node_formula_logprobs": "NoneType",
+      "pred_nb_node_logprobs": "NoneType",
+      "pred_nb_node_node_batch_idxs": "NoneType",
+      "pred_nb_node_node_idxs": "NoneType",
+      "pred_nb_node_node_logprobs": "NoneType",
+      "pred_nb_node_node_node_idxs": "NoneType",
+      "pred_node_batch_idxs": "torch.int64",
+      "pred_node_formula_logprobs": "torch.float32",
+      "pred_node_logprobs": "torch.float32",
+      "pred_node_node_idxs": "torch.int64",
+      "pred_null_formula_logprob": "torch.float32",
+      "pred_oos_logprobs": "torch.float32"
+    },
+    "loss_terms": [
+      "ios_ce",
+      "loss",
+      "null_formula_prob",
+      "oos_ce",
+      "oos_prob",
+      "primary_loss",
+      "spec_ce"
+    ],
+    "state_dict": {
+      "model.complement_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.complement_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.depth_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.depth_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.formula_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.formula_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.formula_module.input_layer.bias": "torch.float32|(32,)",
+      "model.formula_module.input_layer.weight": "torch.float32|(32, 64)",
+      "model.formula_module.layers.0.bias": "torch.float32|(32,)",
+      "model.formula_module.layers.0.weight": "torch.float32|(32, 32)",
+      "model.formula_module.output_layer.bias": "torch.float32|(5,)",
+      "model.formula_module.output_layer.weight": "torch.float32|(5, 32)",
+      "model.frag_embedder.gnn.edge_transform.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.edge_transform.weight": "torch.float32|(32, 168)",
+      "model.frag_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.frag_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.1.eps": "torch.float32|(1,)",
+      "model.frag_embedder.gnn.layers.1.nn.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.1.nn.0.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.1.nn.2.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.1.nn.2.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.norms.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.frag_embedder.gnn.norms.0.running_mean": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.running_var": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.weight": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.num_batches_tracked": "torch.int64|()",
+      "model.frag_embedder.gnn.norms.1.running_mean": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.running_var": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.weight": "torch.float32|(32,)",
+      "model.frag_embedder.input_project.bias": "torch.float32|(32,)",
+      "model.frag_embedder.input_project.weight": "torch.float32|(32, 200)",
+      "model.frag_mode_embedder.weight": "torch.float32|(1, 8)",
+      "model.in_degree_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.in_degree_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(32, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.1.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.1.nn.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.1.nn.0.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.1.nn.2.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.1.nn.2.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.1.running_mean": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.running_var": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.weight": "torch.float32|(32,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(32,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(32, 60)",
+      "model.num_heavy_atoms_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.num_heavy_atoms_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.out_degree_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.out_degree_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:fragnnet": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_edge_batch_idxs": "NoneType",
+      "pred_edge_h_diffs": "NoneType",
+      "pred_edge_h_logprobs": "NoneType",
+      "pred_edge_h_range_masks": "NoneType",
+      "pred_edge_logprobs": "NoneType",
+      "pred_formula_batch_idxs": "torch.int64",
+      "pred_formula_formula_idxs": "torch.int64",
+      "pred_formula_logprobs": "torch.float32",
+      "pred_formula_node_logprobs": "torch.float32",
+      "pred_formula_support_batch_idxs": "NoneType",
+      "pred_formula_support_logits": "NoneType",
+      "pred_formula_support_peak_batch_idxs": "NoneType",
+      "pred_formula_support_peak_formula_idxs": "NoneType",
+      "pred_formula_support_peak_mzs": "NoneType",
+      "pred_formula_support_valid_mask": "NoneType",
+      "pred_h_batch_idxs": "torch.int64",
+      "pred_h_counts": "torch.int64",
+      "pred_h_logprobs": "torch.float32",
+      "pred_joint_batch_idxs": "torch.int64",
+      "pred_joint_formula_idxs": "torch.int64",
+      "pred_joint_h_counts": "torch.int64",
+      "pred_joint_h_idxs": "torch.int64",
+      "pred_joint_logprobs": "torch.float32",
+      "pred_joint_node_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_nb_formula_node_logprobs": "NoneType",
+      "pred_nb_joint_batch_idxs": "NoneType",
+      "pred_nb_joint_formula_idxs": "NoneType",
+      "pred_nb_joint_logprobs": "NoneType",
+      "pred_nb_joint_node_idxs": "NoneType",
+      "pred_nb_node_batch_idxs": "NoneType",
+      "pred_nb_node_formula_logprobs": "NoneType",
+      "pred_nb_node_logprobs": "NoneType",
+      "pred_nb_node_node_batch_idxs": "NoneType",
+      "pred_nb_node_node_idxs": "NoneType",
+      "pred_nb_node_node_logprobs": "NoneType",
+      "pred_nb_node_node_node_idxs": "NoneType",
+      "pred_node_batch_idxs": "torch.int64",
+      "pred_node_formula_logprobs": "torch.float32",
+      "pred_node_logprobs": "torch.float32",
+      "pred_node_node_idxs": "torch.int64",
+      "pred_null_formula_logprob": "torch.float32",
+      "pred_oos_logprobs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_edge_batch_idxs": "NoneType",
+      "pred_edge_h_diffs": "NoneType",
+      "pred_edge_h_logprobs": "NoneType",
+      "pred_edge_h_range_masks": "NoneType",
+      "pred_edge_logprobs": "NoneType",
+      "pred_formula_batch_idxs": "torch.int64",
+      "pred_formula_formula_idxs": "torch.int64",
+      "pred_formula_logprobs": "torch.float32",
+      "pred_formula_node_logprobs": "torch.float32",
+      "pred_formula_support_batch_idxs": "NoneType",
+      "pred_formula_support_logits": "NoneType",
+      "pred_formula_support_peak_batch_idxs": "NoneType",
+      "pred_formula_support_peak_formula_idxs": "NoneType",
+      "pred_formula_support_peak_mzs": "NoneType",
+      "pred_formula_support_valid_mask": "NoneType",
+      "pred_h_batch_idxs": "torch.int64",
+      "pred_h_counts": "torch.int64",
+      "pred_h_logprobs": "torch.float32",
+      "pred_joint_batch_idxs": "torch.int64",
+      "pred_joint_formula_idxs": "torch.int64",
+      "pred_joint_h_counts": "torch.int64",
+      "pred_joint_h_idxs": "torch.int64",
+      "pred_joint_logprobs": "torch.float32",
+      "pred_joint_node_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_nb_formula_node_logprobs": "NoneType",
+      "pred_nb_joint_batch_idxs": "NoneType",
+      "pred_nb_joint_formula_idxs": "NoneType",
+      "pred_nb_joint_logprobs": "NoneType",
+      "pred_nb_joint_node_idxs": "NoneType",
+      "pred_nb_node_batch_idxs": "NoneType",
+      "pred_nb_node_formula_logprobs": "NoneType",
+      "pred_nb_node_logprobs": "NoneType",
+      "pred_nb_node_node_batch_idxs": "NoneType",
+      "pred_nb_node_node_idxs": "NoneType",
+      "pred_nb_node_node_logprobs": "NoneType",
+      "pred_nb_node_node_node_idxs": "NoneType",
+      "pred_node_batch_idxs": "torch.int64",
+      "pred_node_formula_logprobs": "torch.float32",
+      "pred_node_logprobs": "torch.float32",
+      "pred_node_node_idxs": "torch.int64",
+      "pred_null_formula_logprob": "torch.float32",
+      "pred_oos_logprobs": "torch.float32"
+    },
+    "loss_terms": [
+      "ios_ce",
+      "loss",
+      "null_formula_prob",
+      "oos_ce",
+      "oos_prob",
+      "primary_loss",
+      "spec_ce"
+    ],
+    "state_dict": {
+      "model.complement_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.complement_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.depth_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.depth_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.formula_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.formula_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.formula_module.input_layer.bias": "torch.float32|(32,)",
+      "model.formula_module.input_layer.weight": "torch.float32|(32, 64)",
+      "model.formula_module.layers.0.bias": "torch.float32|(32,)",
+      "model.formula_module.layers.0.weight": "torch.float32|(32, 32)",
+      "model.formula_module.output_layer.bias": "torch.float32|(5,)",
+      "model.formula_module.output_layer.weight": "torch.float32|(5, 32)",
+      "model.frag_embedder.gnn.edge_transform.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.edge_transform.weight": "torch.float32|(32, 168)",
+      "model.frag_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.frag_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.1.eps": "torch.float32|(1,)",
+      "model.frag_embedder.gnn.layers.1.nn.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.1.nn.0.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.layers.1.nn.2.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.layers.1.nn.2.weight": "torch.float32|(32, 32)",
+      "model.frag_embedder.gnn.norms.0.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.frag_embedder.gnn.norms.0.running_mean": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.running_var": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.0.weight": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.bias": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.num_batches_tracked": "torch.int64|()",
+      "model.frag_embedder.gnn.norms.1.running_mean": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.running_var": "torch.float32|(32,)",
+      "model.frag_embedder.gnn.norms.1.weight": "torch.float32|(32,)",
+      "model.frag_embedder.input_project.bias": "torch.float32|(32,)",
+      "model.frag_embedder.input_project.weight": "torch.float32|(32, 200)",
+      "model.frag_mode_embedder.weight": "torch.float32|(1, 8)",
+      "model.in_degree_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.in_degree_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(32, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.1.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.1.nn.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.1.nn.0.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.layers.1.nn.2.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.layers.1.nn.2.weight": "torch.float32|(32, 32)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.bias": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.1.running_mean": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.running_var": "torch.float32|(32,)",
+      "model.mol_embedder.gnn.norms.1.weight": "torch.float32|(32,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(32,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(32, 60)",
+      "model.num_heavy_atoms_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.num_heavy_atoms_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.out_degree_embedder._extra_embeddings": "torch.float32|(1, 8)",
+      "model.out_degree_embedder.int_to_feat_matrix": "torch.float32|(255, 8)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:gnn": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "spec_cd"
+    ],
+    "state_dict": {
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.ffn.ff_layers.0.in_batch_norm.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.in_batch_norm.running_mean": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.running_var": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.weight": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_linear.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.in_linear.weight": "torch.float32|(8, 16)",
+      "model.ffn.ff_layers.0.out_batch_norm.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.out_batch_norm.running_mean": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.running_var": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.weight": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_linear.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.out_linear.weight": "torch.float32|(16, 8)",
+      "model.ffn.forw_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.forw_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.forw_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.in_layer.bias": "torch.float32|(16,)",
+      "model.ffn.in_layer.weight": "torch.float32|(16, 48)",
+      "model.ffn.out_gate.0.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.out_gate.0.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.out_gate.0.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.rev_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.rev_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.rev_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(16, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(16, 60)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:graff": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "primary_loss"
+    ],
+    "state_dict": {
+      "model.attn.bias": "torch.float32|(1,)",
+      "model.attn.weight": "torch.float32|(1, 16)",
+      "model.clf.bias": "torch.float32|(8,)",
+      "model.clf.weight": "torch.float32|(8, 16)",
+      "model.cov_emb.0.bias": "torch.float32|(16,)",
+      "model.cov_emb.0.weight": "torch.float32|(16, 2)",
+      "model.cov_emb.3.bias": "torch.float32|(16,)",
+      "model.cov_emb.3.weight": "torch.float32|(16,)",
+      "model.cov_emb.4.bias": "torch.float32|(16,)",
+      "model.cov_emb.4.weight": "torch.float32|(16, 16)",
+      "model.decoder.0.bias": "torch.float32|(16,)",
+      "model.decoder.0.weight": "torch.float32|(16, 16)",
+      "model.decoder.1.linear.bias": "torch.float32|(16,)",
+      "model.decoder.1.linear.weight": "torch.float32|(16, 16)",
+      "model.decoder.1.norm.bias": "torch.float32|(16,)",
+      "model.decoder.1.norm.weight": "torch.float32|(16,)",
+      "model.edge_emb.0.bias": "torch.float32|(16,)",
+      "model.edge_emb.0.weight": "torch.float32|(16, 17)",
+      "model.edge_emb.3.bias": "torch.float32|(16,)",
+      "model.edge_emb.3.weight": "torch.float32|(16,)",
+      "model.edge_emb.4.bias": "torch.float32|(16,)",
+      "model.edge_emb.4.weight": "torch.float32|(16, 16)",
+      "model.encoder.edge_layers.0.lin1.bias": "torch.float32|(16,)",
+      "model.encoder.edge_layers.0.lin1.weight": "torch.float32|(16, 48)",
+      "model.encoder.edge_layers.0.norm.bias": "torch.float32|(16,)",
+      "model.encoder.edge_layers.0.norm.mean_scale": "torch.float32|(16,)",
+      "model.encoder.edge_layers.0.norm.weight": "torch.float32|(16,)",
+      "model.encoder.layers.0.conv.eps": "torch.float32|(1,)",
+      "model.encoder.layers.0.conv.lin.bias": "torch.float32|(16,)",
+      "model.encoder.layers.0.conv.lin.weight": "torch.float32|(16, 16)",
+      "model.encoder.layers.0.edge_lin.bias": "torch.float32|(16,)",
+      "model.encoder.layers.0.edge_lin.weight": "torch.float32|(16, 16)",
+      "model.encoder.layers.0.lin1.bias": "torch.float32|(16,)",
+      "model.encoder.layers.0.lin1.weight": "torch.float32|(16, 16)",
+      "model.encoder.layers.0.norm.bias": "torch.float32|(16,)",
+      "model.encoder.layers.0.norm.mean_scale": "torch.float32|(16,)",
+      "model.encoder.layers.0.norm.weight": "torch.float32|(16,)",
+      "model.encoder.linear.bias": "torch.float32|(16,)",
+      "model.encoder.linear.weight": "torch.float32|(16, 16)",
+      "model.isotope_shift.bias": "torch.float32|(3,)",
+      "model.isotope_shift.weight": "torch.float32|(3, 16)",
+      "model.node_emb.0.bias": "torch.float32|(16,)",
+      "model.node_emb.0.weight": "torch.float32|(16, 174)",
+      "model.node_emb.3.bias": "torch.float32|(16,)",
+      "model.node_emb.3.weight": "torch.float32|(16,)",
+      "model.node_emb.4.bias": "torch.float32|(16,)",
+      "model.node_emb.4.weight": "torch.float32|(16, 16)",
+      "model.signnet.phi.0.bias": "torch.float32|(8,)",
+      "model.signnet.phi.0.weight": "torch.float32|(8, 2)",
+      "model.signnet.phi.1.bias": "torch.float32|(8,)",
+      "model.signnet.phi.1.weight": "torch.float32|(8, 8)",
+      "model.signnet.phi.4.bias": "torch.float32|(8,)",
+      "model.signnet.phi.4.weight": "torch.float32|(8,)",
+      "model.signnet.rho.0.bias": "torch.float32|(16,)",
+      "model.signnet.rho.0.weight": "torch.float32|(16, 8)",
+      "model.signnet.rho.1.bias": "torch.float32|(16,)",
+      "model.signnet.rho.1.weight": "torch.float32|(16, 16)",
+      "model.signnet.rho.4.bias": "torch.float32|(16,)",
+      "model.signnet.rho.4.weight": "torch.float32|(16,)"
+    }
+  },
+  "structure:massformer": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "spec_cd"
+    ],
+    "state_dict": {
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.ffn.ff_layers.0.in_batch_norm.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.in_batch_norm.running_mean": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.running_var": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.weight": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_linear.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.in_linear.weight": "torch.float32|(8, 16)",
+      "model.ffn.ff_layers.0.out_batch_norm.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.out_batch_norm.running_mean": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.running_var": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.weight": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_linear.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.out_linear.weight": "torch.float32|(16, 8)",
+      "model.ffn.forw_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.forw_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.forw_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.in_layer.bias": "torch.float32|(16,)",
+      "model.ffn.in_layer.weight": "torch.float32|(16, 64)",
+      "model.ffn.out_gate.0.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.out_gate.0.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.out_gate.0.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.rev_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.rev_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.rev_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.gf.encoder.graph_encoder.emb_layer_norm.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.emb_layer_norm.weight": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.graph_attn_bias.edge_dis_encoder.weight": "torch.float32|(512, 1)",
+      "model.gf.encoder.graph_encoder.graph_attn_bias.edge_encoder.weight": "torch.float32|(1537, 2)",
+      "model.gf.encoder.graph_encoder.graph_attn_bias.graph_token_virtual_distance.weight": "torch.float32|(1, 2)",
+      "model.gf.encoder.graph_encoder.graph_attn_bias.spatial_pos_encoder.weight": "torch.float32|(512, 2)",
+      "model.gf.encoder.graph_encoder.graph_node_feature.atom_encoder.weight": "torch.float32|(4609, 32)",
+      "model.gf.encoder.graph_encoder.graph_node_feature.graph_token.weight": "torch.float32|(1, 32)",
+      "model.gf.encoder.graph_encoder.graph_node_feature.in_degree_encoder.weight": "torch.float32|(512, 32)",
+      "model.gf.encoder.graph_encoder.graph_node_feature.out_degree_encoder.weight": "torch.float32|(512, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.fc1.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.fc1.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.fc2.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.fc2.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.final_layer_norm.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.final_layer_norm.weight": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.k_proj.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.k_proj.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.out_proj.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.out_proj.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.q_proj.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.q_proj.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.v_proj.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn.v_proj.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn_layer_norm.bias": "torch.float32|(32,)",
+      "model.gf.encoder.graph_encoder.layers.0.self_attn_layer_norm.weight": "torch.float32|(32,)",
+      "model.gf.encoder.layer_norm.bias": "torch.float32|(32,)",
+      "model.gf.encoder.layer_norm.weight": "torch.float32|(32,)",
+      "model.gf.encoder.lm_head_transform_weight.bias": "torch.float32|(32,)",
+      "model.gf.encoder.lm_head_transform_weight.weight": "torch.float32|(32, 32)",
+      "model.gf.encoder.lm_output_learned_bias": "torch.float32|(1,)",
+      "model.gf.encoder.masked_lm_pooler.bias": "torch.float32|(32,)",
+      "model.gf.encoder.masked_lm_pooler.weight": "torch.float32|(32, 32)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:masster": {
+    "eval_outputs": {
+      "atom_charge_logits": "torch.float32",
+      "bond_break_logits": "torch.float32",
+      "candidate_batch_idxs_by_cut": "torch.int64",
+      "candidate_cut_counts": "torch.int64",
+      "candidate_input_transfer_batch_ms": "torch.float32",
+      "candidate_mask_selection_batch_ms": "torch.float32",
+      "candidate_mzs_by_cut": "torch.float64",
+      "candidate_output_transfer_batch_ms": "torch.float32",
+      "candidate_topology_assembly_batch_ms": "torch.float32",
+      "candidate_total_batch_ms": "torch.float32",
+      "candidate_total_molecule_ms": "torch.float32",
+      "component_pathway_count": "torch.int64",
+      "components_per_mask": "torch.float32",
+      "duplicate_component_pathway_fraction": "torch.float32",
+      "duplicate_pathway_probability_fraction": "torch.float32",
+      "fragment_count_after_cutoff": "torch.float32",
+      "fragment_count_before_cutoff": "torch.float32",
+      "fragment_cutoff_pruned_fraction": "torch.float32",
+      "full_candidate_fragment_idxs": "torch.int64",
+      "ion_h_chemical_valid_channels": "torch.bool",
+      "ion_h_cutoff_pruned_fraction": "torch.float32",
+      "ion_h_dense_log_weights": "torch.float32",
+      "ion_h_dense_mzs": "torch.float64",
+      "ion_h_fragment_batch_idxs": "torch.int64",
+      "ion_h_fragment_proposal_logprobs": "torch.float32",
+      "ion_h_support_logits": "torch.float32",
+      "ion_mode_cutoff_pruned_fraction": "torch.float32",
+      "ion_mode_proposal_logits": "torch.float32",
+      "latent_pathways_per_unique_fragment": "torch.float32",
+      "mask_cut_fraction_0": "torch.float32",
+      "mask_cut_fraction_1": "torch.float32",
+      "mask_cut_fraction_2": "torch.float32",
+      "mask_cut_fraction_3": "torch.float32",
+      "mask_cut_fraction_4": "torch.float32",
+      "mask_cut_fraction_4plus": "torch.float32",
+      "mask_cut_fraction_5": "torch.float32",
+      "mask_cut_fraction_6plus": "torch.float32",
+      "mean_mask_cut_count": "torch.float32",
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float64",
+      "productive_mask_fraction": "torch.float32",
+      "proposal_mixture_effective_count": "torch.float32",
+      "proposal_mixture_entropy": "torch.float32",
+      "proposal_mixture_log_weights": "torch.float32",
+      "proposal_mixture_top1_weight": "torch.float32",
+      "proposal_single_cut_fraction": "torch.float32",
+      "retained_fragment_probability": "torch.float32",
+      "retained_ion_h_count": "torch.float32",
+      "retained_ion_h_probability": "torch.float32",
+      "retained_ion_mode_count": "torch.float32",
+      "retained_ion_mode_probability": "torch.float32",
+      "retained_joint_channel_intensity_fraction": "torch.float32",
+      "retained_mask_probability": "torch.float32",
+      "selected_mask_count": "torch.int64",
+      "unique_component_count": "torch.float32",
+      "unique_components_per_mask": "torch.float32",
+      "unique_fragment_effective_count": "torch.float32",
+      "unique_fragment_target_fill_fraction": "torch.float32",
+      "unique_fragment_target_reached": "torch.float32",
+      "unique_fragment_top1_mass_fraction": "torch.float32",
+      "valid_ion_h_count": "torch.float32",
+      "valid_ion_mode_count": "torch.float32"
+    },
+    "forward_outputs": {
+      "atom_charge_logits": "torch.float32",
+      "bond_break_logits": "torch.float32",
+      "candidate_batch_idxs_by_cut": "torch.int64",
+      "candidate_cut_counts": "torch.int64",
+      "candidate_input_transfer_batch_ms": "torch.float32",
+      "candidate_mask_selection_batch_ms": "torch.float32",
+      "candidate_mzs_by_cut": "torch.float64",
+      "candidate_output_transfer_batch_ms": "torch.float32",
+      "candidate_topology_assembly_batch_ms": "torch.float32",
+      "candidate_total_batch_ms": "torch.float32",
+      "candidate_total_molecule_ms": "torch.float32",
+      "component_pathway_count": "torch.int64",
+      "components_per_mask": "torch.float32",
+      "duplicate_component_pathway_fraction": "torch.float32",
+      "duplicate_pathway_probability_fraction": "torch.float32",
+      "fragment_count_after_cutoff": "torch.float32",
+      "fragment_count_before_cutoff": "torch.float32",
+      "fragment_cutoff_pruned_fraction": "torch.float32",
+      "full_candidate_fragment_idxs": "torch.int64",
+      "ion_h_chemical_valid_channels": "torch.bool",
+      "ion_h_cutoff_pruned_fraction": "torch.float32",
+      "ion_h_dense_log_weights": "torch.float32",
+      "ion_h_dense_mzs": "torch.float64",
+      "ion_h_fragment_batch_idxs": "torch.int64",
+      "ion_h_fragment_proposal_logprobs": "torch.float32",
+      "ion_h_support_logits": "torch.float32",
+      "ion_mode_cutoff_pruned_fraction": "torch.float32",
+      "ion_mode_proposal_logits": "torch.float32",
+      "latent_pathways_per_unique_fragment": "torch.float32",
+      "mask_cut_fraction_0": "torch.float32",
+      "mask_cut_fraction_1": "torch.float32",
+      "mask_cut_fraction_2": "torch.float32",
+      "mask_cut_fraction_3": "torch.float32",
+      "mask_cut_fraction_4": "torch.float32",
+      "mask_cut_fraction_4plus": "torch.float32",
+      "mask_cut_fraction_5": "torch.float32",
+      "mask_cut_fraction_6plus": "torch.float32",
+      "mean_mask_cut_count": "torch.float32",
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float64",
+      "productive_mask_fraction": "torch.float32",
+      "proposal_mixture_effective_count": "torch.float32",
+      "proposal_mixture_entropy": "torch.float32",
+      "proposal_mixture_log_weights": "torch.float32",
+      "proposal_mixture_top1_weight": "torch.float32",
+      "proposal_single_cut_fraction": "torch.float32",
+      "retained_fragment_probability": "torch.float32",
+      "retained_ion_h_count": "torch.float32",
+      "retained_ion_h_probability": "torch.float32",
+      "retained_ion_mode_count": "torch.float32",
+      "retained_ion_mode_probability": "torch.float32",
+      "retained_joint_channel_intensity_fraction": "torch.float32",
+      "retained_mask_probability": "torch.float32",
+      "selected_mask_count": "torch.int64",
+      "unique_component_count": "torch.float32",
+      "unique_components_per_mask": "torch.float32",
+      "unique_fragment_effective_count": "torch.float32",
+      "unique_fragment_target_fill_fraction": "torch.float32",
+      "unique_fragment_target_reached": "torch.float32",
+      "unique_fragment_top1_mass_fraction": "torch.float32",
+      "valid_ion_h_count": "torch.float32",
+      "valid_ion_mode_count": "torch.float32"
+    },
+    "loss_terms": [
+      "component_pathway_count",
+      "components_per_mask",
+      "conditional_spec_ce",
+      "coverage_weighted_spec_ce",
+      "duplicate_component_pathway_fraction",
+      "duplicate_pathway_probability_fraction",
+      "fragment_count_after_cutoff",
+      "fragment_count_before_cutoff",
+      "fragment_cutoff_pruned_fraction",
+      "ion_h_cutoff_pruned_fraction",
+      "ion_mode_cutoff_pruned_fraction",
+      "latent_pathways_per_unique_fragment",
+      "loss",
+      "mask_cut_fraction_0",
+      "mask_cut_fraction_1",
+      "mask_cut_fraction_2",
+      "mask_cut_fraction_3",
+      "mask_cut_fraction_4",
+      "mask_cut_fraction_4plus",
+      "mask_cut_fraction_5",
+      "mask_cut_fraction_6plus",
+      "mean_mask_cut_count",
+      "primary_loss",
+      "productive_mask_fraction",
+      "proposal_mixture_effective_count",
+      "proposal_mixture_entropy",
+      "proposal_mixture_top1_weight",
+      "proposal_single_cut_fraction",
+      "retained_fragment_probability",
+      "retained_ion_h_count",
+      "retained_ion_h_probability",
+      "retained_ion_mode_count",
+      "retained_ion_mode_probability",
+      "retained_joint_channel_intensity_fraction",
+      "retained_mask_probability",
+      "selected_mask_count",
+      "spec_ce",
+      "unique_component_count",
+      "unique_components_per_mask",
+      "unique_fragment_effective_count",
+      "unique_fragment_target_fill_fraction",
+      "unique_fragment_target_reached",
+      "unique_fragment_top1_mass_fraction",
+      "valid_ion_h_count",
+      "valid_ion_mode_count"
+    ],
+    "state_dict": {
+      "model.bond_break_head.head.0.bias": "torch.float32|(32,)",
+      "model.bond_break_head.head.0.weight": "torch.float32|(32, 133)",
+      "model.bond_break_head.head.3.bias": "torch.float32|(1,)",
+      "model.bond_break_head.head.3.weight": "torch.float32|(1, 32)",
+      "model.boundary_bond_encoder.net.0.bias": "torch.float32|(32,)",
+      "model.boundary_bond_encoder.net.0.weight": "torch.float32|(32, 96)",
+      "model.boundary_bond_encoder.net.2.bias": "torch.float32|(32,)",
+      "model.boundary_bond_encoder.net.2.weight": "torch.float32|(32, 32)",
+      "model.charge_head.head.0.bias": "torch.float32|(32,)",
+      "model.charge_head.head.0.weight": "torch.float32|(32, 96)",
+      "model.charge_head.head.3.bias": "torch.float32|(1,)",
+      "model.charge_head.head.3.weight": "torch.float32|(1, 32)",
+      "model.cmf_formula_deltas": "torch.int64|(1, 1)",
+      "model.cmf_mass_deltas": "torch.float64|(1,)",
+      "model.cmf_precursor_valid": "torch.bool|(1,)",
+      "model.composition_element_columns": "torch.int64|(119,)",
+      "model.context_encoder.instrument_embedding.weight": "torch.float32|(2, 16)",
+      "model.context_encoder.precursor_embedding.weight": "torch.float32|(1, 16)",
+      "model.context_encoder.projector.0.bias": "torch.float32|(64,)",
+      "model.context_encoder.projector.0.weight": "torch.float32|(64, 33)",
+      "model.context_encoder.projector.2.bias": "torch.float32|(64,)",
+      "model.context_encoder.projector.2.weight": "torch.float32|(64, 64)",
+      "model.crf_formula_deltas": "torch.int64|(1, 1)",
+      "model.crf_mass_deltas": "torch.float64|(1,)",
+      "model.intensity_head.component_residual_head.bias": "torch.float32|(1,)",
+      "model.intensity_head.component_residual_head.weight": "torch.float32|(1, 32)",
+      "model.intensity_head.inducing_tokens": "torch.float32|(1, 8, 32)",
+      "model.intensity_head.input_projection.0.bias": "torch.float32|(32,)",
+      "model.intensity_head.input_projection.0.weight": "torch.float32|(32, 168)",
+      "model.intensity_head.input_projection.2.bias": "torch.float32|(32,)",
+      "model.intensity_head.input_projection.2.weight": "torch.float32|(32,)",
+      "model.intensity_head.ion_hydrogen_head.bias": "torch.float32|(6,)",
+      "model.intensity_head.ion_hydrogen_head.weight": "torch.float32|(6, 32)",
+      "model.intensity_head.layers.0.candidate_attention.in_proj_bias": "torch.float32|(96,)",
+      "model.intensity_head.layers.0.candidate_attention.in_proj_weight": "torch.float32|(96, 32)",
+      "model.intensity_head.layers.0.candidate_attention.out_proj.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.candidate_attention.out_proj.weight": "torch.float32|(32, 32)",
+      "model.intensity_head.layers.0.candidate_attention_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.candidate_attention_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.candidate_feedforward.0.bias": "torch.float32|(64,)",
+      "model.intensity_head.layers.0.candidate_feedforward.0.weight": "torch.float32|(64, 32)",
+      "model.intensity_head.layers.0.candidate_feedforward.3.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.candidate_feedforward.3.weight": "torch.float32|(32, 64)",
+      "model.intensity_head.layers.0.candidate_feedforward_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.candidate_feedforward_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_attention.in_proj_bias": "torch.float32|(96,)",
+      "model.intensity_head.layers.0.latent_attention.in_proj_weight": "torch.float32|(96, 32)",
+      "model.intensity_head.layers.0.latent_attention.out_proj.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_attention.out_proj.weight": "torch.float32|(32, 32)",
+      "model.intensity_head.layers.0.latent_attention_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_attention_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_feedforward.0.bias": "torch.float32|(64,)",
+      "model.intensity_head.layers.0.latent_feedforward.0.weight": "torch.float32|(64, 32)",
+      "model.intensity_head.layers.0.latent_feedforward.3.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_feedforward.3.weight": "torch.float32|(32, 64)",
+      "model.intensity_head.layers.0.latent_feedforward_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.0.latent_feedforward_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_attention.in_proj_bias": "torch.float32|(96,)",
+      "model.intensity_head.layers.1.candidate_attention.in_proj_weight": "torch.float32|(96, 32)",
+      "model.intensity_head.layers.1.candidate_attention.out_proj.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_attention.out_proj.weight": "torch.float32|(32, 32)",
+      "model.intensity_head.layers.1.candidate_attention_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_attention_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_feedforward.0.bias": "torch.float32|(64,)",
+      "model.intensity_head.layers.1.candidate_feedforward.0.weight": "torch.float32|(64, 32)",
+      "model.intensity_head.layers.1.candidate_feedforward.3.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_feedforward.3.weight": "torch.float32|(32, 64)",
+      "model.intensity_head.layers.1.candidate_feedforward_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.candidate_feedforward_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_attention.in_proj_bias": "torch.float32|(96,)",
+      "model.intensity_head.layers.1.latent_attention.in_proj_weight": "torch.float32|(96, 32)",
+      "model.intensity_head.layers.1.latent_attention.out_proj.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_attention.out_proj.weight": "torch.float32|(32, 32)",
+      "model.intensity_head.layers.1.latent_attention_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_attention_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_feedforward.0.bias": "torch.float32|(64,)",
+      "model.intensity_head.layers.1.latent_feedforward.0.weight": "torch.float32|(64, 32)",
+      "model.intensity_head.layers.1.latent_feedforward.3.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_feedforward.3.weight": "torch.float32|(32, 64)",
+      "model.intensity_head.layers.1.latent_feedforward_norm.bias": "torch.float32|(32,)",
+      "model.intensity_head.layers.1.latent_feedforward_norm.weight": "torch.float32|(32,)",
+      "model.intensity_head.mask_residual_head.bias": "torch.float32|(1,)",
+      "model.intensity_head.mask_residual_head.weight": "torch.float32|(1, 32)",
+      "model.precursor_encoder.gnn.edge_transform.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.edge_transform.weight": "torch.float32|(32, 5)",
+      "model.precursor_encoder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.precursor_encoder.gnn.layers.0.nn.0.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.layers.0.nn.0.weight": "torch.float32|(32, 32)",
+      "model.precursor_encoder.gnn.layers.0.nn.2.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.layers.0.nn.2.weight": "torch.float32|(32, 32)",
+      "model.precursor_encoder.gnn.layers.1.eps": "torch.float32|(1,)",
+      "model.precursor_encoder.gnn.layers.1.nn.0.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.layers.1.nn.0.weight": "torch.float32|(32, 32)",
+      "model.precursor_encoder.gnn.layers.1.nn.2.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.layers.1.nn.2.weight": "torch.float32|(32, 32)",
+      "model.precursor_encoder.gnn.norms.0.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.precursor_encoder.gnn.norms.0.running_mean": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.0.running_var": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.0.weight": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.1.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.1.num_batches_tracked": "torch.int64|()",
+      "model.precursor_encoder.gnn.norms.1.running_mean": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.1.running_var": "torch.float32|(32,)",
+      "model.precursor_encoder.gnn.norms.1.weight": "torch.float32|(32,)",
+      "model.precursor_encoder.input_project.bias": "torch.float32|(32,)",
+      "model.precursor_encoder.input_project.weight": "torch.float32|(32, 60)",
+      "model.required_atomic_numbers": "torch.int64|(1,)"
+    }
+  },
+  "structure:mces_pretraining_wiring_patched": {
+    "eval_outputs": {
+      "output": "torch.float32"
+    },
+    "forward_outputs": {
+      "output": "torch.float32"
+    },
+    "loss_terms": [
+      "loss"
+    ],
+    "state_dict": {
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(16, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(16, 60)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)",
+      "model.regressor.input_layer.bias": "torch.float32|(16,)",
+      "model.regressor.input_layer.weight": "torch.float32|(16, 32)",
+      "model.regressor.output_layer.bias": "torch.float32|(1,)",
+      "model.regressor.output_layer.weight": "torch.float32|(1, 16)"
+    }
+  },
+  "structure:neims": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32",
+      "pred_specs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "spec_cd"
+    ],
+    "state_dict": {
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.ffn.ff_layers.0.in_batch_norm.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.in_batch_norm.running_mean": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.running_var": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_batch_norm.weight": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.in_linear.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.in_linear.weight": "torch.float32|(8, 16)",
+      "model.ffn.ff_layers.0.out_batch_norm.bias": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.num_batches_tracked": "torch.int64|()",
+      "model.ffn.ff_layers.0.out_batch_norm.running_mean": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.running_var": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_batch_norm.weight": "torch.float32|(8,)",
+      "model.ffn.ff_layers.0.out_linear.bias": "torch.float32|(16,)",
+      "model.ffn.ff_layers.0.out_linear.weight": "torch.float32|(16, 8)",
+      "model.ffn.forw_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.forw_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.forw_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.in_layer.bias": "torch.float32|(16,)",
+      "model.ffn.in_layer.weight": "torch.float32|(16, 327)",
+      "model.ffn.out_gate.0.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.out_gate.0.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.out_gate.0.proj2.weight": "torch.float32|(2000, 8)",
+      "model.ffn.rev_out_layer.proj1.weight": "torch.float32|(8, 16)",
+      "model.ffn.rev_out_layer.proj2.bias": "torch.float32|(2000,)",
+      "model.ffn.rev_out_layer.proj2.weight": "torch.float32|(2000, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)"
+    }
+  },
+  "structure:precursor": {
+    "eval_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32"
+    },
+    "forward_outputs": {
+      "pred_batch_idxs": "torch.int64",
+      "pred_logprobs": "torch.float32",
+      "pred_mzs": "torch.float32"
+    },
+    "loss_terms": [
+      "loss",
+      "primary_loss"
+    ],
+    "state_dict": {
+      "model.dummy_params": "torch.float32|(1,)"
+    }
+  },
+  "structure:spec_mol_clip_pretraining": {
+    "eval_outputs": {
+      "0": "torch.float32",
+      "1": "torch.float32"
+    },
+    "forward_outputs": {
+      "0": "torch.float32",
+      "1": "torch.float32"
+    },
+    "loss_terms": [
+      "loss"
+    ],
+    "state_dict": {
+      "log_temperature": "torch.float32|()",
+      "model.ce_embedder.0._extra_embeddings": "torch.float32|(1, 8)",
+      "model.ce_embedder.0.int_to_feat_matrix": "torch.float32|(201, 8)",
+      "model.ce_embedder.1.bias": "torch.float32|(32,)",
+      "model.ce_embedder.1.weight": "torch.float32|(32, 8)",
+      "model.frag_mode_embedder.weight": "torch.float32|(1, 8)",
+      "model.inst_embedder.weight": "torch.float32|(3, 32)",
+      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(16, 5)",
+      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(16, 16)",
+      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
+      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(16,)",
+      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.bias": "torch.float32|(16,)",
+      "model.mol_embedder.input_project.weight": "torch.float32|(16, 60)",
+      "model.prec_embedder.weight": "torch.float32|(2, 32)",
+      "model.projector.input_layer.bias": "torch.float32|(16,)",
+      "model.projector.input_layer.weight": "torch.float32|(16, 48)",
+      "model.projector.output_layer.bias": "torch.float32|(16,)",
+      "model.projector.output_layer.weight": "torch.float32|(16, 16)",
+      "spec_encoder.input_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.input_proj.weight": "torch.float32|(16, 4)",
+      "spec_encoder.model.isab_blocks.0.inducing_points": "torch.float32|(1, 4, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_i.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.isab_blocks.0.mab_x.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.0.bias": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.0.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.out_proj.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.out_proj.3.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.pma.mab.attn.in_proj_bias": "torch.float32|(48,)",
+      "spec_encoder.model.pma.mab.attn.in_proj_weight": "torch.float32|(48, 16)",
+      "spec_encoder.model.pma.mab.attn.out_proj.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.attn.out_proj.weight": "torch.float32|(16, 16)",
+      "spec_encoder.model.pma.mab.ffn.0.bias": "torch.float32|(32,)",
+      "spec_encoder.model.pma.mab.ffn.0.weight": "torch.float32|(32, 16)",
+      "spec_encoder.model.pma.mab.ffn.3.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.ffn.3.weight": "torch.float32|(16, 32)",
+      "spec_encoder.model.pma.mab.norm1.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm1.weight": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm2.bias": "torch.float32|(16,)",
+      "spec_encoder.model.pma.mab.norm2.weight": "torch.float32|(16,)",
+      "spec_encoder.model.pma.seeds": "torch.float32|(1, 1, 16)"
+    }
+  }
+}
