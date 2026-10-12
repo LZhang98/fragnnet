@@ -739,3 +739,15 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
       metadata lists it until `pip install --no-deps -e .` is re-run.
     - Bytecode of the deleted modules (`src/fragnnet/iceberg/`, `dgl_compat_utils*.pyc`) needs a
       user-run cleanup script, because agent `rm -rf` is blocked.
+- 2026-10-11: Phase 2 committed (`30eb927d`).
+  - The Phase 0 item 4-5 records are bit-identical for FraGNNet, MASSter proposal-only and MASSter
+    joint training. Multiplying any helper's output by 1.001 fails them for both models, so
+    both loss paths run through the helpers.
+  - Full suite: no new failures. Six tests in `test_fragnnet_audit_fixes.py` call
+    `FraGNNetPL._setup_loss_fn` on a `SimpleNamespace` stand-in. They now bind the inherited
+    helpers onto it.
+  - A three-lens review workflow (numerics, config paths, contract) with two skeptics per
+    finding found no behavior change. It flagged two imprecise docstrings, now fixed.
+  - `_spectral_ce_auxiliary` takes the caller's `sparse_ce_fn`, because the models build it
+    with different `oos_tolerance_multiple` values. FraGNNet's `oos_loss` branch, which no
+    record reaches, is covered by `tests/test_reorg_shared_objectives.py`.
