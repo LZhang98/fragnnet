@@ -57,6 +57,9 @@ pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 pip install -e ".[dev]"
 ```
 
+The analysis scripts under `scripts/` need scikit-learn, which `.[dev]` includes; `.[scripts]`
+installs it without the development tools.
+
 See [INSTALL.md](INSTALL.md) for detailed options, troubleshooting, and HPC cluster setup.
 
 Note that the -e flag is used to install the package in editable mode.

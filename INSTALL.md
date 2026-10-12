@@ -32,6 +32,11 @@ Choose based on your CUDA version and Python preference:
 - **CUDA 12.1, Python 3.12**: `env/env_setup_gpu_py312_cu121_251105.sh`
 - **CUDA 11.8, Python 3.10 (Legacy)**: `env/env_setup_gpu_py310_cu118.sh`
 
+`env/fragnnet_gpu_py311.lock.txt` pins the exact package versions of the reference
+`FRAGNNET-GPU` environment (Python 3.11, CUDA 12.1). To reproduce it, install the lock into a
+fresh Python 3.11 environment with `pip install -r env/fragnnet_gpu_py311.lock.txt`, then
+install the package with `pip install --no-deps -e .`.
+
 ### HPC/SLURM Cluster Setup (Compute Canada)
 
 For training on Compute Canada clusters, use the appropriate environment setup script:
@@ -72,7 +77,12 @@ For development with testing tools:
 pip install -e ".[dev]"
 ```
 
-This includes pytest, ruff, black, mypy, and other development tools.
+This includes pytest, ruff, black, mypy, and other development tools, plus scikit-learn,
+which the analysis and evaluation scripts under `scripts/` import (six tests load those
+scripts). To run the scripts without the development tools:
+```bash
+pip install -e ".[scripts]"
+```
 
 For the `chemlm` model (a pretrained SMILES language model), also install its pinned
 Hugging Face packages:
@@ -201,13 +211,14 @@ For contributors and developers:
 ## Dependencies
 
 ### Core Dependencies
-- Python 3.10-3.13
+- Python 3.10-3.12 (the pinned PyTorch and RDKit, and the compiled extensions, do not
+  support 3.13)
 - PyTorch 2.4.1
 - PyTorch Lightning 2.4.0
 - RDKit 2022.09-2023.09 (cheminformatics)
 - NumPy <2.0
 - Pandas 2.2.3
-- scikit-learn 1.15.2
+- PyYAML, NetworkX, Pillow
 - Cython 3.0.12 (for building fragmentation modules)
 
 ### Development Dependencies (optional)
@@ -216,6 +227,7 @@ For contributors and developers:
 - mypy (type checking)
 - wandb (experiment tracking)
 - Jupyter notebook
+- scikit-learn (also the `scripts` extra)
 
 See [pyproject.toml](pyproject.toml) for the complete dependency list.
 

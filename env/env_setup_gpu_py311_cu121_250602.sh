@@ -25,7 +25,6 @@ pip install \
  matplotlib
 
 pip install \
- omegaconf \
  cython==3.0.12 \
  pyteomics \
  pyopenms \

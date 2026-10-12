@@ -21,7 +21,6 @@ pip install  \
  joblib==1.3.2 \
  matplotlib \
  lightning==2.5.0 \
- omegaconf \
  cython==3.0.12 \
  pyteomics \
  pyopenms \

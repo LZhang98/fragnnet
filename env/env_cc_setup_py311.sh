@@ -22,7 +22,6 @@ pip install --no-index \
   joblib==1.3.2 \
   matplotlib \
   lightning==2.4.0 \
-  omegaconf \
   cython==3.0.12 \
   pyopenms==3.3.0 \
   pandarallel==1.6.5 \
