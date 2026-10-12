@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 import fragnnet.utils.misc_utils as misc_utils
+from fragnnet import registry
 from fragnnet.dataset import (
     BondCountCurriculumSampler,
     CEContextDynamicBatchSampler,
@@ -46,25 +47,8 @@ from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 # Every model reads the same `config/template.yml`, so shared code can read any key without
-# checking `model_type` first. This set only guards against a typo in `model_type` itself.
-VALID_MODEL_TYPES = frozenset(
-    {
-        "frag_gnn",
-        "fragnnet",
-        "masster",
-        "neims",
-        "chemlm",
-        "massformer",
-        "iceberg_gen",
-        "iceberg_inten",
-        "graff",
-        "precursor",
-        "gnn",
-        "mces_pretraining",
-        "clip",
-        "spec_mol_clip_pretraining",
-    }
-)
+# checking `model_type` first. The registry's set only guards against a typo in `model_type`.
+VALID_MODEL_TYPES = registry.VALID_MODEL_TYPES
 TEMPLATE_FILENAME = "template.yml"
 # What a config that declares no `model_type` means, and what `config/template.yml` declares.
 # Only reached by a template that omits the key, e.g. a minimal one saved beside a checkpoint.
