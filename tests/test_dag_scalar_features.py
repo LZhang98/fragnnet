@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 import torch as th
 
-from fragnnet.utils.feat_utils import get_frag_graph
+from fragnnet.utils.frag_feat_utils import get_frag_graph
 from fragnnet.utils.frag_utils import (
     ELEMENT_TO_IDX,
     NODE_FEAT_TO_IDX,

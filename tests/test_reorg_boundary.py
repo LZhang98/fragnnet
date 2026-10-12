@@ -80,3 +80,45 @@ def test_phase1_isolation_gate(isolation: dict[str, dict]) -> None:
         for model_type, loaded in isolation["model_selection"].items()
     }
     assert {t: v for t, v in selection_offenders.items() if v} == {}
+
+
+# Plan gate table, Phase 3 row. script_utils stays report-only until Phase 4.
+PHASE3_ENTRY_MODULES = (
+    "fragnnet.runner",
+    "fragnnet.pl_model.spectrum_pl",
+    "fragnnet.dataset.spec_mol_dataset",
+    "fragnnet.dataset.base_dataset",
+    "fragnnet.utils.feat_utils",
+    "fragnnet.utils.proc_utils",
+    "fragnnet.dataset.data_sampler",
+    "fragnnet.utils.pl_utils",
+)
+# Non-core layers a model selection may load: its own, plus fragmentation/ for the two fragment
+# models. Every other model type loads core only.
+PHASE3_SELECTION_LAYERS = {
+    "frag_gnn": {"fragnnet", "fragmentation"},
+    "fragnnet": {"fragnnet", "fragmentation"},
+    "masster": {"masster", "fragmentation"},
+    "graff": {"baseline:graff"},
+    "massformer": {"baseline:massformer"},
+}
+
+
+def test_phase3_isolation_gate(isolation: dict[str, dict]) -> None:
+    """The plan's Phase 3 gate, enforced independently of the golden file.
+
+    The Phase 3 entry modules load no module outside core (stricter than the plan's list of
+    forbidden modules, and true after Phase 3), and a model selection loads only its own layer,
+    plus fragmentation/ for FraGNNet and MASSter.
+    """
+    entry_offenders = {
+        module: loaded
+        for module, loaded in isolation["entry_modules"].items()
+        if module in PHASE3_ENTRY_MODULES and loaded
+    }
+    assert entry_offenders == {}
+    selection_offenders = {
+        model_type: sorted(set(loaded) - PHASE3_SELECTION_LAYERS.get(model_type, set()))
+        for model_type, loaded in isolation["model_selection"].items()
+    }
+    assert {t: v for t, v in selection_offenders.items() if v} == {}

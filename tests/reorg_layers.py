@@ -40,7 +40,8 @@ FRAGNNET = {
     "fragnnet.model.fragment_competition",
     "fragnnet.model.fragnnet_model",
     "fragnnet.pl_model.fragnnet_pl",
-    # Split in Phase 3: element tables and the DAG format move to core, the rest stays here.
+    "fragnnet.utils.frag_feat_utils",
+    # The remnant after the Phase 3 split; the element tables and DAG format are in core.
     "fragnnet.utils.frag_utils",
 }
 MASSTER = {

@@ -28,8 +28,6 @@ from fragnnet.utils.feat_utils import (
     BondRingSize,
     BondStereo,
     MolGraph,
-    batch_mols_frags,
-    get_frag_graph,
     get_mol_feats_sizes,
     get_mol_fp,
     get_mol_fp_size,
@@ -37,6 +35,7 @@ from fragnnet.utils.feat_utils import (
     one_hot_encoding,
     random_walk_pe,
 )
+from fragnnet.utils.frag_feat_utils import batch_mols_frags, get_frag_graph
 
 
 class TestOneHotEncoding:

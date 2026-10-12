@@ -11,8 +11,8 @@ from torch_geometric.data import Batch
 
 from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import load_config
-from fragnnet.utils.feat_utils import get_frag_graph, get_node_feats
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
+from fragnnet.utils.frag_feat_utils import get_frag_graph
+from fragnnet.utils.frag_utils import compute_dags, extract_mol_info, get_node_feats
 
 
 def _bind_shared_objectives(pl):

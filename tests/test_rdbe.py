@@ -21,7 +21,7 @@ import pytest
 import torch as th
 from test_ce_multi_location import _build as _build_fragnnet
 
-from fragnnet.utils.feat_utils import get_frag_graph
+from fragnnet.utils.frag_feat_utils import get_frag_graph
 from fragnnet.utils.frag_utils import (
     ELEMENTS,
     compute_dags,

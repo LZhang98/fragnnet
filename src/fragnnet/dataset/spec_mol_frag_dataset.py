@@ -19,7 +19,6 @@ from fragnnet.utils.dag_format_utils import (
     load_dag_hdf5,
     load_frag_d,
 )
-from fragnnet.utils.feat_utils import batch_mols_frags, get_frag_graph
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
@@ -27,6 +26,7 @@ from fragnnet.utils.formula_utils import (
     prec_type_removed_counts,
     tracked_element_counts,
 )
+from fragnnet.utils.frag_feat_utils import batch_mols_frags, get_frag_graph
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 

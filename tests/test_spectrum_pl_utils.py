@@ -5,28 +5,17 @@ Covers the functions touched or added by the feiw_v2 ↔ ccx_run merge:
   - list_to_batch_tensor : kept from HEAD
   - ragged_to_batch      : new from ccx_run
 
-The import chain for spectrum_pl requires fragnnet.frag.multi_cut_bfs (a
-Cython extension that may not be compiled). We stub it at module level so
-the rest of the package can be imported normally.
+spectrum_pl no longer imports the fragment Cython extensions (reorganization Phase 3), so this
+file needs no stub for them.
 """
 
-import sys
 import types
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 
-# ---------------------------------------------------------------------------
-# Stub the uncompiled Cython extension before any fragnnet import
-# ---------------------------------------------------------------------------
-if "fragnnet.frag.multi_cut_bfs" not in sys.modules:
-    _m = types.ModuleType("fragnnet.frag.multi_cut_bfs")
-    _m.compute_ccs_multi_cut = MagicMock()
-    _m.get_ring_edge_mask = MagicMock()
-    sys.modules["fragnnet.frag.multi_cut_bfs"] = _m
-
-from fragnnet.pl_model.spectrum_pl import (  # noqa: E402
+from fragnnet.pl_model.spectrum_pl import (
     SpectrumPL,
     get_split_fn,
     list_to_batch_tensor,

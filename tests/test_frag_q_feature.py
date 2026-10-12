@@ -22,7 +22,7 @@ import torch as th
 from rdkit.Chem import AllChem
 
 from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.feat_utils import get_frag_graph
+from fragnnet.utils.frag_feat_utils import get_frag_graph
 from fragnnet.utils.frag_utils import (
     compute_dags,
     extract_mol_info,
