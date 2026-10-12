@@ -12,7 +12,7 @@ except ImportError:
 from fragnnet.baselines.graff.data_utils import e_map, x_map
 from fragnnet.baselines.graff.model import GrAFFModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
-from fragnnet.pl_model import SpectrumPL
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.misc_utils import LOG_ZERO
 
 

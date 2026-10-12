@@ -9,7 +9,7 @@ It is intended to be subclassed for specific model architectures and tasks.
 import inspect
 import logging
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 import lightning as L
@@ -82,26 +82,6 @@ def get_split_fn(bs_idx: th.Tensor) -> Callable[[th.Tensor], tuple[th.Tensor, ..
         return th.split(inp_tensor, batch_counts)
 
     return split_fn
-
-
-def list_to_batch_tensor(inp: Sequence[th.Tensor], pad: float) -> th.Tensor:
-    """Right-pad a list of 1-D tensors to equal length and stack them.
-
-    Args:
-        inp: Tensors of shape ``[L_i]``.
-        pad: Fill value for positions past each tensor's length.
-
-    Returns:
-        Tensor of shape ``[len(inp), max_i L_i]``.
-    """
-    max_l = max([len(_) for _ in inp])
-
-    def padv(v: th.Tensor) -> th.Tensor:
-        if len(v) < max_l:
-            return th.cat([v, v.new_zeros(max_l - len(v)) + pad], 0)
-        return v
-
-    return th.stack([padv(_) for _ in inp], 0)
 
 
 def ragged_to_batch(
@@ -2577,7 +2557,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.train_results = None
         self._reset_running_metrics("train")
-        self.train_counter = 0
 
     def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking:
@@ -2586,7 +2565,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.val_results = None
         self._reset_running_metrics("val")
-        self.val_counter = 0
 
     def on_test_epoch_end(self) -> None:
         # consolidate results
@@ -2594,7 +2572,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.test_results = None
         self._reset_running_metrics("test")
-        self.test_counter = 0
 
     def _print_grad_norm(self, prefix=None, total_num_params=5):
         if prefix is None:

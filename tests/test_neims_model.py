@@ -3,7 +3,7 @@
 import pytest
 import torch as th
 
-from fragnnet.model import NeimsModel
+from fragnnet.model.neims_model import NeimsModel
 
 
 def _neims(use_nce: bool, use_ace: bool) -> NeimsModel:

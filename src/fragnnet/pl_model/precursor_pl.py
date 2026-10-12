@@ -1,8 +1,8 @@
 import torch as th
 
-from fragnnet.model import PrecursorModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
-from fragnnet.pl_model import SpectrumPL
+from fragnnet.model.precursor_model import PrecursorModel
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.misc_utils import LOG_ZERO
 
 
@@ -68,10 +68,8 @@ class PrecursorPL(SpectrumPL):
                     dtype=pred_logprobs.dtype,
                 ),
             )
-            spec_ce = ios_ce + oos_ce
             if self.hparams.oos_loss:
                 raise NotImplementedError
-                primary_loss = spec_ce
             else:
                 primary_loss = ios_ce
             loss = primary_loss

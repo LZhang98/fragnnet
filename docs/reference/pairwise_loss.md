@@ -1,6 +1,6 @@
 # Pairwise Loss & Sampler Design
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-06-08
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > Design of the shipped pairwise loss + sampler (`model/loss.py`, `dataset/data_sampler.py`).
 
@@ -31,12 +31,11 @@ All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matr
 | `get_pairwise_jss_sim()` | `pairwise_jss_loss_weight` | JSS = 1 − JSD/log(2); computed in log-space for stability |
 | `get_pairwise_cross_entropy()` | `pairwise_cross_entropy_loss_weight` | **Asymmetric** — must fill full [B,B]; missing bins use log(eps) |
 
-### Hungarian / Peak-aligned (slower, more accurate)
+### Hungarian / Peak-aligned (removed)
 
-| Function | Notes |
-|---|---|
-| `get_pairwise_jss_sim_hun()` | m/z-based peak matching before JSS computation |
-| `get_pairwise_cross_entropy_hun()` | m/z-based peak matching before CE computation |
+`get_pairwise_jss_sim_hun()` and `get_pairwise_cross_entropy_hun()` matched peaks by m/z before
+computing the similarity. Nothing called them, and they were deleted on 2026-10-12 (reorganization
+plan Phase 8 step 0); the code is at revision `13b1599d`.
 
 ---
 

@@ -2,7 +2,7 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet.baselines.massformer.nn_utils import GFv2Embedder
-from fragnnet.model import CEModel, InstModel, PrecModel
+from fragnnet.model.base_model import CEModel, InstModel, PrecModel
 from fragnnet.model.nn_blocks import SpecFFN
 from fragnnet.utils.nn_utils import *
 

@@ -40,7 +40,7 @@ from fragnnet.model.loss import (
 )
 from fragnnet.models.fragnnet.frag_utils import get_node_feats
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
-from fragnnet.pl_model import SpectrumPL
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.formula_utils import formula_row_prec_deltas
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
 from fragnnet.utils.nn_utils import (

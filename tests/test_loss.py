@@ -12,14 +12,11 @@ import pytest
 import torch as th
 
 from fragnnet.model.loss import (
-    _compute_pair_ce_hun,
-    _compute_pair_jss_hun,
     ce_switch_pair_bce,
     conditional_in_support_cross_entropy,
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
-    get_pairwise_jss_sim_hun,
     precursor_contender_bce,
     sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
@@ -828,65 +825,7 @@ class TestPairwiseJssSim:
 
 
 class TestHungarianJSS:
-    """Tests for JSS computation using Hungarian matching."""
-
-    def test_compute_pair_jss_hun_identical(self):
-        """Test JSS for identical spectra is 1.0."""
-        mzs = th.tensor([100.0, 200.0])
-        logprobs = th.tensor([0.0, 0.0])  # Equal intensities
-
-        sim = _compute_pair_jss_hun(
-            mzs, logprobs, mzs, logprobs, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(1.0), atol=1e-6)
-
-    def test_compute_pair_jss_hun_orthogonal(self):
-        """Test JSS for orthogonal spectra is 0.0."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([200.0])
-        logprobs2 = th.tensor([0.0])
-
-        sim = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(0.0), atol=1e-6)
-
-    def test_compute_pair_jss_hun_tolerance(self):
-        """Test spectra matching within tolerance."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([100.0001])
-        logprobs2 = th.tensor([0.0])
-
-        # Within tolerance
-        sim = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=0.01, relative=False, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(1.0), atol=1e-6)
-
-        # Outside tolerance
-        sim_out = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-6, relative=False, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim_out, th.tensor(0.0), atol=1e-6)
-
-    def test_get_pairwise_jss_sim_hun(self):
-        """Test the pairwise wrapper for Hungarian JSS."""
-        mzs = th.tensor([100.0, 200.0])
-        logprobs = th.tensor([0.0, 0.0])
-        batch_idxs = th.tensor([0, 1], dtype=th.long)
-        batch_size = 2
-
-        S = get_pairwise_jss_sim_hun(
-            mzs, logprobs, batch_idxs, batch_size, tolerance=1e-5, relative=True
-        )
-
-        assert S.shape == (2, 2)
-        assert th.allclose(S[0, 0], th.tensor(1.0))
-        assert th.allclose(S[1, 1], th.tensor(1.0))
-        assert th.allclose(S[0, 1], th.tensor(0.0), atol=1e-6)
-        assert th.allclose(S[1, 0], th.tensor(0.0), atol=1e-6)
+    """Tests for the vectorized JSS loss with Hungarian matching."""
 
     def test_sparse_jss_hun_vec_matches_sequential(self):
         """Vectorized training JSS-Hungarian should match the sequential loss."""
@@ -944,40 +883,6 @@ class TestHungarianJSS:
 
         assert vec[0].item() > vec[1].item()
         assert vec[1].item() == pytest.approx(0.0, abs=1e-5)
-
-
-class TestHungarianCE:
-    """Tests for Cross-Entropy computation using Hungarian matching."""
-
-    def test_compute_pair_ce_hun_identical(self):
-        """Test CE for identical spectra is low (minimizing CE)."""
-        mzs = th.tensor([100.0])
-        logprobs = th.tensor([0.0])
-
-        ce = _compute_pair_ce_hun(
-            mzs, logprobs, mzs, logprobs, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        # For P=Q=[1], CE = -sum(1 * log(1)) = 0.
-        # However, we use log(1+eps) for stability, so it should be close to 0.
-        assert ce < 1e-3
-
-    def test_compute_pair_ce_hun_orthogonal(self):
-        """Test CE for orthogonal spectra is high."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([200.0])
-        logprobs2 = th.tensor([0.0])
-
-        ce = _compute_pair_ce_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        # For orthogonal, it should mismatch and use log_eps.
-        # CE = -log(eps)
-
-        from fragnnet.model.loss import EPS
-
-        expected = -math.log(EPS)
-        assert th.allclose(ce, th.tensor(expected), atol=1e-3)
 
 
 class TestSparseJensenShannonDivergence:

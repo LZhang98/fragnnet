@@ -4,14 +4,12 @@ It includes implementations of Graph Neural Networks (GNNs), Multilayer Perceptr
 specialized layers for molecular and spectra.
 
 - ZerosAggregation: Dummy aggregation module that outputs zero tensors.
-- GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, GAT, GGNN).
+- GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, NodeMLP).
 - GINE: Graph Isomorphism Network with Edge Features.
 - GINE_GSA: GINE augmented with exact per-graph global self-attention.
 - GINE_GRAPHORMER: GINE augmented with structurally biased global softmax attention.
 - Graphormer: Global molecular attention with degree, distance, and bond biases.
 - MPNN: Neural Message Passing for Quantum Chemistry.
-- GAT: Graph Attention Networks (v1 and v2).
-- GGNN: Gated Graph Neural Networks.
 - NodeMLP: Multilayer Perceptron for node-level ms/ms prediction.
 - MLPBlocks: Multilayer Perceptron with optional residual connections.
 - NeimsBlock: Specialized block from the NEIMS paper.
@@ -147,14 +145,14 @@ class GNN(nn.Module):
     """
     Generic GNN Class.
     This class serves as a wrapper for different types of Graph Neural Networks (GNNs),
-    such as GINE, NodeMLP, MPNN, GAT, and GGNN.
+    such as GINE, GINE_GSA, Graphormer, NodeMLP and MPNN.
 
     Args:
         hidden_size (int): Hidden layer size.
         num_layers (int): Number of GNN layers.
         node_feats_size (int): Size of node features.
         edge_feats_size (int): Size of edge features.
-        gnn_type (str): Type of GNN to use (e.g., "GINE", "MPNN", "GAT").
+        gnn_type (str): Type of GNN to use (e.g., "GINE", "MPNN", "NodeMLP").
         dropout (float): Dropout rate.
         normalization (str): Type of normalization to use ("batch", "layer", etc.).
         atom_mask (float): Training-only probability, drawn per atom and forward pass, that an
@@ -263,23 +261,6 @@ class GNN(nn.Module):
                 num_layers=self.num_layers,
                 dropout=self.dropout,
                 normalization=self.normalization,
-            )
-        elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
-            self.gnn = GAT(
-                node_feats_size=self.node_feats_size,
-                edge_feats_size=self.edge_feats_size,
-                hidden_size=self.hidden_size,
-                num_layers=self.num_layers,
-                dropout=self.dropout,
-                normalization=self.normalization,
-                is_v2=(self.gnn_type == "GATv2"),
-            )
-        elif self.gnn_type == "GGNN":
-            self.gnn = GGNN(
-                node_feats_size=self.node_feats_size,
-                edge_feats_size=self.edge_feats_size,
-                hidden_size=self.hidden_size,
-                num_layers=self.num_layers,
             )
         else:
             raise NotImplementedError(self.gnn_type)
@@ -1624,115 +1605,6 @@ class MPNN(nn.Module):
         return x
 
 
-class GAT(nn.Module):
-    """Graph attention networks. https://arxiv.org/abs/1710.10903
-    Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
-    """
-
-    def __init__(
-        self,
-        node_feats_size: int,
-        edge_feats_size: int,
-        hidden_size: int,
-        num_layers: int,
-        dropout: float,
-        normalization: str,
-        num_gat_heads: int = 8,
-        gat_dropout: float = 0.0,
-        is_v2: bool = True,
-        is_concat: bool = True,
-        **kwargs: Any,
-    ) -> None:
-        """_summary_
-        Args:
-            node_feats_size (int): _description_
-            edge_feats_size (int): _description_
-            node_hidden_dim (int): _description_
-            num_step_message_passing (int): _description_
-            num_step_set2set (int): _description_
-            output_dim (int): _description_
-            gat_heads (int, optional): _description_. Defaults to 1.
-            gat_dropout (float, optional): _description_. Defaults to 0.0.
-            is_v2 (bool, optional). use v2 GATConv, Defaults to True
-            is_concat (bool, optional). concatenated multihead attetion, Defaults to True
-        """
-        super().__init__()
-        self.residual_activation = _validate_residual_activation(
-            kwargs.get("residual_activation", "relu")
-        )
-        if edge_feats_size < 0:
-            raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
-        self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
-        gat_output_size = hidden_size // num_gat_heads if is_concat else hidden_size
-        if is_concat and hidden_size % num_gat_heads != 0:
-            raise ValueError(
-                f"Ensure that the number of output channels of "
-                f"'GAT' (got '{hidden_size}') is divisible "
-                f"by the number of heads (got '{num_gat_heads}')"
-            )
-        GATConv_fn = pyg.nn.conv.GATConv if not is_v2 else pyg.nn.conv.GATv2Conv
-        self.layers = []
-        for _i in range(num_layers):
-            layer = GATConv_fn(
-                in_channels=hidden_size,
-                out_channels=gat_output_size,
-                heads=num_gat_heads,
-                edge_dim=hidden_size,
-                dropout=gat_dropout,
-                concat=is_concat,
-            )
-            self.layers.append(layer)
-        self.layers = nn.ModuleList(self.layers)
-        # setup norms and dropout
-        norm_mod, norm_fn = get_norm(normalization, hidden_size)
-        self.norm_fn = norm_fn
-        self.norms = get_clones(norm_mod, num_layers)
-        self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
-
-    def forward(
-        self,
-        x: th.Tensor,
-        batch_index: th.Tensor,
-        edge_index: th.Tensor,
-        edge_attr: th.Tensor,
-    ) -> th.Tensor:
-        edge_attr = self.edge_transform(edge_attr)
-        for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
-            layer_out = layer(x, edge_index, edge_attr)
-            layer_out = self.norm_fn(layer_out, batch_index, norm)
-            x = _residual_branch(self.residual_activation, dropout(layer_out)) + x
-        return x
-
-
-class GGNN(nn.Module):
-    def __init__(
-        self,
-        node_feats_size: int,
-        edge_feats_size: int,
-        hidden_size: int,
-        num_layers: int,
-        **kwargs: Any,
-    ) -> None:
-        """ """
-        super().__init__()
-        if edge_feats_size < 0:
-            raise ValueError(f"edge_feats_size must be non-negative, got {edge_feats_size}")
-        self.edge_transform = nn.Linear(edge_feats_size, 1)
-        self.model = pyg.nn.conv.GatedGraphConv(out_channels=hidden_size, num_layers=num_layers)
-
-    def forward(
-        self,
-        x: th.Tensor,
-        batch_index: th.Tensor,
-        edge_index: th.Tensor,
-        edge_attr: th.Tensor,
-    ) -> th.Tensor:
-        """forward."""
-        edge_weight = self.edge_transform(edge_attr).squeeze(1)
-        x = self.model(x=x, edge_index=edge_index, edge_weight=edge_weight)
-        return x
-
-
 class NodeMLP(nn.Module):
     def __init__(
         self,
@@ -2107,27 +1979,13 @@ def reverse_prediction(
     return offset_rev_prediction
 
 
-class Set2SetPooling(nn.Module):
-    """Wrapper for Set2Set that handles batch argument correctly."""
-
-    def __init__(self, node_dim: int, processing_steps: int = 3) -> None:
-        super().__init__()
-        self.set2set = pyg.nn.Set2Set(node_dim, processing_steps=processing_steps)
-        self.linear = nn.Linear(2 * node_dim, node_dim)
-
-    def forward(self, x: th.Tensor, batch: th.Tensor) -> th.Tensor:
-        """Forward pass that accepts batch argument like other PyG aggregations."""
-        x = self.set2set(x, batch)
-        x = self.linear(x)
-        return x
-
-
 def build_pool_module(pool_type: str, node_dim: int) -> nn.Module:
     """Method to build pooling layer for given pool_type and dim
         node dim is required for attention layer.
     Args:
-        pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','none']
-        node_dim (int): node_dim, used for attention and set_transformer
+        pool_type (str): pooling type in ['sum', 'mean', 'max', 'attention', 'softmax',
+            'mean_max_sum', 'mean_std_softmax', 'none']
+        node_dim (int): node_dim, used for attention
     Returns:
         nn.Module: pooling module
     """
@@ -2142,27 +2000,6 @@ def build_pool_module(pool_type: str, node_dim: int) -> nn.Module:
         pool_module = aggr.AttentionalAggregation(
             gate_nn=nn.Sequential(nn.Linear(node_dim, node_dim), nn.ReLU(), nn.Linear(node_dim, 1))
         )
-    elif pool_type == "set_transformer":
-        # use SetTransformerAggregation from pyg
-        # TODO pass channels, num_seed_points, num_encoder_blocks, num_decoder_blocks, heads, concat, layer_norm, dropout
-        raise NotImplementedError
-        # pool_module = aggr.SetTransformerAggregation(
-        #   channels=node_dim,
-        #   num_seed_points=16,
-        #   num_encoder_blocks=1,
-        #   num_decoder_blocks=1,
-        #   heads=4,
-        #   concat=True,
-        #   layer_norm=False,
-        #   dropout= 0.1
-        # )
-    elif pool_type == "equilibrium":
-        raise NotImplementedError
-        # TODO pass in_channels and out_channels
-        # pool_module = aggr.EquilibriumAggregation(
-        #   in_channels=node_dim,
-        #   out_channels=node_dim
-        # )
     elif pool_type == "softmax":
         pool_module = aggr.SoftmaxAggregation(learn=True)
     elif pool_type == "mean_max_sum":
@@ -2171,10 +2008,11 @@ def build_pool_module(pool_type: str, node_dim: int) -> nn.Module:
     elif pool_type == "mean_std_softmax":
         # raise NotImplementedError
         pool_module = aggr.MultiAggregation(["mean", "std", aggr.SoftmaxAggregation(learn=True)])
-    else:
-        assert pool_type == "none", pool_type
+    elif pool_type == "none":
         # just return 0s
         pool_module = ZerosAggregation()
+    else:
+        raise ValueError(f"Unknown pool_type: {pool_type!r}")
     return PoolWithDimSizeAdapter(pool_module)
 
 

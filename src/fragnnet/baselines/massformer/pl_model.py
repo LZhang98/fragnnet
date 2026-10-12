@@ -10,7 +10,7 @@ except ImportError:
 
 from fragnnet.baselines.massformer.model import MassFormerModel
 from fragnnet.baselines.massformer.nn_utils import PolynomialDecayLR
-from fragnnet.pl_model import BinnedPL
+from fragnnet.pl_model.binned_pl import BinnedPL
 from fragnnet.utils.nn_utils import build_lr_scheduler
 
 

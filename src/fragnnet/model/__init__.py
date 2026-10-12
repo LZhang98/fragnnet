@@ -1,6 +1,2 @@
-# this is where all the torch models goes
-# this controls model architecture and forward pass
-from .base_model import CEModel, InstModel, PrecModel
-from .gnn_model import GNNModel
-from .neims_model import NeimsModel
-from .precursor_model import PrecursorModel
+# Shared torch building blocks and the core models. This initializer re-exports nothing, so
+# importing one module here does not import the others; import from the defining module.
