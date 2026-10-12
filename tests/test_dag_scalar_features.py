@@ -18,13 +18,9 @@ from __future__ import annotations
 import pytest
 import torch as th
 
-from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
-from fragnnet.models.fragnnet.frag_utils import (
-    NODE_FEAT_TO_IDX,
-    compute_dags,
-    extract_mol_info,
-    get_node_feats,
-)
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX, get_node_feats
 from fragnnet.utils.formula_utils import ELEMENT_TO_IDX
 
 # ---------------------------------------------------------------------------

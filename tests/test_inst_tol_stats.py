@@ -6,7 +6,7 @@ Exercises the ``inst_type`` / ``inst_type_tol`` path of ``compute_frag_peak_stat
 
 import torch as th
 
-from fragnnet.models.fragnnet.frag_utils import compute_frag_peak_stats
+from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 # Matches INST_TYPE_LOSS_TOL in 03_prepare_dag_feats.py / the training configs.

@@ -20,7 +20,7 @@ from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
 )
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_pl import (

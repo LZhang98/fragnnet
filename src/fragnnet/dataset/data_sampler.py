@@ -8,7 +8,7 @@ Includes:
 - FormulaPrecTypeGroupSampler: Sample K specs per formula and precursor type
 - get_group_sampler: WeightedRandomSampler factory
 
-FraGNNet's fragment-DAG samplers are in ``frag_data_sampler`` and MASSter's in
+FraGNNet's fragment-DAG samplers are in ``fragnnet_data_sampler`` and MASSter's in
 ``masster_data_sampler``.
 """
 

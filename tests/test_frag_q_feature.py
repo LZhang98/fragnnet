@@ -21,8 +21,9 @@ import pytest
 import torch as th
 from rdkit.Chem import AllChem
 
-from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
-from fragnnet.models.fragnnet.frag_utils import compute_dags, extract_mol_info, get_node_feats
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.formula_utils import th_long_to_mask
 

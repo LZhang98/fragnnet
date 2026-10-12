@@ -9,7 +9,7 @@ logs
 logs*
 # Extensions
 *.c
-src/fragnnet/models/fragnnet/compute_frags.c
+src/fragnnet/models/fragnnet/dag/compute_frags.c
 src/fragnnet/baselines/massformer/algos.c
 cysignals_crash_logs
 

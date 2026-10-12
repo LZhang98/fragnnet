@@ -8,7 +8,7 @@
 # Hydrogen-transfer arm: masster_h_transfer_bound none -> complement.
 # A fragment may gain at most the hydrogens its complementary neutral holds, so the
 # intact molecule can only lose them. This is the `num_hs` term of the cap FraGNNet has
-# always applied (frag_utils.py:518-533); MASSter only required nonnegative element
+# always applied (dag/formula.py, compute_approximate_formula); MASSter only required nonnegative element
 # counts, which bounds losses but not gains.
 # Measured on four probe molecules at max_h_transfer 4: emitted candidates 1,193 -> 1,042
 # (-12.7%), and the 104 channels sitting above the precursor ion all disappear.

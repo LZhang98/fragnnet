@@ -63,7 +63,7 @@ import torch as th
 from torch_geometric.data import Data
 
 sys.path.insert(0, "src")
-from fragnnet.models.fragnnet.frag_utils import NODE_FEAT_TO_IDX, get_node_feats  # noqa: E402
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX, get_node_feats  # noqa: E402
 
 ROOT_NODE_IDX = 0
 

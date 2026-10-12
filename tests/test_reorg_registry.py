@@ -40,11 +40,11 @@ REPO_TEMPLATE = Path(__file__).resolve().parents[1] / "config" / "template.yml"
 EXPECTED_MAPPING = {
     "frag_gnn": (
         "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
-        "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
+        "fragnnet.models.fragnnet.fragnnet_dataset:SpecMolFragDataset",
     ),
     "fragnnet": (
         "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
-        "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
+        "fragnnet.models.fragnnet.fragnnet_dataset:SpecMolFragDataset",
     ),
     "masster": (
         "fragnnet.models.masster.masster_pl:MassterPL",

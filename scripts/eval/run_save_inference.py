@@ -9,8 +9,8 @@ from fragnnet.baselines.graff.pl_model import GrAFFPL
 from fragnnet.baselines.massformer.dataset import SpecMolMFDataset
 from fragnnet.baselines.massformer.pl_model import MassFormerPL
 from fragnnet.dataset import SpecMolDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.models.neims.neims_pl import NeimsPL
 from fragnnet.models.precursor.precursor_pl import PrecursorPL
 from fragnnet.runner import init_dataloader, load_config

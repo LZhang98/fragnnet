@@ -24,7 +24,8 @@ from typing import Any
 import pandas as pd
 
 from fragnnet.utils import data_utils
-from fragnnet.models.fragnnet import frag_utils
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils import formula_utils
 from fragnnet.utils.misc_utils import booltype
@@ -59,7 +60,7 @@ def _load_filtered_mol_df(args: argparse.Namespace) -> pd.DataFrame:
 def _get_cc_mask_rows(dag_d: dict[str, Any]) -> list[tuple[int, ...]]:
     dag = dag_d["dag"]
     node_feat_idxs = dag.node_feat_idxs[0].tolist()
-    cc_long = frag_utils.get_node_feats(dag.x, node_feat_idxs, "cc")
+    cc_long = get_node_feats(dag.x, node_feat_idxs, "cc")
     cc_mask = formula_utils.th_long_to_mask(cc_long).cpu().numpy()
     node_count = int(cc_mask.shape[0])
     mol_atoms = int(cc_mask[0].sum()) if node_count else 0
@@ -195,7 +196,7 @@ def generate_dags(
     )
     frag_results = data_utils.par_apply(
         mol_input_rows,
-        frag_utils.timed_get_dags,
+        timed_get_dags,
         need_unpack=True,
         return_as_generator=False,
     )

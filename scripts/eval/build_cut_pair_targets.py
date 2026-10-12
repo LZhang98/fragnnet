@@ -61,7 +61,7 @@ import torch as th
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.models.fragnnet.frag_utils import MAX_H_TRANSFER, get_node_feats
+from fragnnet.models.fragnnet.dag.layout import MAX_H_TRANSFER, get_node_feats
 from fragnnet.utils.data_utils import CHARGE_FACTOR_MAP, get_charge
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
@@ -468,7 +468,7 @@ def node_candidate_ions(
         zero-mass isotope padding are dropped.
     """
     std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-    # Mirrors src/fragnnet/models/fragnnet/spec_mol_frag_dataset.py: a precursor whose CMF ion is already
+    # Mirrors src/fragnnet/models/fragnnet/fragnnet_dataset.py: a precursor whose CMF ion is already
     # enumerated as a CRF hydrogen shift emits no CMF rows, and every other CMF-bearing precursor
     # emits the full H-shift range.
     effective_h_transfer = (

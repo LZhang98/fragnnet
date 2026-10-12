@@ -13,7 +13,7 @@ import torch as th
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-import fragnnet.models.fragnnet.compute_frags as compute_frags
+import fragnnet.models.fragnnet.dag.compute_frags as compute_frags
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
@@ -21,7 +21,7 @@ from fragnnet.fragmentation.smarts_prepass import (
     _apply_nl_prepass,
     _apply_smarts_prepass,
 )
-from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.dag.compute_frags import MASK_DTYPE
 from fragnnet.models.fragnnet.dag.formula import (
     cc_bit_mask_to_atom_idx,
     cc_bitmask_to_formula_arr,
@@ -36,10 +36,10 @@ from fragnnet.models.fragnnet.dag.layout import (
     NODE_FEAT_DTYPE,
     compute_boundary_pair_idxs,
 )
-from fragnnet.models.fragnnet.multi_cut_bfs import (
+from fragnnet.models.fragnnet.dag.multi_cut_bfs import (
     compute_ccs_multi_cut as _compute_ccs_multi_cut_cy,
 )
-from fragnnet.models.fragnnet.multi_cut_bfs import (
+from fragnnet.models.fragnnet.dag.multi_cut_bfs import (
     get_ring_edge_mask,
 )
 from fragnnet.utils.dag_format_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
@@ -62,8 +62,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# The size limits live in core formula_utils (re-exported here until Phase 6); the Cython
-# builder's compile-time copies must match them.
+# The size limits live in core formula_utils; the Cython builder's compile-time copies must
+# match them.
 assert (compute_frags.MAX_NUM_NODES, compute_frags.MAX_NUM_EDGES) == (MAX_NUM_NODES, MAX_NUM_EDGES)
 
 BOND_TYPE_TO_IDX = {

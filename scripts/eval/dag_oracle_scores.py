@@ -186,7 +186,7 @@ def _dag_ion_mzs(
 ) -> th.Tensor:
     """Flatten a DAG's neutral fragment masses into candidate ion-form m/z values.
 
-    Mirrors the CMF/std union built in frag_utils.compute_frag_peak_stats: a true peak
+    Mirrors the CMF/std union built in dag.stats.compute_frag_peak_stats: a true peak
     counts as DAG-explainable if it matches either the charge-migration-fragment (CMF)
     or the direct-charge-retention (std) ion-mass convention for this precursor type.
 

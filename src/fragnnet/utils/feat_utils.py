@@ -57,7 +57,7 @@ def _atom_free_valence_slots(atom: Chem.rdchem.Atom) -> int:
     """Return how many more hydrogens an atom could carry in the intact molecule.
 
     Equal to ``ve - sbond - h``, the quantities FraGNNet builds in
-    ``frag_utils.extract_mol_info``: ``ve`` is the atom's total valence (less a positive
+    ``dag.builder.extract_mol_info``: ``ve`` is the atom's total valence (less a positive
     formal charge that funds a heavy-atom bond rather than an H slot), ``sbond`` its
     heavy-atom degree, and ``h`` its current hydrogen count. It is exactly the atom's
     share of unsaturation -- the sum of ``bond order - 1`` over its bonds -- so a
@@ -253,7 +253,7 @@ class MolGraph:
         # Spare hydrogen capacity per atom, in the intact molecule: how many further
         # hydrogens the atom could carry if every one of its bonds were reduced to a single
         # bond. Mirrors FraGNNet's `ve_arr`/`sbond_arr` arithmetic in
-        # `frag_utils.extract_mol_info` (`use_default_valence=False`), including its formal
+        # `dag.builder.extract_mol_info` (`use_default_valence=False`), including its formal
         # charge correction, so both models bound hydrogen transfer the same way. Cutting a
         # bond frees one more slot per severed end, which the consumer adds per fragment.
         g.atom_free_valence_slots = th.tensor(
@@ -323,7 +323,7 @@ class AtomOneHot(FeatBase):
 
     name = "a_onehot"
     # A copy: ``one_hot_encoding`` appends the unknown bucket to whatever list it is given, and
-    # ``CANONICAL_ELEMENT_ORDER`` is shared with the formula code in ``frag_utils``.
+    # ``CANONICAL_ELEMENT_ORDER`` is shared with the formula code in ``dag.formula``.
     allowable_set = list(CANONICAL_ELEMENT_ORDER)
     feat_size = len(allowable_set) + 1
 

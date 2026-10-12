@@ -24,7 +24,7 @@ Two counts are reported per observed peak, and the difference between them is th
 ``n_cand > n_distinct_mz`` is *structural aliasing*: candidates the loss can provably never
 separate because they are the same m/z. For [M+H]+, CMF(F) and CRF(F-H) are the same ion and
 land at a bit-identical m/z, so the CMF/CRF doubling in
-``spec_mol_frag_dataset._apply_fragment_mz_change`` plus the H-transfer budget makes this
+``fragnnet_dataset._apply_fragment_mz_change`` plus the H-transfer budget makes this
 pervasive rather than incidental.
 
 ``n_distinct_mz > 1`` is *real chemical ambiguity*: chemically different formulas that happen
@@ -67,11 +67,11 @@ MZ_CLUSTER_ATOL = 1.0e-6  # Da; below any real isobar spacing, above float noise
 def build_candidates(dag_d: dict, prec_type: str) -> tuple[np.ndarray, np.ndarray]:
     """Build the model's candidate ion m/z set for one molecule.
 
-    Mirrors ``spec_mol_frag_dataset._apply_fragment_mz_change``: CRF rows for every formula,
+    Mirrors ``fragnnet_dataset._apply_fragment_mz_change``: CRF rows for every formula,
     plus CMF rows for every non-NULL formula, each a separate softmax entry.
 
     Args:
-        dag_d: DAG dict from ``frag_utils.load_frag_d``.
+        dag_d: DAG dict from ``dag_format_utils.load_frag_d``.
         prec_type: Precursor adduct, e.g. "[M+H]+".
 
     Returns:

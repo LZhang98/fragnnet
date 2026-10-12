@@ -33,7 +33,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 from tqdm import tqdm
 
-from fragnnet.models.fragnnet.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.formula_utils import (

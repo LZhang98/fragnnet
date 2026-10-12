@@ -48,7 +48,7 @@ from rdkit.Chem.rdMolDescriptors import CalcMolFormula  # noqa: E402
 from torch.utils.data import BatchSampler, DataLoader, Dataset  # noqa: E402
 
 from fragnnet import runner  # noqa: E402
-from fragnnet.models.fragnnet import frag_utils
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
 from fragnnet.utils import dag_format_utils  # noqa: E402
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF  # noqa: E402
 
@@ -136,8 +136,8 @@ def generate_dags(mol_df: pd.DataFrame) -> dict[int, dict]:
     """{mol_id: dag_d}, generated serially in-process (no joblib)."""
     dags = {}
     for mol_id, smiles in zip(mol_df["mol_id"], mol_df["smiles"]):
-        dags[int(mol_id)] = frag_utils.compute_dags(
-            frag_utils.extract_mol_info(smiles),
+        dags[int(mol_id)] = compute_dags(
+            extract_mol_info(smiles),
             DAG_MAX_DEPTH,
             True,
             DAG_MAX_H_TRANSFER,

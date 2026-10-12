@@ -468,7 +468,7 @@ class NeutralLossRule:
     mask covering all precursor atoms *except* the neutral-loss atoms.  Because
     the new bond is not in the original graph, the product atoms may be
     disconnected in the original connectivity. Hydrogen shifts count from the
-    product atoms' own hydrogens (``num_hs_prior`` in ``frag_utils``), so the product
+    product atoms' own hydrogens (``num_hs_prior`` in ``dag.formula``), so the product
     formula sits at the shift that moves H between the product and the neutral:
     0 when the neutral takes exactly the hydrogens of its own atoms, and a few H
     either way otherwise, inside ``max_h_transfer``. Each rule's comment gives it.

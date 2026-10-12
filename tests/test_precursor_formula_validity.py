@@ -3,8 +3,9 @@
 import pytest
 import torch as th
 
-from fragnnet.models.fragnnet.frag_utils import NODE_FEAT_TO_IDX, compute_dags, extract_mol_info
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.utils.formula_utils import (
     PREC_DELTA_REMOVED_ELEMENTS,
     PREC_TYPE_TO_CMF_COMP_DIFF,

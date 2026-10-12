@@ -9,7 +9,7 @@ import torch as th
 from rdkit import Chem
 from torch_geometric.data import Data
 
-from fragnnet.models.fragnnet.frag_feat_utils import batch_mols_frags, get_frag_graph
+from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
 from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,

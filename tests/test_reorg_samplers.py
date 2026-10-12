@@ -81,7 +81,7 @@ import torch as th
 from reorg_golden import UPDATE, load_json, ratchet_json, write_json
 from torch.utils.data import DataLoader
 
-from fragnnet.models.fragnnet.frag_data_sampler import DualGroupDynamicBatchSampler
+from fragnnet.models.fragnnet.fragnnet_data_sampler import DualGroupDynamicBatchSampler
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 
 GOLDEN = "samplers"

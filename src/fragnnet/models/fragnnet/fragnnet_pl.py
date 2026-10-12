@@ -39,7 +39,7 @@ from fragnnet.loss.spectrum_distance import (
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
-from fragnnet.models.fragnnet.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.formula_utils import formula_row_prec_deltas

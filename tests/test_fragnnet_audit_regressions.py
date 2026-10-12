@@ -9,9 +9,9 @@ from pyteomics.mass import Composition
 from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build
 
-from fragnnet.models.fragnnet.frag_feat_utils import batch_mols_frags
-from fragnnet.models.fragnnet.frag_utils import compute_dags, extract_mol_info
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import batch_mols_frags
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,

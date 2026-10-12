@@ -14,7 +14,7 @@ sys.path.insert(
 )
 from build_cut_pair_targets import load_spec_df_with_ce_fill
 
-from fragnnet.models.fragnnet.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import th_long_to_mask
 

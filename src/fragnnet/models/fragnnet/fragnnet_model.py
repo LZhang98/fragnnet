@@ -19,7 +19,7 @@ from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import CEModel, FragModeModel, InstModel, PrecModel
 from fragnnet.layers.mlp import MLPBlocks
 from fragnnet.layers.pooling import build_pool_module
-from fragnnet.models.fragnnet.frag_utils import (
+from fragnnet.models.fragnnet.dag.layout import (
     compute_boundary_mask,
     get_edge_feats,
     get_node_feats,

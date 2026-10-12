@@ -1,7 +1,7 @@
 """FraGNNet fragment-DAG graphs: one molecule's DAG as a PyG graph, and DAG batching.
 
 Moved out of core ``feat_utils`` in the reorganization (docs/plans/repo_reorg_plan.md, Phase 3), so
-core featurization no longer imports FraGNNet's ``frag_utils``.
+core featurization no longer imports FraGNNet's DAG builder.
 """
 
 from collections.abc import Sequence
@@ -12,7 +12,7 @@ import torch as th
 import torch_geometric as pyg
 from torch_geometric.data import Data
 
-from fragnnet.models.fragnnet.frag_utils import (
+from fragnnet.models.fragnnet.dag.layout import (
     EDGE_FEAT_TO_IDX,
     NODE_FEAT_TO_IDX,
     get_edge_feats,
@@ -157,7 +157,7 @@ def get_frag_graph(
     # select node features
     # TODO: out_degree / in_degree / num_heavy_atoms are computed on-the-fly here for now
     # (avoids DAG regeneration during testing). Once validated, move the computation into
-    # compute_dags in frag_utils.py and store them in dag.x like other features.
+    # compute_dags in dag/builder.py and store them in dag.x like other features.
     _x = []
     _node_feat_idxs = [0]
     _node_feat_size = 0

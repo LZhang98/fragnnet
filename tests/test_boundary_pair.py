@@ -1,8 +1,8 @@
-"""Unit tests for compute_boundary_pair_idxs in frag_utils.py."""
+"""Unit tests for compute_boundary_pair_idxs in dag/layout.py."""
 
 import torch as th
 
-from fragnnet.models.fragnnet.frag_utils import compute_boundary_pair_idxs
+from fragnnet.models.fragnnet.dag.layout import compute_boundary_pair_idxs
 
 # ---------------------------------------------------------------------------
 # Helper

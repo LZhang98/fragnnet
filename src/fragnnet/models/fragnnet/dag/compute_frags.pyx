@@ -182,7 +182,7 @@ cdef int _cc_uf(
 
 
 # ---------------------------------------------------------------------------
-# node_to_edge_idx — kept for interface compatibility with frag_utils.py
+# node_to_edge_idx — kept for interface compatibility with dag/builder.py
 # ---------------------------------------------------------------------------
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):

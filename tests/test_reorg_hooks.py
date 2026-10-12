@@ -90,9 +90,9 @@ def test_migration_and_validation_load_no_model_code() -> None:
         "fragnnet.models.masster.masster_core",
         "fragnnet.models.fragnnet.fragnnet_pl",
         "fragnnet.models.fragnnet.fragnnet_model",
-        "fragnnet.models.fragnnet.frag_utils",
-        "fragnnet.models.fragnnet.compute_frags",
-        "fragnnet.models.fragnnet.multi_cut_bfs",
+        "fragnnet.models.fragnnet.dag.builder",
+        "fragnnet.models.fragnnet.dag.compute_frags",
+        "fragnnet.models.fragnnet.dag.multi_cut_bfs",
     }
     assert not loaded & heavy
 

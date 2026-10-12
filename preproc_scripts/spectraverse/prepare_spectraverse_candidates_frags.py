@@ -32,7 +32,7 @@ import pandas as pd
 from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.models.fragnnet.frag_utils import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5
 from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
 from fragnnet.utils.misc_utils import booltype
 

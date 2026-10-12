@@ -9,7 +9,7 @@ cache imposes on callers.
 
 import pytest
 
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 
 
 class _StubDataset(SpecMolFragDataset):

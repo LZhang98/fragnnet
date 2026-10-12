@@ -3,18 +3,20 @@
 The element tables, formula and mask helpers moved to core ``formula_utils`` and the DAG storage
 format to core ``dag_format_utils``. The FraGNNet-owned ``frag_utils`` remnant re-exported them
 until Phase 6 (step 6), which retargeted every importer to core: the remnant now imports only the
-core names it uses itself, and nothing imports a moved name through it.
+core names it uses itself, and nothing imports a moved name through it. Phase 9 split the remnant
+into ``models/fragnnet/dag/`` (builder, layout, formula, hashing, stats; graph was
+``frag_feat_utils``), so these checks cover every module there.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib
 import subprocess
 from pathlib import Path
 
 import pytest
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 from fragnnet.utils import dag_format_utils, formula_utils
 
 MOVED = {
@@ -65,7 +67,10 @@ PAIRS = [(module, name) for module, names in MOVED.items() for name in names]
 
 
 REPO = Path(__file__).resolve().parents[1]
-REMNANT = "fragnnet.models.fragnnet.frag_utils"
+DAG_PACKAGE = "fragnnet.models.fragnnet.dag"
+REMNANTS = tuple(
+    f"{DAG_PACKAGE}.{name}" for name in ("builder", "layout", "formula", "hashing", "stats", "graph")
+)
 MOVED_NAMES = {name for _, name in PAIRS}
 
 
@@ -73,12 +78,14 @@ def _used_names(tree: ast.AST) -> set[str]:
     return {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
 
 
+@pytest.mark.parametrize("remnant", REMNANTS)
 @pytest.mark.parametrize(("module", "name"), PAIRS, ids=lambda v: getattr(v, "__name__", v))
-def test_remnant_binds_a_core_name_only_to_use_it(module, name: str) -> None:
-    if not hasattr(frag_utils, name):
+def test_remnant_binds_a_core_name_only_to_use_it(remnant: str, module, name: str) -> None:
+    dag_module = importlib.import_module(remnant)
+    if not hasattr(dag_module, name):
         return
-    assert getattr(frag_utils, name) is getattr(module, name)
-    assert name in _used_names(ast.parse(Path(frag_utils.__file__).read_text())), name
+    assert getattr(dag_module, name) is getattr(module, name)
+    assert name in _used_names(ast.parse(Path(dag_module.__file__).read_text())), name
 
 
 def test_nothing_imports_a_moved_name_through_the_remnant() -> None:
@@ -86,17 +93,17 @@ def test_nothing_imports_a_moved_name_through_the_remnant() -> None:
     found = []
     for f in files:
         text = (REPO / f).read_text()
-        if "frag_utils" not in text:
+        if DAG_PACKAGE not in text:
             continue
         tree = ast.parse(text)
         aliases = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == REMNANT:
+            if isinstance(node, ast.ImportFrom) and node.module in REMNANTS:
                 found += [f"{f}: from-import {a.name}" for a in node.names if a.name in MOVED_NAMES]
-            elif isinstance(node, ast.ImportFrom) and node.module == "fragnnet.models.fragnnet":
-                aliases |= {a.asname or a.name for a in node.names if a.name == "frag_utils"}
+            elif isinstance(node, ast.ImportFrom) and node.module == DAG_PACKAGE:
+                aliases |= {a.asname or a.name for a in node.names}
             elif isinstance(node, ast.Import):
-                aliases |= {a.asname or a.name for a in node.names if a.name == REMNANT}
+                aliases |= {a.asname for a in node.names if a.name in REMNANTS and a.asname}
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.Attribute)
@@ -128,4 +135,5 @@ def test_functions_are_defined_in_core() -> None:
 )
 def test_dead_functions_are_deleted(name: str) -> None:
     """No callers; the Cython ``update_bonds`` is the production and test version."""
-    assert not hasattr(frag_utils, name)
+    for remnant in REMNANTS:
+        assert not hasattr(importlib.import_module(remnant), name), remnant

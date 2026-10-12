@@ -19,8 +19,8 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
-from fragnnet.models.fragnnet.compute_frags import update_bonds
-from fragnnet.models.fragnnet.frag_utils import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.compute_frags import update_bonds
 
 _NITROBENZENE = "c1ccc([N+](=O)[O-])cc1"
 
@@ -208,7 +208,7 @@ def test_cation_h_cap_is_nonnegative():
     import numpy as np
 
     atom_ids = np.array(all_atoms, dtype=np.int32)
-    from fragnnet.models.fragnnet.compute_frags import update_bonds
+    from fragnnet.models.fragnnet.dag.compute_frags import update_bonds
 
     updated_sbond, _ = update_bonds(
         atom_ids,

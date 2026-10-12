@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from fragnnet.models.fragnnet.frag_utils import extract_mol_info, get_fraggen_input_arrays
-from fragnnet.models.fragnnet.multi_cut_bfs import compute_ccs_multi_cut
+from fragnnet.models.fragnnet.dag.builder import extract_mol_info, get_fraggen_input_arrays
+from fragnnet.models.fragnnet.dag.multi_cut_bfs import compute_ccs_multi_cut
 
 # ---------------------------------------------------------------------------
 # Helpers

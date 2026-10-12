@@ -26,11 +26,11 @@ MASSTER = "fragnnet.models.masster"
 # The names the shims used to export, and where they live now. fragnnet.model is now
 # fragnnet.layers.
 FORMER_LAZY_EXPORTS = {
-    ("fragnnet.dataset", "CEContextDynamicBatchSampler"): f"{FRAG}.frag_data_sampler",
-    ("fragnnet.dataset", "DualGroupDynamicBatchSampler"): f"{FRAG}.frag_data_sampler",
-    ("fragnnet.dataset", "SpecMolFragDynamicBatchSampler"): f"{FRAG}.frag_data_sampler",
-    ("fragnnet.dataset", "IterableSpecMolFragDataset"): f"{FRAG}.iterable_spec_mol_frag_dataset",
-    ("fragnnet.dataset", "SpecMolFragDataset"): f"{FRAG}.spec_mol_frag_dataset",
+    ("fragnnet.dataset", "CEContextDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
+    ("fragnnet.dataset", "DualGroupDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
+    ("fragnnet.dataset", "SpecMolFragDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
+    ("fragnnet.dataset", "IterableSpecMolFragDataset"): f"{FRAG}.fragnnet_iterable_dataset",
+    ("fragnnet.dataset", "SpecMolFragDataset"): f"{FRAG}.fragnnet_dataset",
     ("fragnnet.dataset", "MassterCEContextDynamicBatchSampler"): f"{MASSTER}.masster_data_sampler",
     ("fragnnet.layers", "FraGNNetModel"): f"{FRAG}.fragnnet_model",
     ("fragnnet.layers", "MassterModel"): f"{MASSTER}.masster_model",

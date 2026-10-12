@@ -13,8 +13,8 @@ from torch_geometric.data import Batch
 from tqdm import tqdm
 
 from fragnnet.dataset import BaseDataset, SpecMolDataset
-from fragnnet.models.fragnnet.frag_feat_utils import batch_mols_frags, get_frag_graph
-from fragnnet.models.fragnnet.frag_utils import NODE_FEAT_TO_IDX
+from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
 from fragnnet.utils.dag_format_utils import (
     _legacy_frag_names,
     get_frag_fp,

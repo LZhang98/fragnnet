@@ -7,9 +7,9 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.models.fragnnet.frag_utils import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5, timed_get_dags
+from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
 from fragnnet.utils import dag_format_utils, formula_utils
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
@@ -214,7 +214,7 @@ def main(args):
                     f"prec_spec_recall_{tolerance}_h{h_transfer}",
                 ]
                 if "ppm" in tolerance:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -226,7 +226,7 @@ def main(args):
                         is_ppm=True,
                     )
                 else:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -253,7 +253,7 @@ def main(args):
                 f"prec_spec_recall_inst_tol_h{h_transfer}",
             ]
             results.append(
-                frag_utils.compute_frag_peak_stats(
+                compute_frag_peak_stats(
                     peaks,
                     formula_peak_mzs,
                     formula_peak_probs,
@@ -341,7 +341,7 @@ def main(args):
     else:
         h5_file = None
     frag_results_gen = data_utils.par_apply(
-        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
     )
     if frag_results_gen is None:
         raise RuntimeError("Parallel fragment generation did not return any results")

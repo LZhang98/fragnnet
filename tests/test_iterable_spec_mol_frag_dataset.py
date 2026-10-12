@@ -2,7 +2,7 @@ import pytest
 import torch as th
 from torch.utils.data import DataLoader
 
-from fragnnet.models.fragnnet.iterable_spec_mol_frag_dataset import IterableSpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_iterable_dataset import IterableSpecMolFragDataset
 
 
 def passthrough_collate(batch):

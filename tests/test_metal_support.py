@@ -12,7 +12,7 @@ METAL_SMILES = [
 @pytest.mark.parametrize("smiles,name", METAL_SMILES)
 def test_metal_featurization(smiles, name):
     """Metal atoms should featurize without error."""
-    from fragnnet.models.fragnnet.frag_utils import extract_mol_info
+    from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 
     mol_d = extract_mol_info(smiles)
     assert mol_d is not None, f"featurization failed for {name}"
@@ -21,7 +21,7 @@ def test_metal_featurization(smiles, name):
 @pytest.mark.parametrize("smiles,name", METAL_SMILES)
 def test_metal_in_element_counts(smiles, name):
     """Metal element should appear in element_counts with count > 0."""
-    from fragnnet.models.fragnnet.frag_utils import extract_mol_info
+    from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 
     non_organic = {"C", "H", "O", "N", "P", "S", "F", "Cl", "Br", "I", "Se", "Si", "As", "B"}
     mol_d = extract_mol_info(smiles)

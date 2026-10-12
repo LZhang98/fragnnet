@@ -15,13 +15,12 @@ import numpy as np
 import pytest
 
 from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.models.fragnnet.frag_utils import (
-    NODE_FEAT_TO_IDX,
+from fragnnet.models.fragnnet.dag.builder import (
     compute_dags,
     extract_mol_info,
     get_fraggen_input_arrays,
-    get_node_feats,
 )
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX, get_node_feats
 
 NUM_RULES = len(FRAG_RULES)
 

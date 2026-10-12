@@ -13,41 +13,29 @@
   },
   "isolation_model_selection": {
     "frag_gnn": {
-      "fragmentation": [
-        "fragnnet.fragmentation",
-        "fragnnet.fragmentation.hydrogen_cap",
-        "fragnnet.fragmentation.smarts_prepass"
-      ],
       "fragnnet": [
         "fragnnet.models.fragnnet",
-        "fragnnet.models.fragnnet.compute_frags",
-        "fragnnet.models.fragnnet.frag_feat_utils",
-        "fragnnet.models.fragnnet.frag_utils",
+        "fragnnet.models.fragnnet.dag",
+        "fragnnet.models.fragnnet.dag.graph",
+        "fragnnet.models.fragnnet.dag.layout",
         "fragnnet.models.fragnnet.fragment_competition",
         "fragnnet.models.fragnnet.fragnnet_conditioning",
+        "fragnnet.models.fragnnet.fragnnet_dataset",
         "fragnnet.models.fragnnet.fragnnet_model",
-        "fragnnet.models.fragnnet.fragnnet_pl",
-        "fragnnet.models.fragnnet.multi_cut_bfs",
-        "fragnnet.models.fragnnet.spec_mol_frag_dataset"
+        "fragnnet.models.fragnnet.fragnnet_pl"
       ]
     },
     "fragnnet": {
-      "fragmentation": [
-        "fragnnet.fragmentation",
-        "fragnnet.fragmentation.hydrogen_cap",
-        "fragnnet.fragmentation.smarts_prepass"
-      ],
       "fragnnet": [
         "fragnnet.models.fragnnet",
-        "fragnnet.models.fragnnet.compute_frags",
-        "fragnnet.models.fragnnet.frag_feat_utils",
-        "fragnnet.models.fragnnet.frag_utils",
+        "fragnnet.models.fragnnet.dag",
+        "fragnnet.models.fragnnet.dag.graph",
+        "fragnnet.models.fragnnet.dag.layout",
         "fragnnet.models.fragnnet.fragment_competition",
         "fragnnet.models.fragnnet.fragnnet_conditioning",
+        "fragnnet.models.fragnnet.fragnnet_dataset",
         "fragnnet.models.fragnnet.fragnnet_model",
-        "fragnnet.models.fragnnet.fragnnet_pl",
-        "fragnnet.models.fragnnet.multi_cut_bfs",
-        "fragnnet.models.fragnnet.spec_mol_frag_dataset"
+        "fragnnet.models.fragnnet.fragnnet_pl"
       ]
     },
     "gnn": {

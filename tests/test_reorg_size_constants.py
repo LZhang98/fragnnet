@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-import fragnnet.models.fragnnet.compute_frags as compute_frags
-import fragnnet.models.fragnnet.frag_utils as frag_utils
-import fragnnet.models.fragnnet.multi_cut_bfs as multi_cut_bfs
+import fragnnet.models.fragnnet.dag.builder as dag_builder
+import fragnnet.models.fragnnet.dag.compute_frags as compute_frags
+import fragnnet.models.fragnnet.dag.multi_cut_bfs as multi_cut_bfs
 import fragnnet.utils.proc_utils as proc_utils
 from fragnnet.utils import formula_utils
 
@@ -54,8 +54,9 @@ def test_cython_stack_arrays_use_core_sizes(pyx: str) -> None:
 
 
 def test_python_constants_come_from_core() -> None:
-    """``proc_utils`` (core) and the ``frag_utils`` remnant read the core values."""
+    """``proc_utils`` (core) and the DAG builder (was the ``frag_utils`` remnant) read the core
+    values."""
     for name in ("MAX_NUM_NODES", "MAX_NUM_EDGES"):
         assert getattr(proc_utils, name) == getattr(formula_utils, name)
     for name in ("MAX_NUM_NODES", "MAX_NUM_EDGES", "MASK_SIZE"):
-        assert getattr(frag_utils, name) == getattr(formula_utils, name)
+        assert getattr(dag_builder, name) == getattr(formula_utils, name)

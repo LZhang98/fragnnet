@@ -1,7 +1,7 @@
 import pytest
 import torch as th
 
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
     H_MASS,

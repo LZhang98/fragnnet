@@ -1,4 +1,4 @@
-"""Tests for compute_dags in frag_utils.py.
+"""Tests for compute_dags in dag/builder.py (was frag_utils.py).
 
 Tests cover:
 1. Brominated amine (BrCCNc1ccccc1): previously caused KeyError: 255 due to
@@ -46,15 +46,10 @@ import re
 import numpy as np
 import pytest
 
-from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
-from fragnnet.models.fragnnet.frag_utils import (
-    FRAG_INDEX_DTYPE,
-    NODE_FEAT_TO_IDX,
-    cc_bit_mask_to_atom_idx,
-    compute_dags,
-    extract_mol_info,
-    get_node_feats,
-)
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.dag.formula import cc_bit_mask_to_atom_idx
+from fragnnet.models.fragnnet.dag.layout import FRAG_INDEX_DTYPE, NODE_FEAT_TO_IDX, get_node_feats
 from fragnnet.utils.formula_utils import (
     ELEMENT_TO_IDX,
     PERIODIC_TABLE,

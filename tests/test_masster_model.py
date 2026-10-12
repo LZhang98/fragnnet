@@ -14,8 +14,8 @@ from torch_geometric.data import Batch
 
 import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
-from fragnnet.models.fragnnet import compute_frags
-from fragnnet.models.fragnnet.frag_utils import extract_mol_info
+from fragnnet.models.fragnnet.dag import compute_frags
+from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_model import (
@@ -2658,7 +2658,7 @@ def test_hydrogen_transfer_bounds(
 
     FraGNNet has always bounded a fragment's post-transfer hydrogen count by
     ``min(compute_cc_h_cap(...), num_hs_prior + max_h_transfer, num_hs)``
-    (``frag_utils``). MASSter only required nonnegative element counts, which bounds
+    (``dag.formula``). MASSter only required nonnegative element counts, which bounds
     losses but not gains. ``complement`` adds the ``num_hs`` term, ``valence`` adds the
     free-valence cap as well, and ``none`` keeps the original unbounded ladder because those
     unreachable channels also serve as negatives in the candidate softmax.

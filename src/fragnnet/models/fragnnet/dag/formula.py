@@ -4,9 +4,9 @@ fragment formula arrays.
 
 import numpy as np
 
-import fragnnet.models.fragnnet.compute_frags as compute_frags
+import fragnnet.models.fragnnet.dag.compute_frags as compute_frags
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
-from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.dag.compute_frags import MASK_DTYPE
 from fragnnet.utils.formula_utils import ELEMENT_TO_IDX, formula_arr_to_str
 
 

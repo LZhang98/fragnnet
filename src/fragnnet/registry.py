@@ -30,7 +30,7 @@ class ModelEntry:
 _SPEC_MOL_DATASET = "fragnnet.dataset.spec_mol_dataset:SpecMolDataset"
 _FRAGNNET = ModelEntry(
     "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
-    "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
+    "fragnnet.models.fragnnet.fragnnet_dataset:SpecMolFragDataset",
     hooks="fragnnet.models.fragnnet.fragnnet_hooks:FraGNNetHooks",
 )
 

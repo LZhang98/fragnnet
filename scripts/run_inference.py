@@ -9,9 +9,9 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from fragnnet.models.fragnnet import frag_utils
-from fragnnet.models.fragnnet.iterable_spec_mol_frag_dataset import IterableSpecMolFragDataset
-from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_iterable_dataset import IterableSpecMolFragDataset
 from fragnnet.runner import init_dataloader
 from fragnnet.utils import dag_format_utils, data_utils
 from fragnnet.utils.misc_utils import booltype
@@ -417,7 +417,7 @@ if __name__ == "__main__":
             )
             # Generate fragment graphs in parallel across CPU cores
             frag_results = data_utils.par_apply(
-                iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True
+                iter(dag_feat_inputs_l), timed_get_dags, True, return_as_generator=True
             )
             if frag_results is None:
                 raise RuntimeError("Parallel fragment generation did not return any results")

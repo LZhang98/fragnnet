@@ -4,12 +4,12 @@ import subprocess
 import time
 import cProfile
 
-# Profiling harness for src/fragnnet/models/fragnnet/compute_frags.pyx
+# Profiling harness for src/fragnnet/models/fragnnet/dag/compute_frags.pyx
 # Writes prof.out in workspace root and generates cython annotation HTML.
 
 def build_extension():
     print('Attempting to build Cython extension (cythonize -a -i)...')
-    pyx = 'src/fragnnet/models/fragnnet/compute_frags.pyx'
+    pyx = 'src/fragnnet/models/fragnnet/dag/compute_frags.pyx'
     cmd = [sys.executable, '-m', 'cythonize', '-a', '-i', pyx]
     try:
         subprocess.check_call(cmd)
@@ -20,12 +20,12 @@ def build_extension():
 
 def import_module():
     try:
-        from fragnnet.models.fragnnet import compute_frags as cf
+        from fragnnet.models.fragnnet.dag import compute_frags as cf
         return cf
     except Exception as e:
         print('Import failed, will try to build then import:', e)
         build_extension()
-        from fragnnet.models.fragnnet import compute_frags as cf
+        from fragnnet.models.fragnnet.dag import compute_frags as cf
         return cf
 
 
@@ -39,7 +39,7 @@ def make_chain(n):
     # compute node_to_edge_idx via helper
     node_to_edge_idx = None
     try:
-        from fragnnet.models.fragnnet import compute_frags as cf
+        from fragnnet.models.fragnnet.dag import compute_frags as cf
         node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, edges.shape[0], edges)
     except Exception:
         # fallback simple construction
@@ -80,7 +80,7 @@ def run_profile(iterations=200, nodes=50, max_depth=4):
 
     # generate cython annotation if cython exists
     try:
-        subprocess.check_call([sys.executable, '-m', 'cython', '-a', 'src/fragnnet/models/fragnnet/compute_frags.pyx'])
+        subprocess.check_call([sys.executable, '-m', 'cython', '-a', 'src/fragnnet/models/fragnnet/dag/compute_frags.pyx'])
         print('Generated compute_frags.html')
     except Exception as e:
         print('Could not run cython -a to generate HTML annotation:', e)

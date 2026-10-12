@@ -81,7 +81,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-from fragnnet.models.fragnnet.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
