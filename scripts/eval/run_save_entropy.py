@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pprint import pprint
 
 import pandas as pd
@@ -10,7 +11,11 @@ from fragnnet.loss.entropy import sparse_conditional_entropy_fn
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.misc_utils import booltype, scatter_logsumexp
-from fragnnet.utils.script_utils import init_wandb_ckpt, log_mean, run_inference, select_model_vals
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
+
+# The stats helpers live with the statistics scripts.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stats_scripts"))
+from stats_helpers import log_mean, select_model_vals  # noqa: E402
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

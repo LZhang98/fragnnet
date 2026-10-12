@@ -1,3 +1,8 @@
+"""SQLite database of candidate molecules (PubChem) for the MS2C candidate pipeline; moved
+from ``fragnnet.utils.ms2c_utils``. The scripts in this directory import it as a sibling
+module.
+"""
+
 import logging
 import sqlite3
 

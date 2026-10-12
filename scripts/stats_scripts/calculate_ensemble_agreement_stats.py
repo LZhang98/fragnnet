@@ -1,6 +1,6 @@
 
 from fragnnet.utils.misc_utils import scatter_reduce, scatter_argtopk,  booltype, scatter_logsumexp, LOG_ZERO
-from fragnnet.utils.script_utils import select_model_vals, log_mean, pearson_r
+from stats_helpers import select_model_vals, log_mean, pearson_r
 from fragnnet.loss.spectrum_distance import  sparse_cosine_distance_hungarian
 
 import numpy as np

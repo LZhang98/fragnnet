@@ -1,7 +1,16 @@
+import importlib.util
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 from fragnnet.utils import clean_spectra_utils, data_utils
+
+# The spectrum selection lives with the command-line entry point, which is a script.
+_CLI_PATH = Path(__file__).resolve().parents[1] / "preproc_scripts" / "clean_spectra.py"
+_CLI_SPEC = importlib.util.spec_from_file_location("clean_spectra_cli", _CLI_PATH)
+clean_spectra_cli = importlib.util.module_from_spec(_CLI_SPEC)
+_CLI_SPEC.loader.exec_module(clean_spectra_cli)
 
 
 def test_merge_peaks_uses_intensity_weighted_centroid():
@@ -503,7 +512,7 @@ def test_select_precursor_types_supports_four_adduct_evaluation_scope():
         }
     )
 
-    selected = clean_spectra_utils.select_precursor_types(
+    selected = clean_spectra_cli.select_precursor_types(
         spec_df, ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )
 
@@ -519,7 +528,7 @@ def test_select_instrument_types_focuses_on_ft_and_qtof():
         }
     )
 
-    selected = clean_spectra_utils.select_instrument_types(spec_df, ["ORB", "QTOF"])
+    selected = clean_spectra_cli.select_instrument_types(spec_df, ["ORB", "QTOF"])
 
     assert selected["spec_id"].tolist() == [0, 1]
 
@@ -533,7 +542,7 @@ def test_select_dsets_focuses_on_requested_source_dataset():
         }
     )
 
-    selected = clean_spectra_utils.select_dsets(spec_df, ["nist20_hr"])
+    selected = clean_spectra_cli.select_dsets(spec_df, ["nist20_hr"])
 
     assert selected["spec_id"].tolist() == [0, 2]
 
@@ -542,7 +551,7 @@ def test_select_supported_formula_spectra_reports_exclusions():
     spec_df = pd.DataFrame({"spec_id": [0, 1], "mol_id": [0, 1], "peaks": [[], []]})
     mol_df = pd.DataFrame({"mol_id": [0, 1], "formula": ["CH4", "CH4Sn"]})
 
-    selected, summary = clean_spectra_utils.select_supported_formula_spectra(spec_df, mol_df)
+    selected, summary = clean_spectra_cli.select_supported_formula_spectra(spec_df, mol_df)
 
     assert selected["spec_id"].tolist() == [0]
     assert summary == {
