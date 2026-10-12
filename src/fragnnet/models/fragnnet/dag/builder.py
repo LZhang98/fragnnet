@@ -1,14 +1,12 @@
-# from copy import deepcopy
+"""Fragment-DAG construction: molecule info, the Cython enumeration (compute_frags,
+multi_cut_bfs), the SMARTS/NL prepass injection, and batch generation into HDF5
+(was frag_utils.py).
+"""
+
 import logging
-from collections import Counter
-from hashlib import blake2b
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import h5py as _h5py
-
 import numpy as np
-import pandas as pd
 import rdkit.Chem as Chem
 import rdkit.Chem.rdmolops as rdmolops
 import torch as th
@@ -24,14 +22,27 @@ from fragnnet.fragmentation.smarts_prepass import (
     _apply_smarts_prepass,
 )
 from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.dag.formula import (
+    cc_bit_mask_to_atom_idx,
+    cc_bitmask_to_formula_arr,
+    compute_approximate_formula,
+)
+from fragnnet.models.fragnnet.dag.hashing import get_subgraph_hashes
+from fragnnet.models.fragnnet.dag.layout import (
+    EDGE_FEAT_DTYPE,
+    FRAG_INDEX_DTYPE,
+    MAX_NUM_MZS_PER_FORMULA,
+    META_DATA_DTYPE,
+    NODE_FEAT_DTYPE,
+    compute_boundary_pair_idxs,
+)
 from fragnnet.models.fragnnet.multi_cut_bfs import (
     compute_ccs_multi_cut as _compute_ccs_multi_cut_cy,
 )
-from fragnnet.models.fragnnet.multi_cut_bfs import get_ring_edge_mask
-from fragnnet.utils.dag_format_utils import (
-    dump_dag_hdf5_packed,
-    initialize_packed_dag_hdf5,
+from fragnnet.models.fragnnet.multi_cut_bfs import (
+    get_ring_edge_mask,
 )
+from fragnnet.utils.dag_format_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
 from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.formula_utils import (
     CANONICAL_H_IDX,
@@ -40,26 +51,16 @@ from fragnnet.utils.formula_utils import (
     MASK_SIZE,
     MAX_NUM_EDGES,
     MAX_NUM_NODES,
-    PREC_TYPE_TO_CMF_MASS_DIFF,
-    PREC_TYPE_TO_MASS_DIFF,
-    formula_arr_to_str,
     formula_to_peak_mzs,
     th_mask_to_long,
 )
-from fragnnet.utils.misc_utils import PPM, ProgressLogger, progress_wrapper
+from fragnnet.utils.misc_utils import ProgressLogger, progress_wrapper
+
+if TYPE_CHECKING:
+    import h5py as _h5py
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
-
-# Fragment index dtype (change here to update everywhere)
-# uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
-FRAG_INDEX_DTYPE = np.uint32
-
-MAX_H_TRANSFER = 4
-MAX_NUM_MZS_PER_FORMULA = 5
-
-NODE_FEAT_DTYPE = th.int64
-EDGE_FEAT_DTYPE = th.int64
-META_DATA_DTYPE = th.float32
 
 # The size limits live in core formula_utils (re-exported here until Phase 6); the Cython
 # builder's compile-time copies must match them.
@@ -71,35 +72,6 @@ BOND_TYPE_TO_IDX = {
     Chem.rdchem.BondType.names["TRIPLE"]: 3,
     Chem.rdchem.BondType.names["SINGLE"]: 1,
 }
-
-NODE_FEAT_TO_IDX = {
-    "depth": 0,
-    "cc": 1,
-    "base_formula": 2,
-    "h_formulae_idx": 3,
-    "h_counts": 4,
-    "nb_iso_idx": 5,
-    "cmf_h_formulae_idx": 6,
-    "out_degree": 7,
-    "in_degree": 8,
-    "num_heavy_atoms": 9,
-}
-
-EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}
-
-
-def cc_bit_mask_to_atom_idx(cc: list | np.ndarray) -> np.ndarray:
-    """_summary_
-
-    Args:
-        cc (list | np.ndarray): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    cc_np = np.array(cc) if isinstance(cc, list) else cc
-    atom_ids = np.where(cc_np == 1)[0].astype(np.int32)
-    return atom_ids
 
 
 def get_fraggen_input_arrays(
@@ -331,287 +303,6 @@ def compute_cc_h_floor(
     cc_floor -= num_radicals
     cc_floor = max(cc_floor, 0)  # why can cc_floor be negative?
     return cc_floor
-
-
-def compute_approximate_formula(
-    cc: list | np.ndarray,
-    mol_d: dict,
-    max_h_transfer: int,
-    formula_strs: bool = False,
-    bitmask: bool = True,
-    base_formula: np.ndarray | None = None,
-) -> tuple[dict[int, str] | dict[int, np.ndarray], dict[int, int]]:
-    """
-    Given a connected component (fragment) of a molecule, compute all possible formulas
-    within a specified hydrogen transfer range (delta H), and return either formula strings
-    or hydrogen counts for each possible transfer.
-
-    Args:
-        cc (list | np.ndarray): Connected component, either as a bitmask or atom indices.
-        mol_d (dict): Molecule dictionary containing atom/bond info and arrays.
-        max_h_transfer (int): Maximum allowed hydrogen transfer (delta H) for enumeration.
-        formula_strs (bool, optional): If True, return formula strings; if False, return formula arrays. Defaults to False.
-        bitmask (bool, optional): If True, interpret cc as bitmask; if False, as atom indices. Defaults to True.
-        base_formula (np.ndarray, optional): Precomputed base formula array for the fragment. If None, computed internally. Defaults to None.
-
-    Returns:
-        tuple[dict[int, str] | dict[int, np.ndarray], dict[int, int]]:
-            - delta_h_to_formula: Maps delta H (hydrogen transfer) to formula string (if formula_strs=True)
-              or formula array (if formula_strs=False) for each possible configuration.
-            - delta_h_to_h_count: Maps delta H to the corresponding hydrogen count, or -1 for invalid configurations.
-    """
-
-    # Extract molecule arrays and info
-    bonds = mol_d["bonds"]  # Bond definitions (atom id pairs)
-    atoms_to_bonds = mol_d["atoms_to_bonds"]  # Atom to bond mapping
-    ve_arr = np.copy(mol_d["ve_arr"])
-    sbond_arr = np.copy(mol_d["sbond_arr"])
-    num_hs = mol_d["num_hs"]  # Total number of hydrogens in molecule
-    hs_arr = mol_d["hs_arr"]  # Hydrogens per atom
-    elem_idxs = mol_d["elem_idxs"]  # Element indices per atom
-    bond_mask_arr = mol_d["bond_mask_arr"]
-
-    # Compute base formula for fragment if not provided
-    if base_formula is None and bitmask:
-        base_formula = cc_bitmask_to_formula_arr(cc, elem_idxs)
-    elif base_formula is None and not bitmask:
-        base_formula = cc_to_formula_arr(cc, elem_idxs, bitmask=False)
-
-    # Get atom indices for fragment
-    atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
-
-    # Update single bond and bond mask arrays for fragment
-    sbond_arr, bond_mask_arr = compute_frags.update_bonds(
-        atom_ids, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds
-    )
-    # Compute hydrogen cap and floor for fragment
-    cap = compute_cc_h_cap(atom_ids, ve_arr, sbond_arr, 0)
-    floor = compute_frags.compute_cc_h_floor(
-        atom_ids, ve_arr, sbond_arr, 0, bonds, atoms_to_bonds, bond_mask_arr
-    )
-
-    # Defensive checks on hydrogen bounds
-    assert floor <= cap, (floor, cap, atom_ids)
-    assert floor >= 0, floor
-
-    # Count hydrogens present in fragment before transfer
-    num_hs_prior = sum(hs_arr[atom] for atom in atom_ids)
-
-    # Restrict hydrogen range to allowed transfer window
-    floor = max(floor, num_hs_prior - max_h_transfer)
-    cap = min(cap, num_hs_prior + max_h_transfer, num_hs)
-    # Guard: the actual H count in the molecule is always a valid configuration.
-    # compute_cc_h_floor can overcount for fragments containing nitro groups because
-    # update_bonds treats all bonds as single bonds — the double bond O= in [N+](=O)[O-]
-    # appears to have 1 free valence slot (ve=2, sbond=1), but its only neighbor N+ has
-    # diff=0 (after formal-charge correction), so the floor can't be reduced and ends up
-    # > num_hs_prior, making delta_h=0 invalid and assigning "" to the node formula.
-    floor = min(floor, num_hs_prior)
-
-    delta_h_to_formula = {}  # Maps delta H to formula string/array
-    delta_h_to_h_count = {}  # Maps delta H to hydrogen count (or -1 if invalid)
-
-    # Prepare formula string templates if requested
-    if formula_strs:
-        formula_template, formual_no_h = formula_arr_to_str(base_formula, get_h_template=True)
-
-    # Enumerate all possible hydrogen transfers
-    for delta_h in range(-max_h_transfer, max_h_transfer + 1):
-        h = num_hs_prior + delta_h  # Proposed hydrogen count for fragment
-        if h < floor or h > cap:
-            # Invalid configuration: assign zero formula and -1 count
-            formula = np.zeros_like(base_formula)
-            formula_str = ""
-            delta_h_to_h_count[delta_h] = -1
-        else:
-            # Valid configuration: update formula with new hydrogen count
-            formula = np.copy(base_formula)
-            formula[ELEMENT_TO_IDX["H"]] = h
-            formula = tuple(formula)
-            if h == 0:
-                formula_str = formual_no_h
-            else:
-                formula_str = formula_template.format(h)
-            delta_h_to_h_count[delta_h] = h
-        # Store formula string if requested, else array/tuple
-        if formula_strs:
-            formula = formula_str
-        delta_h_to_formula[delta_h] = formula
-    return delta_h_to_formula, delta_h_to_h_count
-
-
-def cc_to_formula_arr(cc: list | np.ndarray, elems: list, bitmask: bool = False) -> np.ndarray:
-    """
-    Convert a fragment (connected component) to a formula array (element counts, excluding hydrogens).
-
-    Args:
-        cc (list | np.ndarray): Fragment as bitmask or atom indices.
-        elems (list): List of element symbols for each atom in molecule.
-        bitmask (bool, optional): If True, interpret cc as bitmask; else as atom indices. Defaults to False.
-
-    Returns:
-        np.ndarray: Array of element counts (excluding hydrogens).
-    """
-    formula_arr = np.zeros([len(ELEMENT_TO_IDX)], dtype=int)
-    if bitmask:
-        for i in range(len(cc)):
-            if cc[i]:
-                elem = elems[i]
-                formula_arr[ELEMENT_TO_IDX[elem]] += 1
-    else:
-        for atom in cc:
-            elem = elems[atom]
-            formula_arr[ELEMENT_TO_IDX[elem]] += 1
-    return formula_arr
-
-
-def cc_bitmask_to_formula_arr(cc: np.ndarray, elem_idxs: np.ndarray) -> np.ndarray:
-    """
-    Fast conversion of a fragment bitmask to a formula array (element counts, excluding hydrogens).
-    Uses element indices for efficient counting.
-
-    Args:
-        cc (list | np.ndarray): Fragment bitmask (0/1 per atom).
-        elem_idxs (list | np.ndarray): Element indices for each atom in molecule.
-
-    Returns:
-        np.ndarray: Array of element counts (excluding hydrogens).
-    """
-    formula_arr = np.zeros([len(ELEMENT_TO_IDX)], dtype=MASK_DTYPE)
-    elem_idxs_np = np.array(elem_idxs) + 1  # Offset by 1 for masking
-    elem_idx_np = np.multiply(cc, elem_idxs_np)
-    unique, counts = np.unique(elem_idx_np, return_counts=True)
-    for elem_idx, count in zip(unique, counts):
-        if elem_idx == 0:
-            continue
-        else:
-            formula_arr[elem_idx - 1] = count
-    return formula_arr
-
-
-def compute_frag_peak_stats(
-    peaks: np.ndarray,
-    formula_peak_mzs: np.ndarray,
-    formula_peak_probs: np.ndarray,
-    idx_by_h_delta: dict,
-    prec_mz: float,
-    allowed_h_transfer: int,
-    tolerance: float = 0.01,
-    prec_type: str = "[M+H]+",
-    is_ppm: bool = False,
-    inst_type: str | None = None,
-    inst_type_tol: dict | None = None,
-) -> pd.Series:
-    """_summary_
-
-    Args:
-        peaks (_type_): _description_
-        formula_peak_mzs (_type_): _description_
-        formula_peak_probs (_type_): _description_
-        idx_by_h_delta (_type_): _description_
-        allowed_h_transfer (_type_): _description_
-        tolerance (float, optional): _description_. Defaults to 0.01.
-        is_ppm (bool, optional): _description_. Defaults to False.
-        inst_type (str, optional): Instrument type for this spectrum (e.g. "ORB", "QTOF").
-            Used to look up a per-instrument tolerance in ``inst_type_tol``. Ignored if
-            ``inst_type_tol`` is None or does not contain this key. Defaults to None.
-        inst_type_tol (dict, optional): Per-instrument tolerance overrides, same convention
-            as the ``inst_type_loss_tol`` training config (e.g.
-            ``{"ORB": {"rel": 1.0e-5, "min_mz": 200.0}, "QTOF": {"rel": 2.0e-5, "min_mz": 750.0}}``).
-            When ``inst_type`` is present in this dict, the effective m/z tolerance for each
-            peak is ``rel * max(peak_mz, min_mz)``, overriding ``tolerance``/``is_ppm`` for
-            that spectrum. Defaults to None (falls back to the global ``tolerance``/``is_ppm``
-            behavior, unchanged from before this parameter existed).
-
-    Returns:
-        _type_: _description_
-    """
-    inst_tol_cfg = None
-    if inst_type_tol is not None and inst_type in inst_type_tol:
-        inst_tol_cfg = inst_type_tol[inst_type]
-    true_mzs, true_ints = list(zip(*peaks))
-    theoretical_mzs = formula_peak_mzs
-    theoretical_probs = formula_peak_probs
-
-    allowed_idx = list(idx_by_h_delta[0])
-    for h in range(1, allowed_h_transfer):
-        allowed_idx += list(idx_by_h_delta[2 * h - 1])
-        allowed_idx += list(idx_by_h_delta[2 * h])
-    allowed_idx = list(set(allowed_idx))
-    # print(allowed_idx)
-    indices = th.tensor(allowed_idx)
-    theoretical_mzs = th.index_select(theoretical_mzs, 0, indices)
-    theoretical_probs = th.index_select(theoretical_probs, 0, indices)
-
-    prec_mask = (theoretical_probs > 0.0).type(th.float32)
-    # Compute two sets of theoretical m/z values:
-    #   - CMF: charge migrates to H+ before fragmentation (correct for [M+NH4]+, [M+Cl]-, etc.)
-    #   - std: adduct mass added directly (correct for [M+H]+, [M-H]- where CMF == std)
-    # A true peak is matched if it falls within tolerance of EITHER set.
-    cmf_diff = PREC_TYPE_TO_CMF_MASS_DIFF.get(prec_type, PREC_TYPE_TO_MASS_DIFF[prec_type])
-    std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-    theoretical_mzs_cmf = theoretical_mzs + prec_mask * cmf_diff
-    theoretical_mzs_std = theoretical_mzs + prec_mask * std_diff
-    # compute overlap
-    overlap_true_idxs = []
-    overlap_true_ints = []
-    overlap_pred_idxs = []
-    overlap_pred_peak_counts = []
-    overlap_pred_formula_counts = []
-
-    # check true_mzs against union of CMF and standard theoretical peaks
-    for true_idx, true_mz in enumerate(true_mzs):
-        if inst_tol_cfg is not None:
-            eff_tol = inst_tol_cfg["rel"] * max(true_mz, inst_tol_cfg["min_mz"])
-            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < eff_tol
-            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < eff_tol
-        elif not is_ppm:
-            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < tolerance
-            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < tolerance
-        else:
-            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < (true_mz * tolerance * PPM)
-            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < (true_mz * tolerance * PPM)
-        mz_close = mz_close_cmf | mz_close_std
-        if th.any(mz_close):
-            pred_idx = th.nonzero(mz_close, as_tuple=False)
-            num_formula_match = th.sum(th.any(mz_close, dim=1).type(th.int32)).item()
-            num_peak_match = pred_idx.shape[0]
-            overlap_true_idxs.append(true_idx)
-            overlap_true_ints.append(true_ints[true_idx])
-            overlap_pred_idxs.append(pred_idx)
-            overlap_pred_peak_counts.append(num_peak_match)
-            overlap_pred_formula_counts.append(num_formula_match)
-    # remove duplicates
-    if len(overlap_pred_idxs) > 0:
-        overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs, dim=0), dim=0)
-    else:
-        overlap_pred_idxs = th.zeros((0, 2))
-    recall = len(overlap_true_idxs) / len(true_mzs)
-    w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
-    prec = len(overlap_pred_idxs) / th.sum((theoretical_probs > 0.0).type(th.int32)).item()
-    if len(overlap_pred_peak_counts) > 0:
-        ppt_peak = np.mean(overlap_pred_peak_counts)
-        ppt_formula = np.mean(overlap_pred_formula_counts)
-    else:
-        ppt_peak = np.nan
-        ppt_formula = np.nan
-    # check prec_mz stuff
-    prec_recalls = []
-    for comp_mzs in [theoretical_mzs_std, th.tensor(true_mzs)]:
-        prec_mz_diffs = th.abs(comp_mzs - prec_mz)
-        if inst_tol_cfg is not None:
-            eff_tol = inst_tol_cfg["rel"] * max(prec_mz, inst_tol_cfg["min_mz"])
-            prec_mz_close = prec_mz_diffs < eff_tol
-        elif not is_ppm:
-            prec_mz_close = prec_mz_diffs < tolerance
-        else:
-            prec_mz_close = prec_mz_diffs < (prec_mz * tolerance * PPM)
-        if th.any(prec_mz_close):
-            prec_recalls.append(1.0)
-        else:
-            prec_recalls.append(0.0)
-    prec_recall, prec_spec_recall = prec_recalls
-    return pd.Series([recall, w_recall, prec, ppt_peak, ppt_formula, prec_recall, prec_spec_recall])
 
 
 def _inject_smarts_pairs_into_dag(
@@ -1351,152 +1042,6 @@ def compute_dags(
     return frag_d
 
 
-def get_node_feats(node_feats: th.Tensor, node_feat_idxs: th.Tensor, key: str) -> th.Tensor:
-    """get node features by key used for pyg
-
-    Args:
-        node_feats (_type_): _description_
-        node_feat_idxs (_type_): _description_
-        key (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-
-    node_feat_idx = NODE_FEAT_TO_IDX[key]
-    node_feats = node_feats[:, node_feat_idxs[node_feat_idx] : node_feat_idxs[node_feat_idx + 1]]
-    # print(f"get_node_feats, node_feats tensor shape: {node_feats.shape}, num nodes: {len(node_feats)}, feature name: {key}" )
-    return node_feats
-
-
-def get_edge_feats(edge_feats: th.Tensor, edge_feat_idxs: int, key: str) -> th.Tensor:
-    """get edege feats used for pyg
-
-    Args:
-        edge_feats (_type_): _description_
-        edge_feat_idxs (_type_): _description_
-        key (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-
-    edge_feat_idx = EDGE_FEAT_TO_IDX[key]
-    edge_feats = edge_feats[:, edge_feat_idxs[edge_feat_idx] : edge_feat_idxs[edge_feat_idx + 1]]
-    return edge_feats
-
-
-def _hash_label(label, digest_size=32):
-    """
-    Adapted from https://networkx.org/documentation/stable/_modules/networkx/algorithms/graph_hashing.html
-    """
-    return blake2b(label.encode("ascii"), digest_size=digest_size).hexdigest()
-
-
-def wl_hash(
-    elems: list,
-    bond_type_idxs: list,
-    node_mask: np.ndarray,
-    edges: np.ndarray,
-    node_to_edge_idx: np.ndarray,
-    include_bond_type: bool = False,
-    max_iterations: int = -1,
-) -> int:
-    """
-    Adapted from https://networkx.org/documentation/stable/_modules/networkx/algorithms/graph_hashing.html
-    """
-
-    cur_hashes = []
-    num_nodes = len(elems)
-    for i in range(num_nodes):
-        if node_mask[i]:
-            cur_hashes.append(str(elems[i]))
-        else:
-            cur_hashes.append("")
-    cur_counter = Counter(cur_hashes)
-    cur_counter.pop("", None)
-    graph_hash_counts = sorted(cur_counter.items(), key=lambda x: x[0])
-    iterations = np.sum(node_mask)
-    assert iterations <= num_nodes, (iterations, num_nodes)
-    if max_iterations == -1:
-        max_iterations = iterations
-    else:
-        assert max_iterations >= 0, max_iterations
-    ct = 0
-    while ct < iterations and ct < max_iterations:
-        # print(cur_hashes)
-        new_hashes = []
-        temp_atoms = 0
-        # Step 2: Update hashes with local neighborhoods
-        for node_idx in range(num_nodes):
-            cur_hash = cur_hashes[node_idx]
-            if not node_mask[node_idx]:
-                new_hashes.append(cur_hash)
-                continue
-            # Count num atoms in this loop
-            temp_atoms += 1
-            # Get local neighbors
-            neighbor_labels = []
-            for edge_idx in node_to_edge_idx[node_idx]:
-                if edge_idx == -1:
-                    break
-                node_idx_1, node_idx_2 = edges[edge_idx]
-                if node_idx_1 == node_idx:
-                    targ_node_idx = node_idx_2
-                else:
-                    targ_node_idx = node_idx_1
-                assert targ_node_idx != node_idx
-                if not node_mask[targ_node_idx]:
-                    continue
-                targ_hash = cur_hashes[targ_node_idx]
-                if include_bond_type:
-                    bondtype = bond_type_idxs[edge_idx]
-                    neighbor_label = f"_{bondtype}_{targ_hash}"
-                else:
-                    neighbor_label = f"_{targ_hash}"
-                neighbor_labels.append(neighbor_label)
-            new_hash = cur_hash + "".join(sorted(neighbor_labels))
-            new_hash = _hash_label(new_hash)
-            new_hashes.append(new_hash)
-        assert temp_atoms == iterations, (temp_atoms, iterations)
-        new_counter = Counter(new_hashes)
-        new_counter.pop("", None)
-        graph_hash_counts.extend(sorted(new_counter.items(), key=lambda x: x[0]))
-        cur_hashes = new_hashes
-        # print(f"> {ct}")
-        # print(new_graph_hash)
-        # print(cur_hashes)
-        ct += 1
-    graph_hash = _hash_label(str(tuple(graph_hash_counts)))
-    return graph_hash
-
-
-def get_subgraph_hashes(
-    nodes_mask_matrix: np.ndarray,
-    elems: list,
-    bond_type_idxs: list,
-    edges: np.ndarray,
-    node_to_edge_idx: np.ndarray,
-    include_bond_type: bool,
-    max_iterations: int,
-) -> list:
-    subgraph_hashes = []
-    num_subgraphs = nodes_mask_matrix.shape[0]
-    for i in range(num_subgraphs):
-        subgraph_mask = nodes_mask_matrix[i]
-        subgraph_hash = wl_hash(
-            elems,
-            bond_type_idxs,
-            subgraph_mask,
-            edges,
-            node_to_edge_idx,
-            include_bond_type=include_bond_type,
-            max_iterations=max_iterations,
-        )
-        subgraph_hashes.append(subgraph_hash)
-    return subgraph_hashes
-
-
 def timed_get_dags(
     mol: "str | Chem.rdchem.Mol",
     mol_id: str | int,
@@ -1658,156 +1203,3 @@ def run_frag_gen_hdf5(
         n_total - len(meta_info),
     )
     return meta_info
-
-
-def compute_boundary_mask(
-    frag_node_mask: th.Tensor,
-    mol_edge_index: th.Tensor,
-    mol_num_nodes: th.Tensor,
-    frag_num_nodes: th.Tensor,
-) -> th.Tensor:
-    """Compute boundary atom mask for each fragment on-the-fly.
-
-    A boundary atom is one that belongs to the fragment AND is adjacent to at
-    least one atom that does not (i.e. it sits at a cut bond).  The root
-    fragment (full precursor) always produces an all-zero row.
-
-    Args:
-        frag_node_mask: Bool tensor of shape ``(F, mask_size)`` with LOCAL atom
-            indices per molecule (as returned by ``th_long_to_mask`` on the cc
-            node feature).
-        mol_edge_index: Long tensor of shape ``(2, E)`` with GLOBAL atom indices
-            across the batch (standard PyG format).
-        mol_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative atom counts
-            per molecule in the batch (prefix sum, starts at 0).
-        frag_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative fragment
-            counts per molecule in the batch (prefix sum, starts at 0).
-
-    Returns:
-        Bool tensor of shape ``(F, mask_size)`` where ``True`` marks boundary
-        atoms for each fragment.
-    """
-    num_frags_total = frag_node_mask.shape[0]
-    mask_size = frag_node_mask.shape[1]
-    device = frag_node_mask.device
-
-    u_global = mol_edge_index[0]
-    v_global = mol_edge_index[1]
-    edge_mol_idx = th.bucketize(u_global, mol_num_nodes, right=True) - 1
-
-    boundary_mask = th.zeros(num_frags_total, mask_size, dtype=th.bool, device=device)
-    num_mols = int(mol_num_nodes.shape[0]) - 1
-    for m in range(num_mols):
-        f_start = int(frag_num_nodes[m])
-        f_end = int(frag_num_nodes[m + 1])
-        if f_start == f_end:
-            continue
-        edge_sel = edge_mol_idx == m
-        if not edge_sel.any():
-            continue
-        atom_off = int(mol_num_nodes[m])
-        u_loc = u_global[edge_sel] - atom_off
-        v_loc = v_global[edge_sel] - atom_off
-        valid_e = (u_loc >= 0) & (u_loc < mask_size) & (v_loc >= 0) & (v_loc < mask_size)
-        u_loc, v_loc = u_loc[valid_e], v_loc[valid_e]
-
-        frags_m = frag_node_mask[f_start:f_end]  # (F_m, mask_size)
-        f_m = f_end - f_start
-        u_in = frags_m[:, u_loc].float()
-        v_in = frags_m[:, v_loc].float()
-        bm = th.zeros(f_m, mask_size, device=device)
-        bm.scatter_add_(1, u_loc.unsqueeze(0).expand(f_m, -1), u_in * (1 - v_in))
-        bm.scatter_add_(1, v_loc.unsqueeze(0).expand(f_m, -1), v_in * (1 - u_in))
-        boundary_mask[f_start:f_end] = bm > 0
-
-    return boundary_mask
-
-
-def compute_boundary_pair_idxs(
-    frag_node_mask: th.Tensor,
-    mol_edge_index: th.Tensor,
-    mol_num_nodes: th.Tensor,
-    frag_num_nodes: th.Tensor,
-) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-    """Compute boundary pair indices for each fragment on-the-fly.
-
-    For each cut bond ``(u_in, v_out)`` where ``u`` is inside the fragment and
-    ``v`` is outside (or vice versa), returns the global fragment index and the
-    global atom indices of both endpoints.  The root fragment (full precursor)
-    always produces zero pairs.
-
-    Args:
-        frag_node_mask: Bool tensor of shape ``(F, mask_size)`` with LOCAL atom
-            indices per molecule (as returned by ``th_long_to_mask`` on the cc
-            node feature).
-        mol_edge_index: Long tensor of shape ``(2, E)`` with GLOBAL atom indices
-            across the batch (standard PyG format).
-        mol_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative atom counts
-            per molecule in the batch (prefix sum, starts at 0).
-        frag_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative fragment
-            counts per molecule in the batch (prefix sum, starts at 0).
-
-    Returns:
-        Tuple of three long tensors of shape ``(N_pairs,)``:
-
-        - ``pair_frag_idxs``: global fragment index for each pair.
-        - ``pair_in_global``: global atom index of the inside atom.
-        - ``pair_out_global``: global atom index of the outside atom.
-
-        All three tensors are empty (numel == 0) when no cut bonds exist.
-    """
-    device = frag_node_mask.device
-    mask_size = frag_node_mask.shape[1]
-
-    u_global = mol_edge_index[0]
-    v_global = mol_edge_index[1]
-    edge_mol_idx = th.bucketize(u_global, mol_num_nodes, right=True) - 1
-
-    num_mols = int(mol_num_nodes.shape[0]) - 1
-
-    all_pair_frag: list[th.Tensor] = []
-    all_pair_in: list[th.Tensor] = []
-    all_pair_out: list[th.Tensor] = []
-
-    for m in range(num_mols):
-        f_start = int(frag_num_nodes[m])
-        f_end = int(frag_num_nodes[m + 1])
-        if f_start == f_end:
-            continue
-        edge_sel = edge_mol_idx == m
-        if not edge_sel.any():
-            continue
-        atom_off = int(mol_num_nodes[m])
-        u_loc = u_global[edge_sel] - atom_off
-        v_loc = v_global[edge_sel] - atom_off
-        valid_e = (u_loc >= 0) & (u_loc < mask_size) & (v_loc >= 0) & (v_loc < mask_size)
-        u_loc, v_loc = u_loc[valid_e], v_loc[valid_e]
-        u_glob_m = u_global[edge_sel][valid_e]
-        v_glob_m = v_global[edge_sel][valid_e]
-
-        frags_m = frag_node_mask[f_start:f_end]  # (F_m, mask_size)
-
-        u_in = frags_m[:, u_loc]  # (F_m, E_m) bool
-        v_in = frags_m[:, v_loc]  # (F_m, E_m) bool
-
-        # cut bonds: u inside, v outside
-        cut_uv = u_in & ~v_in  # (F_m, E_m)
-        if cut_uv.any():
-            idxs = th.nonzero(cut_uv)  # (N, 2): [frag_local, edge_local]
-            all_pair_frag.append(idxs[:, 0] + f_start)
-            all_pair_in.append(u_glob_m[idxs[:, 1]])
-            all_pair_out.append(v_glob_m[idxs[:, 1]])
-
-        # cut bonds: v inside, u outside
-        cut_vu = v_in & ~u_in  # (F_m, E_m)
-        if cut_vu.any():
-            idxs = th.nonzero(cut_vu)  # (N, 2): [frag_local, edge_local]
-            all_pair_frag.append(idxs[:, 0] + f_start)
-            all_pair_in.append(v_glob_m[idxs[:, 1]])
-            all_pair_out.append(u_glob_m[idxs[:, 1]])
-
-    if not all_pair_frag:
-        empty = th.zeros(0, dtype=th.long, device=device)
-        return empty, empty, empty
-
-    return th.cat(all_pair_frag), th.cat(all_pair_in), th.cat(all_pair_out)
