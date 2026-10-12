@@ -14,7 +14,7 @@ import contextlib
 
 import torch as th
 
-from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.pl_model import FraGNNetPL
 from fragnnet.runner import load_config
 from fragnnet.utils import script_utils

@@ -20,12 +20,15 @@ import torch as th
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
-from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.model.loss import (
     ce_switch_pair_bce,
     sparse_entropy_fn,
     sparse_outside_window_intensity_fraction,
     validate_hellinger_auxiliary_weights,
+)
+from fragnnet.model.output_schema import (
+    EXPLAINABILITY_OUTPUT_KEYS,
+    RETURN_EXPLAINABILITY_TENSORS_DEFAULT,
 )
 from fragnnet.utils.misc_utils import (
     TOLERANCE_MIN_MZ,
@@ -1893,7 +1896,9 @@ class SpectrumPL(L.LightningModule):
         if (
             metrics is not None
             and self.expl_metric_args
-            and not batch.get("return_explainability_tensors", True)
+            and not batch.get(
+                "return_explainability_tensors", RETURN_EXPLAINABILITY_TENSORS_DEFAULT["fragnnet"]
+            )
         ):
             batch = {**batch, "return_explainability_tensors": True}
 

@@ -43,6 +43,7 @@ from fragnnet.model.loss import (
     get_sparse_cross_entropy_fn,
     sparse_peak_list_distance,
 )
+from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.model.rt_ccs import property_regression_terms
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -2537,7 +2538,12 @@ class MassterPL(SpectrumPL):
             ),
             memorization_sink_indices=self._memorization_sink_indices(batch_kwargs),
             # The exporter's switch for the per-peak annotation; absent in training.
-            return_annotation=bool(batch_kwargs.get("return_explainability_tensors", False)),
+            return_annotation=bool(
+                batch_kwargs.get(
+                    "return_explainability_tensors",
+                    RETURN_EXPLAINABILITY_TENSORS_DEFAULT["masster"],
+                )
+            ),
         )
         if (
             self.hparams.masster_share_proposal_across_ev

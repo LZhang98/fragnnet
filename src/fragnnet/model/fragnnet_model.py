@@ -29,6 +29,7 @@ from fragnnet.model.base_model import (
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.fragment_competition import TopKFragmentTransformer
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
+from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import formula_row_prec_deltas
@@ -52,42 +53,6 @@ from fragnnet.utils.misc_utils import (
 from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
-
-# Outputs of `FraGNNetModel.forward` that only exist when the terminal explainability
-# marginals are computed; every one of them is None on a forward that skipped them.
-# A forward with `return_explainability_tensors=False` returns None for every one of them.
-EXPLAINABILITY_OUTPUT_KEYS = frozenset(
-    {
-        "pred_formula_logprobs",
-        "pred_node_logprobs",
-        "pred_node_formula_logprobs",
-        "pred_formula_node_logprobs",
-        "pred_joint_logprobs",
-        "pred_joint_node_idxs",
-        "pred_joint_formula_idxs",
-        "pred_joint_batch_idxs",
-        "pred_h_counts",
-        "pred_h_batch_idxs",
-        "pred_h_logprobs",
-        "pred_formula_formula_idxs",
-        "pred_node_node_idxs",
-        "pred_joint_h_counts",
-        "pred_joint_h_idxs",
-        # nb_iso (isomorphic-neighbourhood) marginals ride the same gate
-        "pred_nb_node_logprobs",
-        "pred_nb_node_formula_logprobs",
-        "pred_nb_formula_node_logprobs",
-        "pred_nb_node_node_logprobs",
-        "pred_nb_node_node_idxs",
-        "pred_nb_node_batch_idxs",
-        "pred_nb_joint_logprobs",
-        "pred_nb_joint_node_idxs",
-        "pred_nb_joint_formula_idxs",
-        "pred_nb_joint_batch_idxs",
-        "pred_nb_node_node_node_idxs",
-        "pred_nb_node_node_batch_idxs",
-    }
-)
 
 
 def _aggregate_formula_support(
@@ -1249,7 +1214,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         spec_inst_type: th.Tensor | None = None,
         spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
-        return_explainability_tensors: bool = True,
+        return_explainability_tensors: bool = RETURN_EXPLAINABILITY_TENSORS_DEFAULT["fragnnet"],
         **kwargs: Any,
     ) -> dict[str, Any]:
         """forward methods for joint predictor
@@ -1267,10 +1232,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_formula_peak_sizes (th.Tensor): _description_
             return_explainability_tensors (bool): Whether this caller will read the terminal
                 explainability marginals and their index arrays - everything in
-                `EXPLAINABILITY_OUTPUT_KEYS`. False drops them (they come back None) and
-                skips ~6 scatter passes over the joint grid. Default True, so a caller that
-                says nothing still gets them; on a TRAINING forward the constructor's
-                `skip_explainability_when_training` overrides it to off.
+                `output_schema.EXPLAINABILITY_OUTPUT_KEYS`. False drops them (they come back
+                None) and skips ~6 scatter passes over the joint grid. Default True, so a
+                caller that says nothing still gets them; on a TRAINING forward the
+                constructor's `skip_explainability_when_training` overrides it to off.
 
         Returns:
             _type_: _description_

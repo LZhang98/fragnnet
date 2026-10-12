@@ -10,9 +10,6 @@
     "fragnnet.model.masster_model -> fragnnet.utils.frag_utils": [
       "CANONICAL_ELEMENT_ORDER"
     ],
-    "fragnnet.pl_model.spectrum_pl -> fragnnet.model.fragnnet_model": [
-      "EXPLAINABILITY_OUTPUT_KEYS"
-    ],
     "fragnnet.utils.feat_utils -> fragnnet.utils.frag_utils": [
       "CANONICAL_ELEMENT_ORDER",
       "EDGE_FEAT_TO_IDX",
@@ -82,8 +79,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -146,8 +141,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -158,8 +151,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -200,8 +191,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -220,8 +209,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -241,8 +228,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -254,8 +239,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ],
       "masster": [
@@ -276,8 +259,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -288,8 +269,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -300,8 +279,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     },
@@ -312,8 +289,6 @@
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
         "fragnnet.utils.frag_utils"
       ]
     }
