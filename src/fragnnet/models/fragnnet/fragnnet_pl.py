@@ -40,9 +40,9 @@ from fragnnet.loss.spectrum_distance import (
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
 from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.models.fragnnet.fragnnet_adducts import formula_row_prec_deltas
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
-from fragnnet.utils.formula_utils import formula_row_prec_deltas
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
 from fragnnet.utils.nn_utils import (
     build_lr_scheduler,

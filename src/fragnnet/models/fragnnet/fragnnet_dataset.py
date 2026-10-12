@@ -19,6 +19,10 @@ from tqdm import tqdm
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
 from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
+from fragnnet.models.fragnnet.fragnnet_adducts import (
+    prec_type_removed_counts,
+    tracked_element_counts,
+)
 from fragnnet.utils.dag_format_utils import (
     _legacy_frag_names,
     get_frag_fp,
@@ -29,8 +33,6 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
-    prec_type_removed_counts,
-    tracked_element_counts,
 )
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 

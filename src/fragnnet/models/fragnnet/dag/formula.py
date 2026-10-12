@@ -2,12 +2,20 @@
 fragment formula arrays.
 """
 
+from typing import Literal
+
 import numpy as np
 
 import fragnnet.models.fragnnet.dag.compute_frags as compute_frags
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 from fragnnet.models.fragnnet.dag.compute_frags import MASK_DTYPE
-from fragnnet.utils.formula_utils import ELEMENT_TO_IDX, formula_arr_to_str
+from fragnnet.utils.formula_utils import (
+    ELEMENT_TO_IDX,
+    PERIODIC_TABLE,
+    PREC_TYPE_TO_MASS_DIFF,
+    formula_arr_to_str,
+    parse_formula,
+)
 
 
 def cc_bit_mask_to_atom_idx(cc: list | np.ndarray) -> np.ndarray:
@@ -178,3 +186,85 @@ def cc_bitmask_to_formula_arr(cc: np.ndarray, elem_idxs: np.ndarray) -> np.ndarr
         else:
             formula_arr[elem_idx - 1] = count
     return formula_arr
+
+
+def get_peaks_for_formula(
+    element_counts: dict[str, int],
+    threshold: float = 0.001,
+    peaks_for_element_cache: dict = None,  # kept for API compatibility, unused
+) -> tuple[list[float], list[float]]:
+    """Return isotope peak masses and relative intensities for a molecular formula.
+
+    Uses pyopenms ``CoarseIsotopePatternGenerator`` with IUPAC 2016 natural
+    abundances.  Replaces the previous multinomial convolution implementation,
+    which was 100–1000× slower and used an older RDKit abundance table.
+
+    Args:
+        element_counts: Element counts dict, e.g. ``{"C": 6, "H": 12, "O": 6}``.
+        threshold: Minimum relative intensity to include.  Defaults to 0.001.
+        peaks_for_element_cache: Ignored.  Kept for API compatibility.
+
+    Returns:
+        Tuple of ``(masses, probs)`` where each is a list of floats.  Masses
+        are monoisotopic-based exact masses in Da; probs are renormalised
+        relative intensities summing to ≤ 1 (peaks below threshold excluded).
+
+    Raises:
+        ValueError: If ``element_counts`` is empty or contains no positive counts.
+    """
+    from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
+
+    formula_str = "".join(f"{el}{n}" for el, n in element_counts.items() if n > 0)
+    if not formula_str:
+        raise ValueError(f"element_counts has no positive counts: {element_counts}")
+    emp = EmpiricalFormula(formula_str)
+    gen = CoarseIsotopePatternGenerator(5)
+    iso = gen.run(emp)
+    iso.renormalize()
+    container = iso.getContainer()
+    keep = [(p.getMZ(), p.getIntensity()) for p in container if p.getIntensity() >= threshold]
+    if not keep:
+        return [container[0].getMZ()], [1.0]
+    return [m for m, p in keep], [p for m, p in keep]
+
+
+def formula_to_peak_mzs(
+    formula,
+    prec_type: Literal["[M+H]+", "[M-H]-", ""],
+    isotopes=True,
+    return_map=False,
+    return_probs=False,
+    peaks_for_element_cache: dict | None = None,
+):
+    """_summary_
+
+    Args:
+        formula (_type_): _description_
+        prec_type (_type_): _description_
+        isotopes (bool, optional): _description_. Defaults to True.
+        return_map (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
+    assert not (return_map and return_probs)
+    element_counts = parse_formula(formula)
+    mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
+    if not isotopes:
+        peak_mz = 0.0
+        for k, v in element_counts.items():
+            peak_mz += v * PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
+        peak_mz += mass_diff
+        peak_mzs = [peak_mz]
+        peak_probs = [1.0]
+    else:
+        peak_mzs, peak_probs = get_peaks_for_formula(
+            element_counts, peaks_for_element_cache=peaks_for_element_cache
+        )
+        peak_mzs = [peak_mz + mass_diff for peak_mz in peak_mzs]
+    if return_map:
+        return dict.fromkeys(peak_mzs, formula)
+    elif return_probs:
+        return peak_mzs, peak_probs
+    else:
+        return peak_mzs

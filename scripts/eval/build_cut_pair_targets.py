@@ -62,14 +62,16 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.models.fragnnet.dag.layout import MAX_H_TRANSFER, get_node_feats
+from fragnnet.models.fragnnet.fragnnet_adducts import (
+    prec_type_removed_counts,
+    tracked_element_counts,
+)
 from fragnnet.utils.data_utils import CHARGE_FACTOR_MAP, get_charge
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
-    prec_type_removed_counts,
     th_long_to_mask,
-    tracked_element_counts,
 )
 from fragnnet.utils.spec_utils import calculate_match_mzs
 

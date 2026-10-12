@@ -9,6 +9,8 @@ import pytest
 import rdkit.Chem as Chem
 from pyteomics.mass import Composition
 
+from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs, get_peaks_for_formula
+from fragnnet.models.fragnnet.fragnnet_adducts import formula_row_prec_deltas
 from fragnnet.utils import formula_utils as fu
 
 
@@ -40,16 +42,16 @@ class TestPeaks:
     """Peak generation via get_peaks_for_formula (pyopenms-backed)."""
 
     def test_probs_sum_to_one(self):
-        masses, probs = fu.get_peaks_for_formula({"C": 6, "H": 12, "O": 6}, threshold=0.0)
+        masses, probs = get_peaks_for_formula({"C": 6, "H": 12, "O": 6}, threshold=0.0)
         assert sum(probs) == pytest.approx(1.0, rel=1e-4, abs=1e-4)
 
     def test_monoisotopic_is_most_abundant_small_molecule(self):
-        masses, probs = fu.get_peaks_for_formula({"C": 6, "H": 12, "O": 6})
+        masses, probs = get_peaks_for_formula({"C": 6, "H": 12, "O": 6})
         assert probs[0] == max(probs)
 
     def test_bromine_m2_dominates(self):
         # For C10H8Br2, M+2 relative intensity should exceed M+1
-        masses, probs = fu.get_peaks_for_formula({"C": 10, "H": 8, "Br": 2})
+        masses, probs = get_peaks_for_formula({"C": 10, "H": 8, "Br": 2})
         sorted_pairs = sorted(zip(masses, probs))
         m2_prob = sorted_pairs[2][1]
         m1_prob = sorted_pairs[1][1]
@@ -57,15 +59,15 @@ class TestPeaks:
 
     def test_empty_raises(self):
         with pytest.raises((ValueError, Exception)):
-            fu.get_peaks_for_formula({})
+            get_peaks_for_formula({})
 
     def test_get_peaks_for_formula(self):
-        masses, probs = fu.get_peaks_for_formula({"H": 2, "O": 1}, threshold=0.0)
+        masses, probs = get_peaks_for_formula({"H": 2, "O": 1}, threshold=0.0)
         assert len(masses) == len(probs) > 0
         assert sum(probs) == pytest.approx(1.0, rel=1e-3, abs=1e-3)
 
     def test_formula_to_peak_mzs_no_isotopes(self):
-        peak_mzs = fu.formula_to_peak_mzs("H2O", prec_type="[M+H]+", isotopes=False)
+        peak_mzs = formula_to_peak_mzs("H2O", prec_type="[M+H]+", isotopes=False)
         assert len(peak_mzs) == 1
         expected = (
             2 * Chem.GetPeriodicTable().GetMostCommonIsotopeMass("H")
@@ -75,7 +77,7 @@ class TestPeaks:
         assert peak_mzs[0] == pytest.approx(expected, rel=1e-6, abs=1e-6)
 
     def test_formula_to_peak_mzs_with_probs(self):
-        peak_mzs, peak_probs = fu.formula_to_peak_mzs(
+        peak_mzs, peak_probs = formula_to_peak_mzs(
             "H2",
             prec_type="[M+H]+",
             isotopes=True,
@@ -194,40 +196,40 @@ class TestFormulaRowPrecDeltas:
 
     def test_crf_only_layout(self):
         # 1 sample, NULL + 3 CRF rows. The NULL row stands for no fragment.
-        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4)
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4)
         assert deltas.tolist() == ["", "H1", "H1", "H1"]
 
     def test_negative_mode_delta(self):
-        deltas = fu.formula_row_prec_deltas(["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4)
+        deltas = formula_row_prec_deltas(["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4)
         assert deltas.tolist() == ["", "H-1", "H-1"]
 
     def test_cmf_half_gets_the_migration_delta(self):
         # NULL + CRF[1:2] + CMF[1:2] = 5 rows; [M+Na]+ keeps both channels.
-        deltas = fu.formula_row_prec_deltas(["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4)
+        deltas = formula_row_prec_deltas(["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4)
         assert deltas.tolist() == ["", "Na1", "Na1", "H1", "H1"]
 
     def test_cmf_ignored_when_it_duplicates_a_crf_h_shift(self):
         # [M+H]+ CMF is the CRF state at delta_h = -1, so the dataset never emits it.
         assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1
-        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4)
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4)
         assert deltas.tolist() == ["", "H1", "H1", "H1", "H1"]
 
     def test_cmf_emitted_when_h_transfer_cannot_reach_it(self):
         # With no hydrogen transfer the CRF ladder never reaches the CMF state, so the
         # dataset does emit the CMF half even for [M+H]+.
         assert fu.cmf_duplicate_crf_h_shift("[M+H]+", 0) is None
-        deltas = fu.formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0)
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0)
         assert deltas.tolist() == ["", "H1", "H1", "", ""]
 
     def test_per_sample_precursor_across_a_batch(self):
-        deltas = fu.formula_row_prec_deltas(
+        deltas = formula_row_prec_deltas(
             ["[M+H]+", "[M-H]-"], [0, 3, 6], include_cmf=False, max_h_transfer=4
         )
         assert deltas.tolist() == ["", "H1", "H1", "", "H-1", "H-1"]
 
     def test_cumsizes_length_is_validated(self):
         with pytest.raises(ValueError, match="batch_size \\+ 1"):
-            fu.formula_row_prec_deltas(
+            formula_row_prec_deltas(
                 ["[M+H]+", "[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4
             )
 

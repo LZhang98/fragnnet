@@ -26,6 +26,7 @@ from fragnnet.models.fragnnet.dag.formula import (
     cc_bit_mask_to_atom_idx,
     cc_bitmask_to_formula_arr,
     compute_approximate_formula,
+    formula_to_peak_mzs,
 )
 from fragnnet.models.fragnnet.dag.hashing import get_subgraph_hashes
 from fragnnet.models.fragnnet.dag.layout import (
@@ -51,7 +52,6 @@ from fragnnet.utils.formula_utils import (
     MASK_SIZE,
     MAX_NUM_EDGES,
     MAX_NUM_NODES,
-    formula_to_peak_mzs,
     th_mask_to_long,
 )
 from fragnnet.utils.misc_utils import ProgressLogger, progress_wrapper

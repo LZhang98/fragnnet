@@ -16,6 +16,7 @@ import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 from fragnnet.models.fragnnet.dag import compute_frags
 from fragnnet.models.fragnnet.dag.builder import extract_mol_info
+from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_model import (
@@ -34,7 +35,7 @@ from fragnnet.models.masster.masster_model import (
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
 from fragnnet.models.masster.masster_templates import MassterTemplate, build_masster_templates
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
+from fragnnet.utils.formula_utils import H_MASS
 
 
 def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:

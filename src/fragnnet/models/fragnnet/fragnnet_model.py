@@ -25,6 +25,7 @@ from fragnnet.models.fragnnet.dag.layout import (
     get_node_feats,
 )
 from fragnnet.models.fragnnet.fragment_competition import TopKFragmentTransformer
+from fragnnet.models.fragnnet.fragnnet_adducts import formula_row_prec_deltas
 from fragnnet.models.fragnnet.fragnnet_conditioning import (
     AdductScaler,
     CEScaler,
@@ -35,12 +36,7 @@ from fragnnet.models.fragnnet.fragnnet_conditioning import (
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.formula_utils import (
-    ELEMENT_TO_VE,
-    HEAVY_ELEMENTS,
-    formula_row_prec_deltas,
-    th_long_to_mask,
-)
+from fragnnet.utils.formula_utils import ELEMENT_TO_VE, HEAVY_ELEMENTS, th_long_to_mask
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
     check_pyg_compile,

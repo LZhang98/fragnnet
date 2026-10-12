@@ -80,6 +80,11 @@ from fragnnet.models.masster.masster_candidates import (
     build_masster_candidates,
 )
 from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.models.masster.masster_isotopes import (
+    nominal_isotope_distribution,
+    nominal_isotope_pattern,
+    nominal_isotope_power_table,
+)
 from fragnnet.models.masster.masster_templates import (
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,
@@ -96,9 +101,6 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
-    nominal_isotope_distribution,
-    nominal_isotope_pattern,
-    nominal_isotope_power_table,
 )
 from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 

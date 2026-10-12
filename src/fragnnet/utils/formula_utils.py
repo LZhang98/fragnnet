@@ -1,7 +1,5 @@
 import re
-from collections.abc import Sequence
-from functools import cache, lru_cache
-from typing import Literal
+from functools import lru_cache
 
 import numpy as np
 import rdkit.Chem as Chem
@@ -193,129 +191,12 @@ PREC_TYPE_TO_CMF_COMP_DIFF = {
 }
 
 
-# A precursor delta can only make a fragment's ion formula impossible through the elements it
-# removes. Loss-type precursors such as [M-H-CO2]- subtract their neutral loss from every
-# enumerated fragment, but that loss left the precursor once, from one site: a fragment that
-# never carried the group cannot lose it. Tracking these few elements is enough to reject those
-# channels without carrying a full composition per formula.
-PREC_DELTA_REMOVED_ELEMENTS = tuple(
-    sorted(
-        {
-            element
-            for delta in (*PREC_TYPE_TO_COMP_DIFF.values(), *PREC_TYPE_TO_CMF_COMP_DIFF.values())
-            for element, count in delta.items()
-            if count < 0
-        }
-    )
-)
-
 NEUTRON_MASS = 1.008665
 C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
 
 
-@cache
-def nominal_isotope_distribution(element: str) -> tuple[int, tuple[float, ...]]:
-    """Return the lightest natural isotope's offset and its dense probability polynomial.
-
-    Offsets are relative to the most abundant isotope. Polynomial indices are relative to
-    the lightest isotope, so convolution indices are nonnegative even for Se, B and metals.
-    """
-    atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
-    base = PERIODIC_TABLE.GetMostCommonIsotope(atomic_number)
-    abundances = np.array(
-        [PERIODIC_TABLE.GetAbundanceForIsotope(atomic_number, mass) for mass in range(300)]
-    )
-    present = np.flatnonzero(abundances)
-    if not present.size:
-        return 0, (1.0,)
-    low, high = int(present[0]), int(present[-1])
-    return low - base, tuple(abundances[low : high + 1] / abundances.sum())
-
-
-@lru_cache(maxsize=65536)
-def nominal_isotope_pattern(
-    composition: tuple[tuple[str, int], ...], max_order: int
-) -> tuple[float, ...]:
-    """Convolve a composition's natural distribution, then crop to ±``max_order``.
-
-    A lightest-isotope origin makes every polynomial index nonnegative. Only coefficients
-    above the final upper index can be discarded during convolution: they cannot return.
-    The returned probabilities are not renormalized after cropping.
-    """
-    distributions = [
-        (count, nominal_isotope_distribution(element)) for element, count in composition
-    ]
-    origin = sum(count * low for count, (low, _) in distributions)
-    upper = max_order - origin
-    pattern = np.ones(1)
-    for count, (_, single) in distributions:
-        for _ in range(count):
-            pattern = np.convolve(pattern, single)[: upper + 1]
-    offsets = np.arange(-max_order, max_order + 1) - origin
-    result = np.zeros(2 * max_order + 1)
-    valid = (offsets >= 0) & (offsets < len(pattern))
-    result[valid] = pattern[offsets[valid]]
-    return tuple(result)
-
-
-def nominal_isotope_power_table(element: str, max_count: int, max_order: int) -> np.ndarray:
-    """Return natural patterns for 0..``max_count`` atoms, cropped after convolution.
-
-    Column ``j`` represents offset ``j - max_order`` from the most abundant isotope.
-    Intermediate support includes offsets that can cancel later; cropping does not
-    renormalize the retained probabilities. Shape: (max_count + 1, 2 * max_order + 1).
-    """
-    low, single = nominal_isotope_distribution(element)
-    # Every row up to max_count must remain recoverable, including negative-offset elements.
-    upper = max_order - max_count * low
-    table = np.zeros((max_count + 1, 2 * max_order + 1))
-    pattern = np.ones(1)
-    for count in range(max_count + 1):
-        offsets = np.arange(-max_order, max_order + 1) - count * low
-        valid = (offsets >= 0) & (offsets < len(pattern))
-        table[count, valid] = pattern[offsets[valid]]
-        if count < max_count:
-            pattern = np.convolve(pattern, single)[: upper + 1]
-    return table
-
-
 def MASS(element: str | int) -> float:
     return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
-
-
-# Layout of a tracked-count row: one column per removable element, then the total atom count.
-TOTAL_ATOM_COLUMN = len(PREC_DELTA_REMOVED_ELEMENTS)
-
-
-@lru_cache(maxsize=1 << 16)
-def tracked_element_counts(formula: str) -> tuple[int, ...]:
-    """Count the ``PREC_DELTA_REMOVED_ELEMENTS`` of a neutral formula, plus its atom total.
-
-    The total is what rejects an ion that has been emptied out entirely, which a per-element
-    check cannot see. Fragment formulas repeat heavily across a dataset, so this is cached;
-    the NULL formula ``""`` counts as all zeros.
-    """
-    counts = parse_formula(formula) if formula else {}
-    tracked = tuple(counts.get(element, 0) for element in PREC_DELTA_REMOVED_ELEMENTS)
-    return (*tracked, sum(counts.values()))
-
-
-def prec_type_removed_counts(prec_type: str, *, cmf: bool = False) -> dict[int, int]:
-    """Map tracked-count columns to the minimum a formula needs to survive this delta.
-
-    Includes ``TOTAL_ATOM_COLUMN``, whose minimum keeps at least one atom in the ion. Returns
-    an empty mapping when nothing can be violated, so the validity check can be skipped.
-    """
-    delta = PREC_TYPE_TO_CMF_COMP_DIFF[prec_type] if cmf else PREC_TYPE_TO_COMP_DIFF[prec_type]
-    minimums = {
-        position: -count
-        for position, element in enumerate(PREC_DELTA_REMOVED_ELEMENTS)
-        if (count := delta.get(element, 0)) < 0
-    }
-    net_atoms = sum(delta.values())
-    if net_atoms < 0:
-        minimums[TOTAL_ATOM_COLUMN] = 1 - net_atoms
-    return minimums
 
 
 def cmf_duplicate_crf_h_shift(
@@ -355,88 +236,6 @@ def cmf_duplicate_crf_h_shift(
         if cmf_counts.get(element, 0) != expected:
             return None
     return h_shift
-
-
-def get_peaks_for_formula(
-    element_counts: dict[str, int],
-    threshold: float = 0.001,
-    peaks_for_element_cache: dict = None,  # kept for API compatibility, unused
-) -> tuple[list[float], list[float]]:
-    """Return isotope peak masses and relative intensities for a molecular formula.
-
-    Uses pyopenms ``CoarseIsotopePatternGenerator`` with IUPAC 2016 natural
-    abundances.  Replaces the previous multinomial convolution implementation,
-    which was 100–1000× slower and used an older RDKit abundance table.
-
-    Args:
-        element_counts: Element counts dict, e.g. ``{"C": 6, "H": 12, "O": 6}``.
-        threshold: Minimum relative intensity to include.  Defaults to 0.001.
-        peaks_for_element_cache: Ignored.  Kept for API compatibility.
-
-    Returns:
-        Tuple of ``(masses, probs)`` where each is a list of floats.  Masses
-        are monoisotopic-based exact masses in Da; probs are renormalised
-        relative intensities summing to ≤ 1 (peaks below threshold excluded).
-
-    Raises:
-        ValueError: If ``element_counts`` is empty or contains no positive counts.
-    """
-    from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
-
-    formula_str = "".join(f"{el}{n}" for el, n in element_counts.items() if n > 0)
-    if not formula_str:
-        raise ValueError(f"element_counts has no positive counts: {element_counts}")
-    emp = EmpiricalFormula(formula_str)
-    gen = CoarseIsotopePatternGenerator(5)
-    iso = gen.run(emp)
-    iso.renormalize()
-    container = iso.getContainer()
-    keep = [(p.getMZ(), p.getIntensity()) for p in container if p.getIntensity() >= threshold]
-    if not keep:
-        return [container[0].getMZ()], [1.0]
-    return [m for m, p in keep], [p for m, p in keep]
-
-
-def formula_to_peak_mzs(
-    formula,
-    prec_type: Literal["[M+H]+", "[M-H]-", ""],
-    isotopes=True,
-    return_map=False,
-    return_probs=False,
-    peaks_for_element_cache: dict | None = None,
-):
-    """_summary_
-
-    Args:
-        formula (_type_): _description_
-        prec_type (_type_): _description_
-        isotopes (bool, optional): _description_. Defaults to True.
-        return_map (bool, optional): _description_. Defaults to True.
-
-    Returns:
-        _type_: _description_
-    """
-    assert not (return_map and return_probs)
-    element_counts = parse_formula(formula)
-    mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-    if not isotopes:
-        peak_mz = 0.0
-        for k, v in element_counts.items():
-            peak_mz += v * PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
-        peak_mz += mass_diff
-        peak_mzs = [peak_mz]
-        peak_probs = [1.0]
-    else:
-        peak_mzs, peak_probs = get_peaks_for_formula(
-            element_counts, peaks_for_element_cache=peaks_for_element_cache
-        )
-        peak_mzs = [peak_mz + mass_diff for peak_mz in peak_mzs]
-    if return_map:
-        return dict.fromkeys(peak_mzs, formula)
-    elif return_probs:
-        return peak_mzs, peak_probs
-    else:
-        return peak_mzs
 
 
 def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
@@ -485,55 +284,6 @@ def formula_delta_to_signed_str(delta_formula: str) -> str:
         if group:
             rendered += sign + get_formulae_hill_notation(group)
     return rendered
-
-
-def formula_row_prec_deltas(
-    prec_type_strs: Sequence[str],
-    formula_cumsizes: Sequence[int],
-    *,
-    include_cmf: bool,
-    max_h_transfer: int,
-) -> np.ndarray:
-    """Precursor delta formula for every formula row of a batch.
-
-    The dataset lays each sample's formula rows out as ``NULL, CRF[1:F]``, and appends
-    ``CMF[1:F]`` only when the CMF channel is actually enumerated — that is, when
-    ``include_cmf`` is set, the adduct has a CMF delta, and
-    :func:`cmf_duplicate_crf_h_shift` does not already emit that ion as a CRF hydrogen
-    shift. This reproduces that split so callers do not each re-derive it.
-
-    Args:
-        prec_type_strs: Precursor type per sample, length ``B``.
-        formula_cumsizes: Formula-row offsets into the batch-concatenated arrays,
-            length ``B + 1``.
-        include_cmf: The ``frag_params["include_cmf"]`` setting the batch was built with.
-        max_h_transfer: Hydrogen-transfer limit of the enumerated CRF channels.
-
-    Returns:
-        Object array of delta formula strings, shape ``[formula_cumsizes[-1]]``. The NULL
-        row of each sample is ``""``: it stands for no fragment, so no adduct applies.
-    """
-    offsets = [int(o) for o in formula_cumsizes]
-    if len(offsets) != len(prec_type_strs) + 1:
-        raise ValueError(
-            f"formula_cumsizes has {len(offsets)} entries for {len(prec_type_strs)} samples; "
-            "expected batch_size + 1"
-        )
-    deltas = np.empty(offsets[-1], dtype=object)
-    for i, prec_type in enumerate(prec_type_strs):
-        start, end = offsets[i], offsets[i + 1]
-        deltas[start:end] = PREC_TYPE_TO_FORMULA_DIFF[prec_type]
-        deltas[start] = ""  # NULL row
-        emits_cmf = (
-            include_cmf
-            and prec_type in PREC_TYPE_TO_CMF_FORMULA_DIFF
-            and cmf_duplicate_crf_h_shift(prec_type, max_h_transfer) is None
-        )
-        if emits_cmf:
-            # Layout: NULL, CRF[1:F], CMF[1:F] -> the CMF half starts after NULL + F rows.
-            cmf_start = start + (end - start + 1) // 2
-            deltas[cmf_start:end] = PREC_TYPE_TO_CMF_FORMULA_DIFF[prec_type]
-    return deltas
 
 
 def parse_formula(formula: str) -> dict[str, int]:
