@@ -20,7 +20,6 @@ from fragnnet.model.candidate_support import (
     observational_channel_targets,
 )
 from fragnnet.model.loss import (
-    ce_switch_pair_bce,
     get_cross_jss_contrastive,
     get_edge_loss_fn,
     get_pairwise_cossim,
@@ -36,8 +35,6 @@ from fragnnet.model.loss import (
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
-    sparse_outside_window_intensity_fraction,
-    validate_hellinger_auxiliary_weights,
 )
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
@@ -553,11 +550,7 @@ class FraGNNetPL(SpectrumPL):
                 )
 
     def _setup_loss_fn(self):
-        validate_hellinger_auxiliary_weights(
-            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
-            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
-            loss_type=self.hparams.loss_type,
-        )
+        self._validate_spectral_auxiliary_weights()
         support_weight = self.hparams.fragnnet_formula_support_loss_weight
         if not math.isfinite(support_weight) or support_weight < 0.0:
             raise ValueError("fragnnet_formula_support_loss_weight must be finite and nonnegative")
@@ -781,23 +774,7 @@ class FraGNNetPL(SpectrumPL):
 
         inst_types = sorted(self.hparams.spec_params["inst_types"])
         prec_types = sorted(self.hparams.spec_params["prec_types"])
-        eligible_inst_idxs = th.empty(0, dtype=th.long)
-        eligible_prec_idxs = th.empty(0, dtype=th.long)
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            eligible_inst_idxs = th.tensor(
-                [
-                    inst_types.index(inst_type)
-                    for inst_type in self.hparams.ce_pair_eligible_inst_types
-                ],
-                dtype=th.long,
-            )
-            eligible_prec_idxs = th.tensor(
-                [
-                    prec_types.index(prec_type)
-                    for prec_type in self.hparams.ce_pair_eligible_prec_types
-                ],
-                dtype=th.long,
-            )
+        ce_pair_loss_fn = self._build_ce_pair_loss_fn()
         precursor_pair_inst_idxs = th.empty(0, dtype=th.long)
         precursor_pair_prec_idxs = th.empty(0, dtype=th.long)
         if self.hparams.precursor_pair_loss_weight != 0.0:
@@ -947,25 +924,22 @@ class FraGNNetPL(SpectrumPL):
             loss_d["primary_loss"] = primary_loss
 
             if self.hparams.spectral_leak_loss_weight > 0.0:
-                spectral_leak_loss = sparse_outside_window_intensity_fraction(
+                spectral_leak_loss = self._spectral_leak_loss(
                     true_mzs,
                     true_batch_idxs,
                     pred_mzs,
                     pred_logprobs.exp(),
                     pred_batch_idxs,
                     batch_size=pred_oos_logprobs.shape[0],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
                     tol_per_sample=tol_per_sample,
                     min_mz_per_sample=min_mz_per_sample,
-                    loss_batch_size=self.hparams.loss_batch_size,
                 )
                 loss = loss + self.hparams.spectral_leak_loss_weight * spectral_leak_loss
                 loss_d["spectral_leak_loss"] = spectral_leak_loss
 
             if self.hparams.spectral_ce_auxiliary_weight > 0.0:
-                auxiliary_ios_ce, auxiliary_oos_ce, _, _ = sparse_ce_fn(
+                spectral_ce_auxiliary = self._spectral_ce_auxiliary(
+                    sparse_ce_fn,
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
@@ -973,13 +947,9 @@ class FraGNNetPL(SpectrumPL):
                     pred_logprobs,
                     pred_batch_idxs,
                     pred_oos_logprobs,
+                    include_oos=self.hparams.oos_loss,
                     tol_per_sample=tol_per_sample,
                     min_mz_per_sample=min_mz_per_sample,
-                )
-                spectral_ce_auxiliary = (
-                    auxiliary_ios_ce + auxiliary_oos_ce
-                    if self.hparams.oos_loss
-                    else auxiliary_ios_ce
                 )
                 loss = loss + (
                     self.hparams.spectral_ce_auxiliary_weight * spectral_ce_auxiliary
@@ -1014,30 +984,9 @@ class FraGNNetPL(SpectrumPL):
                 loss_d["formula_support_loss"] = formula_support_loss
 
             if self.hparams.ce_pair_loss_weight != 0.0:
-                pair_loss = pred_logprobs.new_zeros(batch_size)
-                eligible_endpoints = pred_logprobs.new_zeros(batch_size)
-                if kwargs["ce_pair_enabled"]:
-                    inst_idxs = kwargs["spec_inst_type"].reshape(-1)
-                    prec_idxs = kwargs["spec_prec_type"].reshape(-1)
-                    eligible_samples = th.isin(
-                        inst_idxs, eligible_inst_idxs.to(inst_idxs.device)
-                    ) & th.isin(prec_idxs, eligible_prec_idxs.to(prec_idxs.device))
-                    pair_loss, eligible_endpoints = ce_switch_pair_bce(
-                        true_mzs=kwargs["ce_pair_true_mzs"],
-                        true_ints=kwargs["ce_pair_true_ints"],
-                        true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
-                        pred_mzs=kwargs["ce_pair_pred_mzs"],
-                        pred_logprobs=kwargs["ce_pair_pred_logprobs"],
-                        pred_batch_idxs=kwargs["ce_pair_pred_batch_idxs"],
-                        group_ids=kwargs["group_id"].reshape(-1),
-                        ce_values=kwargs["ce_pair_ce_values"],
-                        eligible_samples=eligible_samples,
-                        batch_size=batch_size,
-                        min_endpoint_confidence=self.hparams.ce_pair_min_endpoint_confidence,
-                        min_contender_relative_intensity=self.hparams.target_rel_ints_thresh,
-                        tol_per_sample=tol_per_sample,
-                        min_mz_per_sample=min_mz_per_sample,
-                    )
+                pair_loss, eligible_endpoints = ce_pair_loss_fn(
+                    kwargs, batch_size, pred_logprobs, tol_per_sample, min_mz_per_sample
+                )
                 loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
                 loss_d["ce_pair_loss"] = pair_loss
                 loss_d["ce_pair_eligible_endpoints"] = eligible_endpoints

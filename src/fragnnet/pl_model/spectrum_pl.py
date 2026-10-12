@@ -21,7 +21,12 @@ from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS
-from fragnnet.model.loss import sparse_entropy_fn
+from fragnnet.model.loss import (
+    ce_switch_pair_bce,
+    sparse_entropy_fn,
+    sparse_outside_window_intensity_fraction,
+    validate_hellinger_auxiliary_weights,
+)
 from fragnnet.utils.misc_utils import (
     TOLERANCE_MIN_MZ,
     flatten_lol,
@@ -315,6 +320,177 @@ class SpectrumPL(L.LightningModule):
         Override in subclass to set up the loss function.
         """
         raise NotImplementedError
+
+    # Shared spectrum objectives. FraGNNet and MASSter prepare the inputs, call these where their
+    # loss functions evaluate each term, and weight, add and log the results themselves; nothing
+    # here touches the total loss.
+
+    def _validate_spectral_auxiliary_weights(self) -> None:
+        """Check the spectral-leak and spectral-CE-auxiliary weights.
+
+        Raises:
+            ValueError: If a weight is not finite and nonnegative, or if a positive weight is
+                paired with a ``loss_type`` other than ``hellinger_distance``.
+        """
+        validate_hellinger_auxiliary_weights(
+            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
+            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
+            loss_type=self.hparams.loss_type,
+        )
+
+    def _spectral_leak_loss(
+        self,
+        true_mzs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_ints: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        *,
+        batch_size: int,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample share of predicted intensity outside every target peak's window.
+
+        Args:
+            true_mzs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_batch_idxs: Predicted peaks.
+            pred_ints: Predicted probabilities or intensities, as the caller defines them.
+            batch_size: Number of spectra.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Spectral leak per spectrum.
+        """
+        return sparse_outside_window_intensity_fraction(
+            true_mzs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_ints,
+            pred_batch_idxs,
+            batch_size=batch_size,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+            loss_batch_size=self.hparams.loss_batch_size,
+        )
+
+    @staticmethod
+    def _spectral_ce_auxiliary(
+        sparse_ce_fn: Callable[..., tuple[th.Tensor, ...]],
+        true_mzs: th.Tensor,
+        true_logprobs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_logprobs: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        pred_oos_logprobs: th.Tensor,
+        *,
+        include_oos: bool,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample spectral cross-entropy used as an auxiliary to the primary loss.
+
+        Args:
+            sparse_ce_fn: The caller's ``get_sparse_cross_entropy_fn`` result.
+            true_mzs, true_logprobs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_logprobs, pred_batch_idxs: Predicted peaks.
+            pred_oos_logprobs: Predicted out-of-support log-probability per spectrum.
+            include_oos: Add the out-of-support CE to the in-support CE.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Auxiliary CE per spectrum.
+        """
+        ios_ce, oos_ce, _, _ = sparse_ce_fn(
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+        )
+        return ios_ce + oos_ce if include_oos else ios_ce
+
+    def _build_ce_pair_loss_fn(
+        self,
+    ) -> Callable[..., tuple[th.Tensor, th.Tensor]]:
+        """CE-pair loss function, with its eligibility tensors built once at setup.
+
+        The term only applies to configured instrument/adduct combinations. Their names become
+        the sorted label indices the batch carries (the sort order the models use).
+
+        Returns:
+            ``fn(batch, batch_size, reference, tol_per_sample, min_mz_per_sample)`` giving the
+            per-sample pair loss and eligible-endpoint count, each of length ``batch_size``. When
+            ``batch["ce_pair_enabled"]`` is false both are zeros with ``reference``'s dtype and
+            device (the term is train-only, but its logged keys exist on every split).
+        """
+        inst_types = sorted(self.hparams.spec_params["inst_types"])
+        prec_types = sorted(self.hparams.spec_params["prec_types"])
+        eligible_inst_idxs = th.empty(0, dtype=th.long)
+        eligible_prec_idxs = th.empty(0, dtype=th.long)
+        if self.hparams.ce_pair_loss_weight != 0.0:
+            eligible_inst_idxs = th.tensor(
+                [
+                    inst_types.index(inst_type)
+                    for inst_type in self.hparams.ce_pair_eligible_inst_types
+                ],
+                dtype=th.long,
+            )
+            eligible_prec_idxs = th.tensor(
+                [
+                    prec_types.index(prec_type)
+                    for prec_type in self.hparams.ce_pair_eligible_prec_types
+                ],
+                dtype=th.long,
+            )
+
+        def ce_pair_loss_fn(
+            batch: dict[str, Any],
+            batch_size: int,
+            reference: th.Tensor,
+            tol_per_sample: th.Tensor | None,
+            min_mz_per_sample: th.Tensor | None,
+        ) -> tuple[th.Tensor, th.Tensor]:
+            pair_loss = reference.new_zeros(batch_size)
+            eligible_endpoints = reference.new_zeros(batch_size)
+            if batch["ce_pair_enabled"]:
+                # Only spectra from a configured instrument *and* adduct take part; elsewhere
+                # the observed winner switch is too noisy to supervise.
+                inst_idxs = batch["spec_inst_type"].reshape(-1)
+                prec_idxs = batch["spec_prec_type"].reshape(-1)
+                eligible_samples = th.isin(
+                    inst_idxs, eligible_inst_idxs.to(inst_idxs.device)
+                ) & th.isin(prec_idxs, eligible_prec_idxs.to(prec_idxs.device))
+                # Supervises which of two adjacent-CE spectra ranks the observed winner higher.
+                # It reads the ``ce_pair_*`` peak lists, which ``_common_step`` passes through
+                # without the filtering and intensity transform applied to the primary targets.
+                pair_loss, eligible_endpoints = ce_switch_pair_bce(
+                    true_mzs=batch["ce_pair_true_mzs"],
+                    true_ints=batch["ce_pair_true_ints"],
+                    true_batch_idxs=batch["ce_pair_true_batch_idxs"],
+                    pred_mzs=batch["ce_pair_pred_mzs"],
+                    pred_logprobs=batch["ce_pair_pred_logprobs"],
+                    pred_batch_idxs=batch["ce_pair_pred_batch_idxs"],
+                    group_ids=batch["group_id"].reshape(-1),
+                    ce_values=batch["ce_pair_ce_values"],
+                    eligible_samples=eligible_samples,
+                    batch_size=batch_size,
+                    min_endpoint_confidence=self.hparams.ce_pair_min_endpoint_confidence,
+                    min_contender_relative_intensity=self.hparams.target_rel_ints_thresh,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+            return pair_loss, eligible_endpoints
+
+        return ce_pair_loss_fn
 
     def _setup_spec_fns(self):
         """

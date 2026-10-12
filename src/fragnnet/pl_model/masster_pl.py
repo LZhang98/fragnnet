@@ -39,12 +39,9 @@ from fragnnet.model.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
 from fragnnet.model.loss import (
-    ce_switch_pair_bce,
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
-    sparse_outside_window_intensity_fraction,
     sparse_peak_list_distance,
-    validate_hellinger_auxiliary_weights,
 )
 from fragnnet.model.rt_ccs import property_regression_terms
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
@@ -1443,11 +1440,7 @@ class MassterPL(SpectrumPL):
             raise ValueError(
                 "masster_intensity_entropy_match_weight must be finite and nonnegative"
             )
-        validate_hellinger_auxiliary_weights(
-            spectral_leak_loss_weight=self.hparams.spectral_leak_loss_weight,
-            spectral_ce_auxiliary_weight=self.hparams.spectral_ce_auxiliary_weight,
-            loss_type=self.hparams.loss_type,
-        )
+        self._validate_spectral_auxiliary_weights()
         if (
             not math.isfinite(self.hparams.masster_kl_epsilon)
             or not 0.0 < self.hparams.masster_kl_epsilon < 1.0
@@ -1652,28 +1645,7 @@ class MassterPL(SpectrumPL):
                 loss_batch_size=self.hparams.loss_batch_size,
             )
 
-        # The CE-pair term only applies to configured instrument/adduct combinations.
-        # Translate those names into the sorted label indices the batch carries (the
-        # same sort order the model uses), once at setup rather than per batch.
-        instrument_types = sorted(self.hparams.spec_params["inst_types"])
-        precursor_types = sorted(self.hparams.spec_params["prec_types"])
-        eligible_instrument_indices = th.empty(0, dtype=th.long)
-        eligible_precursor_indices = th.empty(0, dtype=th.long)
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            eligible_instrument_indices = th.tensor(
-                [
-                    instrument_types.index(instrument_type)
-                    for instrument_type in self.hparams.ce_pair_eligible_inst_types
-                ],
-                dtype=th.long,
-            )
-            eligible_precursor_indices = th.tensor(
-                [
-                    precursor_types.index(precursor_type)
-                    for precursor_type in self.hparams.ce_pair_eligible_prec_types
-                ],
-                dtype=th.long,
-            )
+        ce_pair_loss_fn = self._build_ce_pair_loss_fn()
 
         # SpectrumPL calls this with the training dict merged with the model's output
         # dict, so every key MassterModel returns has to be named here or absorbed
@@ -1828,19 +1800,15 @@ class MassterPL(SpectrumPL):
             if entropy_match is not None:
                 loss = loss + self.hparams.masster_intensity_entropy_match_weight * entropy_match
             if self.hparams.spectral_leak_loss_weight > 0.0:
-                spectral_leak_loss = sparse_outside_window_intensity_fraction(
+                spectral_leak_loss = self._spectral_leak_loss(
                     true_mzs,
                     true_batch_idxs,
                     pred_mzs,
                     pred_intensities,
                     pred_batch_idxs,
                     batch_size=batch_size,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
-                    loss_batch_size=self.hparams.loss_batch_size,
                 )
                 loss = loss + self.hparams.spectral_leak_loss_weight * spectral_leak_loss
             if self.hparams.spectral_ce_auxiliary_weight > 0.0:
@@ -1861,7 +1829,8 @@ class MassterPL(SpectrumPL):
                     intensity_tiny
                 )
                 pred_ce_logprobs = pred_ce_probs.clamp_min(intensity_tiny).log()
-                spectral_ce_auxiliary, _, _, _ = sparse_ce_fn(
+                spectral_ce_auxiliary = self._spectral_ce_auxiliary(
+                    sparse_ce_fn,
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
@@ -1869,6 +1838,7 @@ class MassterPL(SpectrumPL):
                     pred_ce_logprobs,
                     pred_batch_idxs,
                     pred_ce_logprobs.new_zeros(batch_size),
+                    include_oos=False,
                     tol_per_sample=tolerance_per_sample,
                     min_mz_per_sample=minimum_mz_per_sample,
                 )
@@ -2187,40 +2157,9 @@ class MassterPL(SpectrumPL):
                 # keys must exist on every split so the logged metrics stay aligned;
                 # hence the zero vectors when it is skipped.
                 batch_size = int(kwargs["batch_size"])
-                pair_loss = pred_logprobs.new_zeros(batch_size)
-                eligible_endpoints = pred_logprobs.new_zeros(batch_size)
-                if kwargs["ce_pair_enabled"]:
-                    # Only spectra from a configured instrument *and* adduct take part;
-                    # elsewhere the observed winner switch is too noisy to supervise.
-                    instrument_indices = kwargs["spec_inst_type"].reshape(-1)
-                    precursor_indices = kwargs["spec_prec_type"].reshape(-1)
-                    eligible_samples = th.isin(
-                        instrument_indices,
-                        eligible_instrument_indices.to(instrument_indices.device),
-                    ) & th.isin(
-                        precursor_indices,
-                        eligible_precursor_indices.to(precursor_indices.device),
-                    )
-                    # Supervises which of two adjacent-CE spectra ranks the observed
-                    # winner higher. It reads the ``ce_pair_*`` peak lists, which
-                    # SpectrumPL passes through without the filtering and intensity
-                    # transform applied to the tensors the primary CE consumes.
-                    pair_loss, eligible_endpoints = ce_switch_pair_bce(
-                        true_mzs=kwargs["ce_pair_true_mzs"],
-                        true_ints=kwargs["ce_pair_true_ints"],
-                        true_batch_idxs=kwargs["ce_pair_true_batch_idxs"],
-                        pred_mzs=kwargs["ce_pair_pred_mzs"],
-                        pred_logprobs=kwargs["ce_pair_pred_logprobs"],
-                        pred_batch_idxs=kwargs["ce_pair_pred_batch_idxs"],
-                        group_ids=kwargs["group_id"].reshape(-1),
-                        ce_values=kwargs["ce_pair_ce_values"],
-                        eligible_samples=eligible_samples,
-                        batch_size=batch_size,
-                        min_endpoint_confidence=(self.hparams.ce_pair_min_endpoint_confidence),
-                        min_contender_relative_intensity=(self.hparams.target_rel_ints_thresh),
-                        tol_per_sample=tolerance_per_sample,
-                        min_mz_per_sample=minimum_mz_per_sample,
-                    )
+                pair_loss, eligible_endpoints = ce_pair_loss_fn(
+                    kwargs, batch_size, pred_logprobs, tolerance_per_sample, minimum_mz_per_sample
+                )
                 loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
                 loss_values["ce_pair_loss"] = pair_loss
                 loss_values["ce_pair_eligible_endpoints"] = eligible_endpoints
