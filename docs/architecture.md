@@ -60,12 +60,15 @@ src/fragnnet/
   (`tests/reorg_layers.py`).
 - Core reaches a model only through [registry.py](../src/fragnnet/registry.py): `model_type`
   maps to `"module:Class"` strings for the Lightning module, the dataset and a hooks class,
-  imported on first use. The registry also holds the aliases (`fragnnet` for `frag_gnn`, legacy
-  `mass_shatter` for `masster`) and the retired ICEBERG types.
+  imported on first use. The registry also holds the aliases (`fragnnet` for `frag_gnn`, `clip`
+  for `spec_mol_clip_pretraining`) and the retired ICEBERG types. The legacy `mass_shatter` name
+  never reaches it: `migrate_legacy_masster_name` in `utils/pl_utils.py` renames it to `masster`
+  wherever a config or checkpoint is loaded.
 - Model-specific steps that core runs go through [hooks.py](../src/fragnnet/hooks.py).
   `ModelHooks`, looked up by `model_type`, covers config and checkpoint migration, config
   validation, batch samplers and dataloader/trainer options, the dataset filter and the
-  inference-config overlay; the core models and baselines use its no-op defaults. `ExportHooks`
+  inference-config overlay. FraGNNet, MASSter and GRAFF override what they need; the core models
+  and MassFormer use the no-op defaults. `ExportHooks`
   is a mixin on `FraGNNetPL` and `MassterPL` for the inference exporters' annotation columns.
   Hook modules import nothing model-specific at module level, so validating a config loads no
   model or compiled extension.

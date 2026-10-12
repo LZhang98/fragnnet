@@ -162,12 +162,12 @@ usually enough.
 
 Relevant code:
 
-- `src/fragnnet/models/fragnnet/fragnnet_pl.py:920`
-- `src/fragnnet/models/fragnnet/fragnnet_pl.py:947`
-- `src/fragnnet/models/fragnnet/fragnnet_pl.py:976`
-- `src/fragnnet/model/loss.py:1200`
-- `src/fragnnet/model/loss.py:1300`
-- `src/fragnnet/model/loss.py:1447`
+- `src/fragnnet/models/fragnnet/fragnnet_pl.py:1313` (cosine), `:1343` (JSS), `:1373`
+  (cross-entropy)
+- `src/fragnnet/model/loss.py`: `get_pairwise_cossim` (2296), `get_pairwise_jss_sim` (2411),
+  `get_pairwise_cross_entropy` (2506)
+
+(Line numbers re-anchored on 2026-10-12; the earlier ones had drifted.)
 
 ### What happens
 
