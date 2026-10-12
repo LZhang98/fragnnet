@@ -6,7 +6,6 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.utils import isotope_utils
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -71,19 +70,6 @@ def weighted_mean_by_batch(
     )
     return sums / totals.unsqueeze(1)
 
-
-_expected_mk_ratio = isotope_utils._expected_mk_ratio
-_parse_adduct_counts = isotope_utils._parse_adduct_counts
-detect_isotope_peaks = isotope_utils.detect_isotope_peaks
-detect_isotope_peaks_formula_aware = isotope_utils.detect_isotope_peaks_formula_aware
-detect_isotope_peaks_for_training_cleanup = isotope_utils.detect_isotope_peaks_for_training_cleanup
-detect_isotope_peaks_for_training = isotope_utils.detect_isotope_peaks_for_training
-dag_formula_source = isotope_utils.dag_formula_source
-subformula_formula_source = isotope_utils.subformula_formula_source
-estimate_coisolation_fraction_from_precursor = (
-    isotope_utils.estimate_coisolation_fraction_from_precursor
-)
-detect_cross_ce_orphan_peaks = isotope_utils.detect_cross_ce_orphan_peaks
 
 try:
     from torch_linear_assignment import (  # pyright: ignore[reportMissingImports]

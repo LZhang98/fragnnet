@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
-from fragnnet.utils.spec_utils import (
+from fragnnet.utils.isotope_utils import (
     detect_isotope_peaks_for_training,
     detect_isotope_peaks_formula_aware,
 )
@@ -752,7 +752,7 @@ def eval_mode(df: pd.DataFrame) -> None:
     # Import helpers needed for FN sub-classification
     from fragnnet.utils.formula_utils import C13_SPACING as _C13
     from fragnnet.utils.formula_utils import parse_formula as _parse_formula
-    from fragnnet.utils.spec_utils import (
+    from fragnnet.utils.isotope_utils import (
         _expected_mk_ratio,
         _parse_adduct_counts,
     )
