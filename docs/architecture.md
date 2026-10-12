@@ -40,7 +40,7 @@
    retired the same day as no longer used; code at `13b1599d`.
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
-   in [pl_utils.py](../src/fragnnet/utils/pl_utils.py) renames them wherever a config is loaded.
+   in [migrations.py](../src/fragnnet/utils/migrations.py) renames them wherever a config is loaded.
    MASSter also offers [FastGNN-style connected-fragment proposals](plans/masster/masster_fast_gnn_proposal.md),
    sharing its chemistry and intensity model while changing proposal score semantics.
    MASSter defaults to CPU candidate construction; its optional CUDA backend performs exact
@@ -60,6 +60,7 @@ src/fragnnet/
   dataset/ utils/                    core: shared datasets, samplers and utilities
   layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases
   runner.py registry.py hooks.py     core: entry point, model registry, hook interface
+  export_adapter.py                  core: what the inference exporters call on a model
   output_schema.py                   core: model-output names that core reads
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/  models/masster/  the two owner models
@@ -80,14 +81,15 @@ src/fragnnet/
   maps to `"module:Class"` strings for the Lightning module, the dataset and a hooks class,
   imported on first use. The registry also holds the `fragnnet` alias for `frag_gnn` and the
   retired types (ICEBERG, MCES pretraining, ChemLM, CLIP). The legacy `mass_shatter` name never
-  reaches it: `migrate_legacy_masster_name` in `utils/pl_utils.py` renames it to `masster`
+  reaches it: `migrate_legacy_masster_name` in `utils/migrations.py` renames it to `masster`
   wherever a config or checkpoint is loaded.
 - Model-specific steps that core runs go through [hooks.py](../src/fragnnet/hooks.py).
   `ModelHooks`, looked up by `model_type`, covers config and checkpoint migration, config
   validation, batch samplers and dataloader/trainer options, the dataset filter and the
   inference-config overlay. FraGNNet, MASSter and GRAFF override what they need; NEIMS,
-  precursor, GNN and MassFormer use the no-op defaults. `ExportHooks`
-  is a mixin on `FraGNNetPL` and `MassterPL` for the inference exporters' annotation columns.
+  precursor, GNN and MassFormer use the no-op defaults. `ExportAdapter`
+  ([export_adapter.py](../src/fragnnet/export_adapter.py)) is a mixin on `FraGNNetPL` and
+  `MassterPL` for the inference exporters' annotation columns.
   Hook modules import nothing model-specific at module level, so validating a config loads no
   model or compiled extension.
 - Anything core reads, such as the annotation output keys, the size constants and the DAG
@@ -106,8 +108,9 @@ src/fragnnet/
   `multi_cut_bfs.pyx`, and `frag_utils.py`) are in [models/fragnnet/](../src/fragnnet/models/fragnnet/);
   MASSter's candidate construction (Cython `masster_core.pyx`, the CUDA `.cu` kernels next to the
   modules that load them) in [models/masster/](../src/fragnnet/models/masster/); the shared
-  SMARTS prepass, hydrogen capping and cut-bond encoding in
-  [fragmentation/](../src/fragnnet/fragmentation/). The
+  SMARTS prepass and hydrogen capping in [fragmentation/](../src/fragnnet/fragmentation/). The
+  shared cut-bond encoder is a layer (`layers/cut_bond_encoder.py`), and the candidate-support
+  targets and loss are in `loss/channel_support.py`. The
   [DAG/prepass reference](reference/frag_gen_prepass.md) explains the FraGNNet workflow.
   Cython changes require checking the build in [setup.py](../setup.py) and rebuilding in the
   approved environment (`python setup.py build_ext --inplace`) before testing; an existing

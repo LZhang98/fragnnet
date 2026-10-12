@@ -734,7 +734,8 @@ a pure `git mv` commit, then a mechanical rewrite):
 
 Separate follow-ups: `fragmentation/candidate_support.py` to `loss/channel_support.py` (a loss,
 not chemistry); `hooks.ExportHooks` to `ExportAdapter`; splitting `pl_utils.py` into callbacks and
-migrations; `GINE_GSA` to `models/masster/`.
+migrations; `GINE_GSA` to `models/masster/`. All but the last are done (see
+[Progress](#progress)).
 
 ## Unchanged
 
@@ -919,6 +920,17 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     fragnnet modules import. An adversarial review (3 reviewers, each finding verified) confirmed
     one stale docstring (`tests/reorg_layers.py`), fixed in step 7 with four config comments that
     still named `_build_loss_chunks`.
-  - Not done (follow-ups above): `candidate_support` to `loss/`, `ExportAdapter`, the `pl_utils`
-    split, `GINE_GSA` to `models/masster/`. The stale `src/fragnnet/model/__pycache__` keeps
-    `fragnnet.model` importable as an empty namespace package until the user deletes it.
+  - Not done in Phase 8: the follow-ups listed with the phase. The stale
+    `src/fragnnet/model/__pycache__` was deleted afterwards, at the user's request.
+- 2026-10-12: Phase 8 follow-ups (user request), each with the full suite (no new failures).
+  - `ea0a6bd1`: `fragmentation/candidate_support.py` to `loss/channel_support.py`.
+  - `b6bdc20b`: `fragmentation/cut_bond_encoder.py` to `layers/` (user decision: a torch module
+    both fragment models use, not chemistry). `fragmentation/` now holds the SMARTS prepass and
+    hydrogen capping only.
+  - `e4bca90a`: `hooks.ExportHooks` to `ExportAdapter` in `fragnnet/export_adapter.py`.
+  - `da1b0852`, `d5a7de68`: `pl_utils.py` renamed to `utils/migrations.py` (migrations and
+    `get_pl_hparams`); `ConsoleLogger` and `ExponentialMovingAverage` to `utils/callbacks.py`;
+    the unused `PrintGradCallback` deleted. The FraGNNet-only backfill table stays in
+    `migrations.py`: moving it to `FraGNNetHooks` would also need a `FraGNNetPL.__init__`,
+    because `load_from_checkpoint` reaches `SpectrumPL.__init__` without `get_pl_hparams`.
+  - Remaining follow-up: `GINE_GSA` to `models/masster/`.

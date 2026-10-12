@@ -190,7 +190,7 @@ numerically against `pool_boundary_bond_embeddings`:
   distinguished within the boundary term.
 
 This is the same degeneracy FraGNNet diagnosed for its `boundary_pair` feature and fixed with
-`CutBondEncoder` ([cut_bond_encoder.py](../../src/fragnnet/fragmentation/cut_bond_encoder.py)), whose
+`CutBondEncoder` ([cut_bond_encoder.py](../../src/fragnnet/layers/cut_bond_encoder.py)), whose
 docstring states the argument in full: a linear map on a concatenation cannot express a bond
 because bond identity is an interaction, and a linear map commutes through the pool. MASSter's
 version is strictly weaker than the `boundary_pair` that fix replaced — `boundary_pair` at least
