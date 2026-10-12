@@ -13,7 +13,7 @@ import torch as th
 
 from fragnnet.loss.entropy import sparse_entropy_fn
 from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
-from fragnnet.utils.misc_utils import safelog, scatter_l1normalize, scatter_reduce
+from fragnnet.utils.scatter_utils import safelog, scatter_l1normalize, scatter_reduce
 from fragnnet.utils.spec_similarity import (
     batch_cos_hun_helper,
     batch_jss_hun_helper,

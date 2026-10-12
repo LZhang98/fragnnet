@@ -41,14 +41,8 @@ from fragnnet.utils.formula_utils import (
     combine_formulae,
     th_long_to_mask,
 )
-from fragnnet.utils.misc_utils import (
-    LOG_ZERO,
-    check_pyg_compile,
-    check_pyg_full_compile,
-    scatter_logsoftmax,
-    scatter_logsumexp,
-    scatter_reduce,
-)
+from fragnnet.utils.misc_utils import LOG_ZERO, check_pyg_compile, check_pyg_full_compile
+from fragnnet.utils.scatter_utils import scatter_logsoftmax, scatter_logsumexp, scatter_reduce
 from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)

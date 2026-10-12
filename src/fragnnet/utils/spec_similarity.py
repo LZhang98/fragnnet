@@ -10,14 +10,12 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.utils.misc_utils import (
-    EPS,
-    TOLERANCE_MIN_MZ,
+from fragnnet.utils.misc_utils import EPS, TOLERANCE_MIN_MZ, th_setdiff1d
+from fragnnet.utils.scatter_utils import (
     safelog,
     scatter_l1normalize,
     scatter_l2normalize,
     scatter_reduce,
-    th_setdiff1d,
 )
 
 logger = logging.getLogger(__name__)

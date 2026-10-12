@@ -4,13 +4,8 @@ import torch.nn as nn
 import torch_geometric as pyg
 
 from fragnnet.baselines.graff.nn_utils import *
-from fragnnet.utils.misc_utils import (
-    check_pyg_compile,
-    check_pyg_full_compile,
-    scatter_logmeanexp,
-    scatter_logsoftmax,
-    scatter_reduce,
-)
+from fragnnet.utils.misc_utils import check_pyg_compile, check_pyg_full_compile
+from fragnnet.utils.scatter_utils import scatter_logmeanexp, scatter_logsoftmax, scatter_reduce
 
 
 class GrAFFModel(nn.Module):

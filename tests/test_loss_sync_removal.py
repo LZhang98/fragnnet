@@ -16,7 +16,8 @@ import torch as th
 import torch.nn.functional as F
 
 from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn, sparse_cross_entropy_vec
-from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
+from fragnnet.utils.misc_utils import LOG_ZERO
+from fragnnet.utils.scatter_utils import scatter_logsumexp
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,8 +64,8 @@ def _reference_sparse_ce_vec(
     import math as _math
 
     from fragnnet.utils.misc_utils import LOG_ZERO as _LZ
-    from fragnnet.utils.misc_utils import scatter_logsumexp as _sle
-    from fragnnet.utils.misc_utils import scatter_reduce as _sr
+    from fragnnet.utils.scatter_utils import scatter_logsumexp as _sle
+    from fragnnet.utils.scatter_utils import scatter_reduce as _sr
     from fragnnet.utils.spec_similarity import calculate_match_mzs as _cmm
 
     float_dtype = true_logprobs.dtype

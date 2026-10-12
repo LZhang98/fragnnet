@@ -2,7 +2,8 @@
 
 import torch as th
 
-from fragnnet.utils.misc_utils import EPS, safelog, scatter_logsumexp, scatter_reduce
+from fragnnet.utils.misc_utils import EPS
+from fragnnet.utils.scatter_utils import safelog, scatter_logsumexp, scatter_reduce
 
 
 def sparse_entropy_fn(

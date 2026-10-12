@@ -27,13 +27,9 @@ from fragnnet.loss.peak_pair_bce import ce_switch_pair_bce
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
 from fragnnet.utils.migrations import migrate_legacy_hparams
-from fragnnet.utils.misc_utils import (
-    TOLERANCE_MIN_MZ,
-    flatten_lol,
-    safelog,
-    to_cpu,
-)
+from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ, flatten_lol, to_cpu
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
+from fragnnet.utils.scatter_utils import safelog
 from fragnnet.utils.spec_utils import (
     batched_bin_func,
     batched_filter_func,

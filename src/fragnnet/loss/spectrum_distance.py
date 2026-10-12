@@ -7,10 +7,8 @@ import math
 import torch as th
 
 from fragnnet.loss.padding import pad_flat_by_batch
-from fragnnet.utils.misc_utils import (
-    EPS,
-    LOG_ZERO,
-    TOLERANCE_MIN_MZ,
+from fragnnet.utils.misc_utils import EPS, LOG_ZERO, TOLERANCE_MIN_MZ
+from fragnnet.utils.scatter_utils import (
     scatter_logl2normalize,
     scatter_logsumexp,
     scatter_reduce,

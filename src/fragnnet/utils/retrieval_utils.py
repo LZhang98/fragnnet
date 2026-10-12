@@ -27,7 +27,7 @@ import numpy as np
 import torch as th
 from scipy.stats import bootstrap
 
-from fragnnet.utils.misc_utils import x_log_x
+from fragnnet.utils.scatter_utils import x_log_x
 from fragnnet.utils.spec_similarity import _solve_batch_assignment, calculate_match_mzs
 from fragnnet.utils.spec_utils import round_aggregate_peaks
 

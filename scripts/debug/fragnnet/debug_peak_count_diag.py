@@ -28,7 +28,8 @@ import torch as th
 from fragnnet.loss.spectrum_distance import sparse_cosine_distance_hungarian
 from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import scatter_reduce, to_device
+from fragnnet.utils.misc_utils import to_device
+from fragnnet.utils.scatter_utils import scatter_reduce
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,

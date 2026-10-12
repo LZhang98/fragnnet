@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fragnnet.layers.int_featurizer import get_embedder
-from fragnnet.utils.misc_utils import scatter_reduce
+from fragnnet.utils.scatter_utils import scatter_reduce
 from fragnnet.utils.spec_utils import transform_ce, weighted_mean_by_batch
 
 # Offset of the breakdown-curve energy axis 1 / (CE + offset). Fitting the QET/Arrhenius form

@@ -4,13 +4,8 @@ from collections.abc import Callable
 import numpy as np
 import torch as th
 
-from fragnnet.utils.misc_utils import (
-    EPS,
-    scatter_l1normalize,
-    scatter_logsumexp,
-    scatter_reduce,
-    validate_bin_geometry,
-)
+from fragnnet.utils.misc_utils import EPS, validate_bin_geometry
+from fragnnet.utils.scatter_utils import scatter_l1normalize, scatter_logsumexp, scatter_reduce
 
 logger = logging.getLogger(__name__)
 

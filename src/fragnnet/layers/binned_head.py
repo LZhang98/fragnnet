@@ -7,7 +7,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fragnnet.utils.misc_utils import safelog
+from fragnnet.utils.scatter_utils import safelog
 
 
 class NeimsBlock(nn.Module):

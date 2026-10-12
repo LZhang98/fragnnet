@@ -173,7 +173,8 @@ class TestSparseVecEndToEnd:
         """Old implementation (th.unique)."""
         import math
 
-        from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
+        from fragnnet.utils.misc_utils import LOG_ZERO
+        from fragnnet.utils.scatter_utils import scatter_logsumexp
         from fragnnet.utils.spec_similarity import calculate_match_mzs
 
         float_dtype = true_logprobs.dtype
@@ -244,7 +245,7 @@ class TestSparseVecEndToEnd:
             bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
 
             if th.any(bl_true_both_mask):
-                from fragnnet.utils.misc_utils import scatter_reduce as _sr
+                from fragnnet.utils.scatter_utils import scatter_reduce as _sr
 
                 bl_ios_ce = _sr(
                     (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],

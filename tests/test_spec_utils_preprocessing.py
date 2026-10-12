@@ -15,8 +15,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_reduce
 from fragnnet.utils.proc_utils import merge_sparse_specs
+from fragnnet.utils.scatter_utils import scatter_logsumexp, scatter_reduce
 from fragnnet.utils.spec_utils import (
     batch_func,
     batched_bin_func,

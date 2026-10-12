@@ -13,7 +13,8 @@ from fragnnet.loss.padding import (
     pad_flat_by_batch,
     pad_flat_with_layout,
 )
-from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ, x_log_x
+from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ
+from fragnnet.utils.scatter_utils import x_log_x
 from fragnnet.utils.spec_similarity import align_sparse_peak_support, calculate_match_mzs
 from fragnnet.utils.spec_utils import round_aggregate_peaks
 

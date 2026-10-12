@@ -43,12 +43,12 @@ from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.models.fragnnet.fragnnet_adducts import formula_row_prec_deltas
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
-from fragnnet.utils.misc_utils import safelog, scatter_logsumexp, scatter_reduce
 from fragnnet.utils.nn_utils import (
     build_lr_scheduler,
     decompile_jit_ckpt,
     get_optimizer_class,
 )
+from fragnnet.utils.scatter_utils import safelog, scatter_logsumexp, scatter_reduce
 
 logger = logging.getLogger(__name__)
 

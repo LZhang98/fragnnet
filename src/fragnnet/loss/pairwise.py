@@ -7,12 +7,11 @@ import math
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.utils.misc_utils import (
-    EPS,
+from fragnnet.utils.misc_utils import EPS, validate_bin_geometry
+from fragnnet.utils.scatter_utils import (
     scatter_logl2normalize,
     scatter_logsoftmax,
     scatter_logsumexp,
-    validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import batched_bin_func
 

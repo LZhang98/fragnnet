@@ -17,7 +17,6 @@ from pandarallel import pandarallel
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
-import fragnnet.utils.misc_utils as misc_utils
 from fragnnet import registry
 from fragnnet.dataset import (
     BondCountCurriculumSampler,
@@ -28,6 +27,7 @@ from fragnnet.dataset import (
 from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
 )
+from fragnnet.utils import misc_utils
 from fragnnet.utils.callbacks import ConsoleLogger, ExponentialMovingAverage
 from fragnnet.utils.migrations import (
     RETIRED_INST_TYPE_HELP,

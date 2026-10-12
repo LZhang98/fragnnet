@@ -104,7 +104,8 @@ def run_score(args: argparse.Namespace) -> None:
     from pandarallel import pandarallel
 
     from fragnnet.runner import init_dataloader, load_config
-    from fragnnet.utils.misc_utils import safelog, to_device
+    from fragnnet.utils.misc_utils import to_device
+    from fragnnet.utils.scatter_utils import safelog
     from fragnnet.utils.script_utils import (
         apply_inference_config,
         init_model_from_ckpt,
