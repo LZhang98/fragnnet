@@ -9,7 +9,8 @@
 - **Goal.** FraGNNet and MASSter become owner packages over a model-agnostic core. GRAFF and MassFormer become baseline subpackages; ICEBERG moves to external ms-pred. The dependency rule below is enforced by tests.
 - **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
 - **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging). Phase 6 (renames) and Phase 7 (doc paths) come later.
-- **Next action.** Phase 0, step 1: the shared deterministic fixture and the registry expected-mapping test.
+- **Done.** Phase 0 (safety net) is committed: 8 test files under `tests/test_reorg_*.py`, goldens in `tests/golden/reorg/`, all mutation-tested (165 passed, 2 strict xfails for source defects).
+- **Next action.** Phase 1 step 1: the lazy registry.
 - Earlier dated entries are in the [plan log](../history/repo_reorg_plan_log.md).
 
 ## Goal
@@ -689,3 +690,22 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
   - Packaging facts.
 
   The user approved implementing Phases 0–5 with one commit per step.
+- 2026-10-11: Phase 0 committed on `refactor/fragnnet-masster-reorg`.
+  - Commits: `7b3437e6` (item 10, boundary ratchet), `69c2eb86` (item 1, registry), `a766b754`
+    (shared fixture `tests/reorg_fixtures.py`), `624a00a9` (items 2, 9), `d5303e0d` (item 3),
+    `c289dc2a` (items 4, 5), `05bf1481` (item 6), `be417637` (item 7), `102400a7` (item 8).
+  - Each test file was written by one agent, then mutation-tested by an independent reviewer
+    (patched behavior through a scratch pytest plugin; the test had to fail), then fixed until
+    every mutation was caught. All eight files: 165 passed, 2 strict xfails, about 85 s, bit-identical
+    across runs.
+  - Two source defects found and pinned as strict xfails, not fixed (behavior preservation):
+    `MCESPL._setup_model` does not pass `use_nce`, `use_ace`, `ace_max`, `ace_mean`, `ace_std` to
+    `SiameseGNNModel`, so `mces_pretraining` cannot be built; `DualGroupDynamicBatchSampler` yields
+    numpy ints that `SpecMolFragDataset.__getitem__` rejects, so the dual-group sampler cannot load
+    a train batch.
+  - Baseline of the existing suite at `13b1599d` code: 28 failed, 4963 passed, 133 skipped. The 28
+    are stale tests in `test_debug_masster_postcut_information_gate.py` (3), `test_export_schema.py`
+    (8, predate the `pred_rt` column), `test_masster_pl.py` (7) and `test_runner_config.py` (10,
+    precursor-pair validation). Later steps must add no failures beyond these.
+  - ICEBERG archive SHA: `13b1599d3cd85ef8f214799894e527adaf3ddd0a` (on `origin/masster`; the
+    ICEBERG paths are unchanged since).
