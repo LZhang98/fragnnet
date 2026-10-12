@@ -39,7 +39,6 @@ from fragnnet.model.loss import (
     get_sparse_cross_entropy_fn,
     sparse_peak_list_distance,
 )
-from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.models.masster.candidate_features import describe_candidate_features
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_export import masster_annotation_tables
@@ -50,6 +49,7 @@ from fragnnet.models.masster.masster_templates import (
     build_masster_templates,
 )
 from fragnnet.models.masster.rt_ccs import property_regression_terms
+from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.misc_utils import scatter_reduce

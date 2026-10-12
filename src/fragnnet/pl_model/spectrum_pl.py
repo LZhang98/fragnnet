@@ -27,7 +27,7 @@ from fragnnet.model.loss import (
     sparse_outside_window_intensity_fraction,
     validate_hellinger_auxiliary_weights,
 )
-from fragnnet.model.output_schema import (
+from fragnnet.output_schema import (
     EXPLAINABILITY_OUTPUT_KEYS,
     RETURN_EXPLAINABILITY_TENSORS_DEFAULT,
 )

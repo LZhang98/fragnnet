@@ -27,13 +27,13 @@ from fragnnet.model.base_model import (
 )
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
-from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.models.fragnnet.frag_utils import (
     compute_boundary_mask,
     get_edge_feats,
     get_node_feats,
 )
 from fragnnet.models.fragnnet.fragment_competition import TopKFragmentTransformer
+from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import (
