@@ -1,16 +1,19 @@
 """Module-to-layer table and import-graph helpers for the repository reorganization.
 
-See docs/plans/repo_reorg_plan.md ("Target layout", Phase 0 item 10). Phase 6 moved the owner
-modules into their own packages, so each module's layer follows from its directory:
+See docs/plans/repo_reorg_plan.md ("Target layout", Phase 0 item 10). Since Phase 6 each
+module's layer follows from its directory, and since Phase 8 every model package is a layer of
+its own:
 
-- ``core``: model-agnostic code (dataset/, model/, pl_model/, utils/, runner, registry, hooks).
+- ``core``: model-agnostic code (dataset/, model/, pl_model/, utils/, runner, registry, hooks,
+  output_schema).
 - ``fragmentation``: bond-cut chemistry shared by both fragment models (fragmentation/).
-- ``fragnnet``, ``masster``: the two owner models (models/fragnnet/, models/masster/).
-- ``baseline:<name>``: retained baselines (baselines/graff/, baselines/massformer/) and the
-  retired ICEBERG.
+- ``<name>``: each package ``models/<name>/`` (fragnnet, masster, neims, precursor, gnn).
+- ``baseline:<name>``: each package ``baselines/<name>/`` (graff, massformer) and the retired
+  ICEBERG.
 
-Allowed edges: a layer may import itself and core; owner models and baselines may also import
-``fragmentation``. Everything else is a violation. Tests are exempt and are not scanned.
+Allowed edges: a layer may import itself and core; model and baseline layers may also import
+``fragmentation``. Everything else is a violation, so no model or baseline imports another.
+Tests are exempt and are not scanned.
 """
 
 from __future__ import annotations
@@ -24,19 +27,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 
-# Since Phase 6 the directories encode the layers: {package: layer}. A module belongs to the
-# layer of the longest package that contains it; anything else under fragnnet.models or
-# fragnnet.baselines is unclassified, which the boundary tests reject.
+# Packages with a fixed layer. Every package directly under a MODEL_ROOTS entry is a layer of
+# its own, named by MODEL_ROOTS[root] + the package name, so a new model package needs no entry
+# here. A module directly under a root (not in a package) is "unclassified", which the boundary
+# tests reject.
 LAYER_PACKAGES = {
     "fragnnet.fragmentation": "fragmentation",
-    "fragnnet.models.fragnnet": "fragnnet",
-    "fragnnet.models.masster": "masster",
-    "fragnnet.baselines.graff": "baseline:graff",
-    "fragnnet.baselines.massformer": "baseline:massformer",
     # Retired in Phase 1; listed so a stray import is still classified as a baseline.
     "fragnnet.iceberg": "baseline:iceberg",
 }
-MODEL_ROOTS = ("fragnnet.models", "fragnnet.baselines")
+MODEL_ROOTS = {"fragnnet.models": "", "fragnnet.baselines": "baseline:"}
 
 OWNER_LAYERS = ("fragnnet", "masster")
 
@@ -82,13 +82,18 @@ def layer_of(module: str) -> str:
     """Return the layer of a ``fragnnet`` module, from the package that contains it.
 
     The bare ``fragnnet.models`` and ``fragnnet.baselines`` packages are core (they import
-    nothing); any other module under them outside LAYER_PACKAGES is ``"unclassified"``.
+    nothing). Below them, the first package names the layer; a module directly under a root is
+    ``"unclassified"``.
     """
     for package, layer in LAYER_PACKAGES.items():
         if module == package or module.startswith(package + "."):
             return layer
-    if any(module.startswith(root + ".") for root in MODEL_ROOTS):
-        return "unclassified"
+    for root, prefix in MODEL_ROOTS.items():
+        if module.startswith(root + "."):
+            name = module[len(root) + 1 :].split(".")[0]
+            if not SRC_ROOT.joinpath(*root.split("."), name).is_dir():
+                return "unclassified"
+            return prefix + name
     return "core"
 
 

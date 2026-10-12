@@ -34,10 +34,18 @@ def test_layer_table_covers_every_module() -> None:
     modules = set(reorg_layers._module_files()) | reorg_layers._compiled_modules()
     layers = {m: reorg_layers.layer_of(m) for m in modules}
     assert not [m for m, layer in layers.items() if layer == "unclassified"]
-    assert {"core", "fragmentation", "fragnnet", "masster"} <= set(layers.values())
-    for package, layer in reorg_layers.LAYER_PACKAGES.items():
-        if layer != "baseline:iceberg":
-            assert package in modules, package
+    assert set(layers.values()) == {
+        "core",
+        "fragmentation",
+        "fragnnet",
+        "masster",
+        "neims",
+        "precursor",
+        "gnn",
+        "baseline:graff",
+        "baseline:massformer",
+    }
+    assert "fragnnet.fragmentation" in modules
 
 
 def _probe_all(targets: tuple[str, ...]) -> dict:
@@ -96,11 +104,14 @@ PHASE3_ENTRY_MODULES = (
     "fragnnet.utils.pl_utils",
 )
 # Non-core layers a model selection may load: its own, plus fragmentation/ for the two fragment
-# models. Every other model type loads core only.
+# models. Since Phase 8 every model type has a layer of its own.
 PHASE3_SELECTION_LAYERS = {
     "frag_gnn": {"fragnnet", "fragmentation"},
     "fragnnet": {"fragnnet", "fragmentation"},
     "masster": {"masster", "fragmentation"},
+    "neims": {"neims"},
+    "precursor": {"precursor"},
+    "gnn": {"gnn"},
     "graff": {"baseline:graff"},
     "massformer": {"baseline:massformer"},
 }

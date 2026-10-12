@@ -11,8 +11,8 @@ from fragnnet.baselines.massformer.pl_model import MassFormerPL
 from fragnnet.dataset import SpecMolDataset
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
-from fragnnet.pl_model.neims_pl import NeimsPL
-from fragnnet.pl_model.precursor_pl import PrecursorPL
+from fragnnet.models.neims.neims_pl import NeimsPL
+from fragnnet.models.precursor.precursor_pl import PrecursorPL
 from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import (

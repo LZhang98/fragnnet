@@ -42,7 +42,7 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         _SPEC_MOL_DATASET,
         hooks="fragnnet.models.masster.masster_hooks:MassterHooks",
     ),
-    "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
+    "neims": ModelEntry("fragnnet.models.neims.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "massformer": ModelEntry(
         "fragnnet.baselines.massformer.pl_model:MassFormerPL",
         "fragnnet.baselines.massformer.dataset:SpecMolMFDataset",
@@ -52,8 +52,10 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         "fragnnet.baselines.graff.dataset:SpecMolAnnDataset",
         hooks="fragnnet.baselines.graff.hooks:GrAFFHooks",
     ),
-    "precursor": ModelEntry("fragnnet.pl_model.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET),
-    "gnn": ModelEntry("fragnnet.pl_model.gnn_pl:GNNPL", _SPEC_MOL_DATASET),
+    "precursor": ModelEntry(
+        "fragnnet.models.precursor.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET
+    ),
+    "gnn": ModelEntry("fragnnet.models.gnn.gnn_pl:GNNPL", _SPEC_MOL_DATASET),
 }
 
 # Every model type a config may declare. Shared code reads any template key regardless of the

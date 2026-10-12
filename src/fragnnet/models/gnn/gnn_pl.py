@@ -8,7 +8,7 @@ try:
 except ImportError:
     profiler_available = False
 
-from fragnnet.model.gnn_model import GNNModel
+from fragnnet.models.gnn.gnn_model import GNNModel
 from fragnnet.pl_model.binned_pl import BinnedPL
 
 

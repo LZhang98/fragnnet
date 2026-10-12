@@ -37,14 +37,14 @@ FORMER_EAGER_EXPORTS = {
     ("fragnnet.model", "CEModel"): "fragnnet.model.base_model",
     ("fragnnet.model", "InstModel"): "fragnnet.model.base_model",
     ("fragnnet.model", "PrecModel"): "fragnnet.model.base_model",
-    ("fragnnet.model", "GNNModel"): "fragnnet.model.gnn_model",
-    ("fragnnet.model", "NeimsModel"): "fragnnet.model.neims_model",
-    ("fragnnet.model", "PrecursorModel"): "fragnnet.model.precursor_model",
+    ("fragnnet.model", "GNNModel"): "fragnnet.models.gnn.gnn_model",
+    ("fragnnet.model", "NeimsModel"): "fragnnet.models.neims.neims_model",
+    ("fragnnet.model", "PrecursorModel"): "fragnnet.models.precursor.precursor_model",
     ("fragnnet.pl_model", "SpectrumPL"): "fragnnet.pl_model.spectrum_pl",
     ("fragnnet.pl_model", "BinnedPL"): "fragnnet.pl_model.binned_pl",
-    ("fragnnet.pl_model", "NeimsPL"): "fragnnet.pl_model.neims_pl",
-    ("fragnnet.pl_model", "PrecursorPL"): "fragnnet.pl_model.precursor_pl",
-    ("fragnnet.pl_model", "GNNPL"): "fragnnet.pl_model.gnn_pl",
+    ("fragnnet.pl_model", "NeimsPL"): "fragnnet.models.neims.neims_pl",
+    ("fragnnet.pl_model", "PrecursorPL"): "fragnnet.models.precursor.precursor_pl",
+    ("fragnnet.pl_model", "GNNPL"): "fragnnet.models.gnn.gnn_pl",
 }
 FORMER_EXPORTS = {**FORMER_LAZY_EXPORTS, **FORMER_EAGER_EXPORTS}
 

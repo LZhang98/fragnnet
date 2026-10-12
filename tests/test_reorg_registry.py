@@ -51,7 +51,7 @@ EXPECTED_MAPPING = {
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "neims": (
-        "fragnnet.pl_model.neims_pl:NeimsPL",
+        "fragnnet.models.neims.neims_pl:NeimsPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "massformer": (
@@ -63,11 +63,11 @@ EXPECTED_MAPPING = {
         "fragnnet.baselines.graff.dataset:SpecMolAnnDataset",
     ),
     "precursor": (
-        "fragnnet.pl_model.precursor_pl:PrecursorPL",
+        "fragnnet.models.precursor.precursor_pl:PrecursorPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "gnn": (
-        "fragnnet.pl_model.gnn_pl:GNNPL",
+        "fragnnet.models.gnn.gnn_pl:GNNPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
 }

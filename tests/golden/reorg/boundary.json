@@ -52,7 +52,13 @@
         "fragnnet.models.fragnnet.spec_mol_frag_dataset"
       ]
     },
-    "gnn": {},
+    "gnn": {
+      "gnn": [
+        "fragnnet.models.gnn",
+        "fragnnet.models.gnn.gnn_model",
+        "fragnnet.models.gnn.gnn_pl"
+      ]
+    },
     "graff": {
       "baseline:graff": [
         "fragnnet.baselines.graff",
@@ -95,7 +101,19 @@
         "fragnnet.models.masster.rt_ccs"
       ]
     },
-    "neims": {},
-    "precursor": {}
+    "neims": {
+      "neims": [
+        "fragnnet.models.neims",
+        "fragnnet.models.neims.neims_model",
+        "fragnnet.models.neims.neims_pl"
+      ]
+    },
+    "precursor": {
+      "precursor": [
+        "fragnnet.models.precursor",
+        "fragnnet.models.precursor.precursor_model",
+        "fragnnet.models.precursor.precursor_pl"
+      ]
+    }
   }
 }

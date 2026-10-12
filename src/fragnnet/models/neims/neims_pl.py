@@ -8,7 +8,7 @@ try:
 except ImportError:
     profiler_available = False
 
-from fragnnet.model.neims_model import NeimsModel
+from fragnnet.models.neims.neims_model import NeimsModel
 from fragnnet.pl_model.binned_pl import BinnedPL
 
 

@@ -1,7 +1,7 @@
 import torch as th
 
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
-from fragnnet.model.precursor_model import PrecursorModel
+from fragnnet.models.precursor.precursor_model import PrecursorModel
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.misc_utils import LOG_ZERO
 
