@@ -213,8 +213,8 @@ mol_params:
 # Model Architecture
 # ============================================================================
 # Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
-# masster, neims, massformer, graff, precursor, gnn, clip, spec_mol_clip_pretraining.
-# iceberg_gen, iceberg_inten, mces_pretraining and chemlm are retired (RETIRED_MODEL_TYPES).
+# masster, neims, massformer, graff, precursor, gnn. iceberg_gen, iceberg_inten,
+# mces_pretraining, chemlm, clip and spec_mol_clip_pretraining are retired (RETIRED_MODEL_TYPES).
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
@@ -1327,12 +1327,14 @@ ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
 
 # ==========================================================================
 # CLIP pretraining only
-# model_type: clip, spec_mol_clip_pretraining
+# model_type: clip, spec_mol_clip_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while CLIP existed
+# carries them in its hparams, and such a config must still resolve.
 clip_temperature: 0.07
 clip_embed_dim: 256
-clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
-clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
+clip_intensity_transform: sqrt
+clip_loss_type: clip
 spectrum_encoder_params:
   encoder_type: set_transformer
   input_dim: 2
@@ -1344,7 +1346,7 @@ spectrum_encoder_params:
   dropout: 0.1
   normalization: layer
 
-retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP models only)
+retrieval_eval_size:
 
 # ==========================================================================
 # MCES pretraining only

@@ -310,7 +310,7 @@ Apply the promotion rule above.
 ### Deferred
 
 - **Own target encoder (`j3`).** Train the existing
-  [`SpectrumEncoder`](../../../src/fragnnet/model/spectrum_encoder.py) jointly as the target with
+  `SpectrumEncoder` (removed with CLIP on 2026-10-12; at revision `13b1599d`) jointly as the target with
   SIGReg (λ = 0.05) and no EMA, masking m/z windows or fragment subgraphs, not random peaks (the
   I-JEPA ablation). Run only if Gate 0 fails because of DreaMS domain shift. If DreaMS passes
   Gate 0 and fails Gate 1, `j3` is unlikely to help, given the audit, and is not run.

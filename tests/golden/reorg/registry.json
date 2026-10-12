@@ -704,9 +704,6 @@
       "weight_decay": 0.01,
       "weight_decay_exclude_norm_bias": false
     },
-    "diff:clip": {
-      "model_type": "clip"
-    },
     "diff:frag_gnn": {},
     "diff:fragnnet": {
       "model_type": "fragnnet"
@@ -728,9 +725,6 @@
     },
     "diff:precursor": {
       "model_type": "precursor"
-    },
-    "diff:spec_mol_clip_pretraining": {
-      "model_type": "spec_mol_clip_pretraining"
     }
   }
 }

@@ -1,26 +1,5 @@
 {
   "constructor_backfill": {
-    "clip": {
-      "ace_max": 100.0,
-      "ace_mean": 20.0,
-      "ace_std": 15.0,
-      "clip_embed_dim": 256,
-      "clip_intensity_transform": "sqrt",
-      "clip_loss_type": "clip",
-      "eval_target_apply_train_rank_filters": false,
-      "inst_type_loss_tol": null,
-      "lr_min_ratio": 0.0,
-      "lr_schedule_type": "exponential",
-      "lr_total_steps": null,
-      "mol_max_degree": null,
-      "mol_max_spatial_distance": null,
-      "mol_multi_hop_max_distance": null,
-      "mol_num_heads": 4,
-      "report_metric_std": false,
-      "spectrum_encoder_params": {},
-      "use_ace": false,
-      "use_nce": true
-    },
     "frag_gnn": {
       "candidate_ion_checkpoint": true,
       "candidate_ion_chunk_size": 32768,
@@ -63,12 +42,6 @@
     "model_type": "masster"
   },
   "get_pl_hparams:alias_pairs": {
-    "clip/spec_mol_clip_pretraining": {
-      "model_type": [
-        "clip",
-        "spec_mol_clip_pretraining"
-      ]
-    },
     "frag_gnn/fragnnet": {
       "model_type": [
         "frag_gnn",
@@ -432,39 +405,6 @@
     }
   },
   "get_pl_hparams:minimal_stub": {
-    "clip": {
-      "ace_max": 100.0,
-      "ace_mean": 20.0,
-      "ace_std": 15.0,
-      "clip_embed_dim": 256,
-      "clip_intensity_transform": "sqrt",
-      "clip_loss_type": "clip",
-      "eval_target_apply_train_rank_filters": false,
-      "inst_type_loss_tol": null,
-      "lr_min_ratio": 0.0,
-      "lr_schedule_type": "exponential",
-      "lr_total_steps": null,
-      "model_type": "clip",
-      "mol_max_degree": null,
-      "mol_max_spatial_distance": null,
-      "mol_multi_hop_max_distance": null,
-      "mol_num_heads": 4,
-      "report_metric_std": false,
-      "spec_params": {
-        "ace": false,
-        "ccs": false,
-        "ccs_labels_fp": null,
-        "merge_ce_aggregation": "legacy",
-        "nce": true,
-        "rt": false,
-        "rt_ccs": false,
-        "rt_ccs_labels_fp": null,
-        "rt_labels_fp": null
-      },
-      "spectrum_encoder_params": {},
-      "use_ace": false,
-      "use_nce": true
-    },
     "frag_gnn": {
       "candidate_ion_checkpoint": true,
       "candidate_ion_chunk_size": 32768,
@@ -710,39 +650,6 @@
       },
       "use_ace": false,
       "use_nce": true
-    },
-    "spec_mol_clip_pretraining": {
-      "ace_max": 100.0,
-      "ace_mean": 20.0,
-      "ace_std": 15.0,
-      "clip_embed_dim": 256,
-      "clip_intensity_transform": "sqrt",
-      "clip_loss_type": "clip",
-      "eval_target_apply_train_rank_filters": false,
-      "inst_type_loss_tol": null,
-      "lr_min_ratio": 0.0,
-      "lr_schedule_type": "exponential",
-      "lr_total_steps": null,
-      "model_type": "spec_mol_clip_pretraining",
-      "mol_max_degree": null,
-      "mol_max_spatial_distance": null,
-      "mol_multi_hop_max_distance": null,
-      "mol_num_heads": 4,
-      "report_metric_std": false,
-      "spec_params": {
-        "ace": false,
-        "ccs": false,
-        "ccs_labels_fp": null,
-        "merge_ce_aggregation": "legacy",
-        "nce": true,
-        "rt": false,
-        "rt_ccs": false,
-        "rt_ccs_labels_fp": null,
-        "rt_labels_fp": null
-      },
-      "spectrum_encoder_params": {},
-      "use_ace": false,
-      "use_nce": true
     }
   },
   "get_pl_hparams:oldest_masster_stub": {
@@ -784,21 +691,6 @@
     }
   },
   "load_config:alias_pairs": {
-    "clip/spec_mol_clip_pretraining": {
-      "differing_keys": [
-        "model_type"
-      ],
-      "model_types": [
-        "clip",
-        "spec_mol_clip_pretraining"
-      ],
-      "validate_sampler_config": {
-        "bad_simple_group_sampler": "ValueError: simple_group_sampler_type must be one of ['adduct_inst_type', 'adduct_inst_type_frag_mode', 'adduct_inst_type_frag_mode_group', 'adduct_inst_type_group', 'group', 'group_mol', 'mol'] (got 'x')",
-        "default": "ok",
-        "dynamic_batch_sampler": "ValueError: Dynamic batch sampler can only be used with frag_gnn model",
-        "masster_batch_sampler": "ValueError: ['masster_batch_sampler'] require model_type='masster' (got '<model_type>')"
-      }
-    },
     "frag_gnn/fragnnet": {
       "differing_keys": [
         "model_type"
@@ -1083,48 +975,6 @@
     "unknown_legacy_key": "['masster_not_a_key']"
   },
   "load_config:template_per_family": {
-    "clip": {
-      "keys": {
-        "ace_max": 460,
-        "ace_mean": 20,
-        "ace_std": 15,
-        "clip_embed_dim": 256,
-        "clip_intensity_transform": "sqrt",
-        "clip_loss_type": "clip",
-        "eval_target_apply_train_rank_filters": false,
-        "inst_type_loss_tol": null,
-        "lr_min_ratio": 0.0,
-        "lr_schedule_type": "exponential",
-        "lr_total_steps": null,
-        "mol_max_degree": 64,
-        "mol_max_spatial_distance": 128,
-        "mol_multi_hop_max_distance": 5,
-        "mol_num_heads": 4,
-        "report_metric_std": false,
-        "spectrum_encoder_params": {
-          "dropout": 0.1,
-          "embed_dim": 256,
-          "encoder_type": "set_transformer",
-          "hidden_dim": 256,
-          "input_dim": 2,
-          "normalization": "layer",
-          "num_heads": 4,
-          "num_inds": 32,
-          "num_layers": 2
-        },
-        "use_ace": false,
-        "use_nce": true
-      },
-      "spec_params": {
-        "ccs": false,
-        "ccs_labels_fp": null,
-        "merge_ce_aggregation": "legacy",
-        "rt": false,
-        "rt_ccs": false,
-        "rt_ccs_labels_fp": null,
-        "rt_labels_fp": null
-      }
-    },
     "frag_gnn": {
       "keys": {
         "candidate_ion_checkpoint": true,
@@ -1313,48 +1163,6 @@
         "mol_max_spatial_distance": 128,
         "mol_multi_hop_max_distance": 5,
         "report_metric_std": false,
-        "use_ace": false,
-        "use_nce": true
-      },
-      "spec_params": {
-        "ccs": false,
-        "ccs_labels_fp": null,
-        "merge_ce_aggregation": "legacy",
-        "rt": false,
-        "rt_ccs": false,
-        "rt_ccs_labels_fp": null,
-        "rt_labels_fp": null
-      }
-    },
-    "spec_mol_clip_pretraining": {
-      "keys": {
-        "ace_max": 460,
-        "ace_mean": 20,
-        "ace_std": 15,
-        "clip_embed_dim": 256,
-        "clip_intensity_transform": "sqrt",
-        "clip_loss_type": "clip",
-        "eval_target_apply_train_rank_filters": false,
-        "inst_type_loss_tol": null,
-        "lr_min_ratio": 0.0,
-        "lr_schedule_type": "exponential",
-        "lr_total_steps": null,
-        "mol_max_degree": 64,
-        "mol_max_spatial_distance": 128,
-        "mol_multi_hop_max_distance": 5,
-        "mol_num_heads": 4,
-        "report_metric_std": false,
-        "spectrum_encoder_params": {
-          "dropout": 0.1,
-          "embed_dim": 256,
-          "encoder_type": "set_transformer",
-          "hidden_dim": 256,
-          "input_dim": 2,
-          "normalization": "layer",
-          "num_heads": 4,
-          "num_inds": 32,
-          "num_layers": 2
-        },
         "use_ace": false,
         "use_nce": true
       },

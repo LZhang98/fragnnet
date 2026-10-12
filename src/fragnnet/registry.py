@@ -33,7 +33,6 @@ _FRAGNNET = ModelEntry(
     "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
     hooks="fragnnet.models.fragnnet.fragnnet_hooks:FraGNNetHooks",
 )
-_CLIP = ModelEntry("fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL", _SPEC_MOL_DATASET)
 
 MODEL_REGISTRY: dict[str, ModelEntry] = {
     "frag_gnn": _FRAGNNET,
@@ -55,8 +54,6 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     ),
     "precursor": ModelEntry("fragnnet.pl_model.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET),
     "gnn": ModelEntry("fragnnet.pl_model.gnn_pl:GNNPL", _SPEC_MOL_DATASET),
-    "clip": _CLIP,
-    "spec_mol_clip_pretraining": _CLIP,
 }
 
 # Every model type a config may declare. Shared code reads any template key regardless of the
@@ -92,6 +89,15 @@ _CHEMLM_RETIRED = (
     f"configs and tests belong to revision {CHEMLM_ARCHIVE_SHA}. NEIMS is unaffected."
 )
 
+# CLIP spectrum-molecule contrastive pretraining (SpectrumEncoder + MolEncoder) was removed on
+# 2026-10-12: it is no longer used.
+CLIP_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_CLIP_RETIRED = (
+    "model_type {model_type!r} is retired: CLIP spectrum-molecule contrastive pretraining is no "
+    "longer used and was removed on 2026-10-12. Its model, losses, configs and tests belong to "
+    f"revision {CLIP_ARCHIVE_SHA}."
+)
+
 # Model types that were removed; selecting one raises an actionable error instead of the generic
 # unknown-type error.
 RETIRED_MODEL_TYPES: dict[str, str] = {
@@ -99,6 +105,8 @@ RETIRED_MODEL_TYPES: dict[str, str] = {
     "iceberg_inten": _ICEBERG_RETIRED,
     "mces_pretraining": _MCES_RETIRED,
     "chemlm": _CHEMLM_RETIRED,
+    "clip": _CLIP_RETIRED,
+    "spec_mol_clip_pretraining": _CLIP_RETIRED,
 }
 
 

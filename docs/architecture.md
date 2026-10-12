@@ -21,7 +21,7 @@
    before changing a field or shape.
 4. [Models](../src/fragnnet/model/) implement prediction; [Lightning modules](../src/fragnnet/pl_model/)
    connect predictions to losses and training/evaluation. Those two directories hold the shared
-   base classes and the core models (NEIMS, precursor, GNN, CLIP). FraGNNet,
+   base classes and the core models (NEIMS, precursor, GNN). FraGNNet,
    which uses fragmentation DAGs, lives in [models/fragnnet/](../src/fragnnet/models/fragnnet/);
    MASSter, with its own candidate construction, in [models/masster/](../src/fragnnet/models/masster/);
    GRAFF and MassFormer in [baselines/](../src/fragnnet/baselines/) ([reference](reference/baselines.md)).
@@ -32,6 +32,8 @@
    revision `13b1599d`. ChemLM (`chemlm`, a ChemBERTa-3 SMILES encoder with the NEIMS head) was
    retired the same day: it barely beat a structure-blind prior
    ([results](plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)); code at `13b1599d`.
+   CLIP spectrum-molecule contrastive pretraining (`clip`, `spec_mol_clip_pretraining`) was
+   retired the same day as no longer used; code at `13b1599d`.
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
    in [pl_utils.py](../src/fragnnet/utils/pl_utils.py) renames them wherever a config is loaded.
@@ -65,10 +67,10 @@ src/fragnnet/
   (`tests/reorg_layers.py`).
 - Core reaches a model only through [registry.py](../src/fragnnet/registry.py): `model_type`
   maps to `"module:Class"` strings for the Lightning module, the dataset and a hooks class,
-  imported on first use. The registry also holds the aliases (`fragnnet` for `frag_gnn`, `clip`
-  for `spec_mol_clip_pretraining`) and the retired types (ICEBERG, MCES pretraining, ChemLM). The legacy
-  `mass_shatter` name never reaches it: `migrate_legacy_masster_name` in `utils/pl_utils.py`
-  renames it to `masster` wherever a config or checkpoint is loaded.
+  imported on first use. The registry also holds the `fragnnet` alias for `frag_gnn` and the
+  retired types (ICEBERG, MCES pretraining, ChemLM, CLIP). The legacy `mass_shatter` name never
+  reaches it: `migrate_legacy_masster_name` in `utils/pl_utils.py` renames it to `masster`
+  wherever a config or checkpoint is loaded.
 - Model-specific steps that core runs go through [hooks.py](../src/fragnnet/hooks.py).
   `ModelHooks`, looked up by `model_type`, covers config and checkpoint migration, config
   validation, batch samplers and dataloader/trainer options, the dataset filter and the

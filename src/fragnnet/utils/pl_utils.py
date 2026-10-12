@@ -96,21 +96,6 @@ _LEGACY_FRAGNNET_HPARAM_DEFAULTS = {
 
 _FRAGNNET_MODEL_TYPES = frozenset({"frag_gnn", "fragnnet"})
 
-# CLIP pretraining heads, same story as above.
-_LEGACY_CLIP_HPARAM_DEFAULTS = {
-    "clip_embed_dim": 256,
-    "clip_intensity_transform": "sqrt",
-    "clip_loss_type": "clip",
-    "spectrum_encoder_params": {},
-    "mol_num_heads": 4,
-    "ace_max": 100.0,
-    "ace_mean": 20.0,
-    "ace_std": 15.0,
-    "lr_schedule_type": "exponential",
-    "lr_total_steps": None,
-    "lr_min_ratio": 0.0,
-}
-
 
 def migrate_legacy_hparams(config: dict) -> None:
     """Backfill hyperparameters that predate their declaration in ``config/template.yml``.
@@ -139,10 +124,6 @@ def migrate_legacy_hparams(config: dict) -> None:
     model_type = config.get("model_type")
     if model_type in _FRAGNNET_MODEL_TYPES:
         for key, value in _LEGACY_FRAGNNET_HPARAM_DEFAULTS.items():
-            if key not in config:
-                config[key] = value
-    if model_type in ("clip", "spec_mol_clip_pretraining"):
-        for key, value in _LEGACY_CLIP_HPARAM_DEFAULTS.items():
             if key not in config:
                 config[key] = value
 

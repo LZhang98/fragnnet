@@ -2,7 +2,7 @@
 
 Each model type names a hooks class in ``registry.MODEL_REGISTRY``; core calls
 ``registry.get_model_hooks(model_type)`` and the method it needs. This base class holds the
-defaults, which the core models (NEIMS, precursor, GNN, CLIP) and MassFormer use
+defaults, which the core models (NEIMS, precursor, GNN) and MassFormer use
 unchanged (docs/plans/repo_reorg_plan.md, "Plugin interface").
 
 A hooks module imports nothing model-specific at module level: config and checkpoint migration

@@ -777,3 +777,16 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     CLOSED NULL.
   - Not done here: `docs/workstreams/msgym.md` still lists ChemBERTa-3 as an open thread and its
     configs; it holds another session's uncommitted edits.
+- 2026-10-12: CLIP retired (user decision: no longer used). The user first asked whether
+  `SpectrumEncoder` was needed; it was CLIP's spectrum tower, and `MolEncoder` its molecule tower,
+  with no other user. A three-scout inventory with a completeness critic confirmed the island.
+  - Removed: `SpectrumMolClipPL`, `SpectrumEncoder`, `MolEncoder`, the set-transformer block in
+    `nn_blocks.py` (only `SpectrumEncoder` used it), `clip_loss`, `siglip_loss` and
+    `soft_clip_loss`, the CLIP legacy-hparam backfill in `pl_utils.py`, the registry entries, six
+    configs (`config/clip/`, three debug configs) and two test files, plus the CLIP smoke cases and
+    alias-pair checks. `LowRankDense`, `MLPBlocks` and the other shared blocks stay.
+  - `clip` and `spec_mol_clip_pretraining` are in `RETIRED_MODEL_TYPES` (archive `13b1599d`,
+    `registry.CLIP_ARCHIVE_SHA`). The CLIP template keys (`clip_*`, `spectrum_encoder_params`,
+    `retrieval_eval_size`) stay inert; the real legacy `mass_shatter` checkpoint carries them.
+  - `test_every_tracked_config_still_resolves` pins 10 known-broken configs: the three
+    `config/clip/` configs were among the 13.

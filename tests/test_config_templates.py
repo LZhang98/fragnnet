@@ -121,8 +121,6 @@ class TestTemplateLayout:
             "massformer",
             "neims",
             "graff",
-            "clip",
-            "spec_mol_clip_pretraining",
             "frag_gnn",
             "fragnnet",
         }
@@ -130,7 +128,14 @@ class TestTemplateLayout:
 
     def test_retired_model_types_are_not_valid(self):
         """Retired types keep their inert template section but cannot be selected."""
-        assert {"iceberg_gen", "iceberg_inten", "mces_pretraining", "chemlm"} == set(RETIRED_MODEL_TYPES)
+        assert {
+            "iceberg_gen",
+            "iceberg_inten",
+            "mces_pretraining",
+            "chemlm",
+            "clip",
+            "spec_mol_clip_pretraining",
+        } == set(RETIRED_MODEL_TYPES)
         assert not set(RETIRED_MODEL_TYPES) & set(VALID_MODEL_TYPES)
 
 
@@ -287,5 +292,6 @@ def test_every_tracked_config_still_resolves():
             failures.append((path, str(error)))
     # Configs that set keys no template has ever declared and were already rejected before this
     # work, or undeclared nested sub-keys that only recursive validation catches. There were 18;
-    # 5 were MCES fine-tuning configs, deleted with MCES pretraining on 2026-10-12.
-    assert len(failures) == 13, [path for path, _ in failures]
+    # 5 were MCES fine-tuning configs and 3 were CLIP configs, deleted with those models on
+    # 2026-10-12.
+    assert len(failures) == 10, [path for path, _ in failures]

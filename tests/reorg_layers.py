@@ -41,8 +41,8 @@ MODEL_ROOTS = ("fragnnet.models", "fragnnet.baselines")
 OWNER_LAYERS = ("fragnnet", "masster")
 
 # Every model_type the runner accepts (runner.VALID_MODEL_TYPES), in plan order. ICEBERG's two
-# types were accepted until Phase 1 step 2, and mces_pretraining and chemlm until 2026-10-12; all
-# are now retired.
+# types were accepted until Phase 1 step 2; mces_pretraining, chemlm and the CLIP pair until
+# 2026-10-12. All are now retired.
 MODEL_TYPES = (
     "frag_gnn",
     "fragnnet",
@@ -52,12 +52,17 @@ MODEL_TYPES = (
     "graff",
     "precursor",
     "gnn",
-    "clip",
-    "spec_mol_clip_pretraining",
 )
 
 # Model types that were removed and must raise the retirement error (registry.RETIRED_MODEL_TYPES).
-RETIRED_MODEL_TYPES = ("iceberg_gen", "iceberg_inten", "mces_pretraining", "chemlm")
+RETIRED_MODEL_TYPES = (
+    "iceberg_gen",
+    "iceberg_inten",
+    "mces_pretraining",
+    "chemlm",
+    "clip",
+    "spec_mol_clip_pretraining",
+)
 
 # Core entry modules checked by the isolation gate (plan, Phase 1 gate table).
 ENTRY_MODULES = (

@@ -23,7 +23,12 @@ import yaml
 from reorg_golden import ratchet_json
 from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
 
-from fragnnet.registry import CHEMLM_ARCHIVE_SHA, ICEBERG_ARCHIVE_SHA, MCES_ARCHIVE_SHA
+from fragnnet.registry import (
+    CHEMLM_ARCHIVE_SHA,
+    CLIP_ARCHIVE_SHA,
+    ICEBERG_ARCHIVE_SHA,
+    MCES_ARCHIVE_SHA,
+)
 from fragnnet.runner import load_config
 from fragnnet.utils.script_utils import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -65,17 +70,9 @@ EXPECTED_MAPPING = {
         "fragnnet.pl_model.gnn_pl:GNNPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
-    "clip": (
-        "fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL",
-        "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
-    ),
-    "spec_mol_clip_pretraining": (
-        "fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL",
-        "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
-    ),
 }
 
-ALIAS_PAIRS = (("frag_gnn", "fragnnet"), ("clip", "spec_mol_clip_pretraining"))
+ALIAS_PAIRS = (("frag_gnn", "fragnnet"),)
 
 
 def _qualified(cls: type) -> str:
@@ -141,6 +138,8 @@ RETIREMENT_MARKERS = {
     "iceberg_inten": ("ms-pred", ICEBERG_ARCHIVE_SHA),
     "mces_pretraining": ("did not help", MCES_ARCHIVE_SHA),
     "chemlm": ("did not help", CHEMLM_ARCHIVE_SHA),
+    "clip": ("no longer used", CLIP_ARCHIVE_SHA),
+    "spec_mol_clip_pretraining": ("no longer used", CLIP_ARCHIVE_SHA),
 }
 
 

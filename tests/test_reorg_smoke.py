@@ -7,8 +7,8 @@ forward outputs, loss terms and gradient summary is recorded in ``tests/golden/r
 The digest holds behavior only (keys, dtypes, shapes, values), never class names or module paths,
 because Phase 1 changes some of those (``massformer`` moves to ``SpecMolMFDataset``).
 
-Retired types (the ICEBERG pair, and ``mces_pretraining`` and ``chemlm`` since 2026-10-12) have no
-case.
+Retired types (the ICEBERG pair; ``mces_pretraining``, ``chemlm`` and the CLIP pair since
+2026-10-12) have no case.
 
 Each case also records an eval-mode forward pass (after the training forward, so BatchNorm
 running statistics are those of one training batch); it must return the same output keys.
@@ -64,7 +64,14 @@ from fragnnet.utils.formula_utils import NEUTRON_MASS
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 GOLDEN = "smoke"
-RETIRED_TYPES = ("iceberg_gen", "iceberg_inten", "mces_pretraining", "chemlm")
+RETIRED_TYPES = (
+    "iceberg_gen",
+    "iceberg_inten",
+    "mces_pretraining",
+    "chemlm",
+    "clip",
+    "spec_mol_clip_pretraining",
+)
 SMOKE_TYPES = tuple(t for t in MODEL_TYPES if t not in RETIRED_TYPES)
 ELECTRON_MASS = 0.00054858
 STEP_SEED = 1234
@@ -111,28 +118,6 @@ GRAFF_OVERRIDES: dict[str, Any] = {
     "gaussian_renormalize": True,
     "pm_tolerance_multiple": 1,
     "oos_tolerance_multiple": 1,
-}
-CLIP_OVERRIDES: dict[str, Any] = {
-    "mol_hidden_size": 16,
-    "mol_num_layers": 1,
-    "mol_dropout": 0.0,
-    "mlp_hidden_size": 16,
-    "mlp_num_layers": 1,
-    "mlp_dropout": 0.0,
-    "ce_insert_type": "embed",
-    "ce_insert_location": "mlp",
-    "ce_insert_merge": True,
-    "clip_embed_dim": 16,
-    # input_dim 4 = (mz, intensity, neutral loss, precursor scale); the template's 2 is stale.
-    "spectrum_encoder_params": {
-        "input_dim": 4,
-        "hidden_dim": 16,
-        "embed_dim": 16,
-        "num_layers": 1,
-        "num_heads": 2,
-        "num_inds": 4,
-        "dropout": 0.0,
-    },
 }
 
 
@@ -425,25 +410,6 @@ def _build_graff(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
     return Case("graff", config, _first_batch(loader), _forward_kwargs)
 
 
-def _clip_forward(module: L.LightningModule, batch: dict) -> tuple[th.Tensor, th.Tensor]:
-    return module.forward(batch)
-
-
-def _build_clip_family(model_type: str, root: Path) -> Case:
-    data = F.write_synth_data(root, dag_backend=None)
-    config = F.make_config(model_type, data, CLIP_OVERRIDES)
-    _, loader = F.init_split(config, "train")
-    return Case(model_type, config, _first_batch(loader), _clip_forward, spectrum_pl=False)
-
-
-def _build_clip(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
-    return _build_clip_family("clip", root)
-
-
-def _build_spec_mol_clip(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
-    return _build_clip_family("spec_mol_clip_pretraining", root)
-
-
 CASES: dict[str, CaseBuilder] = {
     "frag_gnn": _build_frag_gnn,
     "fragnnet": _build_fragnnet,
@@ -453,8 +419,6 @@ CASES: dict[str, CaseBuilder] = {
     "graff": _build_graff,
     "precursor": _build_precursor,
     "gnn": _build_gnn,
-    "clip": _build_clip,
-    "spec_mol_clip_pretraining": _build_spec_mol_clip,
 }
 # GRAFF's dataset assigns into a slice of a DataFrame (graff/dataset.py:112); harmless, and only
 # this case may ignore it.
@@ -594,25 +558,18 @@ def _assert_sane(case: Case, run: Run) -> None:
 
 
 def _assert_forward_shapes(case: Case, outputs: dict[str, Any]) -> None:
-    """Per-family forward contract: predicted peaks per spectrum, or unit-norm embeddings."""
+    """Forward contract: predicted peaks per spectrum."""
     batch_size = int(case.batch["batch_size"])
-    if case.model_type in ("clip", "spec_mol_clip_pretraining"):
-        embed_dim = case.config["clip_embed_dim"]
-        for key in ("0", "1"):
-            assert outputs[key].shape == (batch_size, embed_dim)
-            norms = outputs[key].norm(dim=-1)
-            assert th.allclose(norms, th.ones_like(norms), atol=1e-5)
-    else:
-        mzs, logprobs = outputs["pred_mzs"], outputs["pred_logprobs"]
-        idxs = outputs["pred_batch_idxs"]
-        assert mzs.shape == logprobs.shape == idxs.shape and mzs.ndim == 1
-        assert idxs.dtype == th.int64
-        assert set(idxs.tolist()) == set(range(batch_size))
-        mass = th.zeros(batch_size, dtype=th.float64).index_add_(0, idxs, logprobs.double().exp())
-        assert (mass <= 1.0 + 1e-3).all(), mass
-        if "pred_specs" in outputs:
-            n_bins = round(case.config["mz_max"] / case.config["mz_bin_res"])
-            assert outputs["pred_specs"].shape == (batch_size, n_bins)
+    mzs, logprobs = outputs["pred_mzs"], outputs["pred_logprobs"]
+    idxs = outputs["pred_batch_idxs"]
+    assert mzs.shape == logprobs.shape == idxs.shape and mzs.ndim == 1
+    assert idxs.dtype == th.int64
+    assert set(idxs.tolist()) == set(range(batch_size))
+    mass = th.zeros(batch_size, dtype=th.float64).index_add_(0, idxs, logprobs.double().exp())
+    assert (mass <= 1.0 + 1e-3).all(), mass
+    if "pred_specs" in outputs:
+        n_bins = round(case.config["mz_max"] / case.config["mz_bin_res"])
+        assert outputs["pred_specs"].shape == (batch_size, n_bins)
 
 
 @pytest.mark.parametrize("case_name", SMOKE_PARAMS)
@@ -632,9 +589,7 @@ def test_one_forward_pass_and_training_step(
     ratchet_records(GOLDEN, f"step:{case_name}", _value_record(first))
 
 
-@pytest.mark.parametrize(
-    "pair", (("frag_gnn", "fragnnet"), ("clip", "spec_mol_clip_pretraining")), ids="/".join
-)
+@pytest.mark.parametrize("pair", (("frag_gnn", "fragnnet"),), ids="/".join)
 def test_alias_pairs_give_identical_records(
     pair: tuple[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

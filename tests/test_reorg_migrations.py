@@ -87,19 +87,6 @@ FRAGNNET_KEYS = (
     "ion_channel_adduct_gated",
     "ion_channel_rank",
 )
-CLIP_KEYS = (
-    "clip_embed_dim",
-    "clip_intensity_transform",
-    "clip_loss_type",
-    "spectrum_encoder_params",
-    "mol_num_heads",
-    "ace_max",
-    "ace_mean",
-    "ace_std",
-    "lr_schedule_type",
-    "lr_total_steps",
-    "lr_min_ratio",
-)
 MASSTER_RT_CCS_KEYS = (
     "masster_predict_rt_ccs",
     "masster_predict_rt",
@@ -145,12 +132,9 @@ FAMILIES = (
     "graff",
     "precursor",
     "gnn",
-    "clip",
-    "spec_mol_clip_pretraining",
 )
 ALIAS_PAIRS = (
     ("frag_gnn", "fragnnet"),
-    ("clip", "spec_mol_clip_pretraining"),
     ("masster", "mass_shatter"),
 )
 
@@ -160,8 +144,6 @@ def _family_keys(family: str) -> tuple[str, ...]:
     extra: tuple[str, ...] = ()
     if family in ("frag_gnn", "fragnnet"):
         extra = FRAGNNET_KEYS
-    elif family in ("clip", "spec_mol_clip_pretraining"):
-        extra = CLIP_KEYS
     elif family in ("masster", "mass_shatter"):
         extra = MASSTER_KEYS
     return (*SHARED_KEYS, *extra)
@@ -309,8 +291,6 @@ def test_get_pl_hparams_minimal_stub_per_family() -> None:
     assert record["frag_gnn"]["ion_channel_rank"] == 32
     assert record["frag_gnn"]["candidate_ion_chunk_size"] == 32768
     assert "ion_channel_rank" not in record["masster"]
-    assert record["clip"]["ace_max"] == 100.0
-    assert record["clip"]["spectrum_encoder_params"] == {}
     assert record["masster"]["masster_fast_gnn_max_boundary_cuts"] == 3
     assert record["masster"]["masster_proposal_method"] == "cut_masks"
     assert record["masster"]["masster_candidate_backend"] == "cpu"
@@ -334,7 +314,6 @@ def test_get_pl_hparams_alias_pairs_migrate_identically() -> None:
         }
     assert {pair: sorted(diff) for pair, diff in record.items()} == {
         "frag_gnn/fragnnet": ["model_type"],
-        "clip/spec_mol_clip_pretraining": ["model_type"],
         "masster/mass_shatter": [],
     }
     ratchet_json(GOLDEN, "get_pl_hparams:alias_pairs", record)
@@ -644,7 +623,7 @@ def test_load_config_template_per_family() -> None:
         config = _quiet(load_config, F.CONFIG_DIR, None, None, model_type=family)
         assert config["model_type"] == family
         assert _legacy_leftovers(config) == []
-        all_keys = {*SHARED_KEYS, *FRAGNNET_KEYS, *CLIP_KEYS, *MASSTER_KEYS}
+        all_keys = {*SHARED_KEYS, *FRAGNNET_KEYS, *MASSTER_KEYS}
         assert all_keys <= set(config), sorted(all_keys - set(config))
         assert set(SPEC_PARAMS_KEYS) <= set(config["spec_params"])
         # The template decides: every migrated key resolves to the file's own value.
@@ -710,7 +689,6 @@ def test_load_config_alias_pairs_resolve_identically(tmp_path: Path) -> None:
             "validate_sampler_config": outcomes,
         }
     assert record["frag_gnn/fragnnet"]["differing_keys"] == ["model_type"]
-    assert record["clip/spec_mol_clip_pretraining"]["differing_keys"] == ["model_type"]
     assert record["masster/mass_shatter"]["differing_keys"] == []
     assert record["masster/mass_shatter"]["model_types"] == ["masster", "masster"]
     assert (
@@ -1057,7 +1035,7 @@ def test_legacy_wandb_run_config_merges_into_resolved_config() -> None:
 
 
 def test_constructors_backfill_hparams_before_saving_them() -> None:
-    """``SpectrumPL``, ``MassterPL`` and the CLIP module migrate kwargs before saving them.
+    """``SpectrumPL`` and ``MassterPL`` migrate kwargs before saving them.
 
     ``neims`` builds through the same ``SpectrumPL`` call as ``frag_gnn``, but its constructor
     needs more than the template (the NEIMS config trips an assertion), so only its
@@ -1103,21 +1081,6 @@ def test_constructors_backfill_hparams_before_saving_them() -> None:
     }
     assert record["masster"]["report_metric_std"] is False
 
-    # CLIP: a current config without the shared and CLIP keys (its `ace_*` and spectrum-encoder
-    # defaults differ from the template's).
-    clip_kwargs = F.make_config("clip")
-    for key in (*SHARED_KEYS, *CLIP_KEYS):
-        del clip_kwargs[key]
-    clip_kwargs["spec_params"]["nce"] = True
-    clip_kwargs["spec_params"]["ace"] = False
-    with F.deterministic():
-        clip = _quiet(get_model_cls("clip"), **clip_kwargs)
-    record["clip"] = _present(dict(clip.hparams), (*SHARED_KEYS, *CLIP_KEYS))
-    assert ABSENT not in record["clip"].values()
-    assert record["clip"]["ace_max"] == 100.0
-    assert record["clip"]["spectrum_encoder_params"] == {}
-    assert (record["clip"]["use_nce"], record["clip"]["use_ace"]) == (True, False)
-    assert clip.clip_embed_dim == record["clip"]["clip_embed_dim"]
     ratchet_json(GOLDEN, "constructor_backfill", record)
 
 
