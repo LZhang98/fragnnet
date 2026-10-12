@@ -112,7 +112,7 @@ Inference is documented in the [inference guide](docs/guides/run_inference.md).
   whether the budget counts `frag_pyg.num_nodes` or `frag_pyg.num_edges`;
   `dynamic_batch_sampler_max` is the per-batch budget. It requires
   `automatic_optimization: False`. The samplers are in
-  [frag_data_sampler.py](src/fragnnet/models/fragnnet/frag_data_sampler.py), and the config
+  [fragnnet_data_sampler.py](src/fragnnet/models/fragnnet/fragnnet_data_sampler.py), and the config
   checks in [fragnnet_hooks.py](src/fragnnet/models/fragnnet/fragnnet_hooks.py).
 - MASSter bond-size curriculum: MASSter can train first on smaller precursor molecules, ranked by
   heavy-bond count, then linearly expand the eligible training set. Validation always uses the

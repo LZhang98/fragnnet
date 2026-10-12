@@ -1,6 +1,6 @@
 # Frag-Gen + SMARTS Prepass
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-04-05
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > How BFS + SMARTS prepass build the fragment DAG.
 
@@ -118,7 +118,7 @@ The depth-2 rule described above applies to the **`multi_cut_bfs=False`**
 
 ## Implementation: `_inject_smarts_pairs_into_dag`
 
-The relevant lines in [frag_utils.py](../../src/fragnnet/models/fragnnet/frag_utils.py):
+The relevant lines in [dag/builder.py](../../src/fragnnet/models/fragnnet/dag/builder.py):
 
 ```python
 # BEFORE (incorrect — depth 1):

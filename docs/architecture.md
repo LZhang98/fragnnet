@@ -1,7 +1,7 @@
 # Architecture map
 
 > **Status:** REFERENCE · **Updated:** 2026-10-12 · Package layout and dependency rule after the
-> reorganization (Phases 0-8 of the [plan](plans/repo_reorg_plan.md)); MASSter backend boundary
+> reorganization (Phases 0-9 of the [plan](plans/repo_reorg_plan.md)); MASSter backend boundary
 > updated 2026-09-17.
 
 ## Entry points and data flow
@@ -97,15 +97,19 @@ src/fragnnet/
 - Frozen records (findings, plans, `docs/history/`) cite the pre-reorganization paths
   (`src/fragnnet/frag/`, `src/fragnnet/graff/`, `model/nn_blocks.py`, `model/loss.py`,
   `model/base_model.py` and the model files under `model/` and `pl_model/`). Resolve them in git
-  history at `13b1599d`. `model/` became `layers/` and `loss/` in Phase 8 (plan, Phase 8 table).
+  history at `13b1599d`. `model/` became `layers/` and `loss/` in Phase 8 (plan, Phase 8 table);
+  FraGNNet's `frag_utils.py`, `frag_feat_utils.py` and Cython modules moved to
+  `models/fragnnet/dag/` in Phase 9.
 
 ## Boundaries and canonical references
 
 - Configuration: [config/](../config/) holds one `template.yml` that declares every model's
   keys, so each run resolves the same schema and `model_type` selects code rather than config.
   [config README](../config/README.md) documents the resolution order, where a key goes, and validation.
-- Fragment generation: FraGNNet's DAG builders (Cython `compute_frags.pyx` and
-  `multi_cut_bfs.pyx`, and `frag_utils.py`) are in [models/fragnnet/](../src/fragnnet/models/fragnnet/);
+- Fragment generation: FraGNNet's DAG code is in
+  [models/fragnnet/dag/](../src/fragnnet/models/fragnnet/dag/): `builder.py` with the Cython
+  `compute_frags.pyx` and `multi_cut_bfs.pyx`, the DAG layout the model reads (`layout.py`),
+  formulas, hashing, statistics and the PyG graph (`graph.py`);
   MASSter's candidate construction (Cython `masster_core.pyx`, the CUDA `.cu` kernels next to the
   modules that load them) in [models/masster/](../src/fragnnet/models/masster/); the shared
   SMARTS prepass and hydrogen capping in [fragmentation/](../src/fragnnet/fragmentation/). The

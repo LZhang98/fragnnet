@@ -1,7 +1,7 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
 > **Status:** ACTIVE · **Updated:** 2026-10-12
-> Phases 0–8 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step. ICEBERG is retired in favor of external ms-pred, and the package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged).
+> Phases 0–9 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step. ICEBERG is retired in favor of external ms-pred, and the package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged).
 > Line and path references in the plan body were measured at commit `13b1599d`, before the moves; the [architecture map](../architecture.md#package-layout-and-dependency-rule) describes the current layout.
 
 ## Current summary
@@ -9,7 +9,7 @@
 - **Goal.** FraGNNet and MASSter become owner packages over a model-agnostic core. GRAFF and MassFormer become baseline subpackages; ICEBERG moves to external ms-pred. The dependency rule below is enforced by tests.
 - **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
 - **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging), Phase 6 (directory moves) and Phase 7 (doc paths).
-- **Done.** All nine phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; every model has its own package (`fragnnet.models.{fragnnet,masster,neims,precursor,gnn}`), GRAFF and MassFormer live in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`, shared building blocks in `fragnnet.layers` and spectrum losses in `fragnnet.loss`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
+- **Done.** All ten phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; every model has its own package (`fragnnet.models.{fragnnet,masster,neims,precursor,gnn}`), GRAFF and MassFormer live in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`, shared building blocks in `fragnnet.layers` and spectrum losses in `fragnnet.loss`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
 - **Next action.** Review and merge the branch. The [Phase 8 follow-ups](#phase-8--naming-and-model-packages-done-2026-10-12) are separate, optional steps; the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
 
 ## Goal
@@ -737,6 +737,34 @@ not chemistry); `hooks.ExportHooks` to `ExportAdapter`; splitting `pl_utils.py` 
 migrations; `GINE_GSA` to `models/masster/`. All but the last are done (see
 [Progress](#progress)).
 
+### Phase 9 — FraGNNet's DAG subpackage and file names (done 2026-10-12)
+
+`models/fragnnet/frag_utils.py` (1,813 lines) held DAG construction, formula math, the node and
+edge feature layout, WL hashing, peak statistics and boundary masks; `frag_` was ambiguous
+between "fragment" and "FraGNNet". The user decided on 2026-10-12 to give the DAG code its own
+subpackage and to rename the dataset and sampler files:
+
+```
+models/fragnnet/
+  fragnnet_model.py  fragnnet_pl.py  fragnnet_hooks.py  fragnnet_conditioning.py
+  fragment_competition.py
+  fragnnet_dataset.py           (was spec_mol_frag_dataset.py)
+  fragnnet_iterable_dataset.py  (was iterable_spec_mol_frag_dataset.py)
+  fragnnet_data_sampler.py      (was frag_data_sampler.py)
+  dag/
+    compute_frags.pyx  multi_cut_bfs.pyx   (names kept)
+    builder.py   DAG construction (was frag_utils.py)
+    layout.py    dtypes, size constants, node/edge feature columns, boundary masks
+    formula.py   fragment formulas from connected-component bitmasks
+    hashing.py   WL subgraph hashes
+    stats.py     peak statistics of generated DAGs
+    graph.py     DAG as a PyG graph, and batching (was frag_feat_utils.py)
+```
+
+`dag/` stays inside the FraGNNet layer (the layer is the first package under `models/`). The DAG
+storage format (`utils/dag_format_utils.py`) stays core. Class names and the Cython module names
+are unchanged.
+
 ## Unchanged
 
 - Retained-model `model_type` strings, config keys, config paths, sweep files and W&B runs. ICEBERG types and configs are the explicit retirement exception. The `iceberg_*`/`magma_params`/`magma_dp` template fields stay inert, so retained-model config and checkpoint loading is not broken by a separate schema cleanup.
@@ -934,3 +962,16 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     `migrations.py`: moving it to `FraGNNetHooks` would also need a `FraGNNetPL.__init__`,
     because `load_from_checkpoint` reaches `SpectrumPL.__init__` without `get_pl_hparams`.
   - Remaining follow-up: `GINE_GSA` to `models/masster/`.
+- 2026-10-12: Phase 9 done (user go), commits `63e86037` (pure `git mv`), `a5478b0e` (split of
+  `dag/builder.py`; 31 statements moved verbatim with their comments) and `70e049a3` (70-file
+  rewrite, extensions rebuilt for py311 and py312, old builds in `output/p9_quarantine/`).
+  - Checks: DAGs for 6 molecules under multi-cut, SMARTS prepass and isotopes/nb-iso (48) are
+    identical between the old and new code by structural comparison, and their PyG graphs have
+    identical values. Pickled DAG bytes are not reproducible from run to run (same code, same
+    hash seed), so md5 is not a usable gate. Checkpoint records 9 of 9 identical. A wheel built
+    from a clean worktree ships `dag/` with both extensions, and an install from it builds a DAG.
+    Full suite: no new failures.
+  - Selecting FraGNNet no longer loads the DAG builder, the Cython modules or `fragmentation/`:
+    the model imports only `dag.layout` (isolation golden updated).
+  - A stale setuptools `build/` tree (from before Phase 6) still holds the old layout, and a
+    wheel built from this checkout picks it up; delete `build/` before building wheels here.
