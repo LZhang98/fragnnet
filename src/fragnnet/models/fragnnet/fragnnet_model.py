@@ -14,9 +14,11 @@ import torch.utils.checkpoint as th_checkpoint
 import torch_geometric as pyg
 
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
-from fragnnet.model.base_model import CEModel, FragModeModel, InstModel, PrecModel
-from fragnnet.model.form_embedder import get_embedder
-from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
+from fragnnet.layers.gnn import GNN
+from fragnnet.layers.int_featurizer import get_embedder
+from fragnnet.layers.metadata_embedding import CEModel, FragModeModel, InstModel, PrecModel
+from fragnnet.layers.mlp import MLPBlocks
+from fragnnet.layers.pooling import build_pool_module
 from fragnnet.models.fragnnet.frag_utils import (
     compute_boundary_mask,
     get_edge_feats,

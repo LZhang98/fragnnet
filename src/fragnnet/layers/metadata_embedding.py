@@ -15,7 +15,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fragnnet.model.form_embedder import get_embedder
+from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.spec_utils import transform_ce, weighted_mean_by_batch
 

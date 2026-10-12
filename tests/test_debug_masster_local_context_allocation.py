@@ -16,7 +16,7 @@ import pytest
 import torch as th
 
 import scripts.debug.masster_memorization.debug_masster_local_context_allocation as PROBE
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 from fragnnet.utils.spec_utils import cos_sim_helper
 from tests.test_masster_model import _build_batch, _build_model
 

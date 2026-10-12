@@ -1,11 +1,11 @@
-"""Unit tests for get_cross_jss_contrastive in fragnnet.model.loss."""
+"""Unit tests for get_cross_jss_contrastive in fragnnet.loss.pairwise."""
 
 import math
 
 import pytest
 import torch as th
 
-from fragnnet.model.loss import get_cross_jss_contrastive
+from fragnnet.loss.pairwise import get_cross_jss_contrastive
 
 
 def _make_spectrum(

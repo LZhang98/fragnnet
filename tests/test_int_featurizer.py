@@ -1,6 +1,6 @@
 import torch as th
 
-from fragnnet.model.form_embedder import LearnedFeaturizer, OneHotFeaturizer
+from fragnnet.layers.int_featurizer import LearnedFeaturizer, OneHotFeaturizer
 
 
 def _reference_int_featurizer_forward(featurizer, tensor: th.Tensor) -> th.Tensor:

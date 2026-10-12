@@ -6,7 +6,7 @@ import pandas as pd
 import torch as th
 
 import wandb
-from fragnnet.model.loss import sparse_conditional_entropy_fn
+from fragnnet.loss.entropy import sparse_conditional_entropy_fn
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.misc_utils import booltype, scatter_logsumexp

@@ -16,9 +16,9 @@ from types import SimpleNamespace
 import pytest
 import torch as th
 
-from fragnnet.model.loss import (
+from fragnnet.loss.cross_entropy import sparse_cross_entropy_vec
+from fragnnet.loss.spectrum_distance import (
     sparse_cosine_distance_hungarian,
-    sparse_cross_entropy_vec,
     sparse_jensen_shannon_divergence_hungarian,
 )
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL

@@ -19,7 +19,8 @@ import torch as th
 
 from fragnnet import runner
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder
-from fragnnet.model.nn_blocks import GINE, GINE_GSA
+from fragnnet.layers.gine_gsa import GINE_GSA
+from fragnnet.layers.gnn import GINE
 from fragnnet.models.masster.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     _drop_set_keys,

@@ -41,9 +41,9 @@ import torch.nn.functional as F
 from torch_geometric.data import Batch
 
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
-from fragnnet.model.base_model import QET_ACE_OFFSET, QETEnergyEncoder
-from fragnnet.model.form_embedder import get_embedder
-from fragnnet.model.nn_blocks import GNN
+from fragnnet.layers.gnn import GNN
+from fragnnet.layers.int_featurizer import get_embedder
+from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder
 from fragnnet.models.masster.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,

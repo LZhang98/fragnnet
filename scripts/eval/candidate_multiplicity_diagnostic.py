@@ -1,7 +1,7 @@
 """Measure how many candidate formulas the spectral loss sums over per observed peak.
 
 The spectral loss (both ``gaussian`` / mog_ce_fn and ``peak_marginal`` / pm_ce_fn in
-``fragnnet/model/loss.py``) scores an observed peak by aggregating EVERY predicted candidate
+``fragnnet/loss/cross_entropy.py``) scores an observed peak by aggregating EVERY predicted candidate
 within the m/z tolerance window:
 
     log P(peak_i) = logsumexp_{j : |mz_j - mz_i| <= tol} [ log w_j (+ log Gaussian(err_ij)) ]

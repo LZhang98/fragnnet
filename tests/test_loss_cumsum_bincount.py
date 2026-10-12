@@ -13,7 +13,7 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

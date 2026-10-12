@@ -1,4 +1,4 @@
-"""Unit tests for fragnnet.model.loss module.
+"""Unit tests for the fragnnet.loss modules.
 
 Tests for pairwise similarity and distance metrics:
 - Cosine similarity
@@ -11,19 +11,22 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.loss import (
-    ce_switch_pair_bce,
-    conditional_in_support_cross_entropy,
+from fragnnet.loss.cross_entropy import conditional_in_support_cross_entropy
+from fragnnet.loss.pairwise import (
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
-    precursor_contender_bce,
+)
+from fragnnet.loss.peak_list import (
+    sparse_outside_window_intensity_fraction,
+    sparse_peak_list_distance,
+)
+from fragnnet.loss.peak_pair_bce import ce_switch_pair_bce, precursor_contender_bce
+from fragnnet.loss.spectrum_distance import (
     sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
-    sparse_outside_window_intensity_fraction,
-    sparse_peak_list_distance,
 )
 from fragnnet.utils.spec_utils import batched_bin_func, calculate_match_mzs
 

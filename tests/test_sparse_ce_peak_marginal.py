@@ -11,7 +11,7 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 
 TOLERANCE = 1e-5
 TOLERANCE_MIN_MZ = 200.0

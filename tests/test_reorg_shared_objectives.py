@@ -19,10 +19,10 @@ import torch as th
 import fragnnet.pl_model.spectrum_pl as spectrum_pl
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 
+# validate_hellinger_auxiliary_weights was inlined into SpectrumPL in Phase 8.
 SHARED_LOSS_FUNCTIONS = {
     "ce_switch_pair_bce",
     "sparse_outside_window_intensity_fraction",
-    "validate_hellinger_auxiliary_weights",
 }
 HELPERS = {
     "_validate_spectral_auxiliary_weights",

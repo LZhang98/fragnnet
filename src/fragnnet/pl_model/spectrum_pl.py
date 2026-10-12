@@ -22,12 +22,9 @@ from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet import registry
-from fragnnet.model.loss import (
-    ce_switch_pair_bce,
-    sparse_entropy_fn,
-    sparse_outside_window_intensity_fraction,
-    validate_hellinger_auxiliary_weights,
-)
+from fragnnet.loss.entropy import sparse_entropy_fn
+from fragnnet.loss.peak_list import sparse_outside_window_intensity_fraction
+from fragnnet.loss.peak_pair_bce import ce_switch_pair_bce
 from fragnnet.output_schema import (
     EXPLAINABILITY_OUTPUT_KEYS,
     RETURN_EXPLAINABILITY_TENSORS_DEFAULT,

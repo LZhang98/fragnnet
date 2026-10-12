@@ -13,7 +13,7 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.nn_blocks import GNN
+from fragnnet.layers.gnn import GNN
 from fragnnet.models.masster.bond_fragment_heads import (
     BondFocusedBreakHead,
     CandidateIntensityTransformerHead,

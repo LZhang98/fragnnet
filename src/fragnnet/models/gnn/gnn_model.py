@@ -12,8 +12,10 @@ import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
 
-from fragnnet.model.base_model import CEModel, InstModel, PrecModel
-from fragnnet.model.nn_blocks import GNN, SpecFFN, build_pool_module
+from fragnnet.layers.binned_head import SpecFFN
+from fragnnet.layers.gnn import GNN
+from fragnnet.layers.metadata_embedding import CEModel, InstModel, PrecModel
+from fragnnet.layers.pooling import build_pool_module
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 
 

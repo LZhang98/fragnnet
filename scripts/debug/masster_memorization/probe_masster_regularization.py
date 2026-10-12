@@ -30,7 +30,7 @@ import sys
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model.nn_blocks import GNN
+from fragnnet.layers.gnn import GNN
 from fragnnet.models.masster import bond_fragment_heads
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_model import MassterContextEncoder, MassterModel

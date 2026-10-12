@@ -46,7 +46,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch_geometric.nn import GINEConv
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 from fragnnet.models.masster.bond_fragment_heads import (
     boundary_bond_endpoint_orientation,
     masked_ion_hydrogen_log_probabilities,

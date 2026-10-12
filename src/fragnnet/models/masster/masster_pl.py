@@ -34,11 +34,11 @@ from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
 from fragnnet.hooks import ExportHooks
-from fragnnet.model.loss import (
+from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
-    sparse_peak_list_distance,
 )
+from fragnnet.loss.peak_list import sparse_peak_list_distance
 from fragnnet.models.masster.candidate_features import describe_candidate_features
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_export import masster_annotation_tables

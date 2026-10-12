@@ -21,18 +21,19 @@ from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets,
 )
 from fragnnet.hooks import ExportHooks
-from fragnnet.model.loss import (
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
+from fragnnet.loss.entropy import sparse_conditional_entropy_fn, sparse_entropy_fn
+from fragnnet.loss.pairwise import (
     get_cross_jss_contrastive,
-    get_edge_loss_fn,
     get_pairwise_cossim,
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
-    get_sparse_cross_entropy_fn,
-    precursor_contender_bce,
-    sparse_conditional_entropy_fn,
+)
+from fragnnet.loss.peak_pair_bce import precursor_contender_bce
+from fragnnet.loss.penalty import get_edge_loss_fn
+from fragnnet.loss.spectrum_distance import (
     sparse_cosine_distance_binned,
     sparse_cosine_distance_hungarian,
-    sparse_entropy_fn,
     sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,

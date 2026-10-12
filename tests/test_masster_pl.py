@@ -15,11 +15,11 @@ from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
 from fragnnet.dataset import SpecMolDataset
-from fragnnet.model.loss import (
+from fragnnet.layers.graphormer import GINEGraphormer
+from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
 )
-from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph

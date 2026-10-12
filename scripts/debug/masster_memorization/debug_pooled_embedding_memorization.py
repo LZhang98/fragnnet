@@ -101,7 +101,7 @@ from lightning import seed_everything
 from tqdm import tqdm
 
 import fragnnet.models.masster.masster_model as masster_model_module
-from fragnnet.model.nn_blocks import GINE_GSA
+from fragnnet.layers.gine_gsa import GINE_GSA
 from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.script_utils import (

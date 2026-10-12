@@ -16,8 +16,8 @@ from collections.abc import Callable
 import pytest
 import torch as th
 
-from fragnnet.model.base_model import QET_ENERGY_OFFSET, QETEnergyEncoder
-from fragnnet.model.form_embedder import FourierFeaturizerAbsoluteSines
+from fragnnet.layers.int_featurizer import FourierFeaturizerAbsoluteSines
+from fragnnet.layers.metadata_embedding import QET_ENERGY_OFFSET, QETEnergyEncoder
 from tests.test_ce_multi_location import _build
 from tests.test_masster_model import _build_batch, _build_model
 from tests.test_merged_ce_context import _context_encoder
