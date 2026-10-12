@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster import masster_cuda_topology
-from fragnnet.models.masster.masster_candidates import (
+from fragnnet.models.masster.path_selection import cuda_topology
+from fragnnet.models.masster.path_selection.candidates import (
     MassterStaticGraph,
     _build_local_topology,
     _merge_forced_masks,
@@ -16,11 +16,15 @@ from fragnnet.models.masster.masster_candidates import (
     _TopologyInput,
     build_masster_candidates,
 )
-from fragnnet.models.masster.masster_cuda_candidates import (
+from fragnnet.models.masster.path_selection.cuda_topology import (
+    CudaTopologyBatch,
+    CudaTopologyCounts,
+)
+from fragnnet.models.masster.path_selection.cuda_topology_prototype import (
     _build_cuda_candidates,
     _validate_grouped_topology,
+    build_masster_candidates_cuda_topology,
 )
-from fragnnet.models.masster.masster_cuda_topology import CudaTopologyBatch, CudaTopologyCounts
 
 
 def _fixture(target):
@@ -133,7 +137,7 @@ def test_vectorized_group_expansion_matches_cpu_candidate_fields_and_gradients(m
         include_single_bond_cuts=True,
         candidate_group_ids=th.tensor(groups),
     )
-    monkeypatch.setattr(masster_cuda_topology, "build_cuda_topology", _cpu_topology)
+    monkeypatch.setattr(cuda_topology, "build_cuda_topology", _cpu_topology)
     actual_logits = logits.clone().requires_grad_()
     statistics = []
     actual = _build_cuda_candidates(
@@ -179,7 +183,7 @@ def test_group_validation_checks_topology_and_retained_csr_prefix():
 def test_private_cuda_prototype_rejects_cpu_inputs():
     logits, edges, atom_batch, atom_ptr, *_ = _fixture(3)
     with pytest.raises(ValueError, match="CUDA float32"):
-        build_masster_candidates(
+        build_masster_candidates_cuda_topology(
             logits,
             edges,
             atom_batch,
@@ -188,7 +192,6 @@ def test_private_cuda_prototype_rejects_cpu_inputs():
             max_unique_components=3,
             max_enumerated_masks=128,
             include_single_bond_cuts=True,
-            _cuda_topology=True,
         )
 
 
@@ -210,12 +213,8 @@ def test_cuda_candidates_match_cpu_topology_fields_and_probability_gradients(tar
     graph_args = (edges.cuda(), atom_batch.cuda(), atom_ptr.cuda())
     expected = build_masster_candidates(cpu_topology_logits, *graph_args, **kwargs)
     statistics = []
-    actual = build_masster_candidates(
-        cuda_topology_logits,
-        *graph_args,
-        **kwargs,
-        _cuda_topology=True,
-        _cuda_topology_stats=statistics,
+    actual = build_masster_candidates_cuda_topology(
+        cuda_topology_logits, *graph_args, **kwargs, statistics=statistics
     )
     _assert_candidates_match(expected, actual)
     weights = th.arange(actual.mask_log_probabilities.numel(), device="cuda") + 1.0
@@ -267,10 +266,9 @@ def test_cuda_hybrid_model_preserves_predictions_and_parameter_gradients(monkeyp
         if parameter.grad is not None
     }
     model.zero_grad(set_to_none=True)
-    original = model_module.build_masster_candidates
-
-    def hybrid(*args, **kwargs):
-        return original(*args, **kwargs, _cuda_topology=True)
+    def hybrid(*args, candidate_backend, **kwargs):
+        assert candidate_backend == "cpu"
+        return build_masster_candidates_cuda_topology(*args, **kwargs)
 
     monkeypatch.setattr(model_module, "build_masster_candidates", hybrid)
     actual = model(**inputs)

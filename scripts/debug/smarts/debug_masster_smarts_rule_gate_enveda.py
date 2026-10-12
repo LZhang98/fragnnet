@@ -50,7 +50,7 @@ from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     NeutralLossRule,
     SmartsFragRule,
 )
-from fragnnet.models.masster.masster_templates import (  # noqa: E402
+from fragnnet.models.masster.path_selection.templates import (  # noqa: E402
     _MASSTER_PRECURSOR_TYPES,
     MASSTER_FRAG_RULES,
     MASSTER_NL_RULES,
@@ -62,7 +62,7 @@ BOTH = ("[M+H]+", "[M-H]-")
 RELATIVE_TOLERANCE, MZ_FLOOR = 1e-5, 200.0
 
 # MASSter-only rules disabled on 2026-09-29, copied from the commented-out definitions in
-# masster_templates.py with their former precursor guards.
+# path_selection/templates.py with their former precursor guards.
 DISABLED_MASSTER_ONLY = [
     (
         SmartsFragRule(

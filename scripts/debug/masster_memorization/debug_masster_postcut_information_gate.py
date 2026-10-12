@@ -84,7 +84,7 @@ from rdkit import Chem, RDLogger
 from torch.utils.data import DataLoader
 
 from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
-from fragnnet.models.masster.masster_templates import (
+from fragnnet.models.masster.path_selection.templates import (
     MASSTER_RULE_NAMES,
     build_masster_templates,
     filter_masster_templates,
@@ -461,7 +461,7 @@ def template_sides(mol: Chem.Mol, precursor_type: str) -> tuple[TemplateSide, ..
 
     Templates come from ``filter_masster_templates`` directly (a templates-off checkpoint has no
     rule-hash buffer for the model's own eligibility method), with the production values for
-    each side's cut count and formed-bond count (``masster_candidates.py``).
+    each side's cut count and formed-bond count (``path_selection/candidates.py``).
 
     Args:
         mol: The molecule as ``Chem.MolFromSmiles`` builds it, which is what training matches.
@@ -782,6 +782,14 @@ def extract(args: argparse.Namespace) -> None:
                 raise RuntimeError("batch order does not match the spectrum table")
             batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
             out = model(**batch, return_explainability_tensors=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             # 3. Eval-convention target, as in the base-peak probe.
             true_mzs, true_ints, true_idx = model.preproc_spec(
                 batch["spec_mzs"],

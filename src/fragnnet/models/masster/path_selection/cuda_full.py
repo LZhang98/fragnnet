@@ -17,16 +17,112 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.masster_candidates import (
+from fragnnet.models.masster.path_selection.candidates import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     MassterStaticGraph,
     _packed_long_chunk_tensors,
     _score_mask_log_probabilities,
 )
-from fragnnet.models.masster.masster_cuda_candidates import _expand_topology_views
-from fragnnet.models.masster.masster_cuda_topology import CudaTopologyCounts, CudaTopologyGraph
-from fragnnet.models.masster.masster_templates import MassterTemplate, _connected_piece_count
+from fragnnet.models.masster.path_selection.cuda_topology import (
+    CudaTopologyBatch,
+    CudaTopologyCounts,
+    CudaTopologyGraph,
+)
+from fragnnet.models.masster.path_selection.templates import MassterTemplate, _connected_piece_count
+
+
+def _expand_topology_views(
+    topology: CudaTopologyBatch,
+    representative_of: Sequence[int],
+    topology_representatives: Sequence[int],
+    atom_ptr_values: Sequence[int],
+    bond_indices_by_molecule: Sequence[Sequence[int]],
+) -> tuple[dict[str, th.Tensor], np.ndarray, float, float]:
+    """Gather ragged representative arrays and apply all view offsets in six batches.
+
+    Host counts determine output sizes. All index arithmetic on candidate arrays
+    runs on their device, with no per-molecule tensor operations or shape reads.
+    """
+    device = topology.arrays[0].device
+    packing_start = perf_counter()
+    position = {leader: index for index, leader in enumerate(topology_representatives)}
+    view_to_rep = np.asarray([position[leader] for leader in representative_of], dtype=np.int64)
+    lengths = np.asarray([count.field_lengths for count in topology.counts], dtype=np.int64)
+    view_lengths = lengths[view_to_rep]
+    source_offsets = np.cumsum(lengths, axis=0) - lengths
+    view_offsets = np.cumsum(view_lengths, axis=0) - view_lengths
+    bonds_per_view = np.asarray(
+        [len(indices) for indices in bond_indices_by_molecule], dtype=np.int64
+    )
+    bond_offsets = np.cumsum(bonds_per_view) - bonds_per_view
+    # Rows 0:6 identify views and their global atom/mask/component/unique/bond starts.
+    metadata_rows = [
+        np.arange(len(representative_of), dtype=np.int64),
+        np.asarray(atom_ptr_values[:-1], dtype=np.int64),
+        view_offsets[:, 0],
+        view_offsets[:, 1],
+        view_offsets[:, 10],
+        bond_offsets,
+    ]
+    domains = ((0,), (1, 2, 9), (3, 4), (5, 6), (7, 8), (10,))
+    for fields in domains:
+        field = fields[0]
+        metadata_rows.extend(
+            (
+                view_lengths[:, field],
+                source_offsets[view_to_rep, field] - view_offsets[:, field],
+            )
+        )
+    metadata_cpu = np.stack(metadata_rows)
+    bond_lookup_cpu = np.asarray(
+        [bond for indices in bond_indices_by_molecule for bond in indices], dtype=np.int64
+    )
+    packing_ms = (perf_counter() - packing_start) * 1000.0
+    transfer_start = perf_counter()
+    metadata = th.from_numpy(metadata_cpu).to(device)
+    bond_lookup = th.from_numpy(bond_lookup_cpu).to(device)
+    transfer_ms = (perf_counter() - transfer_start) * 1000.0
+
+    # Gather each distinct ragged domain once; fields in a domain share its index map.
+    remap_start = perf_counter()
+    gathered: dict[int, th.Tensor] = {}
+    owners: list[th.Tensor] = []
+    for domain, fields in enumerate(domains):
+        total = int(view_lengths[:, fields[0]].sum())
+        owner = th.repeat_interleave(metadata[0], metadata[6 + 2 * domain], output_size=total)
+        source_indices = th.arange(total, device=device) + metadata[7 + 2 * domain][owner]
+        owners.append(owner)
+        for field in fields:
+            gathered[field] = topology.arrays[field][source_indices]
+    masks, components, atoms, broken, boundaries, unique = owners
+    component_mask_indices = gathered[1] + metadata[2][components]
+    mask_indices = gathered[5] + metadata[2][broken]
+    broken_bond_indices = bond_lookup[gathered[6] + metadata[5][broken]]
+    arrays = {
+        "mask_batch_indices": masks,
+        "mask_cut_counts": gathered[0],
+        "mechanism_mask_indices": th.arange(masks.numel(), dtype=th.long, device=device),
+        "mechanism_rule_indices": th.zeros_like(masks),
+        "mechanism_boundary_bond_indices": broken_bond_indices,
+        "boundary_mechanism_indices": mask_indices,
+        "component_mask_indices": component_mask_indices,
+        "component_mechanism_indices": component_mask_indices,
+        "component_batch_indices": components,
+        "component_cut_counts": gathered[2],
+        # Ordinary components are connected, so they form no bond.
+        "component_formed_bond_counts": th.zeros_like(gathered[2]),
+        "component_unique_indices": gathered[9] + metadata[4][components],
+        "unique_representative_component_indices": gathered[10] + metadata[3][unique],
+        "atom_indices": gathered[3] + metadata[1][atoms],
+        "atom_component_indices": gathered[4] + metadata[3][atoms],
+        "boundary_bond_indices": bond_lookup[gathered[7] + metadata[5][boundaries]],
+        "boundary_component_indices": gathered[8] + metadata[3][boundaries],
+        "mask_indices": mask_indices,
+        "broken_bond_indices": broken_bond_indices,
+    }
+    packing_ms += (perf_counter() - remap_start) * 1000.0
+    return arrays, view_to_rep, packing_ms, transfer_ms
 
 
 @dataclass(frozen=True)
@@ -554,8 +650,10 @@ def build_masster_candidates_cuda(
     input_ms = (perf_counter() - total_start) * 1000.0
 
     # 2. Select exact forced-prefix CSR on GPU, then feed it directly to GPU topology.
-    from fragnnet.models.masster.masster_cuda_selection import rank_batch_cuda
-    from fragnnet.models.masster.masster_cuda_topology import build_cuda_topology_device_masks
+    from fragnnet.models.masster.path_selection.cuda_selection import rank_batch_cuda
+    from fragnnet.models.masster.path_selection.cuda_topology import (
+        build_cuda_topology_device_masks,
+    )
 
     selection_start = perf_counter()
     ranked = rank_batch_cuda(

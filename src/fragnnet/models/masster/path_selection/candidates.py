@@ -17,7 +17,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.masster_templates import MassterTemplate
+    from fragnnet.models.masster.path_selection.templates import MassterTemplate
 
 
 _CPU_POOL: ThreadPoolExecutor | None = None
@@ -183,7 +183,7 @@ class _TopologyInput:
 
 
 def _build_local_topology(request: _TopologyInput) -> _TopologyCache:
-    from fragnnet.models.masster.masster_core import build_component_arrays_raw
+    from fragnnet.models.masster.path_selection.core import build_component_arrays_raw
 
     (
         cut_counts, component_mask_indices, component_cut_counts, atom_indices,
@@ -287,7 +287,7 @@ def _top_mixture_bond_sets(
         concatenated cut bond indices. Bond sets are ordered by descending mixture
         probability, ties broken by ascending lexicographic bond order.
     """
-    from fragnnet.models.masster.masster_core import top_mixture_bond_sets_raw
+    from fragnnet.models.masster.path_selection.core import top_mixture_bond_sets_raw
 
     return top_mixture_bond_sets_raw(
         np.ascontiguousarray(logits, dtype=np.float64),
@@ -556,9 +556,6 @@ def build_masster_candidates(
     mixture_log_weights: th.Tensor | None = None,
     candidate_group_ids: th.Tensor | None = None,
     candidate_backend: str = "cpu",
-    _cuda_topology: bool = False,
-    _cuda_topology_stats: list[dict] | None = None,
-    _cuda_full: bool = False,
     _cuda_full_stats: list[dict] | None = None,
 ) -> MassterCandidateBatch:
     """Select masks on CPU and return sparse pathway tensors on the model device.
@@ -583,10 +580,8 @@ def build_masster_candidates(
     """
     if candidate_backend not in ("cpu", "cuda"):
         raise ValueError(f"unknown candidate_backend: {candidate_backend!r}; use cpu or cuda")
-    if candidate_backend == "cuda" or _cuda_full:
-        if _cuda_topology or _cuda_topology_stats is not None:
-            raise ValueError("full CUDA and topology-only prototypes are mutually exclusive")
-        from fragnnet.models.masster.masster_cuda_full_candidates import (
+    if candidate_backend == "cuda":
+        from fragnnet.models.masster.path_selection.cuda_full import (
             build_masster_candidates_cuda,
         )
 
@@ -608,7 +603,44 @@ def build_masster_candidates(
             _statistics=_cuda_full_stats,
         )
     if _cuda_full_stats is not None:
-        raise ValueError("full CUDA statistics require _cuda_full=True")
+        raise ValueError("full CUDA statistics require candidate_backend='cuda'")
+    return _build_cpu_candidates(
+        bond_logits,
+        chemical_bond_index,
+        atom_batch_indices,
+        atom_ptr,
+        max_masks=max_masks,
+        include_single_bond_cuts=include_single_bond_cuts,
+        min_mask_relative_probability=min_mask_relative_probability,
+        max_unique_components=max_unique_components,
+        max_enumerated_masks=max_enumerated_masks,
+        mask_selection_threads=mask_selection_threads,
+        static_graph=static_graph,
+        smarts_templates=smarts_templates,
+        mixture_log_weights=mixture_log_weights,
+        candidate_group_ids=candidate_group_ids,
+    )
+
+
+def _build_cpu_candidates(
+    bond_logits: th.Tensor,
+    chemical_bond_index: th.Tensor,
+    atom_batch_indices: th.Tensor,
+    atom_ptr: th.Tensor,
+    *,
+    max_masks: int,
+    include_single_bond_cuts: bool,
+    min_mask_relative_probability: float = 0.0,
+    max_unique_components: int | None = None,
+    max_enumerated_masks: int | None = None,
+    mask_selection_threads: int = 1,
+    static_graph: MassterStaticGraph | None = None,
+    smarts_templates: Sequence[Sequence[MassterTemplate]] | None = None,
+    mixture_log_weights: th.Tensor | None = None,
+    candidate_group_ids: th.Tensor | None = None,
+    topology_builder: Callable[..., MassterCandidateBatch] | None = None,
+) -> MassterCandidateBatch:
+    """CPU candidate construction; ``topology_builder`` is the benchmark-only GPU topology hook."""
     if bond_logits.ndim not in {1, 2}:
         raise ValueError("bond_logits must have shape (num_bonds,) or (num_bonds, mixtures)")
     if bond_logits.ndim == 2 and bond_logits.shape[1] < 2:
@@ -651,16 +683,6 @@ def build_masster_candidates(
         raise ValueError("mixture_log_weights must be omitted for one Bernoulli component")
     if num_mixtures > 1 and mixture_log_weights is None:
         raise ValueError("mixture_log_weights are required for multiple Bernoulli components")
-
-    if _cuda_topology:
-        if bond_logits.device.type != "cuda" or bond_logits.dtype != th.float32:
-            raise ValueError("CUDA topology prototype requires CUDA float32 bond logits")
-        if num_mixtures != 1 or max_unique_components is None:
-            raise ValueError("CUDA topology prototype requires one mixture and unique mode")
-        if min_mask_relative_probability != 0.0:
-            raise ValueError("CUDA topology prototype requires disabled mask probability floors")
-    elif _cuda_topology_stats is not None:
-        raise ValueError("CUDA topology statistics require _cuda_topology=True")
 
     total_start = perf_counter()
     device = bond_logits.device
@@ -730,8 +752,6 @@ def build_masster_candidates(
         smarts_templates = static_graph.smarts_templates
     if smarts_templates is not None and len(smarts_templates) != num_molecules:
         raise ValueError("smarts_templates must contain one sequence per precursor")
-    if _cuda_topology and smarts_templates is not None and any(smarts_templates):
-        raise ValueError("CUDA topology prototype does not support SMARTS mechanisms")
     atom_ptr_values = atom_ptr_cpu.tolist()
     if atom_batch_indices.numel() != atom_ptr_values[-1]:
         raise ValueError("atom_ptr does not describe atom_batch_indices")
@@ -904,10 +924,8 @@ def build_masster_candidates(
         if leader == molecule_index:
             topology_representatives.append(leader)
 
-    if _cuda_topology:
-        from fragnnet.models.masster.masster_cuda_candidates import _build_cuda_candidates
-
-        return _build_cuda_candidates(
+    if topology_builder is not None:
+        return topology_builder(
             bond_logits=bond_logits,
             topology_inputs=topology_inputs,
             topology_representatives=topology_representatives,
@@ -921,7 +939,7 @@ def build_masster_candidates(
             input_transfer_ms=input_transfer_ms,
             mask_selection_ms=mask_selection_ms,
             forced_merge_ms=forced_merge_ms,
-            statistics=_cuda_topology_stats,
+            smarts_templates=smarts_templates,
         )
 
     # One coordinator interval measures concurrent construction, never a sum of workers.
@@ -1033,7 +1051,7 @@ def build_masster_candidates(
 
         smarts_start = perf_counter()
         if molecule_templates:
-            from fragnnet.models.masster.masster_templates import formed_bond_count
+            from fragnnet.models.masster.path_selection.templates import formed_bond_count
 
             smarts_lookup = (
                 None

@@ -276,6 +276,14 @@ def main() -> None:
             out = model.inference_step(
                 {**batch, "return_explainability_tensors": True}, metrics=None
             )
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             true = model.preproc_spec(
                 batch["spec_mzs"],
                 batch["spec_ints"],

@@ -111,10 +111,10 @@ def test_repeated_loader_preserves_equal_samples_and_loading_settings():
 
 
 def test_reference_import_uses_frozen_python_and_extension_and_records_adapter(tmp_path):
-    core_spec = importlib.util.find_spec("fragnnet.models.masster.masster_core")
+    core_spec = importlib.util.find_spec("fragnnet.models.masster.path_selection.core")
     core_path = Path(core_spec.origin)
     (tmp_path / core_path.name).symlink_to(core_path)
-    (tmp_path / "masster_candidates.py").write_text(
+    (tmp_path / "candidates.py").write_text(
         "from dataclasses import dataclass\n"
         "MARKER = 'frozen reference'\n"
         "@dataclass(frozen=True)\n"
@@ -131,15 +131,15 @@ spec = importlib.util.spec_from_file_location('benchmark', sys.argv[1])
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 report = benchmark._install_reference(Path(sys.argv[2]))
-from fragnnet.models.masster import masster_core, masster_candidates
-report['marker'] = masster_candidates.MARKER
-report['combined_ms'] = masster_candidates.MassterCandidateTimings(2, 3).topology_assembly_ms
-report['core_file'] = masster_core.__file__
-report['python_file'] = masster_candidates.__file__
-report['candidate_identity'] = masster_candidates.build_masster_candidates(
+from fragnnet.models.masster.path_selection import core, candidates
+report['marker'] = candidates.MARKER
+report['combined_ms'] = candidates.MassterCandidateTimings(2, 3).topology_assembly_ms
+report['core_file'] = core.__file__
+report['python_file'] = candidates.__file__
+report['candidate_identity'] = candidates.build_masster_candidates(
     [1, 2, 3], candidate_backend='cpu')
 try:
-    masster_candidates.build_masster_candidates([], candidate_backend='cuda')
+    candidates.build_masster_candidates([], candidate_backend='cuda')
 except ValueError:
     report['cuda_reference_rejected'] = True
 try:
@@ -204,7 +204,9 @@ def test_benchmark_prototype_wrapper_preserves_inputs_and_supplies_private_stati
         received.update(args=args, kwargs=kwargs)
         return "candidate batch"
 
-    module = SimpleNamespace(build_masster_candidates=original)
+    module = SimpleNamespace(
+        build_masster_candidates=original, build_masster_candidates_cuda_topology=original
+    )
     monkeypatch.setattr(benchmark.importlib, "import_module", lambda name: module)
     statistics = []
     benchmark._enable_cuda_prototype(statistics, backend)
@@ -216,13 +218,14 @@ def test_benchmark_prototype_wrapper_preserves_inputs_and_supplies_private_stati
         == "candidate batch"
     )
     assert received["args"] == ("logits",)
-    expected = {
-        "max_masks": 256,
-        "candidate_backend": public_backend,
-        f"_{backend}_stats": statistics,
-    }
     if backend == "cuda_topology":
-        expected["_cuda_topology"] = True
+        expected = {"max_masks": 256, "statistics": statistics}
+    else:
+        expected = {
+            "max_masks": 256,
+            "candidate_backend": public_backend,
+            "_cuda_full_stats": statistics,
+        }
     assert received["kwargs"] == expected
     with pytest.raises(RuntimeError, match="requires public backend"):
         module.build_masster_candidates("logits", candidate_backend="wrong")

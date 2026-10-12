@@ -10,12 +10,12 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.bond_mask_generator import (
+from fragnnet.models.masster.path_selection.candidates import build_masster_candidates
+from fragnnet.models.masster.path_selection.core import build_component_arrays_raw
+from fragnnet.models.masster.path_selection.masks import (
     connected_component_atom_masks,
     iter_ranked_cut_masks,
 )
-from fragnnet.models.masster.masster_candidates import build_masster_candidates
-from fragnnet.models.masster.masster_core import build_component_arrays_raw
 
 BOUNDED_CUT_COUNT_WEIGHTS = (0.0, 0.0, 0.35, 0.30, 0.20, 0.10, 0.05)
 

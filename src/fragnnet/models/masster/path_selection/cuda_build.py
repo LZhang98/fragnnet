@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import logging
 import os
 import re
 import shutil
 import subprocess
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 
 import torch as th
 
@@ -101,3 +104,45 @@ def resolve_cuda_home(explicit: str | None = None) -> str:
     return _discover_home(
         explicit, os.environ.get("CUDA_HOME"), shutil.which("nvcc"), th.version.cuda
     )
+
+
+def build_cuda_library(
+    source: Path,
+    stage: str,
+    lock: Lock,
+    cache_dir: str,
+    cuda_home: str,
+    flags: Sequence[str],
+) -> ctypes.CDLL:
+    """Compile `source` lazily into the /tmp cache and load it; callers declare the ABI.
+
+    The cache filename hashes the source, compiler and the repr of `flags` (the full nvcc
+    flag sequence), so identical inputs reuse one binary. `lock` is the calling stage's own
+    build lock.
+    """
+    compiler = Path(cuda_home) / "bin" / "nvcc"
+    if not compiler.is_file():
+        raise RuntimeError(f"CUDA {stage} requires an existing nvcc compiler: {compiler}")
+    cache = Path(cache_dir).resolve()
+    if not cache.is_relative_to(Path("/tmp").resolve()):
+        raise ValueError(f"CUDA {stage} build cache must be inside /tmp")
+    version = subprocess.run(
+        [str(compiler), "--version"], check=True, capture_output=True, timeout=30
+    ).stdout
+    identity = hashlib.sha256(
+        source.read_bytes() + str(compiler.resolve()).encode() + version + repr(flags).encode()
+    ).hexdigest()[:20]
+    binary = cache / f"masster_cuda_{stage}_{identity}.so"
+    with lock:
+        cache.mkdir(parents=True, exist_ok=True)
+        if not binary.is_file():
+            temporary = binary.with_suffix(f".{os.getpid()}.tmp.so")
+            command = [str(compiler), *flags, str(source), "-o", str(temporary)]
+            try:
+                subprocess.run(command, check=True, capture_output=True, text=True, timeout=180)
+                temporary.replace(binary)
+            except subprocess.CalledProcessError as error:
+                raise RuntimeError(f"CUDA {stage} compilation failed:\n{error.stderr}") from error
+            finally:
+                temporary.unlink(missing_ok=True)
+    return ctypes.CDLL(str(binary))

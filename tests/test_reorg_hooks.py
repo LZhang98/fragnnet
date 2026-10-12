@@ -87,7 +87,7 @@ def test_migration_and_validation_load_no_model_code() -> None:
     heavy = {
         "fragnnet.models.masster.masster_pl",
         "fragnnet.models.masster.masster_model",
-        "fragnnet.models.masster.masster_core",
+        "fragnnet.models.masster.path_selection.core",
         "fragnnet.models.fragnnet.fragnnet_pl",
         "fragnnet.models.fragnnet.fragnnet_model",
         "fragnnet.models.fragnnet.dag.builder",

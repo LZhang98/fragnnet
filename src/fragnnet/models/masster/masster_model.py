@@ -74,18 +74,18 @@ from fragnnet.models.masster.candidate_features import (
     element_counts_by_group,
     resolve_candidate_features,
 )
-from fragnnet.models.masster.masster_candidates import (
-    MassterCandidateBatch,
-    MassterStaticGraph,
-    build_masster_candidates,
-)
 from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.models.masster.masster_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
     nominal_isotope_power_table,
 )
-from fragnnet.models.masster.masster_templates import (
+from fragnnet.models.masster.path_selection.candidates import (
+    MassterCandidateBatch,
+    MassterStaticGraph,
+    build_masster_candidates,
+)
+from fragnnet.models.masster.path_selection.templates import (
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,
     MassterTemplate,
@@ -1400,12 +1400,12 @@ class MassterModel(nn.Module):
                 nominal m/z of unit-resolution libraries such as NIST EI: the sum of each
                 atom's most-abundant-isotope mass number (implicit hydrogens at 1), plus the H
                 shift and the adduct's rounded mass delta, with no electron mass. Candidate
-                features keep exact masses. Without ``return_annotation`` the prediction rows
-                of one spectrum that share an m/z are merged (probabilities summed).
+                features keep exact masses. The prediction rows of one spectrum that share an m/z
+                are merged (probabilities summed).
             merge_same_mz_rows: Merge rows of one spectrum that share a 4-decimal m/z
-                (probabilities summed) in ``exact`` mode too, unless ``return_annotation``.
-                Exact for the loss (coincident Gaussians) and the metrics; needed when the
-                targets are intensity-transformed, so evaluation untransforms each m/z's sum.
+                (probabilities summed) in ``exact`` mode too. Exact for the loss (coincident
+                Gaussians) and the metrics; needed when the targets are intensity-transformed,
+                so evaluation untransforms each m/z's sum.
             isotope_envelope: ``none`` emits one row per pathway. ``natural`` (requires
                 ``nominal``) splits each emitted pathway over nominal offsets by the natural
                 isotope pattern of its ion composition (fragment atoms, the channel's
@@ -3173,7 +3173,10 @@ class MassterModel(nn.Module):
             - "bond_break_logits"/"atom_charge_logits": raw head outputs.
             - with ``return_annotation``: "pred_pathway_fragment_idxs",
               "pred_pathway_ion_mode_idxs" (0 CRF, 1 CMF) and "pred_pathway_h_shifts",
-              aligned with "pred_mzs"; "fragment_atom_indices" /
+              one per pathway, aligned with "pred_pathway_mzs" when rows are merged (nominal
+              mass or ``merge_same_mz_rows``: also "pred_pathway_batch_idxs" and
+              "pred_pathway_scores", each pathway's linear score before the merge) and with
+              "pred_mzs" otherwise; "fragment_atom_indices" /
               "fragment_atom_fragment_idxs", one entry per (fragment, atom) membership, with
               fragments indexed like "ion_h_fragment_batch_idxs"; and
               "fragment_rule_fragment_idxs" / "fragment_rule_idxs", one entry per
@@ -4100,10 +4103,11 @@ class MassterModel(nn.Module):
                 num_fragments,
                 precursor_type_indices,
                 # `component_cut_counts` carries the whole mask's cut count on every one of
-                # its components (`masster_core.pyx:851`), so for a mask that yields
-                # three or more pieces this over-counts an end piece's own boundary. It is an
-                # upper bound, so the valence bound stays conservative here: it can leave an
-                # unreachable channel in place, never remove a reachable one. The
+                # its components (`build_component_arrays_raw` in `path_selection/core.pyx`),
+                # so for a mask that yields three or more pieces this over-counts an end
+                # piece's own boundary. It is an upper bound, so the valence bound stays
+                # conservative here: it can leave an unreachable channel in place, never
+                # remove a reachable one. The
                 # unique-fragment path above uses exact per-fragment boundary counts.
                 fragment_cut_counts,
                 fragment_formed_bond_counts,
@@ -4468,13 +4472,24 @@ class MassterModel(nn.Module):
                 base_pred_logprobs = base_pred_logprobs[emitted_rows] + isotope_log_shares.to(
                     base_pred_logprobs
                 )
-        if (self.mass_mode == "nominal" or self.merge_same_mz_rows) and not return_annotation:
+        merged_pathway_scores = None
+        if self.mass_mode == "nominal" or self.merge_same_mz_rows:
             # 7. At nominal mass many pathways land on the same integer of a spectrum. The loss
             # and metrics see only (m/z, probability), so merging those rows is exact, and it
-            # divides the loss's target-by-prediction work several-fold. The annotation export
-            # keeps one row per pathway. merge_same_mz_rows applies the same merge at exact mass
-            # (4-decimal m/z), so an intensity untransform sees each m/z's summed probability.
+            # divides the loss's target-by-prediction work several-fold. merge_same_mz_rows
+            # applies the same merge at exact mass (4-decimal m/z), so an intensity untransform
+            # sees each m/z's summed probability. The annotation export gets the same merged
+            # spectrum plus each pathway's pre-merge score, which it turns into shares of the
+            # merged peak.
             row_mzs, row_batch_idxs = pred_mzs, pred_batch_idxs
+            if return_annotation:
+                merged_pathway_scores = {
+                    "pred_pathway_mzs": row_mzs,
+                    "pred_pathway_batch_idxs": row_batch_idxs,
+                    "pred_pathway_scores": (
+                        pred_logprobs.exp() if pred_intensities is None else pred_intensities
+                    ),
+                }
             pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
                 row_mzs, pred_logprobs, row_batch_idxs, agg="lse"
             )
@@ -4612,6 +4627,8 @@ class MassterModel(nn.Module):
             if emitted_rows is not None:
                 pathway_rows = {name: rows[emitted_rows] for name, rows in pathway_rows.items()}
                 pathway_rows["pred_pathway_isotope_offsets"] = isotope_offsets
+            if merged_pathway_scores is not None:
+                pathway_rows.update(merged_pathway_scores)
             output.update(
                 {
                     **pathway_rows,

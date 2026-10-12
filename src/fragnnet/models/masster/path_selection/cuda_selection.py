@@ -7,9 +7,6 @@ does not require a CUDA device or toolkit. The candidate builder selects this mo
 from __future__ import annotations
 
 import ctypes
-import hashlib
-import os
-import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -21,7 +18,11 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
+from fragnnet.models.masster.path_selection.cuda_build import (
+    build_cuda_library,
+    default_cuda_cache_dir,
+    resolve_cuda_home,
+)
 
 _BUILD_LOCK = Lock()
 _MAX_BONDS = 2048
@@ -63,16 +64,6 @@ class RankedMasksCuda:
 def _load_native_library(
     cache_dir: str, cuda_home: str, capability: tuple[int, int]
 ) -> ctypes.CDLL:
-    source = Path(__file__).with_suffix(".cu")
-    compiler = Path(cuda_home) / "bin" / "nvcc"
-    if not compiler.is_file():
-        raise RuntimeError(f"CUDA selection requires an existing nvcc compiler: {compiler}")
-    cache = Path(cache_dir).resolve()
-    if not cache.is_relative_to(Path("/tmp").resolve()):
-        raise ValueError("CUDA selection build cache must be inside /tmp")
-    version = subprocess.run(
-        [str(compiler), "--version"], check=True, capture_output=True, timeout=30
-    ).stdout
     flags = (
         "-O3",
         "-std=c++17",
@@ -84,29 +75,14 @@ def _load_native_library(
         "-Xlinker=-rpath",
         f"-Xlinker={cuda_home}/lib64",
     )
-    identity = hashlib.sha256(
-        source.read_bytes() + str(compiler.resolve()).encode() + version + repr(flags).encode()
-    ).hexdigest()[:20]
-    binary = cache / f"masster_cuda_selection_{identity}.so"
-    with _BUILD_LOCK:
-        cache.mkdir(parents=True, exist_ok=True)
-        if not binary.is_file():
-            temporary = binary.with_suffix(f".{os.getpid()}.tmp.so")
-            command = [
-                str(compiler),
-                *flags,
-                str(source),
-                "-o",
-                str(temporary),
-            ]
-            try:
-                subprocess.run(command, check=True, capture_output=True, text=True, timeout=180)
-                temporary.replace(binary)
-            except subprocess.CalledProcessError as error:
-                raise RuntimeError(f"CUDA selection compilation failed:\n{error.stderr}") from error
-            finally:
-                temporary.unlink(missing_ok=True)
-    library = ctypes.CDLL(str(binary))
+    library = build_cuda_library(
+        Path(__file__).with_suffix(".cu"),
+        "selection",
+        _BUILD_LOCK,
+        cache_dir,
+        cuda_home,
+        flags,
+    )
     library.masster_selection_launch.argtypes = [
         ctypes.POINTER(ctypes.c_uint64),
         ctypes.c_int,

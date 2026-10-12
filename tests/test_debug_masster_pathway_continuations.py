@@ -10,7 +10,7 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.fragmentation.smarts_prepass import _apply_nl_prepass
-from fragnnet.models.masster.masster_templates import MASSTER_NL_RULES, formed_bond_count
+from fragnnet.models.masster.path_selection.templates import MASSTER_NL_RULES, formed_bond_count
 from scripts.debug.smarts import debug_masster_excision_continuations as ec
 from scripts.debug.smarts.debug_masster_smarts_rule_gate import (
     ChannelScorer,

@@ -119,22 +119,23 @@ def test_natural_isotope_rows_split_each_pathway() -> None:
     isotopic = _build_model(batch, **common, **NATURAL).eval()(**inputs)
 
     keys = ("pred_pathway_fragment_idxs", "pred_pathway_ion_mode_idxs", "pred_pathway_h_shifts")
-    mono_rows = {tuple(int(mono[k][i]) for k in keys): i for i in range(mono["pred_mzs"].numel())}
+    n_mono = mono["pred_pathway_mzs"].numel()
+    mono_rows = {tuple(int(mono[k][i]) for k in keys): i for i in range(n_mono)}
     assert "pred_pathway_isotope_offsets" not in mono
     offsets = isotopic["pred_pathway_isotope_offsets"]
-    assert offsets.shape == isotopic["pred_mzs"].shape
+    assert offsets.shape == isotopic["pred_pathway_mzs"].shape
     split = {}
-    for i in range(isotopic["pred_mzs"].numel()):
+    for i in range(isotopic["pred_pathway_mzs"].numel()):
         source = mono_rows[tuple(int(isotopic[k][i]) for k in keys)]
-        assert isotopic["pred_mzs"][i] == mono["pred_mzs"][source] + offsets[i]
-        assert isotopic["pred_batch_idxs"][i] == mono["pred_batch_idxs"][source]
-        split[source] = split.get(source, 0.0) + float(isotopic["pred_logprobs"][i].exp())
-    assert sorted(split) == list(range(mono["pred_mzs"].numel()))
+        assert isotopic["pred_pathway_mzs"][i] == mono["pred_pathway_mzs"][source] + offsets[i]
+        assert isotopic["pred_pathway_batch_idxs"][i] == mono["pred_pathway_batch_idxs"][source]
+        split[source] = split.get(source, 0.0) + float(isotopic["pred_pathway_scores"][i])
+    assert sorted(split) == list(range(mono["pred_pathway_mzs"].numel()))
     for source, total in split.items():
-        assert total == pytest.approx(float(mono["pred_logprobs"][source].exp()), rel=1e-5)
+        assert total == pytest.approx(float(mono["pred_pathway_scores"][source]), rel=1e-5)
     # Bromine and chlorine put a real M+2 on their fragments.
     assert (offsets == 2).any()
-    assert th.equal(mono["pred_mzs"], mono["pred_mzs"].round())
+    assert th.equal(mono["pred_pathway_mzs"], mono["pred_pathway_mzs"].round())
 
 
 @pytest.mark.parametrize("unique", [False, True])
@@ -171,7 +172,7 @@ def test_isotope_rows_follow_each_fragments_atoms(unique: bool) -> None:
         out["pred_pathway_fragment_idxs"].tolist(),
         out["pred_pathway_h_shifts"].tolist(),
         out["pred_pathway_isotope_offsets"].tolist(),
-        out["pred_logprobs"].exp().tolist(),
+        out["pred_pathway_scores"].tolist(),
     ):
         patterns.setdefault((fragment, shift), np.zeros(2 * order + 1))[offset + order] = logprob
     for (fragment, shift), observed in patterns.items():
@@ -200,9 +201,9 @@ def test_nominal_rows_merge_by_spectrum_and_mz(settings: dict) -> None:
 
     expected = {}
     for mz, logprob, batch_idx in zip(
-        rows["pred_mzs"].tolist(),
-        rows["pred_logprobs"].exp().tolist(),
-        rows["pred_batch_idxs"].tolist(),
+        rows["pred_pathway_mzs"].tolist(),
+        rows["pred_pathway_scores"].tolist(),
+        rows["pred_pathway_batch_idxs"].tolist(),
     ):
         expected[(batch_idx, mz)] = expected.get((batch_idx, mz), 0.0) + logprob
     observed = {
@@ -210,7 +211,7 @@ def test_nominal_rows_merge_by_spectrum_and_mz(settings: dict) -> None:
         for mz, p, b in zip(merged["pred_mzs"], merged["pred_logprobs"], merged["pred_batch_idxs"])
     }
     assert observed.keys() == expected.keys()
-    assert merged["pred_mzs"].numel() < rows["pred_mzs"].numel()
+    assert merged["pred_mzs"].numel() < rows["pred_pathway_mzs"].numel()
     for key, value in expected.items():
         assert observed[key] == pytest.approx(value, rel=1e-5)
 

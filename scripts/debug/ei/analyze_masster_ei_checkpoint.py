@@ -189,7 +189,7 @@ def main() -> None:
             arrays = {
                 name: result[name].detach().cpu().numpy()
                 for name in (
-                    "pred_mzs", "pred_ints", "pred_batch_idxs",
+                    "pred_pathway_mzs", "pred_pathway_scores", "pred_pathway_batch_idxs",
                     "pred_pathway_fragment_idxs", "pred_pathway_h_shifts",
                 )
             }
@@ -197,12 +197,12 @@ def main() -> None:
             batch_size = int(batch["batch_size"])
             for view in range(batch_size):
                 spec_id = int(specs.iloc[positions[batch_number * args.batch_size + view]].spec_id)
-                pred_mask = arrays["pred_batch_idxs"] == view
+                pred_mask = arrays["pred_pathway_batch_idxs"] == view
                 true_mask = target[2] == view
                 rows, info = _spectrum_rows(
                     spec_id,
-                    arrays["pred_mzs"][pred_mask],
-                    arrays["pred_ints"][pred_mask],
+                    arrays["pred_pathway_mzs"][pred_mask],
+                    arrays["pred_pathway_scores"][pred_mask],
                     arrays["pred_pathway_fragment_idxs"][pred_mask],
                     arrays["pred_pathway_h_shifts"][pred_mask],
                     target[0][true_mask], target[1][true_mask],

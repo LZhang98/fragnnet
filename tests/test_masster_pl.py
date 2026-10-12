@@ -23,7 +23,6 @@ from fragnnet.loss.cross_entropy import (
 )
 from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_pl import (
     MassterPL,
     _balanced_binary_support_loss,
@@ -36,13 +35,13 @@ from fragnnet.models.masster.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
-from fragnnet.models.masster.masster_templates import build_masster_templates
+from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
+from fragnnet.models.masster.path_selection.templates import build_masster_templates
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 from fragnnet.utils.spec_similarity import calculate_match_mzs
-from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassterPL, dict]:
@@ -1808,6 +1807,7 @@ def test_proposal_target_can_use_a_different_intensity_transform() -> None:
     model, _ = _build_pl(
         ints_transform="sqrt",
         masster_proposal_ints_transform="none",
+        masster_merge_same_mz_rows=True,
         masster_unique_fragment_mode=True,
         masster_proposal_anchored=True,
         masster_proposal_selection_only=True,
@@ -2100,6 +2100,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
         masster_proposal_loss_weight=0.1,
         loss_type="cosine_distance",
         ints_transform="sqrt",
+        masster_merge_same_mz_rows=True,
     )
     params = config["mol_params"]
     graph = get_mol_graph(
@@ -2158,6 +2159,7 @@ def test_masster_cli_exports_without_dags(
         masster_proposal_loss_weight=0.1,
         loss_type="cosine_distance",
         ints_transform="sqrt",
+        masster_merge_same_mz_rows=True,
         auxiliary_scores=[],
     )
     smiles = ["CCO", "CO"]
@@ -2239,23 +2241,82 @@ def test_masster_cli_exports_without_dags(
     assert saved["spec_id"].tolist() == [101, 102]
     for index in range(2):
         mask = prediction["pred_batch_idxs"] == index
-        # sqrt-transformed scores are squared back to linear intensity; the export then sums
-        # candidates at one m/z (4 decimals), as every score does, keeps each peak's exact m/z,
-        # and rescales the summed peaks to a per-spectrum base peak of 1000.
+        # The merged spectrum has one row per 4-decimal m/z whose scores already sum the
+        # pathways there; the export must untransform that sum (sqrt scores are squared back
+        # to linear) and rescale to a per-spectrum base peak of 1000, never square each pathway.
         linear = (weights[mask] / weights[mask].max()).square()
-        peak_mzs, peak_ints, _ = aggregate_peaks_exact_mz(
-            prediction["pred_mzs"][mask], linear, th.zeros(int(mask.sum()), dtype=th.long)
-        )
+        peak_mzs = prediction["pred_mzs"][mask]
         th.testing.assert_close(
-            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=peak_mzs.dtype), peak_mzs
+            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=peak_mzs.dtype),
+            peak_mzs,
+            rtol=0,
+            atol=1e-4,
         )
-        expected = peak_ints / peak_ints.max() * 1000.0
+        expected = linear / linear.max() * 1000.0
         th.testing.assert_close(
             th.as_tensor(saved.iloc[index]["pred_ints"], dtype=expected.dtype),
             expected,
             rtol=1e-5,
             atol=1e-4,
         )
+
+
+@pytest.mark.parametrize("output_mode", ["probability", "independent"])
+@pytest.mark.parametrize("ints_transform", ["sqrt", "log10"])
+def test_annotation_export_peaks_equal_the_merged_spectrum(
+    output_mode: str, ints_transform: str
+) -> None:
+    """The annotation export untransforms each m/z's summed score, as the merged spectrum does."""
+    model, config = _build_pl(
+        masster_intensity_output=output_mode,
+        masster_merge_same_mz_rows=True,
+        masster_unique_fragment_mode=True,
+        masster_proposal_selection_only=True,
+        masster_proposal_anchored=True,
+        masster_proposal_loss_weight=0.1,
+        ints_transform=ints_transform,
+        loss_type="cosine_distance",
+        auxiliary_scores=[],
+    )
+    smiles = ["CCO", "CCCO", "CC(C)O"]
+    params = config["mol_params"]
+    graphs = [
+        get_mol_graph(
+            Chem.MolFromSmiles(s),
+            params["pyg_node_feats"],
+            params["pyg_edge_feats"],
+            params["pyg_pe_embed_k"],
+            True,
+        )
+        for s in smiles
+    ]
+    batch = {
+        "mol_pyg": Batch.from_data_list(graphs),
+        "mol_smiles": smiles,
+        "mol_id": th.tensor([11, 22, 33]),
+        "spec_unique_id": th.tensor([101, 102, 103]),
+        "spec_prec_type": th.tensor([0, 0, 0]),
+        "spec_inst_type": th.tensor([0, 0, 0]),
+        "spec_nce": th.tensor([25.0, 35.0, 30.0]),
+        "batch_size": th.tensor(3),
+    }
+    model.eval()
+    with th.no_grad():
+        merged = model.inference_step(dict(batch))
+        annotated = model.inference_step({**batch, "return_explainability_tensors": True})
+    # Several pathways must share an m/z, or the two spectra could agree by construction.
+    assert annotated["pred_pathway_mzs"].numel() > merged["pred_mzs"].numel()
+    (mzs, ints, batch_idxs), annotation = model.postprocess_export_peaks(
+        dict(batch),
+        annotated,
+        (annotated["pred_mzs"], annotated["pred_ints"], annotated["pred_batch_idxs"]),
+        need_annotation=True,
+        return_cc_hash=False,
+        return_rule_provenance=False,
+    )
+    th.testing.assert_close(batch_idxs, merged["pred_batch_idxs"])
+    th.testing.assert_close(mzs, merged["pred_mzs"], rtol=0, atol=1e-4)
+    th.testing.assert_close(ints, merged["pred_ints"])
 
 
 @pytest.mark.parametrize("model_type", ["frag_gnn", "fragnnet"])

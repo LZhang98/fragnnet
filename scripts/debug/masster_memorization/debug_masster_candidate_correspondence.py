@@ -391,6 +391,14 @@ def main() -> None:
                 raise ValueError("Unexpected batch order")
             batch = model.transfer_batch_to_device(batch, th.device("cpu"), 0)
             out = model(**batch, return_explainability_tensors=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             formulas, precursors, error = reconstruct_formulas(
                 batch, out, model.model.precursor_types
             )

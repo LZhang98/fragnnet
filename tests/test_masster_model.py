@@ -18,7 +18,6 @@ from fragnnet.models.fragnnet.dag import compute_frags
 from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_model import (
     MassterModel,
     _absolute_binary_channel_keep_mask,
@@ -33,7 +32,11 @@ from fragnnet.models.masster.masster_model import (
     _top_k_fragment_keep_mask,
 )
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
-from fragnnet.models.masster.masster_templates import MassterTemplate, build_masster_templates
+from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
+from fragnnet.models.masster.path_selection.templates import (
+    MassterTemplate,
+    build_masster_templates,
+)
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS
 
@@ -991,7 +994,7 @@ def test_absolute_support_floor_is_evaluation_only_and_keeps_each_spectrum_nonem
 def test_masster_shares_one_ce_independent_proposal_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fragnnet.models.masster import masster_core
+    from fragnnet.models.masster.path_selection import core as masster_core
 
     batch = _build_batch(("CCCO",) * 5)
     model = _build_model(

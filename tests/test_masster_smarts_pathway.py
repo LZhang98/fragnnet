@@ -15,10 +15,13 @@ import torch as th
 from rdkit import Chem
 
 from fragnnet import runner
-from fragnnet.models.masster.masster_candidates import MassterStaticGraph, build_masster_candidates
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.models.masster.masster_templates import (
+from fragnnet.models.masster.path_selection.candidates import (
+    MassterStaticGraph,
+    build_masster_candidates,
+)
+from fragnnet.models.masster.path_selection.templates import (
     _MASSTER_RULE_INDEX,
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,

@@ -8,10 +8,7 @@ importing this module does not require a CUDA device, compiler, or binary.
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import operator
-import os
-import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -23,10 +20,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
+from fragnnet.models.masster.path_selection.cuda_build import (
+    build_cuda_library,
+    default_cuda_cache_dir,
+    resolve_cuda_home,
+)
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.masster_candidates import _TopologyInput
+    from fragnnet.models.masster.path_selection.candidates import _TopologyInput
 
 _BUILD_LOCK = Lock()
 _META_WIDTH = 15
@@ -107,17 +108,7 @@ class CudaTopologyBatch:
 def _load_native_library(
     cache_dir: str, cuda_home: str, capability: tuple[int, int]
 ) -> ctypes.CDLL:
-    source = Path(__file__).with_suffix(".cu")
-    compiler = Path(cuda_home) / "bin" / "nvcc"
-    if not compiler.is_file():
-        raise RuntimeError(f"CUDA topology requires an existing nvcc compiler: {compiler}")
-    cache = Path(cache_dir).resolve()
-    if not cache.is_relative_to(Path("/tmp").resolve()):
-        raise ValueError("CUDA topology build cache must be inside /tmp")
-    version = subprocess.run(
-        [str(compiler), "--version"], check=True, capture_output=True, timeout=30
-    ).stdout
-    compile_flags = [
+    flags = [
         "-O3",
         "-std=c++17",
         "--shared",
@@ -126,26 +117,14 @@ def _load_native_library(
         "-Xlinker=-rpath",
         f"-Xlinker={cuda_home}/lib64",
     ]
-    identity = hashlib.sha256(
-        source.read_bytes()
-        + str(compiler.resolve()).encode()
-        + version
-        + repr(compile_flags).encode()
-    ).hexdigest()[:20]
-    binary = cache / f"masster_cuda_topology_{identity}.so"
-    with _BUILD_LOCK:
-        cache.mkdir(parents=True, exist_ok=True)
-        if not binary.is_file():
-            temporary = binary.with_suffix(f".{os.getpid()}.tmp.so")
-            command = [str(compiler), *compile_flags, str(source), "-o", str(temporary)]
-            try:
-                subprocess.run(command, check=True, capture_output=True, text=True, timeout=180)
-                temporary.replace(binary)
-            except subprocess.CalledProcessError as error:
-                raise RuntimeError(f"CUDA topology compilation failed:\n{error.stderr}") from error
-            finally:
-                temporary.unlink(missing_ok=True)
-    library = ctypes.CDLL(str(binary))
+    library = build_cuda_library(
+        Path(__file__).with_suffix(".cu"),
+        "topology",
+        _BUILD_LOCK,
+        cache_dir,
+        cuda_home,
+        flags,
+    )
     library.masster_topology_launch.argtypes = [
         ctypes.POINTER(ctypes.c_uint64),
         *([ctypes.c_int] * 6),

@@ -683,6 +683,14 @@ def extract(args: argparse.Namespace) -> None:
                 batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
                 capture.reset()
                 out = model(**batch, return_explainability_tensors=True)
+                if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                    out = {
+                        **out,
+                        "pred_mzs": out["pred_pathway_mzs"],
+                        "pred_ints": out["pred_pathway_scores"],
+                        "pred_logprobs": out["pred_pathway_scores"].log(),
+                        "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                    }
                 got = capture.take()
 
                 # 2-3. Pre-filter fragments, the validity filter and the rebuilt prediction.

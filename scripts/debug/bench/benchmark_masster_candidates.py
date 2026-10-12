@@ -10,11 +10,11 @@ import time
 
 import torch as th
 
-from fragnnet.models.masster.masster_candidates import (
+from fragnnet.models.masster.path_selection.candidates import (
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.models.masster.masster_templates import MassterTemplate
+from fragnnet.models.masster.path_selection.templates import MassterTemplate
 
 LOGGER = logging.getLogger(__name__)
 

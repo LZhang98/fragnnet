@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster.masster_candidates import _merge_forced_masks
-from fragnnet.models.masster.masster_core import (
+from fragnnet.models.masster.path_selection.candidates import _merge_forced_masks
+from fragnnet.models.masster.path_selection.core import (
     build_component_arrays_raw,
     top_mixture_bond_sets_raw,
 )
-from fragnnet.models.masster.masster_cuda_selection import (
+from fragnnet.models.masster.path_selection.cuda_selection import (
     _extra_forced_words,
     _prepare_layout,
     rank_batch_cuda,
@@ -290,7 +290,7 @@ def test_cuda_selection_nondefault_stream_and_noncontiguous_logits() -> None:
 @_CUDA
 @pytest.mark.parametrize("target", [1, 6, 256])
 def test_cuda_selection_connects_directly_to_gpu_topology(target: int) -> None:
-    from fragnnet.models.masster.masster_cuda_topology import (
+    from fragnnet.models.masster.path_selection.cuda_topology import (
         CudaTopologyGraph,
         build_cuda_topology_device_masks,
     )

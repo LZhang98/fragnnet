@@ -40,11 +40,11 @@ from fragnnet.loss.cross_entropy import (
 )
 from fragnnet.loss.peak_list import sparse_peak_list_distance
 from fragnnet.models.masster.candidate_features import describe_candidate_features
-from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_export import masster_annotation_tables
 from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.models.masster.masster_model import MassterModel
-from fragnnet.models.masster.masster_templates import (
+from fragnnet.models.masster.path_selection.candidates import MassterStaticGraph
+from fragnnet.models.masster.path_selection.templates import (
     MassterTemplate,
     build_masster_templates,
 )
@@ -76,6 +76,65 @@ _CUT_COUNT_BUCKETS = {
 }
 
 logger = logging.getLogger(__name__)
+
+# Per-spectrum diagnostics MassterModel returns that loss_fn re-emits as detached metrics.
+# retained_mask_probability keeps its own dtype and is handled beside this group; these
+# follow the prediction dtype. Each group is read, detached and registered in loss_names
+# from its tuple, so a new diagnostic is added in one place.
+_MASK_DIAGNOSTIC_NAMES = (
+    "selected_mask_count",
+    "component_pathway_count",
+    "mean_mask_cut_count",
+    "proposal_single_cut_fraction",
+    "proposal_mixture_entropy",
+    "proposal_mixture_effective_count",
+    "proposal_mixture_top1_weight",
+    "unique_component_count",
+    "fragment_count_before_cutoff",
+    "fragment_count_after_cutoff",
+    "retained_fragment_probability",
+    "fragment_cutoff_pruned_fraction",
+    "components_per_mask",
+    "unique_components_per_mask",
+    "latent_pathways_per_unique_fragment",
+    "unique_fragment_target_fill_fraction",
+    "unique_fragment_target_reached",
+    "unique_fragment_effective_count",
+    "unique_fragment_top1_mass_fraction",
+    "duplicate_pathway_probability_fraction",
+    "productive_mask_fraction",
+    "duplicate_component_pathway_fraction",
+    "mask_cut_fraction_0",
+    "mask_cut_fraction_1",
+    "mask_cut_fraction_2",
+    "mask_cut_fraction_3",
+    "mask_cut_fraction_4",
+    "mask_cut_fraction_5",
+    "mask_cut_fraction_6plus",
+    "mask_cut_fraction_4plus",
+)
+
+# Timing values stay in their own dtype and are logged only with candidate timing metrics.
+_CANDIDATE_TIMING_NAMES = (
+    "candidate_input_transfer_batch_ms",
+    "candidate_mask_selection_batch_ms",
+    "candidate_topology_assembly_batch_ms",
+    "candidate_output_transfer_batch_ms",
+    "candidate_total_batch_ms",
+    "candidate_total_molecule_ms",
+)
+
+_ION_CHANNEL_DIAGNOSTIC_NAMES = (
+    "valid_ion_h_count",
+    "retained_ion_h_count",
+    "retained_ion_h_probability",
+    "retained_joint_channel_intensity_fraction",
+    "ion_h_cutoff_pruned_fraction",
+    "valid_ion_mode_count",
+    "retained_ion_mode_count",
+    "retained_ion_mode_probability",
+    "ion_mode_cutoff_pruned_fraction",
+)
 
 _ION_H_REQUIRED_K_METRIC_NAMES = (
     "valid_ion_h_per_fragment_mean",
@@ -1656,51 +1715,14 @@ class MassterPL(SpectrumPL, ExportAdapter):
 
         # SpectrumPL calls this with the training dict merged with the model's output
         # dict, so every key MassterModel returns has to be named here or absorbed
-        # by **kwargs. The diagnostics are named explicitly because they are re-emitted
-        # as metrics below.
+        # by **kwargs. The diagnostics re-emitted as metrics are read from **kwargs by
+        # the names in the module-level ``_*_NAMES`` tuples.
         def loss_fn(
             true_mzs: th.Tensor,
             true_logprobs: th.Tensor,
             true_batch_idxs: th.Tensor,
             pred_mzs: th.Tensor,
             pred_batch_idxs: th.Tensor,
-            retained_mask_probability: th.Tensor,
-            selected_mask_count: th.Tensor,
-            component_pathway_count: th.Tensor,
-            mean_mask_cut_count: th.Tensor,
-            proposal_single_cut_fraction: th.Tensor,
-            proposal_mixture_entropy: th.Tensor,
-            proposal_mixture_effective_count: th.Tensor,
-            proposal_mixture_top1_weight: th.Tensor,
-            unique_component_count: th.Tensor,
-            fragment_count_before_cutoff: th.Tensor,
-            fragment_count_after_cutoff: th.Tensor,
-            retained_fragment_probability: th.Tensor,
-            fragment_cutoff_pruned_fraction: th.Tensor,
-            components_per_mask: th.Tensor,
-            unique_components_per_mask: th.Tensor,
-            latent_pathways_per_unique_fragment: th.Tensor,
-            unique_fragment_target_fill_fraction: th.Tensor,
-            unique_fragment_target_reached: th.Tensor,
-            unique_fragment_effective_count: th.Tensor,
-            unique_fragment_top1_mass_fraction: th.Tensor,
-            duplicate_pathway_probability_fraction: th.Tensor,
-            productive_mask_fraction: th.Tensor,
-            duplicate_component_pathway_fraction: th.Tensor,
-            mask_cut_fraction_0: th.Tensor,
-            mask_cut_fraction_1: th.Tensor,
-            mask_cut_fraction_2: th.Tensor,
-            mask_cut_fraction_3: th.Tensor,
-            mask_cut_fraction_4: th.Tensor,
-            mask_cut_fraction_5: th.Tensor,
-            mask_cut_fraction_6plus: th.Tensor,
-            mask_cut_fraction_4plus: th.Tensor,
-            candidate_input_transfer_batch_ms: th.Tensor,
-            candidate_mask_selection_batch_ms: th.Tensor,
-            candidate_topology_assembly_batch_ms: th.Tensor,
-            candidate_output_transfer_batch_ms: th.Tensor,
-            candidate_total_batch_ms: th.Tensor,
-            candidate_total_molecule_ms: th.Tensor,
             **kwargs,
         ) -> dict[str, th.Tensor]:
             """Return per-spectrum loss terms and metrics, each of shape ``(batch_size,)``.
@@ -2000,118 +2022,30 @@ class MassterPL(SpectrumPL, ExportAdapter):
             # batch) and the candidate-generation stage timings.
             loss_values = {
                 "primary_loss": primary_loss,
-                "retained_mask_probability": retained_mask_probability.detach(),
-                "selected_mask_count": selected_mask_count.detach().to(prediction_reference),
-                "component_pathway_count": component_pathway_count.detach().to(
-                    prediction_reference
-                ),
-                "mean_mask_cut_count": mean_mask_cut_count.detach().to(prediction_reference),
-                "proposal_single_cut_fraction": (
-                    proposal_single_cut_fraction.detach().to(prediction_reference)
-                ),
-                "proposal_mixture_entropy": (
-                    proposal_mixture_entropy.detach().to(prediction_reference)
-                ),
-                "proposal_mixture_effective_count": (
-                    proposal_mixture_effective_count.detach().to(prediction_reference)
-                ),
-                "proposal_mixture_top1_weight": (
-                    proposal_mixture_top1_weight.detach().to(prediction_reference)
-                ),
-                "unique_component_count": unique_component_count.detach().to(prediction_reference),
-                "fragment_count_before_cutoff": (
-                    fragment_count_before_cutoff.detach().to(prediction_reference)
-                ),
-                "fragment_count_after_cutoff": (
-                    fragment_count_after_cutoff.detach().to(prediction_reference)
-                ),
-                "retained_fragment_probability": (
-                    retained_fragment_probability.detach().to(prediction_reference)
-                ),
-                "fragment_cutoff_pruned_fraction": (
-                    fragment_cutoff_pruned_fraction.detach().to(prediction_reference)
-                ),
-                "components_per_mask": components_per_mask.detach().to(prediction_reference),
-                "unique_components_per_mask": (
-                    unique_components_per_mask.detach().to(prediction_reference)
-                ),
-                "latent_pathways_per_unique_fragment": (
-                    latent_pathways_per_unique_fragment.detach().to(prediction_reference)
-                ),
-                "unique_fragment_target_fill_fraction": (
-                    unique_fragment_target_fill_fraction.detach().to(prediction_reference)
-                ),
-                "unique_fragment_target_reached": (
-                    unique_fragment_target_reached.detach().to(prediction_reference)
-                ),
-                "unique_fragment_effective_count": (
-                    unique_fragment_effective_count.detach().to(prediction_reference)
-                ),
-                "unique_fragment_top1_mass_fraction": (
-                    unique_fragment_top1_mass_fraction.detach().to(prediction_reference)
-                ),
-                "duplicate_pathway_probability_fraction": (
-                    duplicate_pathway_probability_fraction.detach().to(prediction_reference)
-                ),
-                "productive_mask_fraction": (
-                    productive_mask_fraction.detach().to(prediction_reference)
-                ),
-                "duplicate_component_pathway_fraction": (
-                    duplicate_component_pathway_fraction.detach().to(prediction_reference)
-                ),
-                "mask_cut_fraction_0": mask_cut_fraction_0.detach().to(prediction_reference),
-                "mask_cut_fraction_1": mask_cut_fraction_1.detach().to(prediction_reference),
-                "mask_cut_fraction_2": mask_cut_fraction_2.detach().to(prediction_reference),
-                "mask_cut_fraction_3": mask_cut_fraction_3.detach().to(prediction_reference),
-                "mask_cut_fraction_4": mask_cut_fraction_4.detach().to(prediction_reference),
-                "mask_cut_fraction_5": mask_cut_fraction_5.detach().to(prediction_reference),
-                "mask_cut_fraction_6plus": (
-                    mask_cut_fraction_6plus.detach().to(prediction_reference)
-                ),
-                "mask_cut_fraction_4plus": (
-                    mask_cut_fraction_4plus.detach().to(prediction_reference)
-                ),
+                "retained_mask_probability": kwargs["retained_mask_probability"].detach(),
+                **{
+                    name: kwargs[name].detach().to(prediction_reference)
+                    for name in _MASK_DIAGNOSTIC_NAMES
+                },
             }
             if candidate_coverage_enabled:
                 loss_values["candidate_wrecall"] = candidate_wrecall
+            # Read unconditionally so a missing timing key fails even with timing disabled.
+            timing_values = {name: kwargs[name].detach() for name in _CANDIDATE_TIMING_NAMES}
             if candidate_timing_enabled:
-                loss_values.update(
-                    {
-                        "candidate_input_transfer_batch_ms": (
-                            candidate_input_transfer_batch_ms.detach()
-                        ),
-                        "candidate_mask_selection_batch_ms": (
-                            candidate_mask_selection_batch_ms.detach()
-                        ),
-                        "candidate_topology_assembly_batch_ms": (
-                            candidate_topology_assembly_batch_ms.detach()
-                        ),
-                        "candidate_output_transfer_batch_ms": (
-                            candidate_output_transfer_batch_ms.detach()
-                        ),
-                        "candidate_total_batch_ms": candidate_total_batch_ms.detach(),
-                        "candidate_total_molecule_ms": candidate_total_molecule_ms.detach(),
-                    }
-                )
+                loss_values.update(timing_values)
             loss_values.update(
                 {
                     name: value.detach().to(prediction_reference)
                     for name, value in support_metrics.items()
                 }
             )
-            for diagnostic_name in (
-                "valid_ion_h_count",
-                "retained_ion_h_count",
-                "retained_ion_h_probability",
-                "retained_joint_channel_intensity_fraction",
-                "ion_h_cutoff_pruned_fraction",
-                "valid_ion_mode_count",
-                "retained_ion_mode_count",
-                "retained_ion_mode_probability",
-                "ion_mode_cutoff_pruned_fraction",
-            ):
-                diagnostic = kwargs[diagnostic_name]
-                loss_values[diagnostic_name] = diagnostic.detach().to(prediction_reference)
+            loss_values.update(
+                {
+                    name: kwargs[name].detach().to(prediction_reference)
+                    for name in _ION_CHANNEL_DIAGNOSTIC_NAMES
+                }
+            )
             if cross_entropy_loss:
                 # Compatibility alias for existing dashboards and checkpoints. New
                 # analyses should use one of the two explicit names below.
@@ -2211,59 +2145,13 @@ class MassterPL(SpectrumPL, ExportAdapter):
             "loss",
             "primary_loss",
             "retained_mask_probability",
-            "selected_mask_count",
-            "component_pathway_count",
-            "mean_mask_cut_count",
-            "proposal_single_cut_fraction",
-            "proposal_mixture_entropy",
-            "proposal_mixture_effective_count",
-            "proposal_mixture_top1_weight",
-            "unique_component_count",
-            "fragment_count_before_cutoff",
-            "fragment_count_after_cutoff",
-            "retained_fragment_probability",
-            "fragment_cutoff_pruned_fraction",
-            "components_per_mask",
-            "unique_components_per_mask",
-            "latent_pathways_per_unique_fragment",
-            "unique_fragment_target_fill_fraction",
-            "unique_fragment_target_reached",
-            "unique_fragment_effective_count",
-            "unique_fragment_top1_mass_fraction",
-            "duplicate_pathway_probability_fraction",
-            "productive_mask_fraction",
-            "duplicate_component_pathway_fraction",
-            "mask_cut_fraction_0",
-            "mask_cut_fraction_1",
-            "mask_cut_fraction_2",
-            "mask_cut_fraction_3",
-            "mask_cut_fraction_4",
-            "mask_cut_fraction_5",
-            "mask_cut_fraction_6plus",
-            "mask_cut_fraction_4plus",
-            "valid_ion_h_count",
-            "retained_ion_h_count",
-            "retained_ion_h_probability",
-            "retained_joint_channel_intensity_fraction",
-            "ion_h_cutoff_pruned_fraction",
-            "valid_ion_mode_count",
-            "retained_ion_mode_count",
-            "retained_ion_mode_probability",
-            "ion_mode_cutoff_pruned_fraction",
+            *_MASK_DIAGNOSTIC_NAMES,
+            *_ION_CHANNEL_DIAGNOSTIC_NAMES,
         ]
         if candidate_coverage_enabled:
             loss_names.append("candidate_wrecall")
         if candidate_timing_enabled:
-            loss_names.extend(
-                [
-                    "candidate_input_transfer_batch_ms",
-                    "candidate_mask_selection_batch_ms",
-                    "candidate_topology_assembly_batch_ms",
-                    "candidate_output_transfer_batch_ms",
-                    "candidate_total_batch_ms",
-                    "candidate_total_molecule_ms",
-                ]
-            )
+            loss_names.extend(_CANDIDATE_TIMING_NAMES)
         if channel_support_metrics_enabled:
             loss_names.extend(
                 [
@@ -2655,13 +2543,32 @@ class MassterPL(SpectrumPL, ExportAdapter):
         pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = peaks
         masster_annotation = None
         pathway_ints = pred_ints_raw
-        aggregated = aggregate_peaks_exact_mz(
-            pred_mzs_batched,
-            pred_ints_raw,
-            pred_batch_idxs_batched,
-            agg="sum" if self.hparams.sum_ints else "amax",
-            return_inverse=need_annotation,
-        )
+        if need_annotation and "pred_pathway_scores" in batch_result:
+            # The model merged same-m/z rows before the intensity untransform, so `pred_ints` is
+            # the merged spectrum and must not be recomputed from pathway rows (squaring each
+            # pathway is not squaring their sum). Each pathway keeps its share of its peak.
+            pathway_scores = batch_result["pred_pathway_scores"]
+            aggregated = aggregate_peaks_exact_mz(
+                batch_result["pred_pathway_mzs"],
+                pathway_scores,
+                batch_result["pred_pathway_batch_idxs"],
+                return_inverse=True,
+            )
+            peak_scores, peak_idxs = aggregated[1], aggregated[3]
+            pathway_ints = (
+                pathway_scores
+                / peak_scores.clamp_min(th.finfo(peak_scores.dtype).tiny)[peak_idxs]
+                * pred_ints_raw[peak_idxs]
+            )
+            aggregated = (aggregated[0], pred_ints_raw, aggregated[2], peak_idxs)
+        else:
+            aggregated = aggregate_peaks_exact_mz(
+                pred_mzs_batched,
+                pred_ints_raw,
+                pred_batch_idxs_batched,
+                agg="sum" if self.hparams.sum_ints else "amax",
+                return_inverse=need_annotation,
+            )
         pred_mzs_batched, pred_ints_raw, pred_batch_idxs_batched = aggregated[:3]
         if need_annotation and "pred_pathway_isotope_offsets" in batch_result:
             # The tables would give an isotope row its monoisotopic formula at m/z + offset.

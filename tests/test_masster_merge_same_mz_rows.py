@@ -30,9 +30,9 @@ def test_exact_rows_merge_by_spectrum_and_4_decimal_mz() -> None:
 
     expected = {}
     for mz, prob, b in zip(
-        rows["pred_mzs"].tolist(),
-        rows["pred_logprobs"].exp().tolist(),
-        rows["pred_batch_idxs"].tolist(),
+        rows["pred_pathway_mzs"].tolist(),
+        rows["pred_pathway_scores"].tolist(),
+        rows["pred_pathway_batch_idxs"].tolist(),
     ):
         key = (b, round(mz, 4))
         expected[key] = expected.get(key, 0.0) + prob
@@ -42,7 +42,10 @@ def test_exact_rows_merge_by_spectrum_and_4_decimal_mz() -> None:
     }
     assert observed.keys() == expected.keys()
     # several pathways share an exact m/z (H-shift channels of different fragments)
-    assert merged["pred_mzs"].numel() < rows["pred_mzs"].numel()
+    assert merged["pred_mzs"].numel() < rows["pred_pathway_mzs"].numel()
+    # the annotation run emits the same merged spectrum, plus the pathway rows above
+    assert th.equal(merged["pred_mzs"], rows["pred_mzs"])
+    assert th.allclose(merged["pred_logprobs"], rows["pred_logprobs"])
     for key, value in expected.items():
         assert observed[key] == pytest.approx(value, rel=1e-5)
 

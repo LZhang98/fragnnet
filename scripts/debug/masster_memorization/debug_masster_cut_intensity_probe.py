@@ -455,6 +455,14 @@ def score(cfg: dict, output: Path, device_name: str, limit: int) -> None:
                 if k in batch
             }
             out = model.model(**kwargs, return_annotation=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             arrays = {
                 k: out[k].cpu().numpy()
                 for k in (

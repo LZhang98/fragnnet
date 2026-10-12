@@ -363,6 +363,14 @@ def main(argv: list[str] | None = None) -> None:
                 raise RuntimeError("batch order does not match the spectrum table")
             batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
             out = model(**batch, return_explainability_tensors=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             # 3. Eval-convention target: relative filter and normalization, no transform.
             true_mzs, true_ints, true_idx = model.preproc_spec(
                 batch["spec_mzs"],
