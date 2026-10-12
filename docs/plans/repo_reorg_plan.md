@@ -742,14 +742,15 @@ migrations; `GINE_GSA` to `models/masster/`. All but the last are done (see
 `models/fragnnet/frag_utils.py` (1,813 lines) held DAG construction, formula math, the node and
 edge feature layout, WL hashing, peak statistics and boundary masks; `frag_` was ambiguous
 between "fragment" and "FraGNNet". The user decided on 2026-10-12 to give the DAG code its own
-subpackage and to rename the dataset and sampler files:
+subpackage and to rename the dataset and sampler files; the iterable dataset was then merged
+into `fragnnet_dataset.py`:
 
 ```
 models/fragnnet/
   fragnnet_model.py  fragnnet_pl.py  fragnnet_hooks.py  fragnnet_conditioning.py
   fragment_competition.py
-  fragnnet_dataset.py           (was spec_mol_frag_dataset.py)
-  fragnnet_iterable_dataset.py  (was iterable_spec_mol_frag_dataset.py)
+  fragnnet_dataset.py           (was spec_mol_frag_dataset.py; also holds the streaming
+                                IterableSpecMolFragDataset, was iterable_spec_mol_frag_dataset.py)
   fragnnet_data_sampler.py      (was frag_data_sampler.py)
   dag/
     compute_frags.pyx  multi_cut_bfs.pyx   (names kept)

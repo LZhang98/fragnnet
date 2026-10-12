@@ -10,8 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from fragnnet.models.fragnnet.dag.builder import timed_get_dags
-from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
-from fragnnet.models.fragnnet.fragnnet_iterable_dataset import IterableSpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import IterableSpecMolFragDataset, SpecMolFragDataset
 from fragnnet.runner import init_dataloader
 from fragnnet.utils import dag_format_utils, data_utils
 from fragnnet.utils.misc_utils import booltype

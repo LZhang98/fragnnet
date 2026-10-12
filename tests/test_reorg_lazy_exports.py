@@ -29,7 +29,7 @@ FORMER_LAZY_EXPORTS = {
     ("fragnnet.dataset", "CEContextDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
     ("fragnnet.dataset", "DualGroupDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
     ("fragnnet.dataset", "SpecMolFragDynamicBatchSampler"): f"{FRAG}.fragnnet_data_sampler",
-    ("fragnnet.dataset", "IterableSpecMolFragDataset"): f"{FRAG}.fragnnet_iterable_dataset",
+    ("fragnnet.dataset", "IterableSpecMolFragDataset"): f"{FRAG}.fragnnet_dataset",
     ("fragnnet.dataset", "SpecMolFragDataset"): f"{FRAG}.fragnnet_dataset",
     ("fragnnet.dataset", "MassterCEContextDynamicBatchSampler"): f"{MASSTER}.masster_data_sampler",
     ("fragnnet.layers", "FraGNNetModel"): f"{FRAG}.fragnnet_model",
