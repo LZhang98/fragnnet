@@ -2649,37 +2649,6 @@
     "numpy": "1.26.4",
     "torch": "2.4.1+cu121"
   },
-  "step:mces_pretraining_wiring_patched": {
-    "eval/output": "float32|(15,)|0b7b22006fc87cd7",
-    "forward/output": "float32|(15,)|0b7b22006fc87cd7",
-    "grad_norm": {
-      "digest": "float64|(1,)|4ad2aeff56e891fe",
-      "values": [
-        "0x1.de6353b0c66ebp+2"
-      ]
-    },
-    "loss": {
-      "digest": "float32|(1,)|6f37c2ffb8f2d896",
-      "values": [
-        "0x1.7be2200000000p+3"
-      ]
-    },
-    "loss/loss": {
-      "digest": "float32|(1,)|6f37c2ffb8f2d896",
-      "values": [
-        "0x1.7be2200000000p+3"
-      ]
-    },
-    "n_grad_tensors": 4,
-    "n_params_changed": 4,
-    "params_after": "float64|(2353,)|f188888d0cc61cf4"
-  },
-  "step:mces_pretraining_wiring_patched:env": {
-    "cpu_capability": "AVX2",
-    "lightning": "2.4.0",
-    "numpy": "1.26.4",
-    "torch": "2.4.1+cu121"
-  },
   "step:neims": {
     "eval/pred_batch_idxs": "int64|(2554,)|3b2a88bebd929c7b",
     "eval/pred_logprobs": "float32|(2554,)|fa1b5ff6bcd9d085",
@@ -3925,39 +3894,6 @@
       "model.precursor_encoder.input_project.bias": "torch.float32|(32,)",
       "model.precursor_encoder.input_project.weight": "torch.float32|(32, 60)",
       "model.required_atomic_numbers": "torch.int64|(1,)"
-    }
-  },
-  "structure:mces_pretraining_wiring_patched": {
-    "eval_outputs": {
-      "output": "torch.float32"
-    },
-    "forward_outputs": {
-      "output": "torch.float32"
-    },
-    "loss_terms": [
-      "loss"
-    ],
-    "state_dict": {
-      "model.inst_embedder.weight": "torch.float32|(3, 32)",
-      "model.mol_embedder.gnn.edge_transform.bias": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.edge_transform.weight": "torch.float32|(16, 5)",
-      "model.mol_embedder.gnn.layers.0.eps": "torch.float32|(1,)",
-      "model.mol_embedder.gnn.layers.0.nn.0.bias": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.layers.0.nn.0.weight": "torch.float32|(16, 16)",
-      "model.mol_embedder.gnn.layers.0.nn.2.bias": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.layers.0.nn.2.weight": "torch.float32|(16, 16)",
-      "model.mol_embedder.gnn.norms.0.bias": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.norms.0.num_batches_tracked": "torch.int64|()",
-      "model.mol_embedder.gnn.norms.0.running_mean": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.norms.0.running_var": "torch.float32|(16,)",
-      "model.mol_embedder.gnn.norms.0.weight": "torch.float32|(16,)",
-      "model.mol_embedder.input_project.bias": "torch.float32|(16,)",
-      "model.mol_embedder.input_project.weight": "torch.float32|(16, 60)",
-      "model.prec_embedder.weight": "torch.float32|(2, 32)",
-      "model.regressor.input_layer.bias": "torch.float32|(16,)",
-      "model.regressor.input_layer.weight": "torch.float32|(16, 32)",
-      "model.regressor.output_layer.bias": "torch.float32|(1,)",
-      "model.regressor.output_layer.weight": "torch.float32|(1, 16)"
     }
   },
   "structure:neims": {

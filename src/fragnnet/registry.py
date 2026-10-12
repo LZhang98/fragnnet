@@ -56,9 +56,6 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     ),
     "precursor": ModelEntry("fragnnet.pl_model.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET),
     "gnn": ModelEntry("fragnnet.pl_model.gnn_pl:GNNPL", _SPEC_MOL_DATASET),
-    "mces_pretraining": ModelEntry(
-        "fragnnet.pl_model.mces_pl:MCESPL", "fragnnet.dataset.mces_dataset:MCESDataset"
-    ),
     "clip": _CLIP,
     "spec_mol_clip_pretraining": _CLIP,
 }
@@ -77,11 +74,22 @@ _ICEBERG_RETIRED = (
     f"revision {ICEBERG_ARCHIVE_SHA}."
 )
 
+# MCES pretraining (a Siamese molecule encoder trained on MCES distances, meant to initialize
+# FraGNNet fine-tuning) was removed on 2026-10-12. The same revision holds its code and configs.
+MCES_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_MCES_RETIRED = (
+    "model_type {model_type!r} is retired: MCES pretraining, and fine-tuning FraGNNet from its "
+    "weights, did not help and was removed on 2026-10-12. Its model, dataset, configs and "
+    f"preprocessing belong to revision {MCES_ARCHIVE_SHA}. FraGNNet fine-tuning from a FraGNNet "
+    "checkpoint (finetune_* keys) is unaffected."
+)
+
 # Model types that were removed; selecting one raises an actionable error instead of the generic
 # unknown-type error.
 RETIRED_MODEL_TYPES: dict[str, str] = {
     "iceberg_gen": _ICEBERG_RETIRED,
     "iceberg_inten": _ICEBERG_RETIRED,
+    "mces_pretraining": _MCES_RETIRED,
 }
 
 

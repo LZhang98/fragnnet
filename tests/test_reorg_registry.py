@@ -23,7 +23,7 @@ import yaml
 from reorg_golden import ratchet_json
 from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
 
-from fragnnet.registry import ICEBERG_ARCHIVE_SHA
+from fragnnet.registry import ICEBERG_ARCHIVE_SHA, MCES_ARCHIVE_SHA
 from fragnnet.runner import load_config
 from fragnnet.utils.script_utils import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -68,10 +68,6 @@ EXPECTED_MAPPING = {
     "gnn": (
         "fragnnet.pl_model.gnn_pl:GNNPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
-    ),
-    "mces_pretraining": (
-        "fragnnet.pl_model.mces_pl:MCESPL",
-        "fragnnet.dataset.mces_dataset:MCESDataset",
     ),
     "clip": (
         "fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL",
@@ -143,11 +139,19 @@ def test_resolved_configs_match_golden() -> None:
     ratchet_json("registry", "resolved_configs", record)
 
 
+# What each retirement message must name besides the type: where to go instead, and the archive.
+RETIREMENT_MARKERS = {
+    "iceberg_gen": ("ms-pred", ICEBERG_ARCHIVE_SHA),
+    "iceberg_inten": ("ms-pred", ICEBERG_ARCHIVE_SHA),
+    "mces_pretraining": ("did not help", MCES_ARCHIVE_SHA),
+}
+
+
 def _assert_retirement_error(excinfo: pytest.ExceptionInfo, model_type: str) -> None:
     message = str(excinfo.value)
     assert f"model_type {model_type!r} is retired" in message
-    assert "ms-pred" in message
-    assert ICEBERG_ARCHIVE_SHA in message
+    for marker in RETIREMENT_MARKERS[model_type]:
+        assert marker in message
 
 
 @pytest.mark.parametrize("model_type", RETIRED_MODEL_TYPES)
@@ -182,7 +186,7 @@ def test_retired_model_types_raise_the_retirement_error_on_every_path(
             lookup(model_type)
         _assert_retirement_error(excinfo, model_type)
 
-    ckpt_fp = tmp_path / "old_iceberg.ckpt"
+    ckpt_fp = tmp_path / f"old_{model_type}.ckpt"
     th.save({"hyper_parameters": {"model_type": model_type}, "state_dict": {}}, ckpt_fp)
     with pytest.raises(ValueError) as excinfo:
         init_model_from_ckpt(str(ckpt_fp), {"model_type": model_type}, th.device("cpu"))

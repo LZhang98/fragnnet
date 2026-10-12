@@ -281,7 +281,7 @@ class FraGNNetPL(SpectrumPL, ExportHooks):
     ):
         """
         Load pre-trained weights from a checkpoint file.
-        Supports both MCES pre-training (partial load) and generic fine-tuning.
+        Supports partial-component fine-tuning from any compatible checkpoint.
 
         Args:
             ckpt_path: Path to checkpoint file

@@ -492,7 +492,6 @@ def main(args):
         "spec_fp",
         "mol_fp",
         "ann_fp",
-        "mces_fp",
         "config",
         "config_template",
         "split_dp",
@@ -535,8 +534,6 @@ def main(args):
         data_keyword.append("frag_dp")
     elif config_d["model_type"] == "graff":
         data_keyword.append("ann_fp")
-    elif config_d["model_type"] == "mces_pretraining":
-        data_keyword.append("mces_fp")
     elif config_d["model_type"] == "chemlm":
         data_keyword.append("chemlm_ckpt_dp")
     if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):

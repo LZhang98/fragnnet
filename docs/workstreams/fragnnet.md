@@ -46,6 +46,7 @@
 - [False-peak loss CLOSED NULL](../plans/fragnnet/false_peak_loss_plan.md) — `log1p_huber` harmful above lambda=0.1.
 - [Output-head and conditioning nulls](../plans/fragnnet/false_peak_loss_plan.md#successor-output-head-lines-all-null-from-local-memory-verified-2026-10-06) — sparsemax/entmax15 + `intensity_head` (0.685-0.705 vs 0.711), two-head presence is root-cause dead, formula-bag 0.7090-0.7119, per-fragment CE features -0.0007, candidate multiplicity null; competition head never trained (four NaN crashes); `frag_pool_combine: concat` built, untrained.
 - [Gap decomposition](../findings/fragnnet/dag_oracle_ceiling_nist20.md#gap-decomposition-and-overfit-ladder-from-local-memory-verified-2026-10-06) — 83.6% of the 0.249 gap is intensity, temperature caps +0.035; regularization ladder 0.533 -> 0.740 (`a6s5it2m` -> `s3iimtqi`).
+- [MCES pretraining retired](../plans/repo_reorg_plan.md#progress) — pretraining the molecule encoder on MCES distances (Siamese GNN), then fine-tuning FraGNNet from it (pretrain run `edd2j4yy`), did not help (user verdict, 2026-10-12). Model, configs and preprocessing removed; they are at `13b1599d`. Fine-tuning from a FraGNNet checkpoint is unaffected.
 - [Bond-set representation](../plans/fragnnet/fragment_bond_set_representation.md) — cost argument refuted (+109%); goal is regularization; `het_only` has best dominant-sibling mismatch 0.405 vs cc 0.473.
 
 **Audits**

@@ -96,7 +96,7 @@ _LEGACY_FRAGNNET_HPARAM_DEFAULTS = {
 
 _FRAGNNET_MODEL_TYPES = frozenset({"frag_gnn", "fragnnet"})
 
-# CLIP and MCES pretraining heads, same story as above.
+# CLIP pretraining heads, same story as above.
 _LEGACY_CLIP_HPARAM_DEFAULTS = {
     "clip_embed_dim": 256,
     "clip_intensity_transform": "sqrt",
@@ -145,8 +145,6 @@ def migrate_legacy_hparams(config: dict) -> None:
         for key, value in _LEGACY_CLIP_HPARAM_DEFAULTS.items():
             if key not in config:
                 config[key] = value
-    if model_type == "mces_pretraining" and "auxiliary_scores" not in config:
-        config["auxiliary_scores"] = []
 
     # 4. `use_nce`/`use_ace` fell back to the dataset's `spec_params` rather than a constant,
     # so their backfill has to read that section instead of a table.

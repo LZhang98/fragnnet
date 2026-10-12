@@ -100,7 +100,6 @@ CLIP_KEYS = (
     "lr_total_steps",
     "lr_min_ratio",
 )
-MCES_KEYS = ("auxiliary_scores",)
 MASSTER_RT_CCS_KEYS = (
     "masster_predict_rt_ccs",
     "masster_predict_rt",
@@ -149,7 +148,6 @@ FAMILIES = (
     "gnn",
     "clip",
     "spec_mol_clip_pretraining",
-    "mces_pretraining",
 )
 ALIAS_PAIRS = (
     ("frag_gnn", "fragnnet"),
@@ -165,8 +163,6 @@ def _family_keys(family: str) -> tuple[str, ...]:
         extra = FRAGNNET_KEYS
     elif family in ("clip", "spec_mol_clip_pretraining"):
         extra = CLIP_KEYS
-    elif family == "mces_pretraining":
-        extra = MCES_KEYS
     elif family in ("masster", "mass_shatter"):
         extra = MASSTER_KEYS
     return (*SHARED_KEYS, *extra)
@@ -316,7 +312,6 @@ def test_get_pl_hparams_minimal_stub_per_family() -> None:
     assert "ion_channel_rank" not in record["masster"]
     assert record["clip"]["ace_max"] == 100.0
     assert record["clip"]["spectrum_encoder_params"] == {}
-    assert record["mces_pretraining"]["auxiliary_scores"] == []
     assert record["masster"]["masster_fast_gnn_max_boundary_cuts"] == 3
     assert record["masster"]["masster_proposal_method"] == "cut_masks"
     assert record["masster"]["masster_candidate_backend"] == "cpu"
@@ -650,7 +645,7 @@ def test_load_config_template_per_family() -> None:
         config = _quiet(load_config, F.CONFIG_DIR, None, None, model_type=family)
         assert config["model_type"] == family
         assert _legacy_leftovers(config) == []
-        all_keys = {*SHARED_KEYS, *FRAGNNET_KEYS, *CLIP_KEYS, *MCES_KEYS, *MASSTER_KEYS}
+        all_keys = {*SHARED_KEYS, *FRAGNNET_KEYS, *CLIP_KEYS, *MASSTER_KEYS}
         assert all_keys <= set(config), sorted(all_keys - set(config))
         assert set(SPEC_PARAMS_KEYS) <= set(config["spec_params"])
         # The template decides: every migrated key resolves to the file's own value.
@@ -1065,10 +1060,9 @@ def test_legacy_wandb_run_config_merges_into_resolved_config() -> None:
 def test_constructors_backfill_hparams_before_saving_them() -> None:
     """``SpectrumPL``, ``MassterPL`` and the CLIP module migrate kwargs before saving them.
 
-    ``neims`` and ``mces_pretraining`` build through the same ``SpectrumPL`` call as
-    ``frag_gnn``, but their constructors need more than the template (the NEIMS config trips an
-    assertion, the MCES model misses five arguments), so only their ``get_pl_hparams`` records
-    exist.
+    ``neims`` builds through the same ``SpectrumPL`` call as ``frag_gnn``, but its constructor
+    needs more than the template (the NEIMS config trips an assertion), so only its
+    ``get_pl_hparams`` record exists.
     """
     record = {}
     # FraGNNet: a current config with the migrated keys taken out, as an old checkpoint lacks them.

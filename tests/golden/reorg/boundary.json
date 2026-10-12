@@ -97,7 +97,6 @@
         "fragnnet.models.masster.rt_ccs"
       ]
     },
-    "mces_pretraining": {},
     "neims": {},
     "precursor": {},
     "spec_mol_clip_pretraining": {}

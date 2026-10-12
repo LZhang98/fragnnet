@@ -726,9 +726,6 @@
     "diff:masster": {
       "model_type": "masster"
     },
-    "diff:mces_pretraining": {
-      "model_type": "mces_pretraining"
-    },
     "diff:neims": {
       "model_type": "neims"
     },

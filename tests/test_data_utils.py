@@ -146,26 +146,6 @@ class TestChargeAndEnergy:
         assert back_nce == pytest.approx(nce)
 
 
-class TestNormalizationHelpers:
-    """Tests for min-max and z-score normalization helpers."""
-
-    def test_min_max_roundtrip(self):
-        val = 5.0
-        mn, mx = 0.0, 10.0
-        norm = du.min_max_normalize(val, mn, mx)
-        assert norm == pytest.approx(0.5, abs=1e-6)
-        denorm = du.min_max_denormalize(norm, mn, mx)
-        assert denorm == pytest.approx(val)
-
-    def test_zscore_roundtrip(self):
-        val = 5.0
-        mean, std = 2.0, 3.0
-        norm = du.zscore_normalize(val, mean, std)
-        assert norm == pytest.approx(1.0, rel=1e-7)
-        denorm = du.zscore_denormalize(norm, mean, std)
-        assert denorm == pytest.approx(val)
-
-
 class TestMolFromSmiles:
     """Tests for mol_from_smiles."""
 

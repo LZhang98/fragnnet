@@ -5,7 +5,6 @@ from .data_sampler import (
     GroupSampler,
     get_group_sampler,
 )
-from .mces_dataset import MCESDataset
 from .spec_mol_dataset import SpecMolDataset
 
 __all__ = [
@@ -14,6 +13,5 @@ __all__ = [
     "FormulaPrecTypeGroupSampler",
     "GroupSampler",
     "get_group_sampler",
-    "MCESDataset",
     "SpecMolDataset",
 ]

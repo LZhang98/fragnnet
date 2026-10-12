@@ -736,3 +736,29 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     use the no-op hooks (GRAFF overrides one). A note's `fragnnet_model.py` line range had drifted;
     the memory review's line anchors, already stale, were re-anchored too. The git-ignored
     `.github/copilot-instructions.md` still shows an old tree; it is not part of the repository.
+- 2026-10-12: MCES pretraining retired (user decision: pretraining and fine-tuning FraGNNet from
+  its weights did not help). A five-agent inventory with a completeness critic found that
+  nothing outside MCES used its model, Lightning module, dataset or four normalization helpers.
+  FraGNNet's fine-tuning loader (`finetune_*` keys) is generic: the `nps_pcdl_nist23_ft` configs
+  use it with FraGNNet checkpoints.
+  - Removed: `MCESPL`, `SiameseGNNModel`, `MCESDataset`, the `data_utils` min-max and z-score
+    helpers, the registry entry, the `pl_utils` backfill and the `setup_job_cc.py` data path.
+    Also gone: 28 configs (`config/mces_pretraining/`, two debug configs, the three
+    `config/fragnnet_finetuning/` MCES-to-FraGNNet configs), `preproc_scripts/mces_pretraining/`,
+    two Fir MCES-distance slurm scripts, a notebook, and two MCES-only test files. The MCES
+    cases came out of the reorg tests and goldens, including the Phase 0 strict xfail that pinned
+    the `MCESPL` wiring defect.
+  - `mces_pretraining` is in `RETIRED_MODEL_TYPES`: selecting it raises an error saying it did
+    not help and naming revision `13b1599d` (`registry.MCES_ARCHIVE_SHA`, reachable from
+    `origin/masster`), which holds the code, configs and preprocessing.
+  - Kept on purpose:
+    - the seven `mces_*` template keys, as an inert block like ICEBERG's: every checkpoint saved
+      while they existed carries them, and that checkpoint's config must still resolve as a
+      custom config (`test_load_config_of_c0_as_a_custom_config` caught this);
+    - the W&B cleanup script's protection of MCES runs;
+    - `notebooks/data_notebooks/biostructure.ipynb`;
+    - the MCES distance data under `data/`.
+  - `test_every_tracked_config_still_resolves` now pins 13 known-broken configs instead of 18:
+    the other five were MCES fine-tuning configs, deleted here.
+  - Docs: the fine-tuning guide points at the `nps_pcdl_nist23_ft` example and a generic
+    checkpoint; the architecture map and the FraGNNet hub's Settled list record the retirement.

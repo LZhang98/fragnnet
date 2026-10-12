@@ -1632,23 +1632,3 @@ def deep_copy_data_dict(data_dict: dict) -> dict:
             copied_dict[key] = copy.deepcopy(value)
 
     return copied_dict
-
-
-def min_max_normalize(value: float, min: float, max: float) -> float:
-    """Normalize float values to [0, 1] range."""
-    return (value - min) / (max - min + 1e-8)
-
-
-def min_max_denormalize(normalized_value: float, min: float, max: float) -> float:
-    """Denormalize float predictions back to original scale."""
-    return normalized_value * (max - min + 1e-8) + min
-
-
-def zscore_normalize(value: float, mean: float, std: float) -> float:
-    """Normalize float values using z-score normalization."""
-    return (value - mean) / (std + 1e-8)
-
-
-def zscore_denormalize(normalized_value: float, mean: float, std: float) -> float:
-    """Denormalize float predictions back to original scale."""
-    return normalized_value * (std + 1e-8) + mean

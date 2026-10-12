@@ -1,6 +1,6 @@
 """Smoke test per retained model type and the dataset construction path (plan Phase 0, items 2, 9).
 
-Item 2: for every ``model_type`` the runner accepts except the retired ICEBERG pair, build the
+Item 2: for every ``model_type`` the runner accepts (retired types excluded), build the
 template plus a tiny config on synthetic data, run one forward pass and one optimizer step on
 CPU, and check that the loss is finite and that a gradient flows. A bit-exact digest of the
 forward outputs, loss terms and gradient summary is recorded in ``tests/golden/reorg/smoke.json``.
@@ -12,15 +12,7 @@ Two types need deliberate handling, and neither is faked:
 - ``chemlm`` reads a Hugging Face checkpoint. The test writes a tiny random RoBERTa checkpoint and
   a byte-level tokenizer to ``tmp_path`` (as ``test_chemlm.py`` does), so it neither downloads nor
   reads the untracked ``data/pretrained`` checkpoint. It skips without ``transformers``.
-- ``mces_pretraining`` cannot be built at the recorded commit: ``MCESPL._setup_model``
-  (``pl_model/mces_pl.py:50``) omits the ``use_nce``, ``use_ace`` and ``ace_*`` arguments
-  ``SiameseGNNModel`` requires. The shipped configuration is a strict ``xfail`` that flips when
-  the wiring is fixed; a second case patches the missing arguments in the test so the dataset,
-  loss and optimizer step still have coverage. That patched record uses this test's own
-  constants (the CE switches from ``spec_params`` and the ACE scaling from the config, as the
-  sibling wrappers pass them), so it guards the MCES loss and data path, not the shipped wiring.
-  The plan's "random-init ``state_dict`` record for mces" (Phase 6, step 5) is unachievable until
-  ``MCESPL`` is fixed; delete the patched case and the xfail then (see ``MCES_DEFECT``).
+- ``mces_pretraining`` was retired on 2026-10-12, like the ICEBERG pair, so it has no case.
 
 Each case also records an eval-mode forward pass (after the training forward, so BatchNorm
 running statistics are those of one training batch); it must return the same output keys.
@@ -49,7 +41,6 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import functools
 import importlib
 import io
 import json
@@ -78,7 +69,7 @@ from fragnnet.utils.formula_utils import NEUTRON_MASS
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 GOLDEN = "smoke"
-RETIRED_TYPES = ("iceberg_gen", "iceberg_inten")
+RETIRED_TYPES = ("iceberg_gen", "iceberg_inten", "mces_pretraining")
 SMOKE_TYPES = tuple(t for t in MODEL_TYPES if t not in RETIRED_TYPES)
 ELECTRON_MASS = 0.00054858
 STEP_SEED = 1234
@@ -153,16 +144,6 @@ CLIP_OVERRIDES: dict[str, Any] = {
         "num_inds": 4,
         "dropout": 0.0,
     },
-}
-MCES_OVERRIDES: dict[str, Any] = {
-    "mlp_hidden_size": 16,
-    "mlp_num_layers": 1,
-    "mlp_dropout": 0.0,
-    "mol_hidden_size": 16,
-    "mol_num_layers": 1,
-    "mol_dropout": 0.0,
-    "loss_type": "mse",
-    "auxiliary_scores": ["mae", "mse"],
 }
 
 
@@ -521,80 +502,6 @@ def _build_spec_mol_clip(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
     return _build_clip_family("spec_mol_clip_pretraining", root)
 
 
-def _write_mces_data(root: Path, data: F.SynthData) -> str:
-    """Write every molecule pair with a synthetic MCES distance and a train split of all pairs.
-
-    Args:
-        root: Directory to write into.
-        data: The synthetic molecules.
-
-    Returns:
-        Path of ``mces_pairs.pkl``; the split directory is ``root / "mces_split"``.
-    """
-    n_mols = len(data.mol_df)
-    pairs = [(i, j) for i in range(n_mols) for j in range(i + 1, n_mols)]
-    mces_df = pd.DataFrame(
-        {
-            "mol_id_1": [i for i, _ in pairs],
-            "mol_id_2": [j for _, j in pairs],
-            "mces": [float(2 + (3 * i + 5 * j) % 9) for i, j in pairs],
-        }
-    )
-    mces_fp = root / "mces_pairs.pkl"
-    mces_df.to_pickle(mces_fp)
-    split_dp = root / "mces_split"
-    split_dp.mkdir()
-    ids = mces_df.reset_index(names="mces_id")[["mol_id_1", "mol_id_2", "mces_id"]]
-    for split in ("train", "val", "test"):
-        ids.to_csv(split_dp / f"{split}_ids.csv", index=False)
-    return str(mces_fp)
-
-
-def _mces_forward(module: L.LightningModule, batch: dict) -> th.Tensor:
-    return module.forward(batch["mol_1_mol_pyg"], batch["mol_2_mol_pyg"])
-
-
-def _build_mces(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
-    data = F.write_synth_data(root, dag_backend=None)
-    overrides = {
-        **MCES_OVERRIDES,
-        "mces_fp": _write_mces_data(root, data),
-        "split_dp": str(root / "mces_split"),
-    }
-    config = F.make_config("mces_pretraining", data, overrides)
-    _, loader = F.init_split(config, "train")
-    return Case("mces_pretraining", config, _first_batch(loader), _mces_forward, spectrum_pl=False)
-
-
-def _patch_siamese_wiring(monkeypatch: pytest.MonkeyPatch, config: dict) -> None:
-    """Supply the ``SiameseGNNModel`` arguments ``MCESPL._setup_model`` leaves out.
-
-    The values are the ones every sibling wrapper passes: the CE switches from ``spec_params``
-    and the ACE scaling constants from the config.
-    """
-    from fragnnet.model import SiameseGNNModel
-
-    module = importlib.import_module(get_model_cls("mces_pretraining").__module__)
-    patched = functools.partial(
-        SiameseGNNModel,
-        use_nce=config["spec_params"]["nce"],
-        use_ace=config["spec_params"]["ace"],
-        ace_max=config["ace_max"],
-        ace_mean=config["ace_mean"],
-        ace_std=config["ace_std"],
-    )
-    monkeypatch.setattr(module, "SiameseGNNModel", patched)
-
-
-MCES_PATCHED = "mces_pretraining_wiring_patched"
-
-
-def _build_mces_patched(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
-    case = _build_mces(root, monkeypatch)
-    _patch_siamese_wiring(monkeypatch, case.config)
-    return case
-
-
 CASES: dict[str, CaseBuilder] = {
     "frag_gnn": _build_frag_gnn,
     "fragnnet": _build_fragnnet,
@@ -605,22 +512,12 @@ CASES: dict[str, CaseBuilder] = {
     "graff": _build_graff,
     "precursor": _build_precursor,
     "gnn": _build_gnn,
-    "mces_pretraining": _build_mces,
     "clip": _build_clip,
     "spec_mol_clip_pretraining": _build_spec_mol_clip,
-    MCES_PATCHED: _build_mces_patched,
 }
-MCES_DEFECT = (
-    "MCESPL._setup_model omits use_nce, use_ace, ace_max, ace_mean and ace_std, which "
-    "SiameseGNNModel requires, so model_type mces_pretraining cannot be built at this commit. "
-    "Once the wiring is fixed this case stops raising: drop the xfail mark, delete the "
-    "wiring-patched case and its blocked-only-by test, then record its golden with "
-    "REORG_UPDATE_GOLDEN=1."
-)
 # GRAFF's dataset assigns into a slice of a DataFrame (graff/dataset.py:112); harmless, and only
 # this case may ignore it.
 CASE_MARKS: dict[str, list[Any]] = {
-    "mces_pretraining": [pytest.mark.xfail(raises=TypeError, strict=True, reason=MCES_DEFECT)],
     "graff": [pytest.mark.filterwarnings("ignore::pandas.errors.SettingWithCopyWarning")],
 }
 SMOKE_PARAMS = [pytest.param(name, marks=CASE_MARKS.get(name, [])) for name in CASES]
@@ -764,8 +661,6 @@ def _assert_forward_shapes(case: Case, outputs: dict[str, Any]) -> None:
             assert outputs[key].shape == (batch_size, embed_dim)
             norms = outputs[key].norm(dim=-1)
             assert th.allclose(norms, th.ones_like(norms), atol=1e-5)
-    elif case.model_type == "mces_pretraining" or case.model_type == MCES_PATCHED:
-        assert outputs["output"].shape[0] == int(case.batch["batch_size"])
     else:
         mzs, logprobs = outputs["pred_mzs"], outputs["pred_logprobs"]
         idxs = outputs["pred_batch_idxs"]
@@ -810,26 +705,9 @@ def test_alias_pairs_give_identical_records(
     assert records[0] == records[1]
 
 
-def test_mces_pretraining_is_blocked_only_by_the_missing_siamese_arguments(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Pin the exact cause of the ``mces_pretraining`` xfail, so no other TypeError hides in it.
-
-    The dataset, dataloader and batch of the shipped configuration build fine; only the module
-    construction fails. When ``MCESPL`` is fixed this test fails with "DID NOT RAISE": delete it
-    and the xfail mark, and record ``mces_pretraining`` like the other types.
-    """
-    with _built("mces_pretraining", tmp_path, monkeypatch) as case:
-        assert set(case.batch) == {"batch_size", "mces", "mol_1_mol_pyg", "mol_2_mol_pyg"}
-        assert case.batch["mces"].shape == (int(case.batch["batch_size"]),)
-        missing = r"'use_nce', 'use_ace', 'ace_max', 'ace_mean', and 'ace_std'"
-        with pytest.raises(TypeError, match=f"missing 5 required positional arguments: {missing}"):
-            F.build_module(case.config)
-
-
 def test_smoke_cases_cover_every_retained_model_type() -> None:
     """A model type added to the registry must get a smoke case (or be retired explicitly)."""
-    assert set(SMOKE_TYPES) | {MCES_PATCHED} == set(CASES)
+    assert set(SMOKE_TYPES) == set(CASES)
     assert not set(RETIRED_TYPES) & set(MODEL_TYPES)
     assert not set(RETIRED_TYPES) & set(CASES)
 

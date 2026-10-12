@@ -213,8 +213,8 @@ mol_params:
 # Model Architecture
 # ============================================================================
 # Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
-# masster, neims, chemlm, massformer, graff, precursor, gnn, mces_pretraining, clip,
-# spec_mol_clip_pretraining. iceberg_gen and iceberg_inten are retired (RETIRED_MODEL_TYPES).
+# masster, neims, chemlm, massformer, graff, precursor, gnn, clip, spec_mol_clip_pretraining.
+# iceberg_gen, iceberg_inten and mces_pretraining are retired (RETIRED_MODEL_TYPES).
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
@@ -223,7 +223,6 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 
 # ============================================================================
 # Molecular GNN Configuration
-# NOTE: If using MCES pre-training, these MUST match the pre-training config
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
@@ -408,7 +407,7 @@ ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin","
 # See docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md.
 ce_insert_location: none # FraGNNet: none, mol, mlp, or mol,mlp (frag insertion unsupported)
 ce_insert_merge: False # FraGNNet: mean-pool CE-reading embeddings within each spectrum
-ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
+ce_insert_size: 32 # Dimension of CE embedding
 context_insert_location: mol,mlp  # where to inject the context vector (mol and/or mlp)
 # Rough approximations from NIST20 Orbitrap/FT MS
 nce_max: 200  # Maximum NCE value for normalization/binning
@@ -428,11 +427,11 @@ ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
 # -- Precursor Type Configuration --
 
 prec_insert_location: none  # Where precursor type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
-prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES config if using pre-training)
+prec_insert_size: 32  # Dimension of precursor type embedding
 # -- Instrument Type Configuration --
 
 inst_insert_location: none  # Where instrument type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
-inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
+inst_insert_size: 32  # Dimension of instrument type embedding
 # -- Fragmentation Mode Configuration --
 
 frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
@@ -1354,14 +1353,14 @@ retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP mo
 
 # ==========================================================================
 # MCES pretraining only
-# model_type: mces_pretraining
+# model_type: mces_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while MCES
+# pretraining existed carries them in its hparams, and such a config must still resolve.
 mces_min: 1
 mces_max: 15
 mces_mean: 12
 mces_std: 2
-mces_normalization: zscore  # options: none, zscore, minmax
-mces_embed_combine: concat_avg  # options: ["concat_avg", "concat", "abs_diff", "signed_diff", "cross_attn"]
-
-# A data path, but only the MCES dataset reads it, so it stays with the other mces keys.
-mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
+mces_normalization: zscore
+mces_embed_combine: concat_avg
+mces_fp: data/proc/mces/mces_pairs.pkl
