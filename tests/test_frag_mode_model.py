@@ -12,7 +12,8 @@ import pytest
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model.base_model import FragModeModel, FragModeScaler
+from fragnnet.model.base_model import FragModeModel
+from fragnnet.models.fragnnet.fragnnet_conditioning import FragModeScaler
 
 # ---------------------------------------------------------------------------
 # Helpers

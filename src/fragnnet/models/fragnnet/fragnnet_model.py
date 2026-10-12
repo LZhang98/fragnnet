@@ -14,17 +14,7 @@ import torch.utils.checkpoint as th_checkpoint
 import torch_geometric as pyg
 
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
-from fragnnet.model.base_model import (
-    AdductScaler,
-    CEModel,
-    CEScaler,
-    ContextEmbedding,
-    FragModeModel,
-    FragModeScaler,
-    InstModel,
-    PrecModel,
-    StratumScaler,
-)
+from fragnnet.model.base_model import CEModel, FragModeModel, InstModel, PrecModel
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.models.fragnnet.frag_utils import (
@@ -33,6 +23,13 @@ from fragnnet.models.fragnnet.frag_utils import (
     get_node_feats,
 )
 from fragnnet.models.fragnnet.fragment_competition import TopKFragmentTransformer
+from fragnnet.models.fragnnet.fragnnet_conditioning import (
+    AdductScaler,
+    CEScaler,
+    ContextEmbedding,
+    FragModeScaler,
+    StratumScaler,
+)
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes

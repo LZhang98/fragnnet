@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from fragnnet.model.base_model import AdductScaler, StratumScaler
+from fragnnet.models.fragnnet.fragnnet_conditioning import AdductScaler, StratumScaler
 
 # ---------------------------------------------------------------------------
 # AdductScaler
