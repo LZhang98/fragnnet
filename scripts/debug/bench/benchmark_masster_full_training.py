@@ -490,7 +490,7 @@ def main() -> None:
         "fragnnet.models.masster.masster_candidates",
         "fragnnet.models.masster.masster_model",
         "fragnnet.models.masster.masster_pl",
-        "fragnnet.utils.pl_utils",
+        "fragnnet.utils.migrations",
         "fragnnet.runner",
     ):
         source_paths[name] = Path(importlib.import_module(name).__file__)

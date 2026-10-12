@@ -52,11 +52,11 @@ from fragnnet.models.masster.rt_ccs import property_regression_terms
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.misc_utils import scatter_reduce
-from fragnnet.utils.pl_utils import (
+from fragnnet.utils.migrations import (
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,
 )
+from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.spec_utils import (
     aggregate_peaks_exact_mz,
     calculate_match_mzs,

@@ -30,7 +30,7 @@ class ModelHooks:
     def migrate_checkpoint_hparams(self, hparams: dict[str, Any]) -> None:
         """Backfill keys that checkpoints saved before they existed lack.
 
-        Called only from ``pl_utils.get_pl_hparams``, after the shared migrations. Fresh configs
+        Called only from ``migrations.get_pl_hparams``, after the shared migrations. Fresh configs
         must declare these keys through the template, so constructors never call it.
 
         Args:

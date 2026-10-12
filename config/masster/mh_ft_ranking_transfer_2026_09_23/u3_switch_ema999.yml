@@ -35,7 +35,7 @@
 # On this pair, averaging two adjacent checkpoints' predictions added +0.008 and their weights
 # +0.003 (optimizer noise at the constant LR 1e-3). This arm keeps a per-step EMA of the weights;
 # validation, the best-checkpoint choice and saved state_dicts use the average
-# (fragnnet.utils.pl_utils.ExponentialMovingAverage). 308 steps/epoch here (3bej6fq7), so 0.999
+# (fragnnet.utils.callbacks.ExponentialMovingAverage). 308 steps/epoch here (3bej6fq7), so 0.999
 # gives the average a mean age of ~1000 steps, ~3.2 of the 64 epochs.
 #
 # WHY UNMERGED [M+H]+/FT. This is where the ranking finding was measured: checkpoint 6h67zps9 has

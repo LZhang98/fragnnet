@@ -8,7 +8,7 @@ import torch as th
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from torch.utils.data import DataLoader, TensorDataset
 
-from fragnnet.utils.pl_utils import ExponentialMovingAverage
+from fragnnet.utils.callbacks import ExponentialMovingAverage
 
 
 class _TinyRegressor(L.LightningModule):

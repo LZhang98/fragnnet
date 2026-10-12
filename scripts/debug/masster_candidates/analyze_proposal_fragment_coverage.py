@@ -49,7 +49,7 @@ from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.pl_utils import migrate_legacy_masster_name
+from fragnnet.utils.migrations import migrate_legacy_masster_name
 
 LOGGER = logging.getLogger(__name__)
 

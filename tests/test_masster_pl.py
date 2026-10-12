@@ -39,7 +39,7 @@ from fragnnet.models.masster.masster_templates import build_masster_templates
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, calculate_match_mzs
 

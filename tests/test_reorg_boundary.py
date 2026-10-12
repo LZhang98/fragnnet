@@ -101,7 +101,7 @@ PHASE3_ENTRY_MODULES = (
     "fragnnet.utils.feat_utils",
     "fragnnet.utils.proc_utils",
     "fragnnet.dataset.data_sampler",
-    "fragnnet.utils.pl_utils",
+    "fragnnet.utils.migrations",
 )
 # Non-core layers a model selection may load: its own, plus fragmentation/ for the two fragment
 # models. Since Phase 8 every model type has a layer of its own.

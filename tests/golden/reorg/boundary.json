@@ -7,7 +7,7 @@
     "fragnnet.pl_model.spectrum_pl": {},
     "fragnnet.runner": {},
     "fragnnet.utils.feat_utils": {},
-    "fragnnet.utils.pl_utils": {},
+    "fragnnet.utils.migrations": {},
     "fragnnet.utils.proc_utils": {},
     "fragnnet.utils.script_utils": {}
   },

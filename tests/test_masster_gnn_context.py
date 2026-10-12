@@ -4,7 +4,7 @@ import pytest
 import torch as th
 
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.utils.migrations import get_pl_hparams
 from tests.test_masster_model import _build_batch, _build_model
 from tests.test_masster_pl import _build_pl
 

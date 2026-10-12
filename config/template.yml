@@ -257,7 +257,7 @@ weight_decay: 0.01
 weight_decay_exclude_norm_bias: False
 # Exponential moving average of the weights, per optimizer step (null = off). Validation, the
 # best-checkpoint choice and every saved checkpoint's state_dict use the AVERAGE; the training
-# weights are stored beside it and restored on resume (fragnnet.utils.pl_utils.
+# weights are stored beside it and restored on resume (fragnnet.utils.callbacks.
 # ExponentialMovingAverage). Mean age of the average is decay/(1-decay) steps, so pick decay
 # from the run's steps per epoch: the merged ma_mi batch-512 lineage runs 90 steps/epoch, where
 # 0.998 averages over ~5.5 epochs. Train-side auxiliary metrics still measure the raw weights.

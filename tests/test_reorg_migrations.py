@@ -5,7 +5,7 @@ Old checkpoints, W&B runs and config files reach the code with keys that were re
 ``eval_target_apply_train_peak_filters`` to ``..._rank_filters``) or that did not exist yet.
 Three boundaries backfill them, and this file records what each produces:
 
-- ``utils.pl_utils.get_pl_hparams`` (checkpoint hparams), with a minimal stub per model family,
+- ``utils.migrations.get_pl_hparams`` (checkpoint hparams), with a minimal stub per model family,
   several edge-case stubs, and the hparams of a real legacy ``mass_shatter`` checkpoint;
 - ``runner.load_config`` (template, custom config and ``key=value`` CLI overrides, including
   dotted keys through ``migrate_legacy_masster_key``), and ``merge_wandb_config`` for a saved
@@ -50,7 +50,7 @@ from reorg_layers import MODEL_TYPES
 
 from fragnnet.runner import load_config, merge_wandb_config, validate_sampler_config
 from fragnnet.utils.data_utils import find_retired_inst_type_refs
-from fragnnet.utils.pl_utils import (
+from fragnnet.utils.migrations import (
     get_pl_hparams,
     migrate_legacy_hparams,
     migrate_legacy_masster_key,
@@ -65,7 +65,7 @@ C0_FIXTURE_FP = GOLDEN_DIR / "legacy_mass_shatter_hparams.json"
 ABSENT = "<absent>"
 
 # Keys the migrations can supply, written out here so the records do not follow the code's
-# private tables (pl_utils.py, `_LEGACY_*_DEFAULTS`).
+# private tables (migrations.py, `_LEGACY_*_DEFAULTS`).
 SHARED_KEYS = (
     "mol_max_degree",
     "mol_max_spatial_distance",

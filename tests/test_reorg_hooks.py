@@ -70,7 +70,7 @@ def test_migration_and_validation_load_no_model_code() -> None:
         import json, sys
         from fragnnet import registry
         from fragnnet.runner import load_config, validate_sampler_config
-        from fragnnet.utils.pl_utils import get_pl_hparams
+        from fragnnet.utils.migrations import get_pl_hparams
         get_pl_hparams({"hyper_parameters": {"model_type": "mass_shatter", "spec_params": {}}})
         registry.get_model_hooks("masster").migrate_template_config({})
         for model_type in ("neims", "masster", "frag_gnn"):

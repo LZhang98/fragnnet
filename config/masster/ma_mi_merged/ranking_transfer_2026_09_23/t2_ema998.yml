@@ -3,7 +3,7 @@
 # their predictions adds +0.020 cosine and cuts the val ranking gap 0.120 -> 0.110, and averaging
 # two ADJACENT checkpoints of one run adds +0.008 (their weights: +0.003) -- optimizer noise at the
 # constant LR 1e-3 (lr_schedule: false). This arm keeps a per-step EMA of the weights; validation,
-# the best-checkpoint choice and saved state_dicts use the average (fragnnet.utils.pl_utils.
+# the best-checkpoint choice and saved state_dicts use the average (fragnnet.utils.callbacks.
 # ExponentialMovingAverage). The lineage runs 90 steps/epoch (c4a_base_s1, 5qws8g9x), so 0.998 gives
 # the average a mean age of ~500 steps, ~5.5 epochs. CAUTION reading the gap: train-side auxiliary
 # metrics measure the RAW training weights while val measures the average, so the logged train/val

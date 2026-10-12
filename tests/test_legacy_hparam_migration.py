@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from fragnnet.runner import load_config
-from fragnnet.utils.pl_utils import (
+from fragnnet.utils.migrations import (
     get_pl_hparams,
     migrate_legacy_hparams,
     migrate_legacy_masster_name,

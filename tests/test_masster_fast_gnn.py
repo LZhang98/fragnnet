@@ -448,7 +448,7 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
     import lightning as L
 
     from fragnnet.models.masster.masster_pl import MassterPL
-    from fragnnet.utils.pl_utils import get_pl_hparams
+    from fragnnet.utils.migrations import get_pl_hparams
 
     config = _small_pl_config()
     if legacy:
@@ -636,7 +636,7 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
     import yaml
 
     from fragnnet.models.masster.masster_pl import MassterPL
-    from fragnnet.utils.pl_utils import get_pl_hparams
+    from fragnnet.utils.migrations import get_pl_hparams
 
     old_key = "masster_proposal_type"
     new_key = "masster_proposal_method"

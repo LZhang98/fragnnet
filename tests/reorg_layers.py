@@ -74,7 +74,7 @@ ENTRY_MODULES = (
     "fragnnet.utils.feat_utils",
     "fragnnet.utils.proc_utils",
     "fragnnet.dataset.data_sampler",
-    "fragnnet.utils.pl_utils",
+    "fragnnet.utils.migrations",
 )
 
 

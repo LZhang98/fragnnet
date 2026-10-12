@@ -22,6 +22,7 @@ from fragnnet.utils.dag_format_utils import PACKED_DAG_INDEX_DATASET
 from fragnnet.utils.formula_utils import (
     formula_delta_to_signed_str,
 )
+from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
     flatten_lol,
@@ -30,7 +31,6 @@ from fragnnet.utils.misc_utils import (
     to_device,
 )
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
-from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
 from fragnnet.utils.spec_utils import batched_mf1000_normalize
 

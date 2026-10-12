@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from fragnnet.hooks import ModelHooks
-from fragnnet.utils.pl_utils import migrate_masster_proposal_method, migrate_rt_ccs_spec_params
+from fragnnet.utils.migrations import migrate_masster_proposal_method, migrate_rt_ccs_spec_params
 
 # MASSter's sampler keys. Every model's config carries them; they mean something only for MASSter.
 MASSTER_SAMPLER_KEYS = (

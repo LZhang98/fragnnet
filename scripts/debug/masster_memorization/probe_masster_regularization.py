@@ -35,8 +35,8 @@ from fragnnet.models.masster import bond_fragment_heads
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.masster_model import MassterContextEncoder, MassterModel
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.migrations import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name
 from fragnnet.utils.nn_utils import build_lr_scheduler
-from fragnnet.utils.pl_utils import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name
 
 # The production molecular feature set used by the merged MASSter configs.
 NODE_FEATS = [
