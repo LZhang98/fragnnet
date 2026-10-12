@@ -11,7 +11,7 @@ across batches so the flat columns stay regroupable.
 import pytest
 import torch as th
 
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.utils import script_utils
 
 

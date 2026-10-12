@@ -48,7 +48,7 @@ from rdkit.Chem.rdMolDescriptors import CalcMolFormula  # noqa: E402
 from torch.utils.data import BatchSampler, DataLoader, Dataset  # noqa: E402
 
 from fragnnet import runner  # noqa: E402
-from fragnnet.utils import frag_utils  # noqa: E402
+from fragnnet.models.fragnnet import frag_utils  # noqa: E402
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF  # noqa: E402
 
 RDLogger.DisableLog("rdApp.*")

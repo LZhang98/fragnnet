@@ -9,6 +9,7 @@ helper contracts the records do not reach, such as FraGNNet's ``oos_loss`` auxil
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,7 +19,6 @@ import torch as th
 import fragnnet.pl_model.spectrum_pl as spectrum_pl
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 
-PL_DIR = Path(spectrum_pl.__file__).parent
 SHARED_LOSS_FUNCTIONS = {
     "ce_switch_pair_bce",
     "sparse_outside_window_intensity_fraction",
@@ -32,9 +32,11 @@ HELPERS = {
 }
 
 
-@pytest.mark.parametrize("module", ["fragnnet_pl", "masster_pl"])
+@pytest.mark.parametrize(
+    "module", ["fragnnet.models.fragnnet.fragnnet_pl", "fragnnet.pl_model.masster_pl"]
+)
 def test_models_use_the_shared_helpers_not_copies(module: str) -> None:
-    tree = ast.parse((PL_DIR / f"{module}.py").read_text())
+    tree = ast.parse(Path(importlib.util.find_spec(module).origin).read_text())
     imported = {
         alias.asname or alias.name
         for node in ast.walk(tree)

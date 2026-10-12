@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 
 
 def load_prepare_module():

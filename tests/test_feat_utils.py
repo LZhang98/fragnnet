@@ -9,6 +9,7 @@ import torch as th
 from rdkit import Chem
 from torch_geometric.data import Data
 
+from fragnnet.models.fragnnet.frag_feat_utils import batch_mols_frags, get_frag_graph
 from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
@@ -35,7 +36,6 @@ from fragnnet.utils.feat_utils import (
     one_hot_encoding,
     random_walk_pe,
 )
-from fragnnet.utils.frag_feat_utils import batch_mols_frags, get_frag_graph
 
 
 class TestOneHotEncoding:
@@ -1265,7 +1265,7 @@ class TestSharedElementOrder:
         return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
 
     def test_featurizing_does_not_grow_the_shared_element_list(self, aspirin_mol):
-        from fragnnet.utils import frag_utils
+        from fragnnet.models.fragnnet import frag_utils
 
         before = list(frag_utils.CANONICAL_ELEMENT_ORDER)
         AtomOneHot.featurize(aspirin_mol.GetAtomWithIdx(0))

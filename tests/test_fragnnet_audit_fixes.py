@@ -9,10 +9,10 @@ from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build
 from torch_geometric.data import Batch
 
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
+from fragnnet.models.fragnnet.frag_utils import compute_dags, extract_mol_info, get_node_feats
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import load_config
-from fragnnet.utils.frag_feat_utils import get_frag_graph
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info, get_node_feats
 
 
 def _bind_shared_objectives(pl):

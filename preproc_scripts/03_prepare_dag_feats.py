@@ -7,9 +7,9 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.frag_utils import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.frag_utils import run_frag_gen_hdf5
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 from fragnnet.utils import dag_format_utils, formula_utils
 
 MOVED = {

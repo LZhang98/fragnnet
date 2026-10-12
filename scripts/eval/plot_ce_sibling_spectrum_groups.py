@@ -33,7 +33,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 

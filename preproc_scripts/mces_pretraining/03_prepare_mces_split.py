@@ -5,7 +5,7 @@ import random
 
 import pandas as pd
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 
 
 def make_splits(args):

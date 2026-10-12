@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, "src")
-from fragnnet.utils.frag_utils import get_edge_feats, get_node_feats
+from fragnnet.models.fragnnet.frag_utils import get_edge_feats, get_node_feats
 
 
 def is_cc_cut(complement_vec: list[float]) -> bool:

@@ -12,7 +12,7 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.script_utils import (
     COLUMN_SPECS,

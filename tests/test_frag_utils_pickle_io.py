@@ -1,4 +1,4 @@
-"""Tests for fragment pickle IO helpers in ``fragnnet.utils.frag_utils``."""
+"""Tests for fragment pickle IO helpers in ``fragnnet.models.fragnnet.frag_utils``."""
 
 import bz2
 import io
@@ -8,7 +8,7 @@ import zipfile
 
 import pytest
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 
 # ---------------------------------------------------------------------------
 # get_frag_name – canonical naming (plain int, .pkl)

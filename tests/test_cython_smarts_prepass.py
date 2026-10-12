@@ -19,9 +19,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as compute_ccs_multi_cut_cy
 from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, MASK_DTYPE, _apply_smarts_prepass
-from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
+from fragnnet.models.fragnnet.frag_utils import extract_mol_info, get_fraggen_input_arrays
+from fragnnet.models.fragnnet.multi_cut_bfs import compute_ccs_multi_cut as compute_ccs_multi_cut_cy
 
 # ---------------------------------------------------------------------------
 # Helpers

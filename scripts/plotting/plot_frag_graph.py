@@ -4,7 +4,7 @@ from PIL import Image
 from rdkit.Chem import MolFromSmiles
 from rdkit.Chem.Draw.rdMolDraw2D import MolDraw2DCairo
 
-from fragnnet.utils.frag_utils import th_long_to_mask, timed_get_dags
+from fragnnet.models.fragnnet.frag_utils import th_long_to_mask, timed_get_dags
 from fragnnet.utils.plot_utils import get_highlighted_bonds
 
 

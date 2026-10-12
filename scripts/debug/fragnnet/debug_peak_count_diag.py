@@ -25,8 +25,8 @@ import logging
 import numpy as np
 import torch as th
 
-from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.model.loss import sparse_cosine_distance_hungarian
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.runner import init_dataloader
 from fragnnet.utils.misc_utils import scatter_reduce, to_device
 from fragnnet.utils.script_utils import (

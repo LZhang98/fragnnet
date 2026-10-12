@@ -13,7 +13,6 @@ from rdkit.Chem.rdMolDescriptors import CalcExactMolWt
 from torch_geometric.data import Batch
 
 import fragnnet.model.masster_model as masster_model_module
-from fragnnet.frag import compute_frags
 from fragnnet.frag.masster_candidates import MassterStaticGraph
 from fragnnet.frag.masster_templates import MassterTemplate, build_masster_templates
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
@@ -31,10 +30,11 @@ from fragnnet.model.masster_model import (
     _relative_joint_channel_keep_mask,
     _top_k_fragment_keep_mask,
 )
+from fragnnet.models.fragnnet import compute_frags
+from fragnnet.models.fragnnet.frag_utils import extract_mol_info
 from fragnnet.pl_model.masster_pl import _proposal_coverage_loss
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
-from fragnnet.utils.frag_utils import extract_mol_info
 
 
 def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:

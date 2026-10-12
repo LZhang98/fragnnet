@@ -15,10 +15,7 @@ import torch as th
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-import fragnnet.frag.compute_frags as compute_frags
-from fragnnet.frag.compute_frags import MASK_DTYPE
-from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
-from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
+import fragnnet.models.fragnnet.compute_frags as compute_frags
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
@@ -26,6 +23,11 @@ from fragnnet.fragmentation.smarts_prepass import (
     _apply_nl_prepass,
     _apply_smarts_prepass,
 )
+from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.multi_cut_bfs import (
+    compute_ccs_multi_cut as _compute_ccs_multi_cut_cy,
+)
+from fragnnet.models.fragnnet.multi_cut_bfs import get_ring_edge_mask
 
 # The element tables, formula/mask helpers and size limits (core formula_utils) and the DAG
 # storage format (core dag_format_utils) moved out of this module in the reorganization

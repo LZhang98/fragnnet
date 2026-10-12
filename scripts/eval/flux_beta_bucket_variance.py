@@ -43,8 +43,8 @@ import torch as th
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import _detect_is_compressed  # noqa: E402
 
-import fragnnet.utils.frag_utils as frag_utils  # noqa: E402
-from fragnnet.utils.frag_utils import th_long_to_mask  # noqa: E402
+import fragnnet.models.fragnnet.frag_utils as frag_utils  # noqa: E402
+from fragnnet.models.fragnnet.frag_utils import th_long_to_mask  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

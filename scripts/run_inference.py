@@ -9,9 +9,11 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from fragnnet.dataset import IterableSpecMolFragDataset, SpecMolFragDataset
+from fragnnet.models.fragnnet import frag_utils
+from fragnnet.models.fragnnet.iterable_spec_mol_frag_dataset import IterableSpecMolFragDataset
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.runner import init_dataloader
-from fragnnet.utils import data_utils, frag_utils
+from fragnnet.utils import data_utils
 from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.script_utils import (
     apply_inference_config,

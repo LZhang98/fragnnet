@@ -20,7 +20,7 @@ import os
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 
 
 def _detect_is_compressed(frag_dp: str) -> bool:

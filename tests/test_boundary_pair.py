@@ -2,7 +2,7 @@
 
 import torch as th
 
-from fragnnet.utils.frag_utils import compute_boundary_pair_idxs
+from fragnnet.models.fragnnet.frag_utils import compute_boundary_pair_idxs
 
 # ---------------------------------------------------------------------------
 # Helper

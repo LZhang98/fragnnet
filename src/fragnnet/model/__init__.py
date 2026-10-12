@@ -10,10 +10,9 @@ from .precursor_model import PrecursorModel
 from .siamese_gnn_model import SiameseGNNModel
 from .spectrum_encoder import SpectrumEncoder
 
-# FraGNNet and MASSter classes load on first access (PEP 562), so importing a shared submodule
-# of this package loads neither model. Phase 6 moves them out of this package.
+# MASSter's model class loads on first access (PEP 562), so importing a shared submodule of this
+# package does not load it. Phase 6 moves it out of this package.
 _LAZY_EXPORTS = {
-    "FraGNNetModel": "fragnnet_model",
     "MassterModel": "masster_model",
 }
 

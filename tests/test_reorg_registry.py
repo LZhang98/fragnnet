@@ -34,12 +34,12 @@ REPO_TEMPLATE = Path(__file__).resolve().parents[1] / "config" / "template.yml"
 # model_type -> (Lightning module, dataset class), as "module:QualName".
 EXPECTED_MAPPING = {
     "frag_gnn": (
-        "fragnnet.pl_model.fragnnet_pl:FraGNNetPL",
-        "fragnnet.dataset.spec_mol_frag_dataset:SpecMolFragDataset",
+        "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
+        "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
     ),
     "fragnnet": (
-        "fragnnet.pl_model.fragnnet_pl:FraGNNetPL",
-        "fragnnet.dataset.spec_mol_frag_dataset:SpecMolFragDataset",
+        "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
+        "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
     ),
     "masster": (
         "fragnnet.pl_model.masster_pl:MassterPL",

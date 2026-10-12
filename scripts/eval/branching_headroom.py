@@ -81,7 +81,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-from fragnnet.utils.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.frag_utils import get_node_feats
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -269,7 +269,7 @@ def _process_mol_group(
     Returns a dict of running sums for both brackets plus coverage counts, or None if the
     molecule's DAG explains no competable parent in any spectrum.
     """
-    import fragnnet.utils.frag_utils as frag_utils
+    import fragnnet.models.fragnnet.frag_utils as frag_utils
 
     dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:

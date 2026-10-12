@@ -46,9 +46,8 @@ import re
 import numpy as np
 import pytest
 
-from fragnnet.frag.compute_frags import MASK_DTYPE
-from fragnnet.utils.formula_utils import PERIODIC_TABLE, parse_formula
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.frag_utils import (
     ELEMENT_TO_IDX,
     FRAG_INDEX_DTYPE,
     NODE_FEAT_TO_IDX,
@@ -58,6 +57,7 @@ from fragnnet.utils.frag_utils import (
     get_node_feats,
     th_long_to_mask,
 )
+from fragnnet.utils.formula_utils import PERIODIC_TABLE, parse_formula
 
 # ---------------------------------------------------------------------------
 # Helpers

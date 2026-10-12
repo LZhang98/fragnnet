@@ -9,7 +9,7 @@ import pytest
 import torch
 import torch_geometric as pyg
 
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_utils import (
     PACKED_DAG_BYTES_DATASET,
     PACKED_DAG_FORMAT,
     PACKED_DAG_FORMAT_ATTR,
@@ -219,7 +219,7 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with (
-            patch("fragnnet.utils.frag_utils.par_apply", return_value=results) as mock_apply,
+            patch("fragnnet.models.fragnnet.frag_utils.par_apply", return_value=results) as mock_apply,
             h5py.File(h5_fp, "w") as h5f,
         ):
             meta_info = run_frag_gen_hdf5(

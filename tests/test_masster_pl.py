@@ -14,7 +14,7 @@ from rdkit import Chem
 from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
+from fragnnet.dataset import SpecMolDataset
 from fragnnet.frag.masster_candidates import MassterStaticGraph
 from fragnnet.frag.masster_templates import build_masster_templates
 from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
@@ -23,6 +23,7 @@ from fragnnet.model.loss import (
     get_sparse_cross_entropy_fn,
 )
 from fragnnet.model.nn_blocks import GINEGraphormer
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.pl_model import MassterPL, SpectrumPL
 from fragnnet.pl_model.masster_pl import (
     _balanced_binary_support_loss,

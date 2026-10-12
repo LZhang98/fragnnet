@@ -42,6 +42,7 @@ import pandas as pd
 from pyteomics.mass import Composition
 from rdkit import Chem
 
+from fragnnet.models.fragnnet.frag_utils import th_long_to_mask
 from fragnnet.utils.data_utils import ace_to_nce_helper, get_charge, nce_to_ace_helper
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_COMP_DIFF,
@@ -49,7 +50,6 @@ from fragnnet.utils.formula_utils import (
     formula_delta_to_signed_str,
     get_formulae_hill_notation,
 )
-from fragnnet.utils.frag_utils import th_long_to_mask
 
 logger = logging.getLogger(__name__)
 

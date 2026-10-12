@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_utils import (
     NODE_FEAT_TO_IDX,
     compute_dags,
     extract_mol_info,

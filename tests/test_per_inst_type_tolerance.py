@@ -21,7 +21,7 @@ from fragnnet.model.loss import (
     sparse_cross_entropy_vec,
     sparse_jensen_shannon_divergence_hungarian,
 )
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.runner import load_config
 from fragnnet.utils.spec_utils import calculate_match_mzs

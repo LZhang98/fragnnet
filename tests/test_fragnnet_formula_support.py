@@ -4,12 +4,12 @@ import pytest
 import torch as th
 
 from fragnnet.fragmentation.candidate_support import balanced_binary_support_loss
-from fragnnet.model.fragnnet_model import (
+from fragnnet.models.fragnnet.fragnnet_model import (
     _aggregate_formula_support,
     _apply_formula_support_gate,
     _formula_support_keep_mask,
 )
-from fragnnet.pl_model.fragnnet_pl import _formula_support_targets
+from fragnnet.models.fragnnet.fragnnet_pl import _formula_support_targets
 
 
 @pytest.mark.parametrize("attribution", ["gaussian_posterior", "hungarian"])

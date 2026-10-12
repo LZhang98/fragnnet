@@ -15,7 +15,7 @@ import torch
 from test_cc_atom_dropout import _build_model, _forward_kwargs
 from test_ce_multi_location import _build
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
 PREC_TYPES = ["[M+H]+", "[M+Na]+", "[M-H]-"]
 RANK = 4

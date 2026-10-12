@@ -18,7 +18,7 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.spec_utils import batched_l1_normalize, get_ints_untransform_func
 

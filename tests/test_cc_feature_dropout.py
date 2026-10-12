@@ -1,6 +1,6 @@
 import torch as th
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
 
 def _make_model_stub(

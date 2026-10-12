@@ -14,7 +14,7 @@ from PIL import Image
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-from fragnnet.utils.frag_utils import load_frag_d, th_long_to_mask
+from fragnnet.models.fragnnet.frag_utils import load_frag_d, th_long_to_mask
 from fragnnet.utils.plot_utils import get_highlighted_bonds, get_mol_im
 from fragnnet.utils.spec_utils import *
 

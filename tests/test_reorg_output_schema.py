@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import inspect
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
 from fragnnet.model.output_schema import (
     EXPLAINABILITY_OUTPUT_KEYS,
     RETURN_EXPLAINABILITY_TENSORS_DEFAULT,
 )
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
 
 def test_switch_defaults_are_unchanged() -> None:

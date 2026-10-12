@@ -10,7 +10,7 @@ from pyteomics import mgf
 from rdkit import Chem
 
 import scripts.misc.export_annotated_mgf as EXPORT
-from fragnnet.utils.frag_utils import MASK_SIZE, th_mask_to_long
+from fragnnet.models.fragnnet.frag_utils import MASK_SIZE, th_mask_to_long
 
 VANILLYL_THIAZOLIUM = "COc1cc(C[n+]2csc(CCO)c2C)ccc1O"
 METHOXYETHANE = "CCOC"  # atoms: C0 C1 O2 C3

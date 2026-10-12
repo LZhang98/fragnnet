@@ -8,7 +8,7 @@ from pathlib import Path
 import torch as th
 from torch_geometric.data import Data
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 
 
 def load_module():

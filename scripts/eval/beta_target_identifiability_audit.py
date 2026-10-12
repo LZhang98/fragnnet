@@ -50,8 +50,8 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

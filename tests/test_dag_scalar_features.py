@@ -18,8 +18,8 @@ from __future__ import annotations
 import pytest
 import torch as th
 
-from fragnnet.utils.frag_feat_utils import get_frag_graph
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
+from fragnnet.models.fragnnet.frag_utils import (
     ELEMENT_TO_IDX,
     NODE_FEAT_TO_IDX,
     compute_dags,
@@ -220,7 +220,7 @@ def test_feature_non_negative() -> None:
 @pytest.fixture
 def minimal_model():
     """Instantiate the smallest valid FraGNNetModel with the 3 new frag features."""
-    from fragnnet.model.fragnnet_model import FraGNNetModel
+    from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
     return FraGNNetModel(
         num_depth=4,

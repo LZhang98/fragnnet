@@ -23,8 +23,8 @@ import torch as th
 from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build as _build_fragnnet
 
-from fragnnet.utils.frag_feat_utils import get_frag_graph
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_feat_utils import get_frag_graph
+from fragnnet.models.fragnnet.frag_utils import (
     compute_boundary_pair_idxs,
     compute_dags,
     extract_mol_info,

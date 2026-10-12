@@ -21,7 +21,6 @@ from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets,
 )
 from fragnnet.hooks import ExportHooks
-from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import (
     get_cross_jss_contrastive,
     get_edge_loss_fn,
@@ -39,9 +38,10 @@ from fragnnet.model.loss import (
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
+from fragnnet.models.fragnnet.frag_utils import get_node_feats
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.formula_utils import formula_row_prec_deltas
-from fragnnet.utils.frag_utils import get_node_feats
 from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
 from fragnnet.utils.nn_utils import (
     build_lr_scheduler,

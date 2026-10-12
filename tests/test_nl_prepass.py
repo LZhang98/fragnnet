@@ -18,8 +18,7 @@ from fragnnet.fragmentation.smarts_prepass import (
     NeutralLossRule,
     _apply_nl_prepass,
 )
-from fragnnet.utils import data_utils
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_utils import (
     _inject_nl_masks_into_dag,
     compute_dags,
     extract_mol_info,
@@ -27,6 +26,7 @@ from fragnnet.utils.frag_utils import (
     get_node_feats,
     th_long_to_mask,
 )
+from fragnnet.utils import data_utils
 
 
 @pytest.mark.parametrize("multi_cut_bfs", [False, True])
@@ -232,7 +232,7 @@ class TestInjectNLMasks:
 
     def test_nl_node_has_depth2(self):
         """Injected NL product nodes must have min_depth=2."""
-        from fragnnet.frag.compute_frags import MASK_DTYPE
+        from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
 
         smi = "O=[N+]([O-])c1ccc(S(=O)(=O)Nc2ncccn2)cc1"
         mol_d = extract_mol_info(smi)
@@ -572,7 +572,7 @@ class TestDiarylKetoneCOLoss:
 
     def test_product_mask_not_in_bfs(self):
         """The CO loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
-        from fragnnet.frag import compute_frags
+        from fragnnet.models.fragnnet import compute_frags
 
         mol_d = extract_mol_info(self.BENZOPHENONE)
         mol = Chem.MolFromSmiles(self.BENZOPHENONE)
@@ -702,7 +702,7 @@ class TestAminobenzothiazoleHcnLoss:
 
     def test_product_mask_not_in_bfs(self):
         """The HCN loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
-        from fragnnet.frag import compute_frags
+        from fragnnet.models.fragnnet import compute_frags
 
         mol_d = extract_mol_info(self.TARGET_1)
         mol = Chem.MolFromSmiles(self.TARGET_1)

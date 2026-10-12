@@ -29,9 +29,9 @@ class ModelEntry:
 
 _SPEC_MOL_DATASET = "fragnnet.dataset.spec_mol_dataset:SpecMolDataset"
 _FRAGNNET = ModelEntry(
-    "fragnnet.pl_model.fragnnet_pl:FraGNNetPL",
-    "fragnnet.dataset.spec_mol_frag_dataset:SpecMolFragDataset",
-    hooks="fragnnet.frag.fragnnet_hooks:FraGNNetHooks",
+    "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
+    "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
+    hooks="fragnnet.models.fragnnet.fragnnet_hooks:FraGNNetHooks",
 )
 _CLIP = ModelEntry("fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL", _SPEC_MOL_DATASET)
 

@@ -103,7 +103,7 @@ def _process_mol_group(
     allow_multi_parent: bool,
 ) -> dict | None:
     """Return clean beta-target coverage counts for one molecule."""
-    import fragnnet.utils.frag_utils as frag_utils
+    import fragnnet.models.fragnnet.frag_utils as frag_utils
 
     dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:

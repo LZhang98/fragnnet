@@ -3,8 +3,8 @@ from Cython.Build import cythonize
 import numpy as np
 
 ext = Extension(
-    "fragnnet.frag.compute_frags",
-    ["src/fragnnet/frag/compute_frags.pyx"],
+    "fragnnet.models.fragnnet.compute_frags",
+    ["src/fragnnet/models/fragnnet/compute_frags.pyx"],
     include_dirs=[np.get_include()],
     extra_compile_args=["-O3"],
 )

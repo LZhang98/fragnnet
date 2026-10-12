@@ -33,18 +33,18 @@ FRAGMENTATION = {
     "fragnnet.fragmentation.smarts_prepass",
 }
 FRAGNNET = {
-    "fragnnet.dataset.frag_data_sampler",
-    "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-    "fragnnet.dataset.spec_mol_frag_dataset",
-    "fragnnet.frag.compute_frags",
-    "fragnnet.frag.fragnnet_hooks",
-    "fragnnet.frag.multi_cut_bfs",
-    "fragnnet.model.fragment_competition",
-    "fragnnet.model.fragnnet_model",
-    "fragnnet.pl_model.fragnnet_pl",
-    "fragnnet.utils.frag_feat_utils",
+    "fragnnet.models.fragnnet.frag_data_sampler",
+    "fragnnet.models.fragnnet.iterable_spec_mol_frag_dataset",
+    "fragnnet.models.fragnnet.spec_mol_frag_dataset",
+    "fragnnet.models.fragnnet.compute_frags",
+    "fragnnet.models.fragnnet.fragnnet_hooks",
+    "fragnnet.models.fragnnet.multi_cut_bfs",
+    "fragnnet.models.fragnnet.fragment_competition",
+    "fragnnet.models.fragnnet.fragnnet_model",
+    "fragnnet.models.fragnnet.fragnnet_pl",
+    "fragnnet.models.fragnnet.frag_feat_utils",
     # The remnant after the Phase 3 split; the element tables and DAG format are in core.
-    "fragnnet.utils.frag_utils",
+    "fragnnet.models.fragnnet.frag_utils",
 }
 MASSTER = {
     "fragnnet.dataset.masster_data_sampler",
@@ -69,19 +69,12 @@ BASELINE_PACKAGES = {
 # the owner classes out of these packages. Must match each package's ``_LAZY_EXPORTS``.
 COMPAT_SHIMS: dict[str, dict[str, str]] = {
     "fragnnet.dataset": {
-        "CEContextDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
-        "DualGroupDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
-        "IterableSpecMolFragDataset": "fragnnet.dataset.iterable_spec_mol_frag_dataset",
         "MassterCEContextDynamicBatchSampler": "fragnnet.dataset.masster_data_sampler",
-        "SpecMolFragDataset": "fragnnet.dataset.spec_mol_frag_dataset",
-        "SpecMolFragDynamicBatchSampler": "fragnnet.dataset.frag_data_sampler",
     },
     "fragnnet.model": {
-        "FraGNNetModel": "fragnnet.model.fragnnet_model",
         "MassterModel": "fragnnet.model.masster_model",
     },
     "fragnnet.pl_model": {
-        "FraGNNetPL": "fragnnet.pl_model.fragnnet_pl",
         "MassterPL": "fragnnet.pl_model.masster_pl",
     },
 }

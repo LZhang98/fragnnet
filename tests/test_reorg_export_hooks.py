@@ -12,7 +12,8 @@ from __future__ import annotations
 import pytest
 
 from fragnnet.hooks import ExportHooks
-from fragnnet.pl_model import FraGNNetPL, MassterPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
+from fragnnet.pl_model import MassterPL
 from fragnnet.utils import script_utils
 
 PEAKS = ["pred_batch_idxs", "true_batch_idxs"]

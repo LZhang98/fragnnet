@@ -5,9 +5,9 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 from tqdm import tqdm
 
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.formula_utils as formula_utils
-import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.formula_utils import MAX_NUM_NODES
 from fragnnet.utils.misc_utils import PPM, booltype
 from fragnnet.utils.ms2c_utils import MolCandidateDB

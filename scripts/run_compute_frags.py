@@ -4,7 +4,7 @@ from pprint import pprint
 import numpy as np
 from torch_geometric.utils import degree
 
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, get_pyg_memory_usage
 
 

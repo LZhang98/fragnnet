@@ -7,9 +7,9 @@ import pandas as pd
 from tqdm import tqdm
 
 import fragnnet.utils.data_utils as data_utils
+from fragnnet.models.fragnnet.frag_utils import ELEMENTS
 from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
 from fragnnet.utils.formula_utils import parse_formula
-from fragnnet.utils.frag_utils import ELEMENTS
 
 
 def process_mol_df(data_fp):

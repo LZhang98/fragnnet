@@ -7,7 +7,7 @@ import torch as th
 
 import wandb
 from fragnnet.model.loss import sparse_conditional_entropy_fn
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.misc_utils import booltype, scatter_logsumexp
 from fragnnet.utils.script_utils import init_wandb_ckpt, log_mean, run_inference, select_model_vals

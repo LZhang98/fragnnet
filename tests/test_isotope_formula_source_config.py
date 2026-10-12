@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from fragnnet.dataset.base_dataset import ISOTOPE_FORMULA_SOURCES, BaseDataset
-from fragnnet.dataset.spec_mol_frag_dataset import wire_isotope_dag_paths
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import wire_isotope_dag_paths
 
 
 def _dataset(**overrides) -> BaseDataset:

@@ -63,7 +63,7 @@ class FraGNNetHooks(ModelHooks):
         if config_d["dag_size_curriculum"]:
             if not config_d["dynamic_batch_sampler"]:
                 raise ValueError("DAG-size curriculum requires dynamic_batch_sampler=True")
-            from fragnnet.dataset.frag_data_sampler import validate_dag_size_curriculum
+            from fragnnet.models.fragnnet.frag_data_sampler import validate_dag_size_curriculum
 
             validate_dag_size_curriculum(
                 config_d["dag_size_curriculum_start_fraction"],
@@ -128,7 +128,7 @@ class FraGNNetHooks(ModelHooks):
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:
-        from fragnnet.dataset.frag_data_sampler import (
+        from fragnnet.models.fragnnet.frag_data_sampler import (
             CEContextDynamicBatchSampler,
             DualGroupDynamicBatchSampler,
             SpecMolFragDynamicBatchSampler,

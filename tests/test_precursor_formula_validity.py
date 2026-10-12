@@ -3,7 +3,8 @@
 import pytest
 import torch as th
 
-from fragnnet.dataset.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.frag_utils import NODE_FEAT_TO_IDX, compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.utils.formula_utils import (
     PREC_DELTA_REMOVED_ELEMENTS,
     PREC_TYPE_TO_CMF_COMP_DIFF,
@@ -12,7 +13,6 @@ from fragnnet.utils.formula_utils import (
     prec_type_removed_counts,
     tracked_element_counts,
 )
-from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, compute_dags, extract_mol_info
 
 NODE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx", "cmf_h_formulae_idx"]
 # Salicylic acid carries exactly one COOH, so only some fragments can lose CO2. It has no

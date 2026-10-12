@@ -4,8 +4,8 @@ from pprint import pprint
 import torch as th
 
 import wandb
-from fragnnet.dataset import SpecMolFragDataset
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
 from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import (

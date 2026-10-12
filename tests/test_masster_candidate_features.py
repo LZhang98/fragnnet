@@ -44,7 +44,7 @@ from fragnnet.model.candidate_features import (
     resolve_candidate_features,
 )
 from fragnnet.model.masster_model import MassterModel
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
+from fragnnet.models.fragnnet.frag_utils import CANONICAL_ELEMENT_ORDER
 from tests.test_masster_model import _build_batch, _build_model
 
 

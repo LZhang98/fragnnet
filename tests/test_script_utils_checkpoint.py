@@ -5,7 +5,7 @@ import copy
 import pytest
 import torch as th
 
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import load_config
 from fragnnet.utils import script_utils
 from fragnnet.utils.script_utils import (

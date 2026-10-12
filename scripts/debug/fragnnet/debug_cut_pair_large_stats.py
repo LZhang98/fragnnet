@@ -14,8 +14,8 @@ sys.path.insert(
 )
 from build_cut_pair_targets import load_spec_df_with_ce_fill
 
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
+import fragnnet.models.fragnnet.frag_utils as frag_utils
+from fragnnet.models.fragnnet.frag_utils import get_node_feats, th_long_to_mask
 
 CACHE_FP = "/tmp/cut-pair-review-BJ5z6X/cache_500mol.pt"
 PRED_FP = "output/inference_eval/9t63zils/predictions_val.hdf5"

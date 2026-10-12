@@ -10,9 +10,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
+from fragnnet.models.fragnnet.frag_utils import (
     _inject_smarts_pairs_into_dag,
     compute_dags,
     extract_mol_info,
@@ -247,8 +247,8 @@ class TestComputeDagsWithSmartsPrepass:
         num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = (
             get_fraggen_input_arrays(mol_d)
         )
-        import fragnnet.frag.compute_frags as compute_frags
-        from fragnnet.frag.compute_frags import MASK_DTYPE
+        import fragnnet.models.fragnnet.compute_frags as compute_frags
+        from fragnnet.models.fragnnet.compute_frags import MASK_DTYPE
 
         nmm, ndm, dem, meta = compute_frags.compute_ccs(
             num_nodes,
@@ -306,7 +306,7 @@ class TestComputeDagsWithSmartsPrepass:
         Note: methyl acetate (COC(C)=O) SMARTS fragments ARE reachable by bond
         cuts at depth 3, so we need a longer-chain ester.
         """
-        import fragnnet.frag.compute_frags as compute_frags
+        import fragnnet.models.fragnnet.compute_frags as compute_frags
 
         # Ethyl propanoate: crf13_2 fires and produces fragments not in BFS
         smiles = "CCOC(=O)CC"
@@ -367,7 +367,7 @@ class TestComputeDagsWithSmartsPrepass:
 
     def test_prepass_new_edges_connect_root(self):
         """New edges introduced by the prepass must originate from root (node 0)."""
-        import fragnnet.frag.compute_frags as compute_frags
+        import fragnnet.models.fragnnet.compute_frags as compute_frags
 
         mol_d = extract_mol_info(self.METHYL_ACETATE)
         num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = (

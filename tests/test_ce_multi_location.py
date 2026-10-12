@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
 from fragnnet.model.siamese_gnn_model import SiameseGNNModel
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
 
 def _build(ce_insert_location: str = "mol", **overrides) -> FraGNNetModel:

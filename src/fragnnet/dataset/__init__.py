@@ -20,16 +20,10 @@ __all__ = [
     "SpecMolDataset",
 ]
 
-# FraGNNet's datasets and the FraGNNet and MASSter batch samplers load on first access (PEP 562),
-# so importing a shared submodule of this package does not load them. They are not in
-# ``__all__``. Phase 6 moves them out of this package.
+# MASSter's batch sampler loads on first access (PEP 562), so importing a shared submodule of
+# this package does not load it. It is not in ``__all__``. Phase 6 moves it out of this package.
 _LAZY_EXPORTS = {
-    "CEContextDynamicBatchSampler": "frag_data_sampler",
-    "DualGroupDynamicBatchSampler": "frag_data_sampler",
-    "IterableSpecMolFragDataset": "iterable_spec_mol_frag_dataset",
     "MassterCEContextDynamicBatchSampler": "masster_data_sampler",
-    "SpecMolFragDataset": "spec_mol_frag_dataset",
-    "SpecMolFragDynamicBatchSampler": "frag_data_sampler",
 }
 
 

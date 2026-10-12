@@ -12,13 +12,13 @@ import torch as th
 import torch_geometric as pyg
 from torch_geometric.data import Data
 
-from fragnnet.utils.formula_utils import th_long_to_mask
-from fragnnet.utils.frag_utils import (
+from fragnnet.models.fragnnet.frag_utils import (
     EDGE_FEAT_TO_IDX,
     NODE_FEAT_TO_IDX,
     get_edge_feats,
     get_node_feats,
 )
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 
 def batch_mols_frags(

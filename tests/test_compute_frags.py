@@ -21,14 +21,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.compute_frags import (
+from fragnnet.models.fragnnet.compute_frags import (
     compute_cc_h_floor,
     compute_ccs,
     mask_to_binary_hash,
     py_compute_node_to_edge_idx,
     update_bonds,
 )
-from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
+from fragnnet.models.fragnnet.frag_utils import extract_mol_info, get_fraggen_input_arrays
 
 # ---------------------------------------------------------------------------
 # Constants matching compute_frags.pyx

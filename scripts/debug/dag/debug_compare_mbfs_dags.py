@@ -24,7 +24,7 @@ from typing import Any
 import pandas as pd
 
 from fragnnet.utils import data_utils
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.proc_utils import filter_spec_mol
 

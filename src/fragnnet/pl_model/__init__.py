@@ -17,10 +17,9 @@ from .mces_pl import MCESPL
 from .spectrum_mol_clip_pl import SpectrumMolClipPL
 from .chemlm_pl import ChemLMPL
 
-# FraGNNet and MASSter classes load on first access (PEP 562), so importing a shared submodule
-# of this package loads neither model. Phase 6 moves them out of this package.
+# MASSter's PL class loads on first access (PEP 562), so importing a shared submodule of this
+# package does not load it. Phase 6 moves it out of this package.
 _LAZY_EXPORTS = {
-    "FraGNNetPL": "fragnnet_pl",
     "MassterPL": "masster_pl",
 }
 

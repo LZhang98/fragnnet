@@ -68,7 +68,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
 import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 

@@ -2,7 +2,7 @@
 
 import torch as th
 
-from fragnnet.utils.frag_utils import compute_boundary_mask
+from fragnnet.models.fragnnet.frag_utils import compute_boundary_mask
 
 # ---------------------------------------------------------------------------
 # Helper builders

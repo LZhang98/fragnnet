@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-import fragnnet.frag.compute_frags as compute_frags
-import fragnnet.frag.multi_cut_bfs as multi_cut_bfs
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.compute_frags as compute_frags
+import fragnnet.models.fragnnet.frag_utils as frag_utils
+import fragnnet.models.fragnnet.multi_cut_bfs as multi_cut_bfs
 import fragnnet.utils.proc_utils as proc_utils
 from fragnnet.utils import formula_utils
 

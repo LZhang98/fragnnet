@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils import frag_utils
+from fragnnet.models.fragnnet import frag_utils
 from fragnnet.utils.misc_utils import booltype, np_temp_seed
 from fragnnet.utils.proc_utils import filter_spec_mol
 

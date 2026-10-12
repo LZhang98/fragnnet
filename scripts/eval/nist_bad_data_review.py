@@ -34,7 +34,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.models.fragnnet.frag_utils as frag_utils
 from fragnnet.utils import data_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
