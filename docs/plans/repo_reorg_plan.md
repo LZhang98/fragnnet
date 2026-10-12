@@ -1,7 +1,7 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
 > **Status:** ACTIVE · **Updated:** 2026-10-12
-> Phases 0–7 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step; what remains is review and merge. ICEBERG is retired in favor of external ms-pred, and the main environment is DGL-free.
+> Phases 0–7 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step. Phase 8 (naming and model packages) is proposed, not started. ICEBERG is retired in favor of external ms-pred, and the main environment is DGL-free.
 > Line and path references in the plan body were measured at commit `13b1599d`, before the moves; the [architecture map](../architecture.md#package-layout-and-dependency-rule) describes the current layout.
 
 ## Current summary
@@ -10,7 +10,7 @@
 - **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
 - **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging), Phase 6 (directory moves) and Phase 7 (doc paths).
 - **Done.** All eight phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; FraGNNet and MASSter live in `fragnnet.models.{fragnnet,masster}`, GRAFF and MassFormer in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
-- **Next action.** Review and merge the branch; then the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
+- **Next action.** Phase 8 ([naming and model packages](#phase-8--naming-and-model-packages-proposed-2026-10-12-not-started)) is proposed and waits for the user's go. Then review and merge the branch; the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
 
 ## Goal
 
@@ -642,6 +642,100 @@ and after open decisions 1-2.
   Repoint what is live. Frozen findings, plans and history keep their links; add one line to `docs/rules/documentation.md`: "paths in frozen records are as of `13b1599d`; use git history to resolve them".
 - **Phase 1 docs** are done in Phase 1, not here.
 
+### Phase 8 — Naming and model packages (proposed 2026-10-12, not started)
+
+The ownership audit after Phase 7 found the dependency rule clean but the shared `model/` package
+ambiguous next to `models/`: it held whole models (NEIMS, precursor, GNN) beside building blocks,
+losses and an output-key table. With MCES pretraining, ChemLM and CLIP retired (see
+[Progress](#progress)), the user decided on 2026-10-12:
+
+- NEIMS, precursor and GNN move to `models/neims/`, `models/precursor/` and `models/gnn/`. This
+  supersedes the earlier "NEIMS stays core" answer (open decision 2).
+- The rest of `model/` becomes `layers/`, holding shared torch building blocks only. `nn/` was
+  rejected because torch is imported as `nn` throughout.
+- `GINE_GSA` lands in `layers/gine_gsa.py`; its move to `models/masster/` is a later, separate
+  step (it needs a `register_gnn_cell` hook and a state-dict check on the 73 GSA checkpoints).
+
+Target layout:
+
+```
+src/fragnnet/
+  runner.py  registry.py  hooks.py  output_schema.py     core
+  layers/        shared torch building blocks only (was model/)
+    metadata_embedding.py  CEModel, PrecModel, InstModel, FragModeModel, QETEnergyEncoder
+    int_featurizer.py      IntFeaturizer family, get_embedder
+    gnn.py                 GNN dispatcher, GINE, GatedGINE, MPNN, NodeMLP
+    norm_residual.py       get_norm, residual_branch, validate_residual_activation
+    graphormer.py          Graphormer, GraphormerEncoderLayer, GINEGraphormer
+    gine_gsa.py            GINE_GSA and its graph softmax attention helpers
+    pooling.py             PoolWithDimSizeAdapter, ZerosAggregation, build_pool_module
+    mlp.py                 MLPBlocks
+    binned_head.py         SpecFFN, NeimsBlock, LowRankDense, reverse_prediction,
+                           mask_prediction_by_mass
+  loss/          functional spectrum math (was model/loss.py)
+    padding.py  cross_entropy.py  peak_list.py  spectrum_distance.py
+    entropy.py  penalty.py  pairwise.py  peak_pair_bce.py
+  pl_model/      Lightning base classes only: spectrum_pl.py, spectrum_metrics.py, binned_pl.py
+  models/
+    fragnnet/ (+ fragnnet_conditioning.py)  masster/
+    neims/  precursor/  gnn/                 <name>_model.py and <name>_pl.py each
+  baselines/  fragmentation/  dataset/  utils/
+```
+
+Rules for this phase:
+
+- **Boundaries.** Each package under `models/` is its own layer: it may import core and
+  `fragmentation/`, never another model or a baseline. `tests/reorg_layers.py` derives the layer
+  from the directory (`fragnnet.models.<name>`), so a new model package needs no table edit.
+  `layers/`, `loss/` and `pl_model/` stay classified as core and need no policy of their own.
+- **No model re-exports in shared initializers.** `model/__init__.py` and `pl_model/__init__.py`
+  eagerly import NEIMS, precursor and GNN today, which would defeat the new boundary and the
+  import isolation. Both lose their re-exports (rule 3) before anything moves; importers name the
+  defining module.
+- **What stays shared.** NEIMS, GNN and MassFormer all use the binned head and `BinnedPL`, and
+  models and baselines may not import each other, so `layers/binned_head.py` and
+  `pl_model/binned_pl.py` stay core. `LowRankDense` goes with the head: since CLIP's
+  `SpectrumEncoder` left, `SpecFFN` is its only user. The conditioning mixins stay core for the
+  same reason.
+- **Not renamed:** `SpectrumPL`, `NeimsPL`, `BinnedPL`, `GINE_GSA` and every GNN cell name (W&B
+  runs, docs, saved `gnn_type` values); the `CEModel`-family mixins; `pl_model/`. Checkpoints
+  store no module paths (206 verified), and only files move, so state-dict keys do not change.
+
+| Current | Target | Why |
+|---|---|---|
+| `model/{neims,precursor,gnn}_model.py`, `pl_model/{neims,precursor,gnn}_pl.py` | `models/<name>/` | Whole models; 2 importers each plus 3 registry strings. |
+| `model/base_model.py` 1-549 | `layers/metadata_embedding.py` | Shared conditioning mixins, not a base class; about 10 importers. |
+| `model/base_model.py` 550-908 | `models/fragnnet/fragnnet_conditioning.py` | `CEScaler`, `FragModeScaler`, `AdductScaler`, `StratumScaler`, `ContextEmbedding`: FraGNNet-only (1 src importer, 4 tests). |
+| `model/form_embedder.py` | `layers/int_featurizer.py` | Integer and scalar featurizers; 5 importers. |
+| `model/nn_blocks.py` | the seven `layers/` modules above | One theme per file; GAT, GGNN and `Set2SetPooling` are deleted as dead (with their dispatch branches and template choice entries). 15 importers. |
+| `model/loss.py` | `loss/` (eight modules) | Functional math, not `nn.Module`; the five dead Hungarian pair functions are deleted and `validate_hellinger_auxiliary_weights` is inlined into `SpectrumPL`. 19 importers. |
+| `model/output_schema.py` | `fragnnet/output_schema.py` | Shared output contracts, not neural layers; its own commit. 6 importers. |
+| `pl_model/spectrum_pl.py` metric builder (about 750 lines) | `pl_model/spectrum_metrics.py` | A one-line `_setup_metric_fns` delegate keeps `MassterPL` and the test stubs unchanged. |
+| `spectrum_pl.py` batch helpers | `utils/spec_utils.py` | `masster_pl` stops importing helpers from a Lightning module. |
+
+Commit order (each step ends with the reorg tests, the import audit and the full suite; moves are
+a pure `git mv` commit, then a mechanical rewrite):
+
+0. Remove the re-exports from `model/__init__.py` and `pl_model/__init__.py` (about 16 importer
+   files) and delete the dead layers and losses.
+1. `output_schema.py` to `fragnnet/output_schema.py`.
+2. NEIMS, precursor and GNN to `models/<name>/`: registry strings; `layer_of` derives
+   `fragnnet.models.<name>` layers; strict NEIMS checkpoint load and random-init records before
+   and after.
+3. FraGNNet scalers to `models/fragnnet/fragnnet_conditioning.py`.
+4. `model/` to `layers/` with the file renames, and `loss.py` to `loss/cross_entropy.py` (pure
+   `git mv`).
+5. Split `layers/` and `loss/` into the modules above.
+6. One mechanical rewrite of about 45 importer files; isort; an AST test that bans aliasing a
+   fragnnet package as `nn`; a state-dict key comparison per `gnn_type`. Hand the user a cleanup
+   script for the leftover `model/` bytecode.
+7. Docs (architecture map, this plan).
+8. `spectrum_pl` diet: `spectrum_metrics.py` and the batch helpers.
+
+Separate follow-ups: `fragmentation/candidate_support.py` to `loss/channel_support.py` (a loss,
+not chemistry); `hooks.ExportHooks` to `ExportAdapter`; splitting `pl_utils.py` into callbacks and
+migrations; `GINE_GSA` to `models/masster/`.
+
 ## Unchanged
 
 - Retained-model `model_type` strings, config keys, config paths, sweep files and W&B runs. ICEBERG types and configs are the explicit retirement exception. The `iceberg_*`/`magma_params`/`magma_dp` template fields stay inert, so retained-model config and checkpoint loading is not broken by a separate schema cleanup.
@@ -663,7 +757,7 @@ and after open decisions 1-2.
 ## Open decisions
 
 1. **Layout.** Decided 2026-10-12 (user): `fragnnet.models.{fragnnet,masster}` and `fragnnet.baselines.*`, as recommended. The alternative, separate top-level packages or pip distributions for the retained baselines, is only worth it if they will be published or installed separately.
-2. **NEIMS.** Decided 2026-10-12 (user): NEIMS stays in core `model/` and `pl_model/`. The `neims_*` keys stay in core either way, because ChemLM reads them. `chemlm`, `gnn`, `precursor`, MCES and CLIP stay in core.
+2. **NEIMS.** Decided 2026-10-12 (user), then revised the same day: NEIMS, precursor and GNN move to `models/<name>/` in Phase 8. MCES pretraining, ChemLM and CLIP were retired instead (see Progress).
 3. **Baseline config directories.** Recommended: do not move them into `config/baselines/`, since sweeps and W&B runs point at the current paths.
 4. **Live branches.** Decided 2026-10-12 (user): no diverged branch is live, so Phase 6 ran without waiting. A branch revived later merges across the pure `git mv` commits with rename detection.
 
