@@ -72,6 +72,19 @@ class ModelHooks:
             ValueError: If the config enables one of this model's settings.
         """
 
+    def apply_inference_config(
+        self, config_d: dict[str, Any], *, disable_preproc: bool, output_formula_str: bool
+    ) -> None:
+        """Adjust the model's own config blocks for inference.
+
+        ``script_utils.apply_inference_config`` calls it after its shared edits.
+
+        Args:
+            config_d: Config, modified in place.
+            disable_preproc: Whether the caller turned dataset preprocessing off.
+            output_formula_str: Whether formula strings are exported.
+        """
+
     def filter_dataset(self, dataset: Any, config: dict[str, Any]) -> None:
         """Drop spectra the model cannot use.
 

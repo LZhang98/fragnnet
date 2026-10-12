@@ -49,7 +49,9 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         "fragnnet.massformer.pl_model:MassFormerPL", "fragnnet.massformer.dataset:SpecMolMFDataset"
     ),
     "graff": ModelEntry(
-        "fragnnet.graff.pl_model:GrAFFPL", "fragnnet.graff.dataset:SpecMolAnnDataset"
+        "fragnnet.graff.pl_model:GrAFFPL",
+        "fragnnet.graff.dataset:SpecMolAnnDataset",
+        hooks="fragnnet.graff.hooks:GrAFFHooks",
     ),
     "precursor": ModelEntry("fragnnet.pl_model.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET),
     "gnn": ModelEntry("fragnnet.pl_model.gnn_pl:GNNPL", _SPEC_MOL_DATASET),

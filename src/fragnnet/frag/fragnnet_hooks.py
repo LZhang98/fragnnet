@@ -106,6 +106,16 @@ class FraGNNetHooks(ModelHooks):
                 "Dual-group dynamic batch sampler can only be used with frag_gnn model"
             )
 
+    def apply_inference_config(
+        self, config_d: dict[str, Any], *, disable_preproc: bool, output_formula_str: bool
+    ) -> None:
+        if "frag_params" in config_d:
+            # The DAG dataset emits frag_formula_str for the formula export.
+            config_d["frag_params"]["formula_str"] = True
+            # Disable preprocessing to save memory, whether or not disable_preproc is set.
+            config_d["frag_params"]["preload"] = False
+            config_d["frag_params"]["preprocess"] = False
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:

@@ -17,6 +17,7 @@ import torch as th
 from pyteomics.mass import Composition
 from tqdm import tqdm
 
+from fragnnet import registry
 from fragnnet.frag.masster_templates import MASSTER_RULE_VOCABULARY
 from fragnnet.pl_model import FraGNNetPL, MassterPL
 from fragnnet.runner import load_config
@@ -457,26 +458,21 @@ def apply_inference_config(
     config_d["compile"] = False  # Disable compilation for evaluation
     # Disable preprocessing if requested
     if disable_preproc:
-        # frag/ann_params are model-owned, so they are absent for models that never read them.
-        for k in ["spec", "mol", "frag", "ann"]:
+        for k in ["spec", "mol"]:
             key = f"{k}_params"
             if key not in config_d:
                 continue
             config_d[key]["preprocess"] = False
-            if k in ["frag"]:
-                config_d[key]["preload"] = False
 
     # Handle formula string outputs
     config_d["output_formula_str"] = output_formula_str
 
-    # Model-specific configurations
-    # for fragnnet
+    # The formula-delta export reads spec_prec_type_str for every model.
     config_d["spec_params"]["prec_type_str"] = True
-    if "frag_params" in config_d:
-        config_d["frag_params"]["formula_str"] = True
-    # for graff
-    if "ann_params" in config_d:
-        config_d["ann_params"]["formula_str"] = output_formula_str
+    # The model's own blocks (FraGNNet's frag_params, GRAFF's ann_params).
+    registry.get_model_hooks(config_d.get("model_type"), strict=False).apply_inference_config(
+        config_d, disable_preproc=bool(disable_preproc), output_formula_str=output_formula_str
+    )
     # Set batch sizes if provided
     if train_batch_size is not None:
         config_d["train_batch_size"] = train_batch_size
@@ -498,12 +494,6 @@ def apply_inference_config(
 
     # Apply common inference settings
     config_d["track_datapoint_metrics"] = False
-
-    # Disable preprocessing to save memory. The block is a model-owned overlay, so it is absent
-    # for a model that does not use it.
-    if "frag_params" in config_d:
-        config_d["frag_params"]["preload"] = False
-        config_d["frag_params"]["preprocess"] = False
 
     # Disable samplers for deterministic inference
     config_d["dynamic_batch_sampler"] = (

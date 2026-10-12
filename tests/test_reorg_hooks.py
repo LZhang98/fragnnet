@@ -22,7 +22,12 @@ from fragnnet import registry
 from fragnnet.hooks import ModelHooks
 
 # Model types with their own hooks class; every other type uses the defaults.
-OWN_HOOKS = {"frag_gnn": "FraGNNetHooks", "fragnnet": "FraGNNetHooks", "masster": "MassterHooks"}
+OWN_HOOKS = {
+    "frag_gnn": "FraGNNetHooks",
+    "fragnnet": "FraGNNetHooks",
+    "masster": "MassterHooks",
+    "graff": "GrAFFHooks",
+}
 
 
 @pytest.mark.parametrize("model_type", MODEL_TYPES)
@@ -178,3 +183,60 @@ def test_only_fragnnet_and_masster_build_their_own_batch_samplers(model_type: st
     assert (
         registry.get_model_hooks(model_type).build_batch_sampler(None, config, None, None) is None
     )
+
+
+def _old_inference_overlay(config_d: dict, disable_preproc: bool, output_formula_str: bool) -> None:
+    """The model-block part of script_utils.apply_inference_config before Phase 4 step 5."""
+    if disable_preproc:
+        for k in ["spec", "mol", "frag", "ann"]:
+            key = f"{k}_params"
+            if key not in config_d:
+                continue
+            config_d[key]["preprocess"] = False
+            if k in ["frag"]:
+                config_d[key]["preload"] = False
+    config_d["output_formula_str"] = output_formula_str
+    config_d["spec_params"]["prec_type_str"] = True
+    if "frag_params" in config_d:
+        config_d["frag_params"]["formula_str"] = True
+    if "ann_params" in config_d:
+        config_d["ann_params"]["formula_str"] = output_formula_str
+    if "frag_params" in config_d:
+        config_d["frag_params"]["preload"] = False
+        config_d["frag_params"]["preprocess"] = False
+
+
+@pytest.mark.parametrize("model_type", MODEL_TYPES)
+@pytest.mark.parametrize("disable_preproc", [False, True])
+@pytest.mark.parametrize("output_formula_str", [False, True])
+def test_inference_overlay_matches_the_pre_hook_function(
+    model_type: str, disable_preproc: bool, output_formula_str: bool
+) -> None:
+    """FraGNNet's frag_params and GRAFF's ann_params overlays moved into their hooks.
+
+    A model's own block, and everything else, is set as before. A block another model owns is
+    now left as the template wrote it (the old overlay edited it too, although nothing reads it).
+    """
+    import copy
+
+    from fragnnet.runner import load_config
+    from fragnnet.utils.script_utils import apply_inference_config
+
+    base = load_config("config", None, None, model_type=model_type)
+    old, new = copy.deepcopy(base), copy.deepcopy(base)
+    _old_inference_overlay(old, disable_preproc, output_formula_str)
+    apply_inference_config(
+        new, disable_preproc=disable_preproc, output_formula_str=output_formula_str
+    )
+    # apply_inference_config's shared edits outside the overlay.
+    for key in ("compile", "track_datapoint_metrics", "dynamic_batch_sampler"):
+        new.pop(key), old.pop(key, None), base.pop(key, None)
+    for key in ("group_sampler", "simple_group_sampler"):
+        new.pop(key), old.pop(key, None)
+    owner_blocks = {"frag_gnn": "frag_params", "fragnnet": "frag_params", "graff": "ann_params"}
+    foreign = {"frag_params", "ann_params"} - {owner_blocks.get(model_type)}
+    assert {k: v for k, v in new.items() if k not in foreign} == {
+        k: v for k, v in old.items() if k not in foreign and k in new
+    }
+    for key in foreign:
+        assert new[key] == base[key]
