@@ -66,7 +66,7 @@ import torch as th
 from fragnnet.utils import parallel_utils
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper, jss_hun_helper
+from fragnnet.utils.spec_similarity import calculate_match_mzs, cos_hun_helper, jss_hun_helper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)

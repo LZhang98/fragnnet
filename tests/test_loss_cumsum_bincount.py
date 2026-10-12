@@ -174,7 +174,7 @@ class TestSparseVecEndToEnd:
         import math
 
         from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
-        from fragnnet.utils.spec_utils import calculate_match_mzs
+        from fragnnet.utils.spec_similarity import calculate_match_mzs
 
         float_dtype = true_logprobs.dtype
         device = true_logprobs.device

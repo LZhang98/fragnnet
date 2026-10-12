@@ -42,7 +42,7 @@ from fragnnet.utils.formula_utils import (
     th_long_to_mask,
 )
 from fragnnet.utils.mol_utils import mol_from_smiles
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 INST_TOL: dict[str, dict] = {
     "ORB": {"rel": 1e-5, "min_mz": 200.0},  # 10 ppm, floor 0.002 Da

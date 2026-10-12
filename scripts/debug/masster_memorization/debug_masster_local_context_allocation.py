@@ -58,7 +58,8 @@ from fragnnet.utils.script_utils import (
     init_model_from_ckpt,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
+from fragnnet.utils.spec_similarity import cos_sim_helper
+from fragnnet.utils.spec_utils import batched_bin_func
 
 try:
     from .debug_masster_base_peak_errors import (

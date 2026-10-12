@@ -16,14 +16,13 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     x_log_x,
 )
-from fragnnet.utils.spec_utils import (
+from fragnnet.utils.spec_similarity import (
     align_sparse_peak_support,
-    batched_bin_func,
     calculate_match_mzs,
     jss_helper,
     linear_sum_assignment,
-    round_aggregate_peaks,
 )
+from fragnnet.utils.spec_utils import batched_bin_func, round_aggregate_peaks
 
 
 def _spectra_in_batch(true_batch_idxs: th.Tensor, pred_batch_idxs: th.Tensor) -> int:

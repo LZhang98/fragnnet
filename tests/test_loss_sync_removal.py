@@ -65,7 +65,7 @@ def _reference_sparse_ce_vec(
     from fragnnet.utils.misc_utils import LOG_ZERO as _LZ
     from fragnnet.utils.misc_utils import scatter_logsumexp as _sle
     from fragnnet.utils.misc_utils import scatter_reduce as _sr
-    from fragnnet.utils.spec_utils import calculate_match_mzs as _cmm
+    from fragnnet.utils.spec_similarity import calculate_match_mzs as _cmm
 
     float_dtype = true_logprobs.dtype
     device = true_logprobs.device

@@ -8,11 +8,8 @@ import torch as th
 from fragnnet.loss.padding import build_loss_chunks
 from fragnnet.loss.peak_list import sparse_peak_list_distance
 from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ
-from fragnnet.utils.spec_utils import (
-    calculate_match_mzs,
-    linear_sum_assignment,
-    round_aggregate_peaks,
-)
+from fragnnet.utils.spec_similarity import calculate_match_mzs, linear_sum_assignment
+from fragnnet.utils.spec_utils import round_aggregate_peaks
 
 
 @pytest.mark.parametrize(

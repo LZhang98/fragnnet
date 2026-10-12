@@ -41,7 +41,8 @@ from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassterPL, dict]:

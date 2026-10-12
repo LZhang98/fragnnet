@@ -14,18 +14,20 @@ import torch as th
 from fragnnet.loss.entropy import sparse_entropy_fn
 from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.utils.misc_utils import safelog, scatter_l1normalize, scatter_reduce
-from fragnnet.utils.spec_utils import (
+from fragnnet.utils.spec_similarity import (
     batch_cos_hun_helper,
     batch_jss_hun_helper,
-    batched_bin_func,
     calculate_match_mz_reductions,
     calculate_match_mzs,
     cos_sim_helper,
-    get_ints_transform_func,
-    get_split_fn,
     jss_helper,
     ndcg_helper,
     opt_cos_sim_helper,
+)
+from fragnnet.utils.spec_utils import (
+    batched_bin_func,
+    get_ints_transform_func,
+    get_split_fn,
     ragged_to_batch,
     round_aggregate_peaks,
 )

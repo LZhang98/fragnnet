@@ -82,7 +82,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
 )
 from fragnnet.models.fragnnet.dag.layout import get_node_feats
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import (  # noqa: E402

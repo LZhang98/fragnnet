@@ -47,7 +47,7 @@ from scipy.stats import spearmanr
 
 from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # Reuse the per-instrument tolerance convention from the oracle script (FT 10ppm/200Da,
 # QTOF 20ppm/750Da, else global 10ppm/200Da) so this diagnostic matches the cos_hun_inst_tol

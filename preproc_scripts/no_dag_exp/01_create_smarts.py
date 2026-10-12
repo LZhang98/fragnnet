@@ -18,7 +18,7 @@ from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.formula_utils import H_MASS, PREC_TYPE_TO_MASS_DIFF, th_long_to_mask
 from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
 from fragnnet.utils.mol_utils import mol_from_smiles
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def draw_highlighted_atoms(mol, atom_ids):

@@ -9,7 +9,7 @@ import torch as th
 import torch.nn.functional as F
 
 from fragnnet.utils.misc_utils import _validate_tensor_condition, scatter_reduce
-from fragnnet.utils.spec_utils import linear_sum_assignment
+from fragnnet.utils.spec_similarity import linear_sum_assignment
 
 # The candidate window is searched with a slightly widened absolute bound so that it is a
 # strict superset of the tolerance predicate; the exact predicate is then re-evaluated on

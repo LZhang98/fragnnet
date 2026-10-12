@@ -28,11 +28,8 @@ import torch as th
 from scipy.stats import bootstrap
 
 from fragnnet.utils.misc_utils import x_log_x
-from fragnnet.utils.spec_utils import (
-    _solve_batch_assignment,
-    calculate_match_mzs,
-    round_aggregate_peaks,
-)
+from fragnnet.utils.spec_similarity import _solve_batch_assignment, calculate_match_mzs
+from fragnnet.utils.spec_utils import round_aggregate_peaks
 
 MSPRED_NUM_BINS = 150000
 MSPRED_UPPER_LIMIT = 1500.0

@@ -10,7 +10,7 @@ import torch as th
 
 from fragnnet.loss.padding import build_loss_chunks, build_padded_batch_layout, pad_flat_with_layout
 from fragnnet.utils.misc_utils import LOG_ZERO
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 logger = logging.getLogger(__name__)
 

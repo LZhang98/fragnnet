@@ -70,7 +70,7 @@ import torch as th
 from fragnnet.utils import parallel_utils
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # Reuse the DAG/ion-mass machinery rather than reimplementing the CMF/std union.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

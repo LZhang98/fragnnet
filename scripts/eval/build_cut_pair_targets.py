@@ -73,7 +73,7 @@ from fragnnet.utils.formula_utils import (
     cmf_duplicate_crf_h_shift,
     th_long_to_mask,
 )
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import (  # noqa: E402

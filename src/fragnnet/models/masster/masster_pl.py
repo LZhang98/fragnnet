@@ -57,9 +57,9 @@ from fragnnet.utils.migrations import (
     migrate_masster_proposal_method,
 )
 from fragnnet.utils.misc_utils import scatter_reduce
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 from fragnnet.utils.spec_utils import (
     aggregate_peaks_exact_mz,
-    calculate_match_mzs,
     get_ints_transform_func,
     select_context_ce_values,
 )

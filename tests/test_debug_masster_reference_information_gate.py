@@ -9,7 +9,8 @@ import torch as th
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 
-from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
+from fragnnet.utils.spec_similarity import cos_sim_helper
+from fragnnet.utils.spec_utils import batched_bin_func
 from scripts.debug.masster_memorization.debug_masster_reference_information_gate import (
     fit_correction,
     metric_cache,

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from fragnnet.utils.plot_utils import get_mol_im
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def not_nan_none(val):

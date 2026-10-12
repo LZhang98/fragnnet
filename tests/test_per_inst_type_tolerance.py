@@ -24,7 +24,7 @@ from fragnnet.loss.spectrum_distance import (
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.runner import load_config
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # ---------------------------------------------------------------------------
 # calculate_match_mzs — tol_per_true / min_mz_per_true

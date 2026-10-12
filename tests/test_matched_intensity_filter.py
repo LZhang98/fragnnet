@@ -8,7 +8,8 @@ import pandas as pd
 import pytest
 import torch as th
 
-from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
+from fragnnet.utils.spec_similarity import cos_sim_helper
+from fragnnet.utils.spec_utils import batched_bin_func
 
 SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "matched_intensity_filter.py"
 SPEC = importlib.util.spec_from_file_location("matched_intensity_filter", SCRIPT_PATH)

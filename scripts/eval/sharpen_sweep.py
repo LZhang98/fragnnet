@@ -32,7 +32,7 @@ import torch as th
 
 from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper
+from fragnnet.utils.spec_similarity import calculate_match_mzs, cos_hun_helper
 
 # Reuse the diagnostic's loaders + per-instrument tolerance (FT 10ppm/200Da, QTOF 20ppm/750Da).
 from intensity_error_diagnostic import _tolerance_for_inst_type, load_pred_spectra

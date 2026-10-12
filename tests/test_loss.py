@@ -28,7 +28,8 @@ from fragnnet.loss.spectrum_distance import (
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
 )
-from fragnnet.utils.spec_utils import batched_bin_func, calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import batched_bin_func
 
 
 def test_sparse_hellinger_distance_matches_known_value_and_backward() -> None:

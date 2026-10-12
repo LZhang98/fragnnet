@@ -35,7 +35,7 @@ from rdkit.Chem import Draw
 
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
