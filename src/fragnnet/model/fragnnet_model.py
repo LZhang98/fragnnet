@@ -31,15 +31,13 @@ from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.formula_utils import formula_row_prec_deltas
-from fragnnet.utils.frag_utils import (
+from fragnnet.utils.formula_utils import (
     ELEMENT_TO_VE,
     HEAVY_ELEMENTS,
-    compute_boundary_mask,
-    get_edge_feats,
-    get_node_feats,
+    formula_row_prec_deltas,
     th_long_to_mask,
 )
+from fragnnet.utils.frag_utils import compute_boundary_mask, get_edge_feats, get_node_feats
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
     check_pyg_compile,

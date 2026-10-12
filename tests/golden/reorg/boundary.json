@@ -1,22 +1,10 @@
 {
   "ast_violations": {
-    "fragnnet.dataset.base_dataset -> fragnnet.utils.frag_utils": [
-      "load_frag_d"
-    ],
-    "fragnnet.model.candidate_features -> fragnnet.utils.frag_utils": [
-      "CANONICAL_ELEMENT_ORDER",
-      "CANONICAL_H_IDX"
-    ],
-    "fragnnet.model.masster_model -> fragnnet.utils.frag_utils": [
-      "CANONICAL_ELEMENT_ORDER"
-    ],
     "fragnnet.utils.feat_utils -> fragnnet.utils.frag_utils": [
-      "CANONICAL_ELEMENT_ORDER",
       "EDGE_FEAT_TO_IDX",
       "NODE_FEAT_TO_IDX",
       "get_edge_feats",
-      "get_node_feats",
-      "th_long_to_mask"
+      "get_node_feats"
     ],
     "fragnnet.utils.script_utils -> fragnnet.frag.masster_templates": [
       "MASSTER_RULE_VOCABULARY"
@@ -28,13 +16,7 @@
       "MassterPL"
     ],
     "fragnnet.utils.script_utils -> fragnnet.utils.frag_utils": [
-      "ELEMENT_TO_IDX",
-      "MASK_SIZE",
-      "NUM_ELEMENTS",
-      "PACKED_DAG_INDEX_DATASET",
-      "formula_arr_to_str",
-      "get_node_feats",
-      "th_mask_to_long"
+      "get_node_feats"
     ]
   },
   "isolation_entry_modules": {

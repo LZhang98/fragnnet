@@ -23,13 +23,12 @@ from fragnnet.utils.data_utils import (
     make_morgan_fingerprint,
     make_rdkit_fingerprint,
 )
+from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER, th_long_to_mask
 from fragnnet.utils.frag_utils import (
-    CANONICAL_ELEMENT_ORDER,
     EDGE_FEAT_TO_IDX,
     NODE_FEAT_TO_IDX,
     get_edge_feats,
     get_node_feats,
-    th_long_to_mask,
 )
 
 # TODO: remove this registry

@@ -6,6 +6,7 @@ from typing import Literal
 
 import numpy as np
 import rdkit.Chem as Chem
+import torch as th
 from pyteomics.mass import Composition
 
 from fragnnet.utils.misc_utils import none_or_nan
@@ -30,6 +31,41 @@ MAX_NUM_EDGES = 4 * MAX_NUM_NODES
 MASK_SIZE = 128
 assert MASK_SIZE >= MAX_NUM_NODES, "MASK_SIZE should be larger than MAX_NUM_NODES"
 assert MASK_SIZE % 64 == 0, "MASK_SIZE should be a multiple of 64"
+
+# full list of common elements
+# NOTE: this maybe a bad idea to not cover all the element
+# we should handle all the elemnet
+ELEMENT_TO_VE = {
+    "C": 4,
+    "O": 2,
+    "N": 3,
+    "P": 3,  # up to 5
+    "S": 2,  # up to 6
+    "F": 1,
+    "Cl": 1,
+    "Br": 1,
+    "I": 1,
+    "Se": 2,  # up to 6, same as S
+    "Si": 4,
+    "As": 3,  # up to 5
+    "B": 3,
+    # Tier 1 metals — covalent organometallics only (C–metal single bonds)
+    "Hg": 2,  # methylmercury, ethylmercury
+    "Sn": 4,  # organotin (tributyltin, trimethyltin)
+    "Pb": 4,  # organolead (tetraethyllead)
+}
+HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
+NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
+ELEMENTS = HEAVY_ELEMENTS + ["H"]
+NUM_ELEMENTS = len(ELEMENTS)
+
+CANONICAL_ELEMENT_ORDER = ["C", "H"] + sorted([elem for elem in HEAVY_ELEMENTS if elem != "C"])
+CANONICAL_H_IDX = CANONICAL_ELEMENT_ORDER.index("H")
+
+ELEMENT_TO_IDX = {elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}
+ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
+
+IDX_TO_ELEMENT = {idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 # NIST ``+Ni`` precursor labels -- ``[M+H+2i]+``, ``[M+H+4i]+``, ``[M-H+2i]-``, ``[M+Na+2i]+``
 # and friends -- are NOT SUPPORTED and are deliberately absent from every table below.
@@ -689,3 +725,82 @@ def get_elements_set(formula: str) -> set[str]:
         formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
     """
     return set(parse_formula(formula).keys())
+
+
+def formula_arr_to_str(
+    formula_arr: np.ndarray, get_h_template: bool = False
+) -> str | tuple[str, str]:
+    """
+    Convert a formula array (element counts) to a string in canonical element order.
+    Optionally returns a template for hydrogen count substitution.
+
+    Args:
+        formula_arr (np.ndarray): Array of element counts (including hydrogen).
+        get_h_template (bool, optional): If True, return template string for hydrogen count. Defaults to False.
+
+    Returns:
+        str | tuple[str, str]:
+            - If get_h_template is False: Formula string (e.g., 'C6H12O6').
+            - If get_h_template is True: Tuple of (template string with 'H{:d}' placeholder, string without hydrogen).
+    """
+    elem_d = {}
+    for idx, count in enumerate(formula_arr):
+        elem = IDX_TO_ELEMENT[idx]
+        elem_d[elem] = count
+
+    if not get_h_template:
+        formula_str = ""
+        for elem in CANONICAL_ELEMENT_ORDER:
+            if elem in elem_d:
+                count = elem_d[elem]
+                if count > 0:
+                    formula_str += elem
+                if count > 1:
+                    formula_str += str(count)
+        return formula_str
+    else:
+        formula_str = ""
+        formula_str_no_h = ""
+        for elem in CANONICAL_ELEMENT_ORDER:
+            if elem in elem_d:
+                if elem == "H":
+                    formula_str += "H{:d}"
+                else:
+                    count = elem_d[elem]
+                    if count > 0:
+                        formula_str += elem
+                        formula_str_no_h += elem
+                    if count > 1:
+                        formula_str += str(count)
+                        formula_str_no_h += str(count)
+        return formula_str, formula_str_no_h
+
+
+def th_long_to_mask(long: th.Tensor) -> th.Tensor:
+    """convert long to mask, this can be more then one 64 bit longs in given row
+
+    Args:
+        long (_type_): N x MASK_SIZE//64 th.Tensor of int
+    Returns:
+        _type_: _description_
+    """
+    # long is N x MASK_SIZE//64
+    num_dims = long.shape[1]
+    long = long.reshape(long.shape[0], num_dims, 1)
+    mask = 2 ** th.arange(64 - 1, -1, -1, device=long.device)
+    mask = mask.reshape(1, 1, 64)
+    return long.bitwise_and(mask).ne(0).reshape(long.shape[0], -1)
+
+
+def th_mask_to_long(mask: th.Tensor) -> th.Tensor:
+    """convert torch binary mask to 64 bits ints, MASK_SIZE//64 number of int are returned per row
+    Args:
+        long (_type_): N x MASK_SIZE//64 th.Tensor of int
+    Returns:
+        _type_: _description_
+    """
+    # mask is N x MASK_SIZE
+    num_dims = mask.shape[1] // 64
+    mask = mask.reshape(mask.shape[0], num_dims, 64)
+    long = 2 ** th.arange(64 - 1, -1, -1, device=mask.device).expand(1, num_dims, 64)
+    return th.sum(long * mask, dim=2).long()

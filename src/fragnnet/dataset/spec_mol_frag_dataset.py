@@ -13,6 +13,12 @@ from torch_geometric.data import Batch
 from tqdm import tqdm
 
 from fragnnet.dataset import BaseDataset, SpecMolDataset
+from fragnnet.utils.dag_format_utils import (
+    _legacy_frag_names,
+    get_frag_fp,
+    load_dag_hdf5,
+    load_frag_d,
+)
 from fragnnet.utils.feat_utils import batch_mols_frags, get_frag_graph
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
@@ -21,13 +27,7 @@ from fragnnet.utils.formula_utils import (
     prec_type_removed_counts,
     tracked_element_counts,
 )
-from fragnnet.utils.frag_utils import (
-    NODE_FEAT_TO_IDX,
-    _legacy_frag_names,
-    get_frag_fp,
-    load_dag_hdf5,
-    load_frag_d,
-)
+from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 
 # Per-formula element counts, attached by _process_neutral_frag and consumed (and removed) by

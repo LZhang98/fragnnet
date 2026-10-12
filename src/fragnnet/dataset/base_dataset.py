@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
 from fragnnet.utils.clean_spectra_utils import clean_spectra
+from fragnnet.utils.dag_format_utils import load_frag_d
 from fragnnet.utils.data_utils import (
     CHARGE_FACTOR_MAP,
     RETIRED_INST_TYPE_HELP,
@@ -21,7 +22,6 @@ from fragnnet.utils.data_utils import (
     get_charge,
 )
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.frag_utils import load_frag_d
 from fragnnet.utils.isotope_utils import (
     _INST_MZ_TOL,
     ISOTOPE_CANDIDATE_RULES,

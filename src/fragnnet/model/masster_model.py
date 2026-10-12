@@ -88,6 +88,7 @@ from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN
 from fragnnet.model.rt_ccs import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
+    CANONICAL_ELEMENT_ORDER,
     H_MASS,
     PERIODIC_TABLE,
     PREC_TYPE_TO_CMF_COMP_DIFF,
@@ -99,7 +100,6 @@ from fragnnet.utils.formula_utils import (
     nominal_isotope_pattern,
     nominal_isotope_power_table,
 )
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
 from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 
 

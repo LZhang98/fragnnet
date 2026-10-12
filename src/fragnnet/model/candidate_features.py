@@ -54,8 +54,7 @@ from fragnnet.model.bond_fragment_heads import (
     boundary_bond_endpoint_orientation,
     pool_boundary_bond_embeddings,
 )
-from fragnnet.utils.formula_utils import H_MASS
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX
+from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX, H_MASS
 from fragnnet.utils.misc_utils import _validate_tensor_condition
 
 # Element vocabulary for composition features: the canonical order plus one shared column for
