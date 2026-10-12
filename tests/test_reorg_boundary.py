@@ -122,3 +122,13 @@ def test_phase3_isolation_gate(isolation: dict[str, dict]) -> None:
         for model_type, loaded in isolation["model_selection"].items()
     }
     assert {t: v for t, v in selection_offenders.items() if v} == {}
+
+
+def test_phase4_isolation_gate(isolation: dict[str, dict]) -> None:
+    """The plan's Phase 4 gate: core is fully separated from the models.
+
+    Every entry module, script_utils included, loads no module outside core, and no import edge
+    anywhere breaks the dependency rule. Model selections are checked by the Phase 3 gate.
+    """
+    assert {m: loaded for m, loaded in isolation["entry_modules"].items() if loaded} == {}
+    assert reorg_layers.boundary_violations() == {}

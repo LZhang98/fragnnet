@@ -240,3 +240,24 @@ def test_inference_overlay_matches_the_pre_hook_function(
     }
     for key in foreign:
         assert new[key] == base[key]
+
+
+@pytest.mark.parametrize("model_type", MODEL_TYPES)
+def test_include_cmf_needs_its_node_feature_for_fragnnet(model_type: str) -> None:
+    """The CMF check moved from runner.run_training into FraGNNetHooks.validate_config.
+
+    run_training validates the sampler config right where the check stood, so FraGNNet configs
+    fail at the same point. Other models never read frag_params, so they no longer check it.
+    """
+    from fragnnet.runner import load_config, validate_sampler_config
+
+    config = load_config("config", None, None, model_type=model_type)
+    config["frag_params"]["include_cmf"] = True
+    config["frag_params"]["pyg_node_feats"] = [
+        f for f in config["frag_params"]["pyg_node_feats"] if f != "cmf_h_formulae_idx"
+    ]
+    if model_type in FRAGNNET_TYPES:
+        with pytest.raises(ValueError, match="cmf_h_formulae_idx' is missing"):
+            validate_sampler_config(config)
+        config["frag_params"]["pyg_node_feats"].append("cmf_h_formulae_idx")
+    validate_sampler_config(config)

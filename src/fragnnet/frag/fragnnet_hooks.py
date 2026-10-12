@@ -94,6 +94,15 @@ class FraGNNetHooks(ModelHooks):
                     "dual_group_dynamic_batch_sampler_max to be set"
                 )
 
+        if (
+            "frag_params" in config_d
+            and config_d["frag_params"]["include_cmf"]
+            and "cmf_h_formulae_idx" not in config_d["frag_params"]["pyg_node_feats"]
+        ):
+            raise ValueError(
+                "include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats"
+            )
+
     def reject_foreign_config(self, config_d: dict[str, Any]) -> None:
         if config_d["dynamic_batch_sampler"]:
             raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")

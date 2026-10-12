@@ -962,16 +962,6 @@ def run_training(
     # check config for sampler
     validate_sampler_config(config_d)
 
-    # check config for CMF; only the FraGNNet template declares frag_params.
-    if (
-        "frag_params" in config_d
-        and config_d["frag_params"]["include_cmf"]
-        and "cmf_h_formulae_idx" not in config_d["frag_params"]["pyg_node_feats"]
-    ):
-        raise ValueError(
-            "include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats"
-        )
-
     # setup dataloaders
     logging.info("setup dataloader")
     if schedule_train_size is not None and len(train_ds) != schedule_train_size:
