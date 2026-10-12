@@ -11,8 +11,8 @@ import pandas as pd
 import torch as th
 from torch.utils.data import DataLoader
 
+from fragnnet.inference.checkpoint import init_model_from_ckpt
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 

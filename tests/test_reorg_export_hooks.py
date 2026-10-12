@@ -1,7 +1,7 @@
 """Export adapter (reorganization plan Phase 4 step 5b; ``ExportHooks`` until Phase 8
 follow-ups, now ``fragnnet.export_adapter.ExportAdapter``).
 
-The inference exporters in ``fragnnet.utils.script_utils`` call
+The inference exporters in ``fragnnet.inference.runners`` call
 ``fragnnet.export_adapter.ExportAdapter`` methods on the model they hold instead of branching on
 ``FraGNNetPL``/``MassterPL``. The export
 records in ``test_reorg_export.py`` pin the behavior; this file covers what they do not reach:
@@ -14,9 +14,9 @@ from __future__ import annotations
 import pytest
 
 from fragnnet.export_adapter import ExportAdapter
+from fragnnet.inference import export_columns
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.utils import script_utils
 
 PEAKS = ["pred_batch_idxs", "true_batch_idxs"]
 ANNOTATION = (
@@ -53,21 +53,21 @@ def _stub(cls):
 )
 def test_index_vars_match_the_pre_hook_lists(model, nb_iso, expected) -> None:
     model = {"masster": _stub(MassterPL), "fragnnet": _stub(FraGNNetPL)}.get(model, model)
-    assert script_utils.get_idx_vars(None, model, nb_iso) == tuple(expected)
+    assert export_columns.get_idx_vars(None, model, nb_iso) == tuple(expected)
 
 
 @pytest.mark.parametrize("model", [None, object(), "masster"])
 def test_nb_iso_is_fragnnet_only(model) -> None:
     model = _stub(MassterPL) if model == "masster" else model
     with pytest.raises(AssertionError):
-        script_utils.get_idx_vars(None, model, nb_iso=True)
+        export_columns.get_idx_vars(None, model, nb_iso=True)
 
 
 def test_required_index_vars_add_the_nb_iso_names_for_fragnnet_only() -> None:
-    subset = set(script_utils.OUTPUT_SUBSET_OPTIONS)
-    plain = script_utils.required_index_vars_for_outputs(subset, None, nb_iso=True)
-    masster = script_utils.required_index_vars_for_outputs(subset, _stub(MassterPL), True)
-    fragnnet = script_utils.required_index_vars_for_outputs(subset, _stub(FraGNNetPL), True)
+    subset = set(export_columns.OUTPUT_SUBSET_OPTIONS)
+    plain = export_columns.required_index_vars_for_outputs(subset, None, nb_iso=True)
+    masster = export_columns.required_index_vars_for_outputs(subset, _stub(MassterPL), True)
+    fragnnet = export_columns.required_index_vars_for_outputs(subset, _stub(FraGNNetPL), True)
     assert plain == masster
     nb_batch, nb_formula, nb_node = (
         set(FRAGNNET_NB_ISO[i]) - set(ANNOTATION[i]) for i in (0, 2, 3)

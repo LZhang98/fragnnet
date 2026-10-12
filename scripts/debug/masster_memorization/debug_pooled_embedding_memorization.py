@@ -101,15 +101,15 @@ from lightning import seed_everything
 from tqdm import tqdm
 
 import fragnnet.models.masster.masster_model as masster_model_module
-from fragnnet.layers.gine_gsa import GINE_GSA
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.layers.gine_gsa import GINE_GSA
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

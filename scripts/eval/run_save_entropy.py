@@ -7,12 +7,13 @@ import pandas as pd
 import torch as th
 
 import wandb
+from fragnnet.inference.checkpoint import init_wandb_ckpt
+from fragnnet.inference.runners import run_inference
 from fragnnet.loss.entropy import sparse_conditional_entropy_fn
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.scatter_utils import scatter_logsumexp
-from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
 
 # The stats helpers live with the statistics scripts.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stats_scripts"))

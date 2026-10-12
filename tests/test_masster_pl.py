@@ -15,6 +15,7 @@ from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
 from fragnnet.dataset import SpecMolDataset
+from fragnnet.inference import checkpoint, runners
 from fragnnet.layers.graphormer import GINEGraphormer
 from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
@@ -37,7 +38,6 @@ from fragnnet.models.masster.masster_pl import (
 )
 from fragnnet.models.masster.masster_templates import build_masster_templates
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
-from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -2121,7 +2121,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
     model.eval()
     with th.no_grad():
         expected = [model.inference_step(batch) for batch in batches]
-    output = script_utils.run_inference_pkl(
+    output = runners.run_inference_pkl(
         model,
         batches,
         th.device("cpu"),
@@ -2134,7 +2134,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
     expected_batch_idxs = th.cat([x["pred_batch_idxs"] + index for index, x in enumerate(expected)])
     th.testing.assert_close(
         output["pred_ints"],
-        script_utils.batched_mf1000_normalize(
+        runners.batched_mf1000_normalize(
             th.cat([x["pred_ints"] for x in expected]), expected_batch_idxs
         ),
     )
@@ -2208,10 +2208,10 @@ def test_masster_cli_exports_without_dags(
     # model prediction, intensity conversion, tabular iterator, and chunk writer.
     monkeypatch.setattr(SpecMolDataset, "__init__", dataset_init)
     monkeypatch.setattr(runner, "init_dataloader", lambda *_args: [batch])
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
-    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
-    monkeypatch.setattr(script_utils, "init_model_from_ckpt", lambda *_args: model)
-    monkeypatch.setattr(script_utils, "setup_device", lambda *_args: th.device("cpu"))
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(checkpoint, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(checkpoint, "init_model_from_ckpt", lambda *_args: model)
+    monkeypatch.setattr(checkpoint, "setup_device", lambda *_args: th.device("cpu"))
     output_dir = tmp_path / "predictions"
     # `existing_dag_directory` also varies the chunk size so both the periodic and the
     # final chunk writer run. Parquet is no longer an option, so both arms write pkl.
@@ -2283,8 +2283,8 @@ def test_inference_cli_preserves_dag_model_filtering(
         raise DatasetChecked
 
     monkeypatch.setattr(SpecMolFragDataset, "__init__", dataset_init)
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
-    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(checkpoint, "get_config_from_ckpt", lambda **_kwargs: config)
     monkeypatch.setattr(
         sys,
         "argv",

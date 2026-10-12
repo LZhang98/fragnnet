@@ -11,8 +11,8 @@ across batches so the flat columns stay regroupable.
 import pytest
 import torch as th
 
+from fragnnet.inference import runners
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
-from fragnnet.utils import script_utils
 
 
 class _StubFraGNNet(FraGNNetPL):
@@ -65,7 +65,7 @@ def two_batches():
 def _run(two_batches, output_set):
     model = _StubFraGNNet(two_batches)
     dataloader = [{"_batch_i": 0}, {"_batch_i": 1}]
-    return script_utils.run_inference_pkl(
+    return runners.run_inference_pkl(
         model,
         dataloader,
         device=th.device("cpu"),
@@ -104,7 +104,7 @@ def test_pred_ints_identical_in_both_modes(two_batches, evaluate):
     and `evaluate` had to be decoded by the exporter to pick an untransform.
     """
     model = _StubFraGNNet(two_batches)
-    out = script_utils.run_inference_pkl(
+    out = runners.run_inference_pkl(
         model,
         [{"_batch_i": 0}, {"_batch_i": 1}],
         device=th.device("cpu"),

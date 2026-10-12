@@ -12,10 +12,10 @@ from torch_geometric.data import Batch
 from fragnnet.dataset.base_dataset import BaseDataset
 from fragnnet.dataset.property_labels import join_rt_ccs_labels
 from fragnnet.dataset.spec_mol_dataset import SpecMolDataset
+from fragnnet.inference import batch_rows, export_columns, runners
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.models.masster.rt_ccs import property_regression_terms
 from fragnnet.runner import load_config
-from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams
 
@@ -278,7 +278,7 @@ def test_prepared_enveda_arm_and_export_tokens():
     assert config["masster_predict_ccs"] and config["spec_params"]["ccs"]
     assert not config["spec_params"]["merge"]
     assert config["spec_params"]["rt_labels_fp"] == "data/df/enveda_180_df.csv"
-    assert {"pred_rt", "pred_ccs"} <= set(script_utils.list_output_subset_options())
+    assert {"pred_rt", "pred_ccs"} <= set(export_columns.list_output_subset_options())
 
 
 def test_property_predictions_export_as_scalars():
@@ -288,7 +288,7 @@ def test_property_predictions_export_as_scalars():
     batch.update(spec_unique_id=th.tensor([8, 9]), mol_id=[4, 4])
     expected = pl.inference_step(batch, metrics=None)
     subset = {"pred_mzs", "pred_ints", "pred_rt", "pred_ccs"}
-    exported = script_utils.run_inference_pkl(
+    exported = runners.run_inference_pkl(
         model=pl,
         dataloader=[batch],
         device=th.device("cpu"),
@@ -299,7 +299,7 @@ def test_property_predictions_export_as_scalars():
     )
     for name in ("pred_rt", "pred_ccs"):
         th.testing.assert_close(exported[name], expected[name])
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch,
         model=pl,
         device=th.device("cpu"),
@@ -314,7 +314,7 @@ def test_property_predictions_export_as_scalars():
         return_cc_hash=False,
         output_set=subset,
     )
-    columns = [column.name for column in script_utils.selected_column_specs(False, False)]
+    columns = [column.name for column in export_columns.selected_column_specs(False, False)]
     for name in ("pred_rt", "pred_ccs"):
         assert rows[columns.index(name)] == pytest.approx(expected[name].detach().tolist())
 

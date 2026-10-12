@@ -14,10 +14,10 @@ import contextlib
 
 import torch as th
 
+from fragnnet.inference import export_columns
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.runner import load_config
-from fragnnet.utils import script_utils
 
 PEAKS_ONLY = {"pred_mzs", "pred_ints"}
 
@@ -68,7 +68,7 @@ class TestExporterDemand:
 
     def test_peaks_only_request_declares_false(self):
         model = _Stub()
-        batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
             PEAKS_ONLY, model, nb_iso=False
         )
         # peaks-only needs neither anchor index array
@@ -79,7 +79,7 @@ class TestExporterDemand:
     def test_annotation_request_declares_true(self):
         """--return_formula_str / --return_cc_hash pull in the anchors, so demand is True."""
         model = _Stub()
-        _, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        _, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
             PEAKS_ONLY, model, nb_iso=False, return_formula_str=True, return_cc_hash=True
         )
         assert "pred_formula_formula_idxs" in formula_idx_vars
@@ -87,7 +87,7 @@ class TestExporterDemand:
 
     def test_probability_tokens_declare_true(self):
         model = _Stub()
-        _, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        _, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
             {"pred_mzs", "pred_node_probs"}, model, nb_iso=False
         )
         assert "pred_node_node_idxs" in node_idx_vars
@@ -95,7 +95,7 @@ class TestExporterDemand:
     def test_output_everything_declares_true(self):
         """output_set=None means every token, so the anchors come along."""
         model = _Stub()
-        _, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        _, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
             None, model, nb_iso=False
         )
         assert "pred_formula_formula_idxs" in formula_idx_vars

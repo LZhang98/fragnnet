@@ -25,9 +25,9 @@ import yaml
 from rdkit import Chem
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_COMP_DIFF, PREC_TYPE_TO_COMP_DIFF
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 LOGGER = logging.getLogger(__name__)

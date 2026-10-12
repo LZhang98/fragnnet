@@ -29,13 +29,13 @@ import torch as th
 from lightning import seed_everything
 from tqdm import tqdm
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

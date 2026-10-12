@@ -4,12 +4,13 @@
     "fragnnet.dataset.base_dataset": {},
     "fragnnet.dataset.data_sampler": {},
     "fragnnet.dataset.spec_mol_dataset": {},
+    "fragnnet.inference.checkpoint": {},
+    "fragnnet.inference.runners": {},
     "fragnnet.pl_model.spectrum_pl": {},
     "fragnnet.runner": {},
     "fragnnet.utils.feat_utils": {},
     "fragnnet.utils.migrations": {},
-    "fragnnet.utils.proc_utils": {},
-    "fragnnet.utils.script_utils": {}
+    "fragnnet.utils.proc_utils": {}
   },
   "isolation_model_selection": {
     "frag_gnn": {

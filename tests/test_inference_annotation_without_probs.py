@@ -14,8 +14,9 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
+from fragnnet.inference import export_columns
+from fragnnet.inference.batch_rows import process_batch_to_tabular_row
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
-from fragnnet.utils import script_utils
 from tests.test_export_schema import _StubInner
 
 PEAKS_ONLY = {"pred_mzs", "pred_ints"}
@@ -106,13 +107,13 @@ def _row(one_spectrum, output_set, *, min_peak_int=0.0, inner=None):
         "eval_bin_sqrt": False,
     }
     model = _StubFraGNNet(batch_result, hparams, inner=inner)
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False, return_formula_str=True, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         hparams, return_formula_str=True, return_cc_hash=True, output_subset=output_set
     )
-    batch_rows = script_utils.process_batch_to_tabular_row(
+    batch_rows = process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),
@@ -133,7 +134,7 @@ def _row(one_spectrum, output_set, *, min_peak_int=0.0, inner=None):
 
 def test_annotation_requests_its_own_index_vars():
     """The idx arrays the annotation columns index with are pulled in on their own."""
-    req_batch, req_node, req_formula, _ = script_utils.required_index_vars_for_outputs(
+    req_batch, req_node, req_formula, _ = export_columns.required_index_vars_for_outputs(
         PEAKS_ONLY, model=None, nb_iso=False, return_formula_str=True, return_cc_hash=True
     )
     assert "pred_formula_formula_idxs" in req_formula
@@ -148,7 +149,7 @@ def test_annotation_requests_its_own_index_vars():
 
 def test_no_annotation_requested_leaves_peaks_only():
     """Without the annotation flags a peaks-only subset stays peaks-only."""
-    req_batch, req_node, req_formula, _ = script_utils.required_index_vars_for_outputs(
+    req_batch, req_node, req_formula, _ = export_columns.required_index_vars_for_outputs(
         PEAKS_ONLY, model=None, nb_iso=False
     )
     assert req_batch == {"pred_batch_idxs"}
@@ -278,13 +279,13 @@ def _rows(two_spectra, output_set, *, min_peak_int=0.0, inner=None):
         "eval_bin_sqrt": False,
     }
     model = _StubFraGNNet(batch_result, hparams, inner=inner)
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False, return_formula_str=True, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         hparams, return_formula_str=True, return_cc_hash=True, output_subset=output_set
     )
-    batch_rows = script_utils.process_batch_to_tabular_row(
+    batch_rows = process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),

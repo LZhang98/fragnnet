@@ -13,11 +13,11 @@ from pyteomics.mass import Composition
 from rdkit import Chem
 from test_masster_model import _build_batch, _build_model
 
+from fragnnet.inference import batch_rows, export_columns
 from fragnnet.models.masster import masster_export
 from fragnnet.models.masster.masster_candidates import MassterStaticGraph
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.models.masster.masster_templates import build_masster_templates
-from fragnnet.utils import script_utils
 from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE, th_long_to_mask
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz
 
@@ -268,13 +268,13 @@ def test_exporter_writes_resolvable_masster_annotation(min_peak_int: float):
         "spec_prec_type": th.tensor([0, 0]),
     }
     output_set = {"pred_mzs", "pred_ints", "pred_formula_probs", "pred_formula_node_probs"}
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False, return_formula_str=True, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         model.hparams, return_formula_str=True, return_cc_hash=True, output_subset=output_set
     )
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),
@@ -384,16 +384,16 @@ def test_exporter_writes_the_smarts_rules_behind_each_node():
         "spec_prec_type": th.tensor([0, 0]),
     }
     output_set = {"pred_mzs", "pred_ints", "pred_node_probs"}
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, stub, nb_iso=False, return_formula_str=False, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         stub.hparams,
         return_cc_hash=True,
         output_subset=output_set,
         return_rule_provenance=True,
     )
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch_input,
         model=stub,
         device=th.device("cpu"),

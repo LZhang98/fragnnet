@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import export_columns, runners
 
 COLUMNS = [
     "spec_id",
@@ -43,10 +43,11 @@ def _rows(specs, oos):
 
 
 def _write(monkeypatch, tmp_path, batches, drop_none_cols=True, chunk_size=10_000):
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "pred.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),
@@ -87,7 +88,8 @@ class TestPlaceholderColumns:
     def test_non_float_columns_are_never_placeholders(self, monkeypatch, tmp_path):
         """index_rebased is all-False but bool, not NaN, so it must survive."""
         batches = [_rows([1, 2, 3], oos=[np.nan] * 3)]
-        monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
+        monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+        monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
         path = _write(monkeypatch, tmp_path, batches)
         with h5py.File(path, "r") as f:
             assert f["index_rebased"].dtype == np.bool_

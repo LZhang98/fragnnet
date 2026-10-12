@@ -77,7 +77,7 @@ class ModelHooks:
     ) -> None:
         """Adjust the model's own config blocks for inference.
 
-        ``script_utils.apply_inference_config`` calls it after its shared edits.
+        ``inference.checkpoint.apply_inference_config`` calls it after its shared edits.
 
         Args:
             config_d: Config, modified in place.

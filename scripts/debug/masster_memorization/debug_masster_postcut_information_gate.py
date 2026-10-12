@@ -83,6 +83,7 @@ import torch as th
 from rdkit import Chem, RDLogger
 from torch.utils.data import DataLoader
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
 from fragnnet.models.masster.masster_templates import (
     MASSTER_RULE_NAMES,
     build_masster_templates,
@@ -90,7 +91,6 @@ from fragnnet.models.masster.masster_templates import (
     formed_bond_count,
 )
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 # Support both the script entry point and imports from pytest.

@@ -18,8 +18,9 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
+from fragnnet.inference import export_columns, runners
+from fragnnet.inference.batch_rows import process_batch_to_tabular_row
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
-from fragnnet.utils import script_utils
 from fragnnet.utils.spec_utils import batched_l1_normalize, get_ints_untransform_func
 
 # what `ints_transform: sqrt` installs: rescale base peak to sqrt(1000), then square
@@ -60,12 +61,12 @@ class TestSingleStepPostcondition:
     def test_exporter_rescale_lands_on_base_peak_1000(self, batch_idxs):
         """The one operation the exporter owes, and it is idempotent."""
         l1 = th.tensor([0.5, 0.3, 0.2, 0.6, 0.4])
-        out = script_utils.batched_mf1000_normalize(l1, batch_idxs)
+        out = runners.batched_mf1000_normalize(l1, batch_idxs)
         assert out[:3].max().item() == pytest.approx(1000.0, abs=1e-3)
         assert out[3:].max().item() == pytest.approx(1000.0, abs=1e-3)
         # relative intensities stay LINEAR - squaring 0.3/0.5 would give 360, not 600
         assert out[1].item() == pytest.approx(600.0, abs=1e-3)
-        again = script_utils.batched_mf1000_normalize(out, batch_idxs)
+        again = runners.batched_mf1000_normalize(out, batch_idxs)
         assert th.allclose(out, again, atol=1e-6)
 
 
@@ -124,13 +125,13 @@ def _tabular_ints(evaluate: bool, ints: th.Tensor, min_peak_int: float = 0.0, mo
     }
     output_set = {"pred_mzs", "pred_ints"}
     model = model if model is not None else _StubPL(batch_result)
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         model.hparams, return_formula_str=False, return_cc_hash=False, output_subset=output_set
     )
-    batch_rows = script_utils.process_batch_to_tabular_row(
+    batch_rows = process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),
@@ -237,7 +238,7 @@ class TestRealStepPostcondition:
         """L1 then mf1000 is the same as `ints_untransform_func` alone, as measured."""
         stub = _RealStepStub(self._pred())
         out = stub.inference_step(_NoGroundTruth(batch_size=th.tensor(1)), metrics=None)
-        exported = script_utils.batched_mf1000_normalize(out["pred_ints"], out["pred_batch_idxs"])
+        exported = runners.batched_mf1000_normalize(out["pred_ints"], out["pred_batch_idxs"])
         direct = get_ints_untransform_func("sqrt")(th.tensor([0.5, 0.3, 0.2]), th.tensor([0, 0, 0]))
         assert th.allclose(exported, direct, atol=1e-3)
         # and that is the squared-ratio shape the raw-forward contract asks for

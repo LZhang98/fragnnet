@@ -25,18 +25,18 @@ import logging
 import numpy as np
 import torch as th
 
-from fragnnet.loss.spectrum_distance import sparse_cosine_distance_hungarian
-from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
-from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import to_device
-from fragnnet.utils.scatter_utils import scatter_reduce
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     get_config_from_ckpt,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.loss.spectrum_distance import sparse_cosine_distance_hungarian
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.runner import init_dataloader
+from fragnnet.utils.misc_utils import to_device
+from fragnnet.utils.scatter_utils import scatter_reduce
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger(__name__)

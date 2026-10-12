@@ -14,14 +14,14 @@ import pandas as pd
 import torch as th
 from tqdm import tqdm
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype, to_device
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import booltype, to_device
 from fragnnet.utils.setup_utils import get_dataset_cls
 from fragnnet.utils.spec_similarity import calculate_match_mzs
 from fragnnet.utils.spec_utils import primary_ce_to_batch

@@ -44,6 +44,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 import fragnnet.models.masster.masster_model as masster_model
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt, setup_device
 from fragnnet.models.masster.masster_core import top_mixture_bond_sets_raw
 from fragnnet.models.masster.masster_templates import (
     _is_connected,
@@ -52,7 +53,6 @@ from fragnnet.models.masster.masster_templates import (
 )
 from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import to_device
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt, setup_device
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 RANK_LIMIT = 65536

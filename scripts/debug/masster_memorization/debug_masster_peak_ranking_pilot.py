@@ -24,8 +24,8 @@ import torch.nn.functional as F
 import yaml
 from torch.utils.data import DataLoader
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 try:

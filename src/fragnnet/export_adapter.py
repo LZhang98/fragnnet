@@ -1,6 +1,6 @@
 """The interface between the inference exporters and the model they export.
 
-``fragnnet.utils.script_utils``'s exporters call ``ExportAdapter`` methods on the model instead
+``fragnnet.inference.runners``'s exporters call ``ExportAdapter`` methods on the model instead
 of branching on its class. FraGNNet and MASSter mix it into their Lightning modules; any other
 model gets the defaults. Moved from ``fragnnet.hooks`` (where it was ``ExportHooks``), so
 "hooks" now means only the registry-looked-up ``ModelHooks``.
@@ -14,7 +14,7 @@ import numpy as np
 
 
 class ExportAdapter:
-    """Methods the inference exporters (``fragnnet.utils.script_utils``) call on the model.
+    """Methods the inference exporters (``fragnnet.inference.runners``) call on the model.
 
     The defaults describe a model with peak outputs only. FraGNNet and MASSter, whose exports
     carry formula/node annotation, mix this class into their Lightning modules and override what

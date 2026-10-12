@@ -1,5 +1,5 @@
 """Helpers shared by the statistics scripts in this directory (moved from
-``fragnnet.utils.script_utils``); import as a sibling module: ``from stats_helpers import ...``.
+``fragnnet.inference.runners``); import as a sibling module: ``from stats_helpers import ...``.
 """
 
 import numpy as np

@@ -23,6 +23,7 @@ import yaml
 from reorg_golden import ratchet_json
 from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
 
+from fragnnet.inference.checkpoint import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.registry import (
     CHEMLM_ARCHIVE_SHA,
     CLIP_ARCHIVE_SHA,
@@ -30,7 +31,6 @@ from fragnnet.registry import (
     MCES_ARCHIVE_SHA,
 )
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 TEMPLATE_DIR = "config"

@@ -48,6 +48,7 @@ import yaml
 from reorg_golden import GOLDEN_DIR, ratchet_json
 from reorg_layers import MODEL_TYPES
 
+from fragnnet.inference.checkpoint import get_config_from_ckpt
 from fragnnet.runner import load_config, merge_wandb_config, validate_sampler_config
 from fragnnet.utils.migrations import (
     find_retired_inst_type_refs,
@@ -57,7 +58,6 @@ from fragnnet.utils.migrations import (
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,
 )
-from fragnnet.utils.script_utils import get_config_from_ckpt
 from fragnnet.utils.setup_utils import get_model_cls
 
 GOLDEN = "migrations"

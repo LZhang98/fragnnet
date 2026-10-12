@@ -222,8 +222,8 @@ def test_inference_overlay_matches_the_pre_hook_function(
     """
     import copy
 
+    from fragnnet.inference.checkpoint import apply_inference_config
     from fragnnet.runner import load_config
-    from fragnnet.utils.script_utils import apply_inference_config
 
     base = load_config("config", None, None, model_type=model_type)
     old, new = copy.deepcopy(base), copy.deepcopy(base)

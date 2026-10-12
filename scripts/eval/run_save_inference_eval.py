@@ -14,19 +14,20 @@ import os
 import pickle
 import sys
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype, get_core_count
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
-    get_required_config_indices,
     init_model_from_ckpt,
-    list_output_subset_options,
-    prepare_output_subset,
-    run_inference_hdf5,
-    run_inference_pkl,
     setup_device,
 )
+from fragnnet.inference.export_columns import (
+    get_required_config_indices,
+    list_output_subset_options,
+    prepare_output_subset,
+)
+from fragnnet.inference.runners import run_inference_hdf5, run_inference_pkl
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 

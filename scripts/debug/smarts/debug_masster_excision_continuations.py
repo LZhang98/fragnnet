@@ -56,6 +56,11 @@ from rdkit import Chem
 from torch.utils.data import DataLoader, Subset
 from torch_geometric.data import Batch
 
+from fragnnet.inference.checkpoint import (
+    apply_inference_config,
+    get_config_from_ckpt,
+    init_model_from_ckpt,
+)
 from fragnnet.models.masster.masster_templates import (
     MASSTER_RULE_NAMES,
     _is_connected,
@@ -65,11 +70,6 @@ from fragnnet.models.masster.masster_templates import (
 )
 from fragnnet.runner import load_config
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.script_utils import (
-    apply_inference_config,
-    get_config_from_ckpt,
-    init_model_from_ckpt,
-)
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 # Support both the script entry point and imports from pytest.

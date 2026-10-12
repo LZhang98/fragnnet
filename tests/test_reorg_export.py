@@ -1,7 +1,7 @@
 """Inference-export records for the repository reorganization (plan Phase 0 item 7).
 
 For FraGNNet (``frag_gnn``) and MASSter (``masster``) this runs the three exporters of
-``fragnnet.utils.script_utils`` on the shared synthetic fixture, with a freshly seeded tiny model
+``fragnnet.inference.runners`` on the shared synthetic fixture, with a freshly seeded tiny model
 on CPU, and records what each one writes:
 
 - ``run_inference_pkl``: the flat concatenated dict (keys, dtypes, shapes, digested values);
@@ -42,7 +42,7 @@ import reorg_fixtures as F
 import torch as th
 from reorg_golden import ratchet_records
 
-from fragnnet.utils import script_utils as su
+from fragnnet.inference import checkpoint, export_columns, runners
 
 MODEL_TYPES = ("frag_gnn", "masster")
 
@@ -58,7 +58,7 @@ SULFONAMIDE_RULES = {"aryl_sulfonamide_so2", "substituted_aryl_sulfonamide_o_tra
 
 PEAKS_ONLY = frozenset({"pred_mzs", "pred_ints"})
 SCORE_COLUMNS = ["cos_sim_0.1", "cos_sim_0.01", "cos_hun"]
-# Emitted column order ahead of the annotation and score columns (script_utils.COLUMN_SPECS).
+# Emitted column order ahead of the annotation and score columns (inference.export_columns.COLUMN_SPECS).
 BASE_COLUMNS = [
     "spec_id",
     "mol_id",
@@ -249,7 +249,7 @@ def _inference_config(model_type: str, data: F.SynthData) -> dict:
     """The config ``scripts/run_inference.py`` ends up with, on the synthetic dataset."""
     overrides = {"masster_smarts_templates": True} if model_type == "masster" else {}
     config = F.make_config(model_type, data, overrides)
-    su.apply_inference_config(
+    checkpoint.apply_inference_config(
         config,
         auxiliary_scores=["cos_sim", "cos_hun"],
         disable_preproc=True,
@@ -315,7 +315,7 @@ def _idx_vars_record(model: th.nn.Module) -> dict[str, Any]:
     for name, subset in subsets.items():
         for formula_str in (False, True):
             for cc_hash in (False, True):
-                batch, node, formula, _ = su.get_idx_vars(
+                batch, node, formula, _ = export_columns.get_idx_vars(
                     subset, model, False, formula_str, cc_hash
                 )
                 record[f"{name}|formula_str={int(formula_str)}|cc_hash={int(cc_hash)}"] = {
@@ -340,7 +340,7 @@ def _columns_record(model: th.nn.Module) -> dict[str, list[str]]:
                 if rules and not cc_hash:
                     continue  # rejected, see the error records
                 key = f"formula_str={int(formula_str)}|cc_hash={int(cc_hash)}|rules={int(rules)}"
-                record[key] = su.get_tabular_columns(
+                record[key] = export_columns.get_tabular_columns(
                     model.hparams, formula_str, cc_hash, return_rule_provenance=rules
                 )
     return record
@@ -426,17 +426,17 @@ def _pkl_cases(model_type: str) -> dict[str, dict[str, Any]]:
 
 def _run_pkl(config: dict, loader: Any, **kwargs: Any) -> dict[str, Any]:
     with _inference_session(config) as model:
-        return su.run_inference_pkl(model, loader, DEVICE, **kwargs)
+        return runners.run_inference_pkl(model, loader, DEVICE, **kwargs)
 
 
 def _run_tabular(config: dict, loader: Any, **kwargs: Any) -> pd.DataFrame:
     with _inference_session(config) as model:
-        return su.run_inference_tabular(model, loader, DEVICE, **kwargs)
+        return runners.run_inference_tabular(model, loader, DEVICE, **kwargs)
 
 
 def _run_hdf5(config: dict, loader: Any, path: Path, **kwargs: Any) -> int:
     with _inference_session(config) as model:
-        return su.run_inference_hdf5(model, loader, DEVICE, save_path=str(path), **kwargs)
+        return runners.run_inference_hdf5(model, loader, DEVICE, save_path=str(path), **kwargs)
 
 
 def _record_exports(model_type: str, config: dict, loader: Any, h5_dir: Path) -> ExportRun:
@@ -466,8 +466,8 @@ def _record_exports(model_type: str, config: dict, loader: Any, h5_dir: Path) ->
 
     with _inference_session(config) as model:
         kwargs = _tabular_cases(model_type)["everything"]
-        run.iter_batches = list(su.run_inference_tabular_iter(model, loader, DEVICE, **kwargs))
-    columns = su.get_tabular_columns(
+        run.iter_batches = list(runners.run_inference_tabular_iter(model, loader, DEVICE, **kwargs))
+    columns = export_columns.get_tabular_columns(
         config,
         kwargs["return_formula_str"],
         kwargs["return_cc_hash"],
@@ -526,13 +526,13 @@ def _record_flags(config: dict, loader: Any, h5_dir: Path) -> dict[str, Any]:
     peaks = set(PEAKS_ONLY)
 
     def pkl(model: th.nn.Module, **kw: Any) -> Any:
-        return su.run_inference_pkl(model, loader, DEVICE, evaluate=False, **kw)
+        return runners.run_inference_pkl(model, loader, DEVICE, evaluate=False, **kw)
 
     def tab(model: th.nn.Module, **kw: Any) -> Any:
-        return su.run_inference_tabular(model, loader, DEVICE, **kw)
+        return runners.run_inference_tabular(model, loader, DEVICE, **kw)
 
     def h5(model: th.nn.Module, **kw: Any) -> Any:
-        return su.run_inference_hdf5(
+        return runners.run_inference_hdf5(
             model, loader, DEVICE, save_path=str(h5_dir / "flag.hdf5"), **kw
         )
 
@@ -565,23 +565,23 @@ def _record_errors(model_type: str, config: dict, loader: Any, h5_dir: Path) -> 
     rules_without_hash = {"return_formula_str": True, "return_rule_provenance": True}
     rules_with_hash = {"return_cc_hash": True, "return_rule_provenance": True}
     cases: dict[str, tuple[Callable[..., Any], dict[str, Any]]] = {
-        "tabular_rules_without_cc_hash": (su.run_inference_tabular, rules_without_hash),
-        "tabular_rules_with_cc_hash": (su.run_inference_tabular, rules_with_hash),
-        "hdf5_rules_without_cc_hash": (su.run_inference_hdf5, rules_without_hash),
-        "hdf5_rules_with_cc_hash": (su.run_inference_hdf5, rules_with_hash),
-        "pkl_node_probs": (su.run_inference_pkl, {"output_set": {"pred_node_probs"}}),
-        "pkl_formula_probs": (su.run_inference_pkl, {"output_set": {"pred_formula_probs"}}),
-        "pkl_oos_prob": (su.run_inference_pkl, {"output_set": {"pred_oos_prob"}}),
+        "tabular_rules_without_cc_hash": (runners.run_inference_tabular, rules_without_hash),
+        "tabular_rules_with_cc_hash": (runners.run_inference_tabular, rules_with_hash),
+        "hdf5_rules_without_cc_hash": (runners.run_inference_hdf5, rules_without_hash),
+        "hdf5_rules_with_cc_hash": (runners.run_inference_hdf5, rules_with_hash),
+        "pkl_node_probs": (runners.run_inference_pkl, {"output_set": {"pred_node_probs"}}),
+        "pkl_formula_probs": (runners.run_inference_pkl, {"output_set": {"pred_formula_probs"}}),
+        "pkl_oos_prob": (runners.run_inference_pkl, {"output_set": {"pred_oos_prob"}}),
     }
     record = {}
     for label, (exporter, kwargs) in cases.items():
-        if exporter is su.run_inference_hdf5:
+        if exporter is runners.run_inference_hdf5:
             kwargs = {**kwargs, "save_path": str(h5_dir / "error.hdf5")}
         with _inference_session(config) as model:
             record[label] = _raises(lambda: exporter(model, loader, DEVICE, **kwargs))
     for label, exporter in {
-        "tabular_model_in_training_mode": su.run_inference_tabular,
-        "pkl_model_in_training_mode": su.run_inference_pkl,
+        "tabular_model_in_training_mode": runners.run_inference_tabular,
+        "pkl_model_in_training_mode": runners.run_inference_pkl,
     }.items():
         with _inference_session(config) as model:
             model.train()
@@ -595,7 +595,7 @@ def _record_errors(model_type: str, config: dict, loader: Any, h5_dir: Path) -> 
         for label, kwargs in isotope_cases.items():
             with _inference_session(_natural_isotope_config(config)) as model:
                 record[label] = _raises(
-                    lambda: su.run_inference_tabular(model, loader, DEVICE, **kwargs)
+                    lambda: runners.run_inference_tabular(model, loader, DEVICE, **kwargs)
                 )
     return record
 
