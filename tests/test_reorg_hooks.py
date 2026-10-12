@@ -20,7 +20,7 @@ from fragnnet import registry
 from fragnnet.hooks import ModelHooks
 
 # Model types with their own hooks class; every other type uses the defaults.
-OWN_HOOKS = {"masster": "MassterHooks"}
+OWN_HOOKS = {"frag_gnn": "FraGNNetHooks", "fragnnet": "FraGNNetHooks", "masster": "MassterHooks"}
 
 
 @pytest.mark.parametrize("model_type", MODEL_TYPES)
@@ -52,25 +52,35 @@ def test_default_hooks_change_nothing() -> None:
     assert json.dumps(config, sort_keys=True) == before
 
 
-def test_masster_migrations_load_no_model_code() -> None:
-    """Config and checkpoint migration for MASSter must not load the model or its extensions."""
+def test_migration_and_validation_load_no_model_code() -> None:
+    """Config migration and validation use the hooks modules only, never a model or extension.
+
+    Validating any config consults every model's ``reject_foreign_config``, so it loads all
+    hooks modules; they import core only.
+    """
     code = textwrap.dedent(
         """
         import json, sys
         from fragnnet import registry
+        from fragnnet.runner import load_config, validate_sampler_config
         from fragnnet.utils.pl_utils import get_pl_hparams
         get_pl_hparams({"hyper_parameters": {"model_type": "mass_shatter", "spec_params": {}}})
         registry.get_model_hooks("masster").migrate_template_config({})
+        for model_type in ("neims", "masster", "frag_gnn"):
+            validate_sampler_config(load_config("config", None, None, model_type=model_type))
         print(json.dumps(sorted(m for m in sys.modules if m.startswith("fragnnet"))))
         """
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     loaded = set(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert "fragnnet.frag.masster_hooks" in loaded
+    assert {"fragnnet.frag.masster_hooks", "fragnnet.frag.fragnnet_hooks"} <= loaded
     heavy = {
         "fragnnet.pl_model.masster_pl",
         "fragnnet.model.masster_model",
         "fragnnet.frag.masster_core",
+        "fragnnet.pl_model.fragnnet_pl",
+        "fragnnet.model.fragnnet_model",
+        "fragnnet.utils.frag_utils",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
     }

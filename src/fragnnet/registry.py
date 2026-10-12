@@ -31,6 +31,7 @@ _SPEC_MOL_DATASET = "fragnnet.dataset.spec_mol_dataset:SpecMolDataset"
 _FRAGNNET = ModelEntry(
     "fragnnet.pl_model.fragnnet_pl:FraGNNetPL",
     "fragnnet.dataset.spec_mol_frag_dataset:SpecMolFragDataset",
+    hooks="fragnnet.frag.fragnnet_hooks:FraGNNetHooks",
 )
 _CLIP = ModelEntry("fragnnet.pl_model.spectrum_mol_clip_pl:SpectrumMolClipPL", _SPEC_MOL_DATASET)
 
@@ -147,6 +148,12 @@ def get_model_hooks(model_type: str | None, *, strict: bool = True):
     if not strict and model_type not in MODEL_REGISTRY:
         return _hooks_instance("fragnnet.hooks:ModelHooks")
     return _hooks_instance(_entry(model_type).hooks)
+
+
+def all_model_hooks() -> list:
+    """The hooks of every registered model type, one per hooks class, in registry order."""
+    paths = dict.fromkeys(entry.hooks for entry in MODEL_REGISTRY.values())
+    return [_hooks_instance(path) for path in paths]
 
 
 def get_dataset_cls(model_type: str) -> type:

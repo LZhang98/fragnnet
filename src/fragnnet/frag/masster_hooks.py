@@ -12,6 +12,13 @@ from typing import Any
 from fragnnet.hooks import ModelHooks
 from fragnnet.utils.pl_utils import migrate_masster_proposal_method, migrate_rt_ccs_spec_params
 
+# MASSter's sampler keys. Every model's config carries them; they mean something only for MASSter.
+MASSTER_SAMPLER_KEYS = (
+    "masster_batch_sampler",
+    "masster_share_proposal_across_ev",
+    "masster_unique_fragment_mode",
+)
+
 # Checkpoints saved before the RT/CCS heads existed: heads off, with their original defaults.
 _LEGACY_RT_CCS_DEFAULTS = {
     "masster_predict_rt_ccs": False,
@@ -76,6 +83,57 @@ class MassterHooks(ModelHooks):
             hparams["masster_fragment_selection"] = "mask_order"
         if "masster_selected_fragment_target" not in hparams:
             hparams["masster_selected_fragment_target"] = None
+
+    def uses_ce_context_sampler(self, config_d: dict[str, Any]) -> bool:
+        return (
+            bool(config_d["masster_batch_sampler"])
+            or config_d["batch_sampler_type"] == "ce_context"
+        )
+
+    def validate_config(self, config_d: dict[str, Any]) -> None:
+        # Hard reads: a MASSter config must declare its sampler keys.
+        use_masster_batch_sampler = config_d["masster_batch_sampler"]
+        share_proposal_across_ev = config_d["masster_share_proposal_across_ev"]
+        use_unique_fragments = config_d["masster_unique_fragment_mode"]
+        if not isinstance(use_masster_batch_sampler, bool):
+            raise ValueError("masster_batch_sampler must be boolean")
+        if not isinstance(share_proposal_across_ev, bool):
+            raise ValueError("masster_share_proposal_across_ev must be boolean")
+        if use_masster_batch_sampler:
+            if not config_d["automatic_optimization"]:
+                raise ValueError("masster_batch_sampler requires automatic_optimization=True")
+            masster_batch_sampler_max = config_d["masster_batch_sampler_max"]
+            if (
+                isinstance(masster_batch_sampler_max, bool)
+                or not isinstance(masster_batch_sampler_max, int)
+                or masster_batch_sampler_max <= 0
+            ):
+                raise ValueError("masster_batch_sampler_max must be a positive integer")
+        if share_proposal_across_ev and not use_masster_batch_sampler:
+            raise ValueError("masster_share_proposal_across_ev requires masster_batch_sampler=True")
+        if config_d["cross_ev_fragment_loss_weight"] > 0:
+            if not share_proposal_across_ev:
+                raise ValueError(
+                    "cross_ev_fragment_loss_weight > 0 requires "
+                    "masster_share_proposal_across_ev=True"
+                )
+            if not use_unique_fragments:
+                raise ValueError(
+                    "cross_ev_fragment_loss_weight > 0 requires masster_unique_fragment_mode=True"
+                )
+
+    def reject_foreign_config(self, config_d: dict[str, Any]) -> None:
+        # Soft reads: another model's (historical) config may omit MASSter's keys.
+        enabled_elsewhere = [key for key in MASSTER_SAMPLER_KEYS if config_d.get(key)]
+        if enabled_elsewhere:
+            raise ValueError(
+                f"{enabled_elsewhere} require model_type='masster' "
+                f"(got '{config_d['model_type']}')"
+            )
+        if config_d["cross_ev_fragment_loss_weight"] > 0:
+            raise ValueError(
+                "cross_ev_fragment_loss_weight > 0 requires masster_share_proposal_across_ev=True"
+            )
 
     def log_resolved_settings(
         self, model: Any, config_d: dict[str, Any], wandb_run: Any | None

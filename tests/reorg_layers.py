@@ -36,6 +36,7 @@ FRAGNNET = {
     "fragnnet.dataset.iterable_spec_mol_frag_dataset",
     "fragnnet.dataset.spec_mol_frag_dataset",
     "fragnnet.frag.compute_frags",
+    "fragnnet.frag.fragnnet_hooks",
     "fragnnet.frag.multi_cut_bfs",
     "fragnnet.model.fragment_competition",
     "fragnnet.model.fragnnet_model",

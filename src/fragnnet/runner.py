@@ -31,7 +31,6 @@ from fragnnet.dataset import (
 )
 from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
-    validate_dag_size_curriculum,
 )
 from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 from fragnnet.utils.misc_utils import deep_update, get_core_count
@@ -78,11 +77,6 @@ VALID_SIMPLE_GROUP_SAMPLER_TYPES = frozenset(
     }
 )
 VALID_BATCH_SAMPLER_TYPES = frozenset({"spec_mol_frag", "ce_context"})
-MASSTER_SAMPLER_KEYS = (
-    "masster_batch_sampler",
-    "masster_share_proposal_across_ev",
-    "masster_unique_fragment_mode",
-)
 
 
 def resolve_template_path(template_path: str) -> str:
@@ -485,64 +479,21 @@ def validate_sampler_config(config_d: dict) -> None:
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
-    # The `masster_*` sampler keys are MASSter's. Every model's config carries them, so
-    # the reads are hard; the model type decides whether they mean anything. For another model a
-    # historical config may still set one - inert, but loud if it is actually switched on.
-    is_masster = config_d["model_type"] == "masster"
-    if not is_masster:
-        enabled_elsewhere = [key for key in MASSTER_SAMPLER_KEYS if config_d.get(key)]
-        if enabled_elsewhere:
-            raise ValueError(
-                f"{enabled_elsewhere} require model_type='masster' "
-                f"(got '{config_d['model_type']}')"
-            )
-    use_masster_batch_sampler = is_masster and config_d["masster_batch_sampler"]
-    share_proposal_across_ev = is_masster and config_d["masster_share_proposal_across_ev"]
-    use_unique_fragments = is_masster and config_d["masster_unique_fragment_mode"]
-
-    if not isinstance(use_masster_batch_sampler, bool):
-        raise ValueError("masster_batch_sampler must be boolean")
-    if not isinstance(share_proposal_across_ev, bool):
-        raise ValueError("masster_share_proposal_across_ev must be boolean")
-    num_enabled_batch_samplers = int(use_masster_batch_sampler) + sum(
-        int(config_d[key])
-        for key in (
-            "dynamic_batch_sampler",
-            "dual_group_dynamic_batch_sampler",
-        )
-    )
-    if num_enabled_batch_samplers > 1:
-        raise ValueError(
-            "masster_batch_sampler, dynamic_batch_sampler, and "
-            "dual_group_dynamic_batch_sampler are mutually exclusive"
-        )
-
-    if use_masster_batch_sampler:
-        if not config_d["automatic_optimization"]:
-            raise ValueError("masster_batch_sampler requires automatic_optimization=True")
-        masster_batch_sampler_max = config_d["masster_batch_sampler_max"]
-        if (
-            isinstance(masster_batch_sampler_max, bool)
-            or not isinstance(masster_batch_sampler_max, int)
-            or masster_batch_sampler_max <= 0
-        ):
-            raise ValueError("masster_batch_sampler_max must be a positive integer")
-
-    if config_d["dynamic_batch_sampler"]:
-        if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
-            raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
-        if config_d["automatic_optimization"]:
-            raise ValueError(
-                f"Dynamic batch sampler cannot be used with automatic optimization "
-                f"(got automatic_optimization={config_d['automatic_optimization']})"
-            )
-        if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
-            raise ValueError(
-                "Dynamic batch sampler only supports frag_node or frag_edge mode "
-                f"(got '{config_d['dynamic_batch_sampler_mode']}')"
-            )
-        if config_d["dynamic_batch_sampler_max"] is None:
-            raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+    # Every model's config carries every key. Another model's settings must stay off, and the
+    # model's own hooks check the rest (fragnnet.hooks.ModelHooks).
+    model_hooks = registry.get_model_hooks(config_d["model_type"], strict=False)
+    cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
+    if (
+        not isinstance(cross_ev_weight, (int, float))
+        or isinstance(cross_ev_weight, bool)
+        or cross_ev_weight < 0
+    ):
+        raise ValueError("cross_ev_fragment_loss_weight must be a non-negative number")
+    for other_hooks in registry.all_model_hooks():
+        if type(other_hooks) is not type(model_hooks):
+            other_hooks.reject_foreign_config(config_d)
+    model_hooks.validate_config(config_d)
+    uses_ce_context_sampler = model_hooks.uses_ce_context_sampler(config_d)
 
     if config_d["batch_sampler_type"] not in VALID_BATCH_SAMPLER_TYPES:
         raise ValueError(
@@ -550,18 +501,7 @@ def validate_sampler_config(config_d: dict) -> None:
             f"{sorted(VALID_BATCH_SAMPLER_TYPES)} (got '{config_d['batch_sampler_type']}')"
         )
 
-    if config_d["batch_sampler_type"] == "ce_context":
-        if not config_d["dynamic_batch_sampler"]:
-            raise ValueError("batch_sampler_type='ce_context' requires dynamic_batch_sampler=True")
-        if config_d["dynamic_batch_sampler_mode"] != "frag_edge":
-            raise ValueError(
-                "batch_sampler_type='ce_context' requires "
-                "dynamic_batch_sampler_mode='frag_edge' for fragment-DAG models"
-            )
-        if config_d["dag_size_curriculum"]:
-            raise ValueError("batch_sampler_type='ce_context' does not support DAG-size curriculum")
-
-    if config_d["batch_sampler_type"] == "ce_context" or use_masster_batch_sampler:
+    if uses_ce_context_sampler:
         if config_d["devices"] != 1:
             raise ValueError("CE-context batch samplers require devices=1")
         spectra_per_context = config_d["ce_context_spectra_per_context"]
@@ -582,29 +522,6 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"{sorted(missing_inst_types)}"
             )
 
-    if share_proposal_across_ev and not use_masster_batch_sampler:
-        raise ValueError(
-            "masster_share_proposal_across_ev requires masster_batch_sampler=True"
-        )
-
-    cross_ev_weight = config_d["cross_ev_fragment_loss_weight"]
-    if (
-        not isinstance(cross_ev_weight, (int, float))
-        or isinstance(cross_ev_weight, bool)
-        or cross_ev_weight < 0
-    ):
-        raise ValueError("cross_ev_fragment_loss_weight must be a non-negative number")
-    if cross_ev_weight > 0:
-        if not share_proposal_across_ev:
-            raise ValueError(
-                "cross_ev_fragment_loss_weight > 0 requires "
-                "masster_share_proposal_across_ev=True"
-            )
-        if not use_unique_fragments:
-            raise ValueError(
-                "cross_ev_fragment_loss_weight > 0 requires masster_unique_fragment_mode=True"
-            )
-
     pair_weight = config_d["ce_pair_loss_weight"]
     if (
         not isinstance(pair_weight, (int, float))
@@ -613,7 +530,7 @@ def validate_sampler_config(config_d: dict) -> None:
     ):
         raise ValueError("ce_pair_loss_weight must be a non-negative number")
     if pair_weight > 0:
-        if not (config_d["batch_sampler_type"] == "ce_context" or use_masster_batch_sampler):
+        if not uses_ce_context_sampler:
             raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
         confidence = config_d["ce_pair_min_endpoint_confidence"]
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -746,19 +663,6 @@ def validate_sampler_config(config_d: dict) -> None:
                     "Precursor-pair eligible tolerance rel and min_mz must be positive numbers"
                 )
 
-    if config_d["dag_size_curriculum"]:
-        if not config_d["dynamic_batch_sampler"]:
-            raise ValueError("DAG-size curriculum requires dynamic_batch_sampler=True")
-        validate_dag_size_curriculum(
-            config_d["dag_size_curriculum_start_fraction"],
-            config_d["dag_size_curriculum_epochs"],
-        )
-        if (
-            config_d["max_epochs"] > 0
-            and config_d["dag_size_curriculum_epochs"] >= config_d["max_epochs"]
-        ):
-            raise ValueError("dag_size_curriculum_epochs must be less than max_epochs")
-
     if config_d["bond_size_curriculum"]:
         if config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
             raise ValueError("Bond-size curriculum requires fixed-size batching")
@@ -777,28 +681,6 @@ def validate_sampler_config(config_d: dict) -> None:
             and config_d["bond_size_curriculum_epochs"] >= config_d["max_epochs"]
         ):
             raise ValueError("bond_size_curriculum_epochs must be less than max_epochs")
-
-    if config_d["dual_group_dynamic_batch_sampler"]:
-        if config_d["model_type"] not in ("frag_gnn", "fragnnet"):
-            raise ValueError(
-                "Dual-group dynamic batch sampler can only be used with frag_gnn model"
-            )
-        if config_d["automatic_optimization"]:
-            raise ValueError(
-                f"Dual-group dynamic batch sampler cannot be used with automatic optimization "
-                f"(got automatic_optimization={config_d['automatic_optimization']})"
-            )
-        dual_group_sampler_mode = config_d.get("dual_group_dynamic_batch_sampler_mode")
-        if dual_group_sampler_mode not in ["frag_node", "frag_edge"]:
-            raise ValueError(
-                f"Dual-group dynamic batch sampler only supports frag_node or frag_edge mode "
-                f"(got '{dual_group_sampler_mode}')"
-            )
-        dual_group_sampler_max = config_d.get("dual_group_dynamic_batch_sampler_max")
-        if dual_group_sampler_max is None:
-            raise ValueError(
-                "Dual-group dynamic batch sampler requires dual_group_dynamic_batch_sampler_max to be set"
-            )
 
 
 def log_cuda_info() -> None:
