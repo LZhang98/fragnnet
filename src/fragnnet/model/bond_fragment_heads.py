@@ -9,13 +9,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-
-def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
-    """Validate tensor data without synchronizing CUDA after every check."""
-    if th.compiler.is_compiling() or condition.device.type == "cuda":
-        th._assert_async(condition, message)
-    elif not bool(condition):
-        raise ValueError(message)
+from fragnnet.utils.misc_utils import _validate_tensor_condition
 
 
 def _build_head(

@@ -718,6 +718,14 @@ def print_shapes(input_dict: Mapping[str, Any]) -> None:
             print(k, "/", None, "/", type(v))
 
 
+def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
+    """Validate tensor data without synchronizing CUDA after every check."""
+    if th.compiler.is_compiling() or condition.device.type == "cuda":
+        th._assert_async(condition, message)
+    elif not bool(condition):
+        raise ValueError(message)
+
+
 def th_setdiff1d(t1: th.Tensor, t2: th.Tensor) -> th.Tensor:
     """Set difference of two 1D torch tensors."""
 

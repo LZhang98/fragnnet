@@ -7,9 +7,6 @@
       "CANONICAL_ELEMENT_ORDER",
       "CANONICAL_H_IDX"
     ],
-    "fragnnet.model.candidate_support -> fragnnet.model.bond_fragment_heads": [
-      "_validate_tensor_condition"
-    ],
     "fragnnet.model.masster_model -> fragnnet.utils.frag_utils": [
       "CANONICAL_ELEMENT_ORDER"
     ],
@@ -179,9 +176,6 @@
         "fragnnet.model.fragnnet_model",
         "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.model.bond_fragment_heads"
       ]
     },
     "fragnnet": {
@@ -197,9 +191,6 @@
         "fragnnet.model.fragnnet_model",
         "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.model.bond_fragment_heads"
       ]
     },
     "gnn": {

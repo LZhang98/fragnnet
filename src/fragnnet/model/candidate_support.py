@@ -5,8 +5,7 @@ from typing import Literal
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.model.bond_fragment_heads import _validate_tensor_condition
-from fragnnet.utils.misc_utils import scatter_reduce
+from fragnnet.utils.misc_utils import _validate_tensor_condition, scatter_reduce
 from fragnnet.utils.spec_utils import linear_sum_assignment
 
 # The candidate window is searched with a slightly widened absolute bound so that it is a
