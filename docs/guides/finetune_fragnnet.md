@@ -588,7 +588,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 
 ## Additional Resources
 
-- **Main Model**: [src/fragnnet/model/fragnnet_model.py](../../src/fragnnet/model/fragnnet_model.py)
+- **Main Model**: [src/fragnnet/models/fragnnet/fragnnet_model.py](../../src/fragnnet/models/fragnnet/fragnnet_model.py)
 - **Data Preparation**: [preproc_scripts/](../../preproc_scripts/)
 - **Inference**: [docs/guides/run_inference.md](run_inference.md)
 - **Training Script**: [scripts/run_pl_model_fit.py](../../scripts/run_pl_model_fit.py)

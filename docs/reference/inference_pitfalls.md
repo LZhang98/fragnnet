@@ -86,7 +86,7 @@ Measured on a 96k-spectrum eval (`jnokddr9`, 212 MB) and the 2.6 GB `9t63zils` v
 
 ## `dags.h5` compression
 
-`dump_dag_hdf5_packed` ([frag_utils.py](../../src/fragnnet/utils/frag_utils.py)) already
+`dump_dag_hdf5_packed` ([dag_format_utils.py](../../src/fragnnet/utils/dag_format_utils.py)) already
 compresses each per-molecule payload with zlib before writing it into `dag_bytes`; do **not**
 propose an HDF5 `compression="gzip"` filter as if the file were uncompressed. Measured on 185
 drug-like d3/h4 DAGs (150.2 MB raw pickle; stdlib codecs only, since zstd is not installed and

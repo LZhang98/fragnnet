@@ -25,7 +25,7 @@ Related records:
 - [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md):
   earlier eligibility checks and positive-ion expansion priorities.
 - Paper URLs are attached to every MASSter-only rule definition in
-  [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), disabled ones
+  [`masster_templates.py`](../../src/fragnnet/models/masster/masster_templates.py), disabled ones
   included, except `tertiary_aryl_sulfonamide_so2`.
 
 ## Scope and admission rule
@@ -69,7 +69,7 @@ template's cut mask into the candidate pool and adds its assembly under that mas
 recorded trained run has turned it on.
 
 The curated registry is
-[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
+[`masster_templates.py`](../../src/fragnnet/models/masster/masster_templates.py).
 It selects shared definitions from
 [`smarts_prepass.py`](../../src/fragnnet/fragmentation/smarts_prepass.py) but owns a separate
 allowlist.
@@ -163,7 +163,7 @@ pattern matched no NIST20 molecule for that reason.
 ### Disabled rules (2026-09-29)
 
 User decision: these eight are commented out in
-[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), to re-check on
+[`masster_templates.py`](../../src/fragnnet/models/masster/masster_templates.py), to re-check on
 Enveda-180. Evidence is in
 [Existing rules under the gate](#existing-rules-under-the-gate).
 - Their names keep their `MASSTER_RULE_VOCABULARY` slots, so uncommenting a rule restores its

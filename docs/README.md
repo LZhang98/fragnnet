@@ -1,6 +1,6 @@
 # FraGNNet Documentation Index
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-12
 > Map of the docs tree. Plans and findings are indexed in the workstream hubs, not here.
 
 Start with [current project state](project-state.md), the [architecture map](architecture.md),
@@ -56,6 +56,7 @@ Data preprocessing commands (including Spectraverse folds) are in
 | Doc | What it covers |
 |-----|----------------|
 | [dataloader_data.md](reference/dataloader_data.md) | Batch dictionary schema. Oldest doc here; verify against the code. |
+| [baselines.md](reference/baselines.md) | Retained GRAFF and MassFormer baselines, and running ICEBERG externally through ms-pred (archive revision, evaluation-file contract). |
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
 | [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |

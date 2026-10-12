@@ -224,7 +224,7 @@ is also absent from the fragment-mass arithmetic, which uses atomic numbers plus
 
 ### 7.8 The featurizer mutates the shared canonical element order
 
-`AtomOneHot.allowable_set` *is* `frag_utils.CANONICAL_ELEMENT_ORDER` (same list object), and
+`AtomOneHot.allowable_set` *is* `formula_utils.CANONICAL_ELEMENT_ORDER` (same list object), and
 `one_hot_encoding(..., encode_unknown=True)` appends `None` to it on first use. After featurizing
 any molecule the shared list is 18 long instead of 17. Harmless today — its two consumers do
 `if elem in elem_d`, and `ELEMENT_TO_IDX`/`IDX_TO_ELEMENT` are built from `ELEMENT_TO_VE`, not
@@ -315,7 +315,7 @@ tensors mismatch. Nothing was trained or evaluated; these are not measured impro
 | §7.4 degenerate boundary embedding | `masster_boundary_bond_encoder` (default True) reuses FraGNNet's `CutBondEncoder` on the oriented (retained, lost) endpoints. `boundary_bond_endpoint_orientation` recovers the orientation the candidate builders do not emit, by looking both endpoints up in the sparse membership relation; it raises if a boundary bond does not have exactly one endpoint inside its component |
 | §7.5 dead token columns | The intensity head drops the constant per-mask component count and the zeroed charge log-probability when its tokens are unique fragments. The legacy pathway-token mode keeps both, where they are live |
 | §7.7 unread required field | `atom_formal_charges` removed from the `forward` field check. It is still attached to the graph and still unread |
-| §7.8 shared-list mutation | `AtomOneHot.allowable_set` is a copy, so featurizing no longer appends `None` to `frag_utils.CANONICAL_ELEMENT_ORDER` |
+| §7.8 shared-list mutation | `AtomOneHot.allowable_set` is a copy, so featurizing no longer appends `None` to `formula_utils.CANONICAL_ELEMENT_ORDER` |
 
 Measured effect on the feature matrix, same 5,000-molecule NIST20 sample: constant atom columns
 fall from **34/70 (49%) to 30/71 (42%)**. The corrected degree encoding leaves 8 constant columns

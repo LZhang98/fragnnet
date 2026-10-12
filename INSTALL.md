@@ -30,7 +30,8 @@ Choose based on your CUDA version and Python preference:
 
 - **CUDA 12.1, Python 3.11 (Recommended)**: `env/env_setup_gpu_py311_cu121_250602.sh`
 - **CUDA 12.1, Python 3.12**: `env/env_setup_gpu_py312_cu121_251105.sh`
-- **CUDA 11.8, Python 3.10 (Legacy)**: `env/env_setup_gpu_py310_cu118.sh`
+- **CUDA 11.8, Python 3.10 (Legacy)**: no maintained script; `env/env_setup_gpu_py310_cu118.sh` was
+  removed in commit `f91a8ded` and can be recovered from git history.
 
 `env/fragnnet_gpu_py311.lock.txt` pins the exact package versions of the reference
 `FRAGNNET-GPU` environment (Python 3.11, CUDA 12.1). To reproduce it, install the lock into a
@@ -129,16 +130,15 @@ nvcc --version
 
 # For CUDA 12.1, use:
 bash env/env_setup_gpu_py311_cu121_250602.sh
-
-# For CUDA 11.8, use:
-bash env/env_setup_gpu_py310_cu118.sh
 ```
 
 ### Cython Build Issues
 If you see compilation errors during installation:
 ```bash
-# Clean previous builds
-rm -rf build/ src/fragnnet/*.so src/fragnnet.egg-info
+# Clean previous builds (the compiled modules sit in subpackages such as
+# src/fragnnet/models/fragnnet/, so search the whole tree)
+rm -rf build/ src/fragnnet.egg-info
+find src/fragnnet -name '*.so' -delete
 
 # Ensure build dependencies are installed
 pip install cython==3.0.12 numpy>=1.24,<2
@@ -162,7 +162,6 @@ pip install --no-deps -I -e .
 | Use Case | Recommended Method |
 |----------|-------------------|
 | GPU training on local machine (CUDA 12.1) | Run: `bash env/env_setup_gpu_py311_cu121_250602.sh` |
-| GPU training on local machine (CUDA 11.8) | Run: `bash env/env_setup_gpu_py310_cu118.sh` |
 | Manual pip installation | `pip install -e .` (after installing PyTorch manually) |
 | Development + testing (local) | After conda setup, run `pip install -e ".[dev]"` |
 | Training on Compute Canada (Python 3.11) | Run: `bash env/env_cc_setup_py311.sh` |

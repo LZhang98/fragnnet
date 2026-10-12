@@ -26,6 +26,8 @@ rsync -a --exclude='*.so' --exclude='__pycache__' \
 if [[ -f setup.cfg ]]; then cp setup.cfg "$FRAGNNET_RUN_ROOT/current/"; fi
 git archive "$FRAGNNET_BASE" | tar -x -C "$FRAGNNET_RUN_ROOT/baseline"
 # Explicit historical candidate sources; no branch switching or checkout changes.
+# $FRAGNNET_BASE predates reorg Phase 6, so its MASSter sources are under src/fragnnet/frag/
+# (src/fragnnet/models/masster/ in later revisions).
 for file in masster_core.pyx masster_candidates.py; do
   git show "$FRAGNNET_BASE:src/fragnnet/frag/$file" \
     > "$FRAGNNET_RUN_ROOT/baseline/src/fragnnet/frag/$file"

@@ -162,9 +162,9 @@ usually enough.
 
 Relevant code:
 
-- `src/fragnnet/pl_model/fragnnet_pl.py:920`
-- `src/fragnnet/pl_model/fragnnet_pl.py:947`
-- `src/fragnnet/pl_model/fragnnet_pl.py:976`
+- `src/fragnnet/models/fragnnet/fragnnet_pl.py:920`
+- `src/fragnnet/models/fragnnet/fragnnet_pl.py:947`
+- `src/fragnnet/models/fragnnet/fragnnet_pl.py:976`
 - `src/fragnnet/model/loss.py:1200`
 - `src/fragnnet/model/loss.py:1300`
 - `src/fragnnet/model/loss.py:1447`

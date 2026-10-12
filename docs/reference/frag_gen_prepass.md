@@ -118,7 +118,7 @@ The depth-2 rule described above applies to the **`multi_cut_bfs=False`**
 
 ## Implementation: `_inject_smarts_pairs_into_dag`
 
-The relevant lines in [frag_utils.py](../../src/fragnnet/utils/frag_utils.py):
+The relevant lines in [frag_utils.py](../../src/fragnnet/models/fragnnet/frag_utils.py):
 
 ```python
 # BEFORE (incorrect — depth 1):
