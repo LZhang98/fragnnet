@@ -18,7 +18,9 @@
 4. [Models](../src/fragnnet/model/) implement prediction; [Lightning modules](../src/fragnnet/pl_model/)
    connect predictions to losses and training/evaluation. FraGNNet uses fragmentation DAGs;
    MASSter has separate candidate construction in [frag/](../src/fragnnet/frag/) and its
-   own model and Lightning module. GRAFF, ICEBERG, and MassFormer have separate package directories.
+   own model and Lightning module. GRAFF and MassFormer have separate package directories.
+   The local ICEBERG fork was retired on 2026-10-11 in favor of external ms-pred
+   ([reorganization plan](plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment)).
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
    in [pl_utils.py](../src/fragnnet/utils/pl_utils.py) renames them wherever a config is loaded.

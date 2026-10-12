@@ -212,9 +212,9 @@ mol_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-# Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
-# fraggnet, fragnnet), masster, neims, chemlm, massformer, iceberg_gen, iceberg_inten, graff,
-# precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
+# Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
+# masster, neims, chemlm, massformer, graff, precursor, gnn, mces_pretraining, clip,
+# spec_mol_clip_pretraining. iceberg_gen and iceberg_inten are retired (RETIRED_MODEL_TYPES).
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
@@ -1223,7 +1223,8 @@ masster_batch_sampler_max: null
 
 # ==========================================================================
 # ICEBERG only
-# model_type: iceberg_gen, iceberg_inten
+# Retired 2026-10-11 (run ICEBERG through external ms-pred). These keys are inert and stay so
+# older configs and checkpoints still resolve.
 # ==========================================================================
 magma_params:
   pe_embed_k: 0

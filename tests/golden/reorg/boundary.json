@@ -55,9 +55,6 @@
     "fragnnet.utils.script_utils -> fragnnet.frag.masster_templates": [
       "MASSTER_RULE_VOCABULARY"
     ],
-    "fragnnet.utils.script_utils -> fragnnet.iceberg.pl_model": [
-      "IcebergIntenPL"
-    ],
     "fragnnet.utils.script_utils -> fragnnet.pl_model.fragnnet_pl": [
       "FraGNNetPL"
     ],
@@ -234,21 +231,6 @@
     },
     "fragnnet.utils.script_utils": {
       "baseline:iceberg": [
-        "fragnnet.iceberg",
-        "fragnnet.iceberg.common",
-        "fragnnet.iceberg.common.chem_utils",
-        "fragnnet.iceberg.common.fingerprint",
-        "fragnnet.iceberg.common.misc_utils",
-        "fragnnet.iceberg.dataset",
-        "fragnnet.iceberg.fragmentation",
-        "fragnnet.iceberg.model",
-        "fragnnet.iceberg.nn_utils",
-        "fragnnet.iceberg.nn_utils.dgl_modules",
-        "fragnnet.iceberg.nn_utils.form_embedder",
-        "fragnnet.iceberg.nn_utils.mol_graph",
-        "fragnnet.iceberg.nn_utils.nn_utils",
-        "fragnnet.iceberg.nn_utils.transformer_layer",
-        "fragnnet.iceberg.pl_model",
         "fragnnet.utils.dgl_compat_utils"
       ],
       "baseline:massformer": [
@@ -481,110 +463,6 @@
         "fragnnet.graff.pl_model"
       ],
       "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
-      "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
-      ],
-      "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
-        "fragnnet.frag.compute_frags",
-        "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
-        "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
-      ]
-    },
-    "iceberg_gen": {
-      "baseline:iceberg": [
-        "fragnnet.iceberg",
-        "fragnnet.iceberg.common",
-        "fragnnet.iceberg.common.chem_utils",
-        "fragnnet.iceberg.common.fingerprint",
-        "fragnnet.iceberg.common.misc_utils",
-        "fragnnet.iceberg.dataset",
-        "fragnnet.iceberg.fragmentation",
-        "fragnnet.iceberg.model",
-        "fragnnet.iceberg.nn_utils",
-        "fragnnet.iceberg.nn_utils.dgl_modules",
-        "fragnnet.iceberg.nn_utils.form_embedder",
-        "fragnnet.iceberg.nn_utils.mol_graph",
-        "fragnnet.iceberg.nn_utils.nn_utils",
-        "fragnnet.iceberg.nn_utils.transformer_layer",
-        "fragnnet.iceberg.pl_model",
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
-      "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
-      ],
-      "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
-        "fragnnet.frag.compute_frags",
-        "fragnnet.frag.multi_cut_bfs",
-        "fragnnet.model.fragment_competition",
-        "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
-        "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
-      ]
-    },
-    "iceberg_inten": {
-      "baseline:iceberg": [
-        "fragnnet.iceberg",
-        "fragnnet.iceberg.common",
-        "fragnnet.iceberg.common.chem_utils",
-        "fragnnet.iceberg.common.fingerprint",
-        "fragnnet.iceberg.common.misc_utils",
-        "fragnnet.iceberg.dataset",
-        "fragnnet.iceberg.fragmentation",
-        "fragnnet.iceberg.model",
-        "fragnnet.iceberg.nn_utils",
-        "fragnnet.iceberg.nn_utils.dgl_modules",
-        "fragnnet.iceberg.nn_utils.form_embedder",
-        "fragnnet.iceberg.nn_utils.mol_graph",
-        "fragnnet.iceberg.nn_utils.nn_utils",
-        "fragnnet.iceberg.nn_utils.transformer_layer",
-        "fragnnet.iceberg.pl_model",
         "fragnnet.utils.dgl_compat_utils"
       ],
       "baseline:massformer": [

@@ -166,7 +166,8 @@ def load_config(
         The resolved configuration dictionary.
 
     Raises:
-        ValueError: If ``model_type`` is unknown, or the custom config sets undeclared keys.
+        ValueError: If ``model_type`` is unknown or retired, or the custom config sets undeclared
+            keys.
     """
     custom_d = None
     if custom_fp is not None:
@@ -190,6 +191,7 @@ def load_config(
         or config_d.get("model_type")
         or DEFAULT_MODEL_TYPE
     )
+    registry.raise_if_retired(resolved_model_type)
     if resolved_model_type not in VALID_MODEL_TYPES:
         raise ValueError(
             f"unknown model_type {resolved_model_type!r}; known types: {sorted(VALID_MODEL_TYPES)}"

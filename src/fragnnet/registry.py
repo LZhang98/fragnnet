@@ -38,14 +38,6 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),
     "massformer": ModelEntry("fragnnet.massformer.pl_model:MassFormerPL", _SPEC_MOL_DATASET),
-    "iceberg_gen": ModelEntry(
-        "fragnnet.iceberg.pl_model:IcebergGenPL",
-        "fragnnet.iceberg.dataset:SpecMolMagmaGenDataset",
-    ),
-    "iceberg_inten": ModelEntry(
-        "fragnnet.iceberg.pl_model:IcebergIntenPL",
-        "fragnnet.iceberg.dataset:SpecMolMagmaIntenDataset",
-    ),
     "graff": ModelEntry(
         "fragnnet.graff.pl_model:GrAFFPL", "fragnnet.graff.dataset:SpecMolAnnDataset"
     ),
@@ -62,6 +54,36 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
 # model type, so this only guards against a typo in ``model_type`` itself.
 VALID_MODEL_TYPES = frozenset(MODEL_REGISTRY)
 
+# Last revision that contains the local ICEBERG fork (reachable from origin/masster).
+ICEBERG_ARCHIVE_SHA = "13b1599d3cd85ef8f214799894e527adaf3ddd0a"
+_ICEBERG_RETIRED = (
+    "model_type {model_type!r} is retired: this repository's ICEBERG fork was removed on "
+    "2026-10-11 (docs/plans/repo_reorg_plan.md). Run ICEBERG with external ms-pred "
+    "(https://github.com/coleygroup/ms-pred) and score its prediction files with this "
+    "repository's evaluation tools. The local fork, its configs and its checkpoints belong to "
+    f"revision {ICEBERG_ARCHIVE_SHA}."
+)
+
+# Model types that were removed; selecting one raises an actionable error instead of the generic
+# unknown-type error.
+RETIRED_MODEL_TYPES: dict[str, str] = {
+    "iceberg_gen": _ICEBERG_RETIRED,
+    "iceberg_inten": _ICEBERG_RETIRED,
+}
+
+
+def raise_if_retired(model_type: str) -> None:
+    """Raise the retirement message for a removed model type; do nothing otherwise.
+
+    Args:
+        model_type: Model type from a config, checkpoint or caller.
+
+    Raises:
+        ValueError: If ``model_type`` was retired.
+    """
+    if model_type in RETIRED_MODEL_TYPES:
+        raise ValueError(RETIRED_MODEL_TYPES[model_type].format(model_type=model_type))
+
 
 def _resolve(path: str) -> type:
     module_name, _, qualname = path.partition(":")
@@ -72,6 +94,7 @@ def _resolve(path: str) -> type:
 
 
 def _entry(model_type: str) -> ModelEntry:
+    raise_if_retired(model_type)
     if model_type not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model type: {model_type}")
     return MODEL_REGISTRY[model_type]
@@ -87,7 +110,7 @@ def get_model_cls(model_type: str) -> type:
         The model class.
 
     Raises:
-        ValueError: If the model type is unknown.
+        ValueError: If the model type is unknown or retired.
     """
     return _resolve(_entry(model_type).model_cls)
 
@@ -102,6 +125,6 @@ def get_dataset_cls(model_type: str) -> type:
         The dataset class.
 
     Raises:
-        ValueError: If the model type is unknown.
+        ValueError: If the model type is unknown or retired.
     """
     return _resolve(_entry(model_type).dataset_cls)

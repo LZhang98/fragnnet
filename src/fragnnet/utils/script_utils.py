@@ -18,7 +18,6 @@ from pyteomics.mass import Composition
 from tqdm import tqdm
 
 from fragnnet.frag.masster_templates import MASSTER_RULE_VOCABULARY
-from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.pl_model import FraGNNetPL, MassterPL
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import (
@@ -460,9 +459,8 @@ def apply_inference_config(
     config_d["compile"] = False  # Disable compilation for evaluation
     # Disable preprocessing if requested
     if disable_preproc:
-        # frag/magma/ann_params are model-owned, so they are absent for models that never
-        # read them.
-        for k in ["spec", "mol", "frag", "magma", "ann"]:
+        # frag/ann_params are model-owned, so they are absent for models that never read them.
+        for k in ["spec", "mol", "frag", "ann"]:
             key = f"{k}_params"
             if key not in config_d:
                 continue
@@ -478,9 +476,6 @@ def apply_inference_config(
     config_d["spec_params"]["prec_type_str"] = True
     if "frag_params" in config_d:
         config_d["frag_params"]["formula_str"] = True
-    # for iceberg
-    if "magma_params" in config_d:
-        config_d["magma_params"]["adduct_form_deltas"] = True
     # for graff
     if "ann_params" in config_d:
         config_d["ann_params"]["formula_str"] = output_formula_str
@@ -506,13 +501,11 @@ def apply_inference_config(
     # Apply common inference settings
     config_d["track_datapoint_metrics"] = False
 
-    # Disable preprocessing to save memory. Both blocks are model-owned overlays, so they are
-    # absent for a model that does not use them.
+    # Disable preprocessing to save memory. The block is a model-owned overlay, so it is absent
+    # for a model that does not use it.
     if "frag_params" in config_d:
         config_d["frag_params"]["preload"] = False
         config_d["frag_params"]["preprocess"] = False
-    if "magma_params" in config_d:
-        config_d["magma_params"]["preprocess"] = False
 
     # Disable samplers for deterministic inference
     config_d["dynamic_batch_sampler"] = (
@@ -848,13 +841,6 @@ def required_index_vars_for_outputs(
 
     # Model-specific adjustments
     is_fragnnet = isinstance(model, FraGNNetPL)
-    is_iceberg = isinstance(model, IcebergIntenPL)
-
-    if is_iceberg:
-        # Iceberg does not use node/formula idxs in inference outputs
-        req_node.clear()
-        req_formula.clear()
-        req_nb_node.clear()
 
     if is_fragnnet and nb_iso:
         # If neighbor isotope predictions are enabled, include NB index vars
@@ -909,7 +895,6 @@ def get_idx_vars(
     """
     # Determine which index variables to track
     fraggnn_model = isinstance(model, FraGNNetPL)
-    iceberg_model = isinstance(model, IcebergIntenPL)
     if isinstance(model, MassterPL):
         # The exporter builds MASSter's formula/joint/node annotation per batch
         # (`masster_annotation_tables`) under FraGNNet's index names.
@@ -924,17 +909,9 @@ def get_idx_vars(
         NODE_IDX_VARS = ["pred_node_node_idxs", "pred_joint_node_idxs"]
         FORMULA_IDX_VARS = ["pred_formula_formula_idxs", "pred_joint_formula_idxs"]
         NB_NODE_IDX_VARS = []
-    elif not (fraggnn_model or iceberg_model):
+    elif not fraggnn_model:
         assert not nb_iso
         BATCH_IDX_VARS = ["pred_batch_idxs", "true_batch_idxs"]
-        NODE_IDX_VARS = []
-        FORMULA_IDX_VARS = []
-        NB_NODE_IDX_VARS = []
-    elif iceberg_model:
-        assert not nb_iso
-        BATCH_IDX_VARS = ["pred_batch_idxs", "true_batch_idxs"]
-        if model.model.output_formula_str:
-            BATCH_IDX_VARS.extend(["pred_formula_batch_idxs"])
         NODE_IDX_VARS = []
         FORMULA_IDX_VARS = []
         NB_NODE_IDX_VARS = []

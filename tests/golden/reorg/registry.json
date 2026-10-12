@@ -720,12 +720,6 @@
     "diff:graff": {
       "model_type": "graff"
     },
-    "diff:iceberg_gen": {
-      "model_type": "iceberg_gen"
-    },
-    "diff:iceberg_inten": {
-      "model_type": "iceberg_inten"
-    },
     "diff:massformer": {
       "model_type": "massformer"
     },

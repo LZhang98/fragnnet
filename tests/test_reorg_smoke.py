@@ -829,7 +829,7 @@ def test_mces_pretraining_is_blocked_only_by_the_missing_siamese_arguments(
 def test_smoke_cases_cover_every_retained_model_type() -> None:
     """A model type added to the registry must get a smoke case (or be retired explicitly)."""
     assert set(SMOKE_TYPES) | {MCES_PATCHED} == set(CASES)
-    assert set(RETIRED_TYPES) <= set(MODEL_TYPES)
+    assert not set(RETIRED_TYPES) & set(MODEL_TYPES)
     assert not set(RETIRED_TYPES) & set(CASES)
 
 

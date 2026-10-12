@@ -390,29 +390,13 @@ python preproc_scripts/04_prepare_split.py --split_type random --split_key inchi
     --ce_types stepped single --split_dp data/split/enveda_180_inchikey_811
 ```
 
-## Step 5: Preparing Optimal MAGMa DAGs (ICEBERG)
+## Steps 5 and 6: MAGMa DAGs for ICEBERG (retired)
 
-This step generates optimal MAGMa DAGs for training/evaluating the ICEBERG generator model optimal ICEBERG intensity model.
-
-```bash
-python preproc_scripts/05_prepare_magma_feats.py --magma_dp data/magma/gen/nist20 --proc_dp data/proc/nist20 --dsets nist20_hr
-```
-
-## Step 6: Preparing Approximate MAGMa DAGs (ICEBERG)
-
-This step generates approximate MAGMa DAGs using a trained ICEBERG generator model, for training and evaluating the ICEBERG intensity model.
-
-For each seed `${SEED}` (see [config README](../config/README.md)) repeat the following:
-
-```bash
-python preproc_scripts/06_predict_magma_dags.py --magma_dp data/magma/inten/nist20_inchikey_s$SEED --proc_dp data/proc/nist20 --gen_ckpt_fp data/magma/ckpt/nist20_inchikey_s$SEED.ckpt --dsets nist20_hr
-```
-
-Don't forget to symlink the formula directory:
-
-```bash
-ln -s $HOME/frag-gnn/data/magma/gen/nist20/magma_formula $HOME/frag-gnn/data/magma/inten/nist20_inchikey_s$SEED/magma_formula
-```
+These steps prepared optimal and predicted MAGMa DAGs for the local ICEBERG fork
+(`05_prepare_magma_feats.py`, `06_predict_magma_dags.py`). The fork and both scripts were removed on
+2026-10-11; ICEBERG now runs through external [ms-pred](https://github.com/coleygroup/ms-pred).
+The scripts remain at revision `13b1599d`. The step numbers are kept so later steps keep their
+numbers.
 
 ## Step 8: Preparing ClassyFire Labels
 

@@ -13,6 +13,7 @@ import re
 import pytest
 import yaml
 
+from fragnnet.registry import RETIRED_MODEL_TYPES
 from fragnnet.runner import (
     VALID_MODEL_TYPES,
     find_unknown_config_keys,
@@ -117,8 +118,6 @@ class TestTemplateLayout:
         """Every known model either owns a section or is declared core-only."""
         owned = {
             "masster",
-            "iceberg_gen",
-            "iceberg_inten",
             "massformer",
             "neims",
             "chemlm",
@@ -130,6 +129,11 @@ class TestTemplateLayout:
             "fragnnet",
         }
         assert owned | CORE_ONLY_MODEL_TYPES == set(VALID_MODEL_TYPES)
+
+    def test_retired_model_types_are_not_valid(self):
+        """Retired types keep their inert template section but cannot be selected."""
+        assert {"iceberg_gen", "iceberg_inten"} == set(RETIRED_MODEL_TYPES)
+        assert not set(RETIRED_MODEL_TYPES) & set(VALID_MODEL_TYPES)
 
 
 class TestResolution:

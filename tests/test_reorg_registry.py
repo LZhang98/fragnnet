@@ -3,8 +3,8 @@
 The expected mapping below is the contract every later phase must keep. It changes only
 deliberately, in the same PR as the code:
 
-- Phase 1 replaces the ICEBERG rows with retirement-error checks and maps ``massformer`` to
-  ``SpecMolMFDataset`` (equivalence shown by the Phase 0 baseline records).
+- Phase 1 step 2 replaced the ICEBERG rows with retirement-error checks (below); Phase 1 step 3
+  maps ``massformer`` to ``SpecMolMFDataset`` (equivalence shown by the Phase 0 baseline records).
 - Phase 6 changes module paths only; class names and behavior stay.
 
 The resolved configs of every model type are also recorded, as one shared base plus per-type
@@ -14,15 +14,21 @@ returns.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import torch as th
 import yaml
 from reorg_golden import ratchet_json
-from reorg_layers import MODEL_TYPES
+from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
 
+from fragnnet.registry import ICEBERG_ARCHIVE_SHA
 from fragnnet.runner import load_config
+from fragnnet.utils.script_utils import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 TEMPLATE_DIR = "config"
+REPO_TEMPLATE = Path(__file__).resolve().parents[1] / "config" / "template.yml"
 
 # model_type -> (Lightning module, dataset class), as "module:QualName".
 EXPECTED_MAPPING = {
@@ -49,14 +55,6 @@ EXPECTED_MAPPING = {
     "massformer": (
         "fragnnet.massformer.pl_model:MassFormerPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
-    ),
-    "iceberg_gen": (
-        "fragnnet.iceberg.pl_model:IcebergGenPL",
-        "fragnnet.iceberg.dataset:SpecMolMagmaGenDataset",
-    ),
-    "iceberg_inten": (
-        "fragnnet.iceberg.pl_model:IcebergIntenPL",
-        "fragnnet.iceberg.dataset:SpecMolMagmaIntenDataset",
     ),
     "graff": (
         "fragnnet.graff.pl_model:GrAFFPL",
@@ -142,3 +140,54 @@ def test_resolved_configs_match_golden() -> None:
             k: config.get(k, "<absent>") for k in keys if config.get(k) != base.get(k)
         }
     ratchet_json("registry", "resolved_configs", record)
+
+
+def _assert_retirement_error(excinfo: pytest.ExceptionInfo, model_type: str) -> None:
+    message = str(excinfo.value)
+    assert f"model_type {model_type!r} is retired" in message
+    assert "ms-pred" in message
+    assert ICEBERG_ARCHIVE_SHA in message
+
+
+@pytest.mark.parametrize("model_type", RETIRED_MODEL_TYPES)
+def test_retired_model_types_raise_the_retirement_error_on_every_path(
+    model_type: str, tmp_path
+) -> None:
+    """Every way a retired type can be selected raises the actionable retirement message.
+
+    Paths: a custom config, the ``model_type`` argument (a checkpoint's type), a template that
+    declares it, the registry lookups, and the checkpoint loaders.
+    """
+    custom = tmp_path / "custom.yml"
+    custom.write_text(yaml.safe_dump({"model_type": model_type}))
+    with pytest.raises(ValueError) as excinfo:
+        load_config(TEMPLATE_DIR, str(custom), None)
+    _assert_retirement_error(excinfo, model_type)
+
+    with pytest.raises(ValueError) as excinfo:
+        load_config(TEMPLATE_DIR, None, None, model_type=model_type)
+    _assert_retirement_error(excinfo, model_type)
+
+    template = tmp_path / "template.yml"
+    template_d = yaml.safe_load((REPO_TEMPLATE).read_text())
+    template_d["model_type"] = model_type
+    template.write_text(yaml.safe_dump(template_d))
+    with pytest.raises(ValueError) as excinfo:
+        load_config(str(template), None, None)
+    _assert_retirement_error(excinfo, model_type)
+
+    for lookup in (get_model_cls, get_dataset_cls):
+        with pytest.raises(ValueError) as excinfo:
+            lookup(model_type)
+        _assert_retirement_error(excinfo, model_type)
+
+    ckpt_fp = tmp_path / "old_iceberg.ckpt"
+    th.save({"hyper_parameters": {"model_type": model_type}, "state_dict": {}}, ckpt_fp)
+    with pytest.raises(ValueError) as excinfo:
+        init_model_from_ckpt(str(ckpt_fp), {"model_type": model_type}, th.device("cpu"))
+    _assert_retirement_error(excinfo, model_type)
+    empty_custom = tmp_path / "empty.yml"
+    empty_custom.write_text("")
+    with pytest.raises(ValueError) as excinfo:
+        get_config_from_ckpt(str(ckpt_fp), str(empty_custom), TEMPLATE_DIR)
+    _assert_retirement_error(excinfo, model_type)

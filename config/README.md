@@ -111,13 +111,12 @@ NEIMS: [inchikey configs](./nist20_inchikey/neims/), [scaffold configs](./nist20
 
 MassFormer: [inchikey configs](./nist20_inchikey/massformer/), [scaffold configs](./nist20_scaffold/massformer/)
 
-ICEBERG (Generator model): [inchikey configs](./nist20_inchikey/iceberg_gen/), [scaffold configs](./nist20_scaffold/iceberg_gen/)
-
-ICEBERG (Intensity model): [inchikey configs](./nist20_inchikey/iceberg/), [scaffold configs](./nist20_scaffold/iceberg/)
-
-ICEBERG (Optimal Intensity model): [inchikey configs](./nist20_inchikey/iceberg_opt/), [scaffold configs](./nist20_scaffold/iceberg_opt/)
-
-Note: the ICEBERG Optimal Intensity model is presented in the ablations section in the paper as ICEBERG (+Opt).
+ICEBERG (generator, intensity and optimal-intensity models): retired on 2026-10-11. The local
+fork and its configs were removed; run ICEBERG through external
+[ms-pred](https://github.com/coleygroup/ms-pred). The configs remain at revision `13b1599d`
+(`config/*_merged/iceberg_*`), see the
+[reorganization plan](../docs/plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
+The `iceberg_*`, `magma_params` and `magma_dp` template keys stay inert.
 
 ### Ablation Experiment Configs
 

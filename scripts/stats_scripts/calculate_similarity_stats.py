@@ -14,8 +14,6 @@ if __name__ == "__main__":
     parser.add_argument("--model_types", type=str, nargs="+", default=[
         "fragnnet_d3",
         "fragnnet_d4",
-        "iceberg_inten",
-        "iceberg_inten_opt",
         "neims",
         "massformer",
         "graff",

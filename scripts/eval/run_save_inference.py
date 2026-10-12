@@ -7,8 +7,6 @@ import wandb
 from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
 from fragnnet.graff.pl_model import GrAFFPL
-from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
-from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
 from fragnnet.runner import init_dataloader, load_config
@@ -32,8 +30,6 @@ if __name__ == "__main__":
         default=[
             "fragnnet_d3",
             "fragnnet_d4",
-            "iceberg_inten",
-            "iceberg_inten_opt",
             "neims",
             "massformer",
             "graff",
@@ -106,8 +102,6 @@ if __name__ == "__main__":
         "massformer": MassFormerPL,
         "fragnnet_d3": FraGNNetPL,
         "fragnnet_d4": FraGNNetPL,
-        "iceberg_inten": IcebergIntenPL,
-        "iceberg_inten_opt": IcebergIntenPL,
         "graff": GrAFFPL,
         "precursor": PrecursorPL,
     }
@@ -117,8 +111,6 @@ if __name__ == "__main__":
         "massformer": SpecMolDataset,
         "fragnnet_d3": SpecMolFragDataset,
         "fragnnet_d4": SpecMolFragDataset,
-        "iceberg_inten": SpecMolMagmaIntenDataset,
-        "iceberg_inten_opt": SpecMolMagmaIntenDataset,
         "graff": SpecMolAnnDataset,
         "precursor": SpecMolDataset,
     }
@@ -128,8 +120,6 @@ if __name__ == "__main__":
         "massformer": "massformer_long",
         "fragnnet_d3": "fraggnn_d3_long",
         "fragnnet_d4": "fraggnn_d4_long",
-        "iceberg_inten": "iceberg_inten3_100_long",
-        "iceberg_inten_opt": "iceberg_inten3_all_long",
         "graff": "graff3_long",
         "precursor": "precursor",
     }

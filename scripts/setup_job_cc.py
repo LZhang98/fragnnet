@@ -535,8 +535,6 @@ def main(args):
 
     if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
         data_keyword.append("frag_dp")
-    elif config_d["model_type"] in ["iceberg_gen", "iceberg_inten"]:
-        data_keyword.append("magma_dp")
     elif config_d["model_type"] == "graff":
         data_keyword.append("ann_fp")
     elif config_d["model_type"] == "mces_pretraining":
