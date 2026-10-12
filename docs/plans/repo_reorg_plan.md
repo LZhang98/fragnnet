@@ -488,10 +488,10 @@ Phase 1 delivers `model_cls`, `dataset_cls`, the alias table, `RETIRED_MODEL_TYP
      - `env/env_cc_setup_py310.sh:25`, `env_cc_setup_py311.sh:25`, `env_setup_gpu_py312_cu121_251105.sh:32-33`;
      - `install_lib.py:85`, `:100` and the `"dgl==1.0.4"` list element at `:104`;
      - `scripts/setup_job_cc.py:395`;
-     - the `scripts/manual_slurm/` files (six under `fir/`, `vulcan/inference_mas.sh:41`);
+     - the `scripts/manual_slurm/` files (seven under `fir/`, `vulcan/inference_mas.sh:41`);
      - `INSTALL.md:99`, `:207`;
      - the `dgl.random_walk_pe` docstring in `feat_utils.py:1156-1158`.
-   - **Shell-continuation trap.** In `env/env_setup_gpu_py311_cu121_250602.sh`, line 27 starts a second `pip install` that also installs omegaconf through h5py. Change it to `pip install \` rather than deleting it, and drop the commented line 26.
+   - **Shell-continuation trap.** In `env/env_setup_gpu_py311_cu121_250602.sh`, line 25 (`matplotlib \`) continues into the comment on line 26, which ends the first `pip install`; line 27 starts a second `pip install` that also installs omegaconf through h5py. End line 25 without `\`, delete line 26 and change line 27 to `pip install \`. Deleting line 26 alone would join `pip install` into the first command's package list.
    - **Shell checks:** check each edited shell script with `bash -n` and a stubbed-pip dry run that shows the same package set minus dgl.
    - **Untracked files:** these are not part of the PR: `containers/apptainer/*.def` (gitignored), generated `slurm_scripts/` and `jobs/`. Mark the `.def` stale locally and regenerate job scripts from `setup_job_cc.py`. The prebuilt `.sif` images still contain DGL.
    - **DGL-free check:** parse `pyproject.toml` (tomllib) and grep the tracked install files for `dgl`. Do not check the live environment: the editable install's metadata and the gitignored `src/fragnnet.egg-info` still report `dgl==1.0.4` until the user chooses to re-run `pip install --no-deps -e .`, which the refactor does not do.

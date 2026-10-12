@@ -96,7 +96,7 @@ conda activate FRAGNNET-GPU
 python -c "import fragnnet; print('fragnnet imported successfully')"
 
 # Test GPU dependencies
-python -c "import torch; import lightning; import dgl; print(f'GPU available: {torch.cuda.is_available()}')"
+python -c "import torch; import lightning; print(f'GPU available: {torch.cuda.is_available()}')"
 
 # Run tests
 pytest tests/ -v
@@ -204,7 +204,6 @@ For contributors and developers:
 - Python 3.10-3.13
 - PyTorch 2.4.1
 - PyTorch Lightning 2.4.0
-- DGL 2.0.0+ (graph deep learning)
 - RDKit 2022.09-2023.09 (cheminformatics)
 - NumPy <2.0
 - Pandas 2.2.3

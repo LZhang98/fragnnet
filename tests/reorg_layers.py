@@ -54,8 +54,6 @@ BASELINE_PACKAGES = {
     "fragnnet.massformer": "baseline:massformer",
     "fragnnet.iceberg": "baseline:iceberg",
 }
-# ICEBERG-only shim; deleted with ICEBERG in Phase 1.
-EXTRA_BASELINE_MODULES = {"fragnnet.utils.dgl_compat_utils": "baseline:iceberg"}
 
 # Lazy package exports introduced in Phase 1 (PEP 562 ``__getattr__`` in a package
 # ``__init__``): {package: {exported name: defining module}}. The resolver follows these so a
@@ -107,8 +105,6 @@ def layer_of(module: str) -> str:
         return "fragnnet"
     if module in MASSTER or module.startswith(MASSTER_PREFIXES):
         return "masster"
-    if module in EXTRA_BASELINE_MODULES:
-        return EXTRA_BASELINE_MODULES[module]
     for package, layer in BASELINE_PACKAGES.items():
         if module == package or module.startswith(package + "."):
             return layer

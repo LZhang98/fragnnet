@@ -1153,9 +1153,8 @@ def random_walk_pe(g: Data, k: int) -> th.Tensor:
         Random walk positional encodings of shape (N, k) where N is the number of nodes.
 
     Example:
-        >>> import dgl
-        >>> g = dgl.graph(([0,1,1], [1,1,0]))
-        >>> dgl.random_walk_pe(g, 2)
+        >>> g = Data(edge_index=th.tensor([[0, 1, 1], [1, 1, 0]]), num_nodes=2)
+        >>> random_walk_pe(g, 2)
         tensor([[0.0000, 0.5000],
                 [0.5000, 0.7500]])
     """

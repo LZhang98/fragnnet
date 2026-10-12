@@ -39,8 +39,6 @@ import torch as th
 import torch_geometric as pyg
 import tqdm
 
-from fragnnet.utils.dgl_compat_utils import DGLGraph
-
 T = TypeVar("T")
 R = TypeVar("R")
 
@@ -681,8 +679,7 @@ def to_device(
 
     for k in data_d:
         v = data_d[k]
-        # Support optional DGL: use DGLGraph placeholder for isinstance checks
-        if isinstance(v, (th.Tensor, DGLGraph, pyg.data.Data)):
+        if isinstance(v, (th.Tensor, pyg.data.Data)):
             v = v.to(device, non_blocking=non_blocking)
             data_d[k] = v
     return data_d
@@ -717,8 +714,6 @@ def print_shapes(input_dict: Mapping[str, Any]) -> None:
             print(k, "/", len(v), "/", type(v))
         elif isinstance(v, pyg.data.Data):
             print(k, "/", (v.num_nodes, v.num_edges), "/", type(v))
-        elif isinstance(v, DGLGraph):
-            print(k, "/", (v.number_of_nodes(), v.number_of_edges()), "/", type(v))
         else:
             print(k, "/", None, "/", type(v))
 

@@ -42,9 +42,6 @@
       "get_node_feats",
       "th_long_to_mask"
     ],
-    "fragnnet.utils.misc_utils -> fragnnet.utils.dgl_compat_utils": [
-      "DGLGraph"
-    ],
     "fragnnet.utils.proc_utils -> fragnnet.frag.compute_frags": [
       "MAX_NUM_EDGES",
       "MAX_NUM_NODES"
@@ -70,12 +67,6 @@
   },
   "isolation_entry_modules": {
     "fragnnet.dataset.base_dataset": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass"
       ],
@@ -88,12 +79,6 @@
       ]
     },
     "fragnnet.dataset.data_sampler": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass"
       ],
@@ -106,12 +91,6 @@
       ]
     },
     "fragnnet.dataset.spec_mol_dataset": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass"
       ],
@@ -124,12 +103,6 @@
       ]
     },
     "fragnnet.pl_model.spectrum_pl": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -154,12 +127,6 @@
       ]
     },
     "fragnnet.runner": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass"
       ],
@@ -172,12 +139,6 @@
       ]
     },
     "fragnnet.utils.feat_utils": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass"
       ],
@@ -187,32 +148,13 @@
         "fragnnet.utils.frag_utils"
       ]
     },
-    "fragnnet.utils.pl_utils": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ]
-    },
+    "fragnnet.utils.pl_utils": {},
     "fragnnet.utils.proc_utils": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragnnet": [
         "fragnnet.frag.compute_frags"
       ]
     },
     "fragnnet.utils.script_utils": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -241,12 +183,6 @@
   },
   "isolation_model_selection": {
     "chemlm": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -273,12 +209,6 @@
       ]
     },
     "clip": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -305,12 +235,6 @@
       ]
     },
     "frag_gnn": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -337,12 +261,6 @@
       ]
     },
     "fragnnet": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -369,12 +287,6 @@
       ]
     },
     "gnn": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -409,12 +321,6 @@
         "fragnnet.graff.nn_utils",
         "fragnnet.graff.pl_model"
       ],
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -441,9 +347,6 @@
       ]
     },
     "massformer": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
       "baseline:massformer": [
         "fragnnet.massformer",
         "fragnnet.massformer.algos",
@@ -452,9 +355,6 @@
         "fragnnet.massformer.model",
         "fragnnet.massformer.nn_utils",
         "fragnnet.massformer.pl_model"
-      ],
-      "dgl": [
-        "dgl"
       ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
@@ -482,12 +382,6 @@
       ]
     },
     "masster": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -514,12 +408,6 @@
       ]
     },
     "mces_pretraining": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -546,12 +434,6 @@
       ]
     },
     "neims": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -578,12 +460,6 @@
       ]
     },
     "precursor": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
@@ -610,12 +486,6 @@
       ]
     },
     "spec_mol_clip_pretraining": {
-      "baseline:iceberg": [
-        "fragnnet.utils.dgl_compat_utils"
-      ],
-      "dgl": [
-        "dgl"
-      ],
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
         "fragnnet.model.candidate_support"
