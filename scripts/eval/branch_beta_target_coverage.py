@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import parallel_utils
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from branching_headroom import (  # noqa: E402
@@ -355,7 +355,7 @@ def main() -> None:
         ),
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of per-mol accumulators.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -381,7 +381,7 @@ def main() -> None:
         allow_multi_parent=args.allow_multi_parent,
     )
     log.info("Processing %d mols (%d spectra)", len(mol_inputs), len(spec_df))
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
     rows = [r for r in per_mol if r is not None]
     if not rows:
         raise ValueError("No molecule produced audit rows; check --frag_dp and --split.")

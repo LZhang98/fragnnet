@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import spec_parse_utils
 
 
 def load_prepare_module():
@@ -342,7 +342,7 @@ def test_process_enveda_maps_columns(enveda_jsonl_fp: Path):
     assert neg["spec_type"] == "MS2"
     assert neg["frag_mode"] == "CID"
     assert [neg[col] for col in module.CE_COLS] == ["20 eV", "40 eV", "60 eV"]
-    assert data_utils.parse_ace_str(neg["col_energy_extra_2"]) == pytest.approx(60.0)
+    assert spec_parse_utils.parse_ace_str(neg["col_energy_extra_2"]) == pytest.approx(60.0)
     assert "isotope_mzs" not in spec_df.columns
     assert "mzs" not in spec_df.columns
     for value in module.MSP_KEY_DICT.values():

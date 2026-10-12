@@ -17,7 +17,7 @@ from PIL import Image, ImageOps
 from rdkit.Chem import Mol
 from rdkit.Chem.Draw import rdMolDraw2D
 
-from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.mol_utils import mol_from_smiles
 
 
 def trim_img_by_white(img: Image.Image, padding: int = 0) -> Image.Image:

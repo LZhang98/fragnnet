@@ -13,8 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 from fragnnet.utils.clean_spectra_utils import MERGE_METHODS, clean_spectra_with_stats, logger
-from fragnnet.utils.data_utils import VALID_ELEMENTS
-from fragnnet.utils.formula_utils import parse_formula
+from fragnnet.utils.formula_utils import VALID_ELEMENTS, parse_formula
 
 
 def select_precursor_types(

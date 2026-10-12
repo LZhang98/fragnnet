@@ -29,8 +29,9 @@ from fragnnet.dataset.data_sampler import (
     validate_bond_size_curriculum,
 )
 from fragnnet.utils.callbacks import ConsoleLogger, ExponentialMovingAverage
-from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 from fragnnet.utils.migrations import (
+    RETIRED_INST_TYPE_HELP,
+    find_retired_inst_type_refs,
     migrate_legacy_masster_key,
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,

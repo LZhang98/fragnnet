@@ -98,7 +98,7 @@ def test_main_max_time_validation():
 
     # Create mock args with max_time >= JOBLIB_TIMEOUT
     args = MagicMock()
-    args.max_time = module.data_utils.JOBLIB_TIMEOUT + 100
+    args.max_time = module.parallel_utils.JOBLIB_TIMEOUT + 100
 
     # Should raise ValueError
     try:

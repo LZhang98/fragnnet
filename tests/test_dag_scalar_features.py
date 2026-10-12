@@ -303,8 +303,8 @@ def test_model_forward_with_new_frag_feats(minimal_model) -> None:
     """Forward pass must complete without error and produce finite output."""
     import torch_geometric as pyg
 
-    from fragnnet.utils.data_utils import mol_from_smiles
     from fragnnet.utils.feat_utils import get_mol_graph
+    from fragnnet.utils.mol_utils import mol_from_smiles
 
     smiles = "CCO"
     mol = mol_from_smiles(smiles)

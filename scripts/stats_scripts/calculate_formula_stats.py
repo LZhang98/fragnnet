@@ -1,6 +1,6 @@
 from fragnnet.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
 from fragnnet.utils.dag_format_utils import load_frag_d
-from fragnnet.utils.data_utils import composition_to_string
+from fragnnet.utils.formula_utils import composition_to_string
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
 import numpy as np

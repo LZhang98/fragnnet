@@ -31,7 +31,7 @@ def test_metal_in_element_counts(smiles, name):
 
 def test_metal_not_disconnected():
     """Normalize+Reionize must not disconnect C–Hg bond (no MetalDisconnector)."""
-    from fragnnet.utils.data_utils import mol_from_smiles
+    from fragnnet.utils.mol_utils import mol_from_smiles
 
     mol = mol_from_smiles("[CH3][Hg]Cl")
     assert mol is not None

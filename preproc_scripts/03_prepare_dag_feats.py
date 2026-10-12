@@ -7,10 +7,9 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
 from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5, timed_get_dags
 from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
-from fragnnet.utils import dag_format_utils, formula_utils
+from fragnnet.utils import dag_format_utils, formula_utils, parallel_utils
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
@@ -79,10 +78,10 @@ def log_frag_output_summary(args, h5_fp: str, dag_dp: str) -> None:
 
 
 def main(args):
-    if args.max_time >= data_utils.JOBLIB_TIMEOUT:
+    if args.max_time >= parallel_utils.JOBLIB_TIMEOUT:
         raise ValueError(
             f"max_time ({args.max_time}s) must be less than JOBLIB_TIMEOUT "
-            f"({data_utils.JOBLIB_TIMEOUT}s)"
+            f"({parallel_utils.JOBLIB_TIMEOUT}s)"
         )
 
     # Setup logging. datefmt is explicit so asctime renders as "2026-09-14 22:06:53"
@@ -340,7 +339,7 @@ def main(args):
         dag_format_utils.initialize_packed_dag_hdf5(h5_file)
     else:
         h5_file = None
-    frag_results_gen = data_utils.par_apply(
+    frag_results_gen = parallel_utils.par_apply(
         iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
     )
     if frag_results_gen is None:
@@ -572,7 +571,7 @@ def main(args):
             )
 
         logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
-        stats_results = data_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
+        stats_results = parallel_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
         del spectra_input_rows
         stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
         del stats_results

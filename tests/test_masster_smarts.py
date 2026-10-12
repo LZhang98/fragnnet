@@ -22,7 +22,7 @@ from fragnnet.models.masster.masster_templates import (
     build_masster_templates,
     filter_masster_templates,
 )
-from fragnnet.utils import data_utils
+from fragnnet.utils import mol_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)
 _NEW_RULE_EXAMPLES = (
@@ -709,7 +709,7 @@ def test_gated_rules_build_their_rearranged_product_on_standardized_molecules(
     rule_name: str, smiles: str, precursor_type: str, product: dict[str, int]
 ) -> None:
     # Standardized input is what training sees: e.g. hydroxamic acids become ON=C(O)R.
-    mol = data_utils.mol_from_smiles(smiles)
+    mol = mol_utils.mol_from_smiles(smiles)
     templates = [t for t in build_masster_templates(mol) if t.rule_name == rule_name]
     assert len(templates) == 1
     endpoints = tuple(zip(*[(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds()]))
@@ -753,7 +753,7 @@ def test_gated_rules_build_their_rearranged_product_on_standardized_molecules(
     ],
 )
 def test_gated_rules_reject_close_negative_structures(rule_name: str, smiles: str) -> None:
-    mol = data_utils.mol_from_smiles(smiles)
+    mol = mol_utils.mol_from_smiles(smiles)
     assert rule_name not in {t.rule_name for t in build_masster_templates(mol)}
 
 

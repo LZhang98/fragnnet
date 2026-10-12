@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from fragnnet.utils import clean_spectra_utils, data_utils
+from fragnnet.utils import clean_spectra_utils, formula_utils, spec_parse_utils
 
 # The spectrum selection lives with the command-line entry point, which is a script.
 _CLI_PATH = Path(__file__).resolve().parents[1] / "preproc_scripts" / "clean_spectra.py"
@@ -151,7 +151,7 @@ def test_merge_only_does_not_require_molecule_metadata():
 
 
 def test_filter_subformula_peaks_keeps_only_mass_matches():
-    carbon_ion_mz = data_utils.formula_to_mass("C") - data_utils.ELECTRON_MASS
+    carbon_ion_mz = formula_utils.formula_to_mass("C") - spec_parse_utils.ELECTRON_MASS
     peaks = [(carbon_ion_mz + 4e-5, 10.0), (50.0, 5.0)]
 
     filtered = clean_spectra_utils.filter_subformula_peaks(
@@ -174,8 +174,8 @@ def test_filter_subformula_peaks_keeps_only_mass_matches():
     ],
 )
 def test_filter_subformula_peaks_applies_adduct_mass_shift(precursor_type, mass_shift):
-    ion_mz = data_utils.formula_to_mass("CH4") + mass_shift
-    neutral_mz = data_utils.formula_to_mass("CH4")
+    ion_mz = formula_utils.formula_to_mass("CH4") + mass_shift
+    neutral_mz = formula_utils.formula_to_mass("CH4")
     peaks = [(ion_mz, 10.0), (neutral_mz, 5.0)]
 
     filtered = clean_spectra_utils.filter_subformula_peaks(
@@ -192,7 +192,7 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
     normalized_type = "[M-H2O+H]+"
     nist_type = "[M+H-H2O]+"
     ion_mz = (
-        data_utils.formula_to_mass("CH4O")
+        formula_utils.formula_to_mass("CH4O")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[normalized_type]
     )
 
@@ -208,7 +208,7 @@ def test_filter_subformula_peaks_accepts_nist_dehydration_adduct_alias():
 
 def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
     impossible_mz = (
-        data_utils.formula_to_mass("C")
+        formula_utils.formula_to_mass("C")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
     )
 
@@ -231,7 +231,7 @@ def test_deprotonated_subformula_requires_a_hydrogen_to_remove():
 )
 def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
     """[M+Na]+ fragments to [frag+H]+ and [M+Cl]- loses HCl to give [frag-H]-."""
-    migrated_mz = data_utils.formula_to_mass("CH4O") + cmf_shift
+    migrated_mz = formula_utils.formula_to_mass("CH4O") + cmf_shift
     peaks = [(migrated_mz, 10.0)]
 
     kept = clean_spectra_utils.filter_subformula_peaks(
@@ -247,7 +247,7 @@ def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
         clean_spectra_utils.PREC_TYPE_TO_COMP_DIFF[precursor_type],
         clean_spectra_utils._precursor_ion_charge(precursor_type),
     )
-    carrier_retaining = crf_budget[crf_budget > data_utils.formula_to_mass(carrier)]
+    carrier_retaining = crf_budget[crf_budget > formula_utils.formula_to_mass(carrier)]
     assert min(abs(carrier_retaining - migrated_mz)) > 5e-6 * migrated_mz
 
 
@@ -255,7 +255,7 @@ def test_charge_migration_fragments_are_candidates(precursor_type, cmf_shift):
 def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
     """Adding the CMF channel must widen the candidate set, never replace it."""
     retained_mz = (
-        data_utils.formula_to_mass("CH4O")
+        formula_utils.formula_to_mass("CH4O")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[precursor_type]
     )
 
@@ -294,7 +294,7 @@ def test_budgets_are_precursor_ions_including_the_migrated_one(precursor_type, b
 def test_charge_migration_reaches_one_hydrogen_past_the_sodiated_ion():
     """[frag+H]+ carries a proton M+Na cannot supply, so the CMF budget must allow it."""
     protonated_mz = (
-        data_utils.formula_to_mass("CH4O")
+        formula_utils.formula_to_mass("CH4O")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
 
@@ -307,7 +307,7 @@ def test_charge_migration_reaches_one_hydrogen_past_the_sodiated_ion():
 
 def test_fragment_ion_cannot_outrun_the_deprotonated_precursor_hydrogens():
     """[M-H]- holds one less hydrogen than M, so a full-hydrogen fragment anion is impossible."""
-    impossible_mz = data_utils.formula_to_mass("CH4") + clean_spectra_utils.ELECTRON_MASS
+    impossible_mz = formula_utils.formula_to_mass("CH4") + clean_spectra_utils.ELECTRON_MASS
 
     filtered = clean_spectra_utils.filter_subformula_peaks(
         [(impossible_mz, 10.0)], "CH4O", "[M-H]-", tolerance_ppm=5.0
@@ -344,7 +344,7 @@ def test_rdbe_is_taken_on_the_neutral_form_with_the_carrier_stripped(
 ):
     """RDBE bounds a neutral, so it scores the molecular part and exempts the charge carrier."""
     charge = clean_spectra_utils._precursor_ion_charge(precursor_type)
-    ion_mz = data_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
+    ion_mz = formula_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
 
     filtered = clean_spectra_utils.filter_subformula_peaks(
         [(ion_mz, 10.0)], source_formula, precursor_type, tolerance_ppm=5.0
@@ -361,7 +361,7 @@ def test_precursor_ion_charge_is_signed():
 
 def test_carrier_free_fragment_ion_is_a_candidate():
     """The bare chloride of an [M+Cl]- precursor is a subformula of that precursor ion."""
-    chloride_mz = data_utils.formula_to_mass("Cl") + clean_spectra_utils.ELECTRON_MASS
+    chloride_mz = formula_utils.formula_to_mass("Cl") + clean_spectra_utils.ELECTRON_MASS
 
     filtered = clean_spectra_utils.filter_subformula_peaks(
         [(chloride_mz, 10.0)], "CH4O", "[M+Cl]-", tolerance_ppm=5.0
@@ -373,7 +373,7 @@ def test_carrier_free_fragment_ion_is_a_candidate():
 def test_cmf_channel_still_requires_a_removable_hydrogen():
     """[M+Cl]- CMF is [frag-H]-, so a hydrogen-free subformula cannot supply it."""
     impossible_mz = (
-        data_utils.formula_to_mass("C")
+        formula_utils.formula_to_mass("C")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M-H]-"]
     )
 
@@ -389,7 +389,7 @@ def test_cmf_channel_respects_the_rdbe_rule():
     # H4 is a subformula of CH4O but has negative RDBE, so the CMF channel must
     # reject it rather than emit [H4+H]+ as a candidate.
     impossible_mz = (
-        data_utils.formula_to_mass("H4")
+        formula_utils.formula_to_mass("H4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
 
@@ -402,7 +402,7 @@ def test_cmf_channel_respects_the_rdbe_rule():
 
 def test_subformula_absolute_da_tolerance_accepts_inside_and_rejects_outside():
     low_mz = (
-        data_utils.formula_to_mass("CH4")
+        formula_utils.formula_to_mass("CH4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
     peaks = [(low_mz + 0.049, 10.0), (low_mz + 0.051, 5.0)]
@@ -416,7 +416,7 @@ def test_subformula_absolute_da_tolerance_accepts_inside_and_rejects_outside():
 
 def test_qtof_instrument_tolerance_uses_0p015_da_low_mass_floor():
     theoretical_mz = (
-        data_utils.formula_to_mass("CH4")
+        formula_utils.formula_to_mass("CH4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
     observed_peak = (theoretical_mz + 0.01, 10.0)
@@ -563,12 +563,12 @@ def test_select_supported_formula_spectra_reports_exclusions():
 
 def _ion_mz(ion_formula: str, charge: int) -> float:
     """m/z of an ion given its full element composition and signed charge."""
-    return data_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
+    return formula_utils.formula_to_mass(ion_formula) - charge * clean_spectra_utils.ELECTRON_MASS
 
 
 def _candidate_masses(candidates: list[dict[str, int]], charge: int) -> list[float]:
     return sorted(
-        sum(count * data_utils.ELEMENT_TO_MASS[element] for element, count in counts.items())
+        sum(count * formula_utils.ELEMENT_TO_MASS[element] for element, count in counts.items())
         - charge * clean_spectra_utils.ELECTRON_MASS
         for counts in candidates
     )
@@ -712,7 +712,7 @@ def test_every_candidate_is_in_the_window_and_inside_the_budget(formula, precurs
         )
         for element in set(precursor_counts) | {e for diff in comp_diffs for e in diff}
     }
-    precursor_mz = data_utils.formula_to_mass(formula) + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[
+    precursor_mz = formula_utils.formula_to_mass(formula) + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF[
         precursor_type
     ]
 
@@ -724,7 +724,7 @@ def test_every_candidate_is_in_the_window_and_inside_the_budget(formula, precurs
         ):
             n_seen += 1
             mass = (
-                sum(count * data_utils.ELEMENT_TO_MASS[e] for e, count in counts.items())
+                sum(count * formula_utils.ELEMENT_TO_MASS[e] for e, count in counts.items())
                 - charge * clean_spectra_utils.ELECTRON_MASS
             )
             assert abs(mass - query) <= tolerance_da + 1e-9
@@ -748,7 +748,7 @@ def test_a_wider_window_only_adds_candidates():
 
 def test_the_precursor_ion_is_a_candidate_at_its_own_mz():
     protonated_mz = (
-        data_utils.formula_to_mass("C9H8O4")
+        formula_utils.formula_to_mass("C9H8O4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
 
@@ -791,7 +791,7 @@ def test_a_query_below_every_ion_has_no_candidates():
 
 def test_a_query_above_the_precursor_has_no_candidates():
     precursor_mz = (
-        data_utils.formula_to_mass("C9H8O4")
+        formula_utils.formula_to_mass("C9H8O4")
         + clean_spectra_utils.PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
     )
 

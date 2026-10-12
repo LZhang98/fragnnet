@@ -31,10 +31,11 @@ import h5py
 import pandas as pd
 from rdkit import RDLogger
 
-import fragnnet.utils.data_utils as data_utils
 from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5
-from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
+from fragnnet.utils import mol_utils
 from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import par_apply_series
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +57,9 @@ def build_mol_df(smiles_series: pd.Series) -> pd.DataFrame:
     """
     # Canonicalize and deduplicate
     mol_series = par_apply_series(
-        smiles_series, lambda s: data_utils.mol_from_smiles(s, ml_standardize=False)
+        smiles_series, lambda s: mol_utils.mol_from_smiles(s, ml_standardize=False)
     )
-    canon_smiles = par_apply_series(mol_series, data_utils.mol_to_smiles)
+    canon_smiles = par_apply_series(mol_series, mol_utils.mol_to_smiles)
 
     tmp_df = pd.DataFrame({"raw_smiles": smiles_series, "mol": mol_series, "smiles": canon_smiles})
     # Drop rows where parsing failed
@@ -74,7 +75,7 @@ def build_mol_df(smiles_series: pd.Series) -> pd.DataFrame:
     # Compute RDKit mol objects (with ml_standardize for mol_df, no tautomer canonicalization)
     mol_df["mol"] = par_apply_series(
         mol_df["smiles"],
-        partial(data_utils.mol_from_smiles, canonicalize_tautomers=False),
+        partial(mol_utils.mol_from_smiles, canonicalize_tautomers=False),
     )
     compute_mol_df_props(mol_df)
 

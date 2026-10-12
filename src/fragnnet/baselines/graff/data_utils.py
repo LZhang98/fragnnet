@@ -6,7 +6,7 @@ from scipy.linalg import eigh
 from torch_geometric.data import Data
 from torch_geometric.utils import get_laplacian, to_scipy_sparse_matrix
 
-from fragnnet.utils.data_utils import formula_to_mass
+from fragnnet.utils.formula_utils import formula_to_mass
 
 RDLogger.DisableLog("rdApp.*")
 

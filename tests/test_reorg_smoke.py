@@ -21,7 +21,7 @@ the filter, including through the legacy ``mass_shatter`` spelling.
 
 Phase 1 and later change paths, and the edits that follow are made in the same PR as the move:
 ``get_model_cls`` and ``get_dataset_cls`` stay importable from ``fragnnet.utils.setup_utils`` as
-thin wrappers (plan, registry table), ``fragnnet.utils.data_utils`` and
+thin wrappers (plan, registry table), ``fragnnet.utils.spec_parse_utils`` and
 ``fragnnet.utils.formula_utils`` stay in core, and ``masster_has_valid_ion`` (in MASSter's
 ``frag/masster_dataset_filter`` since Phase 4) is reached only through the dataset constructor,
 never imported here. The
@@ -59,8 +59,7 @@ from reorg_golden import ratchet_json, ratchet_records
 from reorg_layers import MODEL_TYPES
 
 from fragnnet import runner
-from fragnnet.utils.data_utils import composition_to_string, formula_to_mass
-from fragnnet.utils.formula_utils import NEUTRON_MASS
+from fragnnet.utils.formula_utils import NEUTRON_MASS, composition_to_string, formula_to_mass
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 GOLDEN = "smoke"

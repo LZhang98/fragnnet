@@ -50,8 +50,7 @@ from torch.utils.data import RandomSampler, SequentialSampler
 
 import fragnnet.baselines.massformer.data_utils as mf_data_utils
 from fragnnet.baselines.graff.data_utils import fit_ann_library, graff_preprocess
-from fragnnet.utils.data_utils import composition_to_string, formula_to_mass
-from fragnnet.utils.formula_utils import NEUTRON_MASS
+from fragnnet.utils.formula_utils import NEUTRON_MASS, composition_to_string, formula_to_mass
 
 GOLDEN = "baselines"
 MODEL_TYPES = ("massformer", "graff")

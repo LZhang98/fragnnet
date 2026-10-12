@@ -27,9 +27,10 @@ import pandas as pd
 from rdkit import RDLogger
 
 import fragnnet.utils.formula_utils as formula_utils
-from fragnnet.utils import data_utils
-from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
+from fragnnet.utils import mol_utils
 from fragnnet.utils.formula_utils import MAX_NUM_NODES
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import par_apply_series
 
 # Suppress RDKit warnings
 RDLogger.DisableLog("rdApp.*")
@@ -68,7 +69,7 @@ def create_mol_df(
 
     # Convert SMILES to RDKit molecules
     logger.info("Converting SMILES to RDKit molecules...")
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], mol_utils.mol_from_smiles)
 
     # Remove invalid molecules
     initial_count = len(mol_df)

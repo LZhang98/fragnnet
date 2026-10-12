@@ -49,8 +49,8 @@ from reorg_golden import GOLDEN_DIR, ratchet_json
 from reorg_layers import MODEL_TYPES
 
 from fragnnet.runner import load_config, merge_wandb_config, validate_sampler_config
-from fragnnet.utils.data_utils import find_retired_inst_type_refs
 from fragnnet.utils.migrations import (
+    find_retired_inst_type_refs,
     get_pl_hparams,
     migrate_legacy_hparams,
     migrate_legacy_masster_key,

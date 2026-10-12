@@ -63,7 +63,7 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import parallel_utils
 from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper, jss_hun_helper
@@ -499,7 +499,7 @@ def score_dag(
     remove_prec_peak: bool = False,
     max_h_transfer: int | None = None,
     include_cmf: bool = True,
-    n_jobs: int = data_utils.JOBLIB_N_JOBS,
+    n_jobs: int = parallel_utils.JOBLIB_N_JOBS,
 ) -> pd.DataFrame:
     """Compute oracle cos_hun/jss_hun for every spectrum in spec_df against one DAG set.
 
@@ -537,7 +537,7 @@ def score_dag(
         len(spec_df),
         frag_dp,
     )
-    per_mol_results = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=n_jobs)
+    per_mol_results = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=n_jobs)
 
     n_missing_dag = sum(1 for r in per_mol_results if len(r) == 0)
     if n_missing_dag > 0:
@@ -679,7 +679,7 @@ def main() -> None:
         help="Randomly subsample this many molecules for a quick check.",
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument(
         "--out_fp",
         default=None,

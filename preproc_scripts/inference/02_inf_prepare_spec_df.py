@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils import data_utils
+from fragnnet.utils import ce_utils, spec_parse_utils
 from fragnnet.utils.misc_utils import booltype
 
 # Set up logging
@@ -37,9 +37,9 @@ def ion_mode_from_prec_type(prec_type: str) -> str:
     wrong value silently drops every spectrum of that mode.
 
     EI maps to "P", matching ``NIST_EI_ION_MODE`` in ``01_prepare_df.py``
-    (``data_utils.get_charge`` returns +1 for "EI").
+    (``ce_utils.get_charge`` returns +1 for "EI").
     """
-    charge = data_utils.get_charge(prec_type)
+    charge = ce_utils.get_charge(prec_type)
     if charge == 0:
         raise ValueError(f"Could not infer ion mode from neutral precursor type: {prec_type}")
     return "P" if charge > 0 else "N"
@@ -156,7 +156,7 @@ def create_spec_df(mol_df: pd.DataFrame, config_d: dict[str, Any]) -> pd.DataFra
 
     # Compute precursor m/z from molecular mass and precursor type
     logger.info("Computing precursor m/z values...")
-    spec_df.loc[:, "prec_mz"] = spec_df.apply(lambda row: data_utils.infer_prec_mz(row), axis=1)
+    spec_df.loc[:, "prec_mz"] = spec_df.apply(lambda row: spec_parse_utils.infer_prec_mz(row), axis=1)
 
     # rename exact_mw to exact_mass if needed by downstream, or keep both?
     # original code had exact_mass in the dict but merged exact_mw.

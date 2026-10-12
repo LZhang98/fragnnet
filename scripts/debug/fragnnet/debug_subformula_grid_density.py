@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from fragnnet.utils.clean_spectra_utils import subformula_candidates
-from fragnnet.utils.data_utils import formula_to_mass
+from fragnnet.utils.formula_utils import formula_to_mass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)

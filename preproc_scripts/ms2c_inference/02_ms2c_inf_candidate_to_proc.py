@@ -7,11 +7,9 @@ from typing import Any
 
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import (
-    compute_mol_df_props,
-    par_apply_series,
-)
+from fragnnet.utils import mol_utils
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import par_apply_series
 
 REQUIRED_CANDIDATE_COLS = [
     "spec_id",
@@ -62,7 +60,7 @@ def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
         columns=["smiles", "mol_id"],
     )
     mol_df.loc[:, "mol"] = par_apply_series(
-        mol_df["smiles"], data_utils.mol_from_smiles, use_tqdm=False
+        mol_df["smiles"], mol_utils.mol_from_smiles, use_tqdm=False
     )
     compute_mol_df_props(mol_df, use_tqdm=False)
     if (mol_df["smiles"] == "").any():

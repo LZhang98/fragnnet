@@ -25,7 +25,7 @@ from fragnnet.models.fragnnet.dag.builder import (
     get_fraggen_input_arrays,
 )
 from fragnnet.models.fragnnet.dag.layout import get_node_feats
-from fragnnet.utils import data_utils
+from fragnnet.utils import mol_utils
 from fragnnet.utils.formula_utils import th_long_to_mask
 
 
@@ -410,7 +410,7 @@ class TestSulfoxideSoLoss:
     def test_matches_standardized_sulfoxides(self, smiles):
         # Training molecules come from mol_from_smiles, which writes the [S+]-[O-] form; the
         # former S=O-only pattern matched none of them.
-        mol = data_utils.mol_from_smiles(smiles)
+        mol = mol_utils.mol_from_smiles(smiles)
         results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
         masks = [m for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
         assert len(masks) == 1

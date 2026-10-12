@@ -60,13 +60,13 @@ import pandas as pd
 import torch as th
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
 from fragnnet.models.fragnnet.dag.layout import MAX_H_TRANSFER, get_node_feats
 from fragnnet.models.fragnnet.fragnnet_adducts import (
     prec_type_removed_counts,
     tracked_element_counts,
 )
-from fragnnet.utils.data_utils import CHARGE_FACTOR_MAP, get_charge
+from fragnnet.utils import parallel_utils
+from fragnnet.utils.ce_utils import CHARGE_FACTOR_MAP, get_charge
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
@@ -1319,7 +1319,7 @@ def main() -> None:
     parser.add_argument("--limit_mols", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--shuffle_seed", type=int, default=1729)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", required=True)
     parser.add_argument("--report_fp", default=None)
     parser.add_argument("--lod_quantile", type=float, default=LOD_QUANTILE)
@@ -1415,7 +1415,7 @@ def main() -> None:
         len(spec_df),
         len(mol_inputs),
     )
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     # 4. Gate on min_frag_atoms before anything is written: a filtered corpus makes the whole
     #    target biased, so this must fail the build rather than annotate it.

@@ -23,7 +23,7 @@ from typing import Any
 
 import pandas as pd
 
-from fragnnet.utils import data_utils
+from fragnnet.utils import parallel_utils
 from fragnnet.models.fragnnet.dag.builder import timed_get_dags
 from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.utils import dag_format_utils
@@ -194,7 +194,7 @@ def generate_dags(
         ]
         for _, row in mol_df.iterrows()
     )
-    frag_results = data_utils.par_apply(
+    frag_results = parallel_utils.par_apply(
         mol_input_rows,
         timed_get_dags,
         need_unpack=True,

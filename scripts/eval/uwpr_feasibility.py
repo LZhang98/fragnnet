@@ -41,8 +41,7 @@ from dag_oracle_scores import (  # noqa: E402  (local script import)
 )
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils import dag_format_utils
+from fragnnet.utils import dag_format_utils, parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.spec_utils import calculate_match_mzs
 
@@ -121,7 +120,7 @@ def main() -> None:
     parser.add_argument("--out_csv", default="data/uwpr/nist20_uwpr_hits_feasibility.csv")
     parser.add_argument("--max_h_transfer", type=int, default=None)
     parser.add_argument("--no_cmf", action="store_true", help="Use std ion-mass convention only.")
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
 
@@ -171,7 +170,7 @@ def main() -> None:
     )
     mol_inputs = [(int(mol_id), grp) for mol_id, grp in hits.groupby("mol_id")]
     log.info("Scoring feasibility for %d molecules", len(mol_inputs))
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     verdict = pd.concat(per_mol).reindex(hits.index)
     hits["feasibility"] = verdict

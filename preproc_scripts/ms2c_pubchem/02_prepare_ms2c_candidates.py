@@ -6,8 +6,8 @@ from candidate_db import MolCandidateDB
 from rdkit import Chem, RDLogger
 from tqdm import tqdm
 
-import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.formula_utils as formula_utils
+from fragnnet.utils import mol_utils, parallel_utils
 from fragnnet.utils.formula_utils import MAX_NUM_NODES
 from fragnnet.utils.misc_utils import PPM, booltype
 
@@ -34,7 +34,7 @@ def get_args():
 
 
 def filter_candidates(db_results, target_smiles, target_mol_id, top_k=None, morgen_radius=3):
-    chem, rd_fpgen, rd_ds, rd_moldesc, rd_logger = data_utils.rdkit_import(
+    chem, rd_fpgen, rd_ds, rd_moldesc, rd_logger = mol_utils.rdkit_import(
         "rdkit.Chem",
         "rdkit.Chem.rdFingerprintGenerator",
         "rdkit.DataStructs",
@@ -52,10 +52,10 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k=None, morg
     db_results.append(
         (
             -1,
-            data_utils.mol_to_inchikey(t_mol),
+            mol_utils.mol_to_inchikey(t_mol),
             target_smiles,
-            data_utils.mol_to_formula(t_mol),
-            data_utils.mol_to_mol_weight(t_mol, exact=True),
+            mol_utils.mol_to_formula(t_mol),
+            mol_utils.mol_to_mol_weight(t_mol, exact=True),
         )
     )
 
@@ -67,15 +67,15 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k=None, morg
     # drop not single mol rows
     case_cdf = case_cdf[~(case_cdf["smiles"].str.contains(".", regex=False))]
 
-    case_cdf["mol"] = case_cdf["smiles"].apply(lambda x: data_utils.mol_from_smiles(x))
+    case_cdf["mol"] = case_cdf["smiles"].apply(lambda x: mol_utils.mol_from_smiles(x))
     # drop duplicate no mol rows
     case_cdf = case_cdf.dropna()
     # drop duplicate by canonical smiles and always keep self
-    case_cdf["smiles"] = case_cdf["mol"].apply(lambda x: data_utils.mol_to_smiles(x))
+    case_cdf["smiles"] = case_cdf["mol"].apply(lambda x: mol_utils.mol_to_smiles(x))
     case_cdf = case_cdf.drop_duplicates(subset="smiles", keep="last")
 
     # drop duplicate by inchikey_s smiles and always keep self
-    case_cdf["inchikey_s"] = case_cdf["mol"].apply(lambda x: data_utils.mol_to_inchikey_s(x))
+    case_cdf["inchikey_s"] = case_cdf["mol"].apply(lambda x: mol_utils.mol_to_inchikey_s(x))
     # drop duplicate by inchikey and always keep self
     case_cdf = case_cdf.drop_duplicates(subset="inchikey_s", keep="last")
 
@@ -95,7 +95,7 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k=None, morg
     case_cdf = case_cdf[case_cdf["num_out_set_elements"] == 0]
 
     # filter by charges
-    case_cdf["charge"] = case_cdf["mol"].apply(lambda x: data_utils.mol_to_charge(x))
+    case_cdf["charge"] = case_cdf["mol"].apply(lambda x: mol_utils.mol_to_charge(x))
     case_cdf = case_cdf[case_cdf["charge"] == 0]
 
     # filter by tanimoto and sort
@@ -186,7 +186,7 @@ if __name__ == "__main__":
             [None, row["smiles"], row["mol_id"], args.max_candidates, morgen_radius]
         )
 
-    db_results = data_utils.par_apply(
+    db_results = parallel_utils.par_apply(
         iter(db_query_input), fetch_db, True, return_as_generator=True
     )
     for idx, res in enumerate(
@@ -195,7 +195,7 @@ if __name__ == "__main__":
         filter_candidates_input_l[idx][0] = res
 
     candidate_data_df_l = []
-    canidate_results = data_utils.par_apply(
+    canidate_results = parallel_utils.par_apply(
         iter(filter_candidates_input_l), filter_candidates, True, return_as_generator=True
     )
     for res in tqdm(

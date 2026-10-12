@@ -12,8 +12,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from fragnnet.utils.data_utils import par_apply, parse_mass_gym_ce_str, rdkit_import, seq_apply
 from fragnnet.utils.misc_utils import flatten_lol
+from fragnnet.utils.mol_utils import rdkit_import
+from fragnnet.utils.parallel_utils import par_apply, seq_apply
+from fragnnet.utils.spec_parse_utils import parse_mass_gym_ce_str
 
 logger = logging.getLogger(__name__)
 

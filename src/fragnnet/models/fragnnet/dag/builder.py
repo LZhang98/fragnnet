@@ -44,7 +44,6 @@ from fragnnet.models.fragnnet.dag.multi_cut_bfs import (
     get_ring_edge_mask,
 )
 from fragnnet.utils.dag_format_utils import dump_dag_hdf5_packed, initialize_packed_dag_hdf5
-from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.formula_utils import (
     CANONICAL_H_IDX,
     ELEMENT_TO_IDX,
@@ -55,6 +54,8 @@ from fragnnet.utils.formula_utils import (
     th_mask_to_long,
 )
 from fragnnet.utils.misc_utils import ProgressLogger, progress_wrapper
+from fragnnet.utils.mol_utils import mol_from_smiles
+from fragnnet.utils.parallel_utils import par_apply
 
 if TYPE_CHECKING:
     import h5py as _h5py
@@ -1111,7 +1112,7 @@ def run_frag_gen_hdf5(
     """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
 
     Iterates over rows in ``mol_df``, calls :func:`timed_get_dags` in parallel via
-    :func:`~fragnnet.utils.data_utils.par_apply`, and writes each successfully
+    :func:`~fragnnet.utils.parallel_utils.par_apply`, and writes each successfully
     fragmented molecule's DAG into ``h5_file`` using the packed HDF5 format (see
     :func:`dump_dag_hdf5_packed`).
 

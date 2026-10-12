@@ -474,3 +474,60 @@ def th_mask_to_long(mask: th.Tensor) -> th.Tensor:
     mask = mask.reshape(mask.shape[0], num_dims, 64)
     long = 2 ** th.arange(64 - 1, -1, -1, device=mask.device).expand(1, num_dims, 64)
     return th.sum(long * mask, dim=2).long()
+
+
+VALID_ELEMENTS = (
+    "C",
+    "N",
+    "P",
+    "O",
+    "S",
+    "Si",
+    "I",
+    "H",
+    "Cl",
+    "F",
+    "Br",
+    "B",
+    "Se",
+    "Fe",
+    "Co",
+    "As",
+    "Na",
+    "K",
+)
+
+
+ELEMENT_TO_MASS = {element: MASS(element) for element in VALID_ELEMENTS}
+
+
+def composition_to_string(x: Composition) -> str:
+    return "".join([a + str(x[a]) for a in sorted(x)])
+
+
+def combine_formulae(formula_1: str, formula_2: str) -> str:
+    # `formula=` is required: pyteomics reads a positional string as a PEPTIDE SEQUENCE, so
+    # Composition("C") is cysteine, not carbon. Any digit-free formula in the one-letter amino
+    # acid alphabet (C, N, O, CO, CN, CNO, ...) silently misparsed before this was keyword-ed.
+    # Each operand is normalised exactly once; the previous `Composition(formula_1) +
+    # Composition(formula_2)` re-copied both on every call, once per predicted fragment.
+    formula_1 = (
+        Composition(formula=formula_1) if isinstance(formula_1, str) else Composition(formula_1)
+    )
+    formula_2 = (
+        Composition(formula=formula_2) if isinstance(formula_2, str) else Composition(formula_2)
+    )
+    combine_comp = formula_1 + formula_2
+    return composition_to_string(combine_comp)
+
+
+def composition_to_mass(formula: str, isotope: int) -> float:
+    mass = isotope * NEUTRON_MASS
+    for k, v in formula.items():
+        mass += MASS(k) * v
+    return mass
+
+
+def formula_to_mass(formula: str) -> float:
+    formula = Composition(formula=formula)
+    return composition_to_mass(formula, 0)

@@ -8,7 +8,6 @@ hook) to a checkpoint's hyperparameters.
 import copy
 
 from fragnnet import registry
-from fragnnet.utils.data_utils import RETIRED_INST_TYPE_HELP, find_retired_inst_type_refs
 
 # MASSter was named MASShatter until 2026-09-25. Configs, checkpoints, W&B runs and sweeps from
 # before the rename declare `model_type: mass_shatter` and `mass_shatter_*` keys.
@@ -183,3 +182,45 @@ def get_pl_hparams(ckpt: dict) -> dict:
         hyper_parameters.get("model_type"), strict=False
     ).migrate_checkpoint_hparams(hyper_parameters)
     return hyper_parameters
+
+
+# Retired instrument-type labels. "FT" was split into the two Orbitrap labels on 2026-09-28, and
+# those were renamed from "OB" / "OB_F" to "ORB" / "ORB_F" on 2026-10-01. Relabelled data has
+# none of them, so a config table or list still keyed by one would silently stop applying to
+# Orbitrap spectra; configs, checkpoints and spec_dfs that name one are refused.
+RETIRED_INST_TYPES = ("FT", "OB", "OB_F")
+
+
+RETIRED_INST_TYPE_HELP = (
+    "Orbitraps are 'ORB' (Elite, Velos, unnamed) and 'ORB_F' (Orbitrap Fusion). 'OB' / 'OB_F' "
+    "were renamed on 2026-10-01: migrate a spec_df.pkl or checkpoint with "
+    "preproc_scripts/dataset_migration/rename_orbitrap_inst_type.py. 'FT' was split on "
+    "2026-09-28: relabel a spec_df.pkl with "
+    "preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py. See "
+    "docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md."
+)
+
+
+def find_retired_inst_type_refs(node: object, path: str = "") -> list[str]:
+    """Return the paths at which a config names a retired instrument type.
+
+    Args:
+        node: A resolved config or checkpoint hparams, or any part of one.
+        path: Dotted path of ``node`` inside the config.
+
+    Returns:
+        Paths of every dict key, list item or string value in ``RETIRED_INST_TYPES``.
+    """
+    if isinstance(node, str):
+        return [path] if node in RETIRED_INST_TYPES else []
+    found = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child = f"{path}.{key}" if path else str(key)
+            if key in RETIRED_INST_TYPES:
+                found.append(child)
+            found += find_retired_inst_type_refs(value, child)
+    elif isinstance(node, list):
+        for idx, value in enumerate(node):
+            found += find_retired_inst_type_refs(value, f"{path}[{idx}]")
+    return found

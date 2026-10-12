@@ -7,12 +7,13 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils.data_utils import ELEMENT_TO_MASS, VALID_ELEMENTS
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
+    ELEMENT_TO_MASS,
     PREC_TYPE_TO_CMF_COMP_DIFF,
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    VALID_ELEMENTS,
     parse_formula,
 )
 

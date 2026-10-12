@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# DAG generation through joblib reads this when fragnnet.utils.data_utils is first imported; the
+# DAG generation through joblib reads this when fragnnet.utils.spec_parse_utils is first imported; the
 # fixture generates DAGs serially anyway, so this only avoids spawning workers elsewhere.
 os.environ.setdefault("FRAGNNET_JOBLIB_N_JOBS", "1")
 

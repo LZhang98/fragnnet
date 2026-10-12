@@ -16,12 +16,8 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from torch_geometric.data import Data
 
-from fragnnet.utils.data_utils import (
-    make_maccs_fingerprint,
-    make_morgan_fingerprint,
-    make_rdkit_fingerprint,
-)
 from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER
+from fragnnet.utils.mol_utils import rdkit_import
 
 # TODO: remove this registry
 
@@ -910,3 +906,80 @@ def random_walk_pe(g: Data, k: int) -> th.Tensor:
     PE = np.stack(PE, axis=-1)
     PE = th.as_tensor(PE, dtype=th.float32)
     return PE
+
+
+def make_morgan_fingerprint(
+    mol: "Chem.rdchem.Mol",
+    radius: int = 3,
+    nbits: int = 2048,
+    covert_to_np: bool = True,
+) -> np.ndarray:
+    """Make Morgan fingerprint from mol object.
+
+    Args:
+        mol: RDKit mol object
+        radius: Fingerprint radius (default: 3). Must be > 0.
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+        covert_to_np: Whether to convert to numpy array (default: True)
+
+    Returns:
+        Fingerprint as numpy array or RDKit fingerprint object
+
+    Raises:
+        ValueError: If radius <= 0 or nbits <= 0
+    """
+    if radius <= 0:
+        raise ValueError(f"morgan_radius must be positive integer, got {radius}")
+    if nbits <= 0:
+        raise ValueError(f"morgan_nbits must be positive integer, got {nbits}")
+
+    modules = rdkit_import("rdkit.Chem.AllChem", "rdkit.DataStructs")
+    AllChem = modules[0]
+    ds = modules[1]
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
+    if covert_to_np:
+        fp_arr = np.zeros(1)
+        ds.ConvertToNumpyArray(fp, fp_arr)
+    else:
+        fp_arr = fp
+    return fp_arr
+
+
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol", nbits: int = 2048) -> np.array:
+    """Make RDKit fingerprint from mol object.
+
+    Args:
+        mol: RDKit mol object
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+
+    Returns:
+        Fingerprint as numpy array
+
+    Raises:
+        ValueError: If nbits <= 0
+    """
+    if nbits <= 0:
+        raise ValueError(f"rdkit_nbits must be positive integer, got {nbits}")
+
+    chem, ds = rdkit_import("rdkit.Chem", "rdkit.DataStructs")
+    fp = chem.RDKFingerprint(mol, fpSize=nbits)
+    fp_arr = np.zeros(1)
+    ds.ConvertToNumpyArray(fp, fp_arr)
+    return fp_arr
+
+
+def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
+    """make maccs fingerpirnt from mol object
+
+    Args:
+            mol (rdkit mol): mol object
+
+    Returns:
+            fp_arr:  np.array
+    """
+
+    maccs, ds = rdkit_import("rdkit.Chem.MACCSkeys", "rdkit.DataStructs")
+    fp = maccs.GenMACCSKeys(mol)
+    fp_arr = np.zeros(1)
+    ds.ConvertToNumpyArray(fp, fp_arr)
+    return fp_arr
