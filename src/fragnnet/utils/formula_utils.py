@@ -1,5 +1,4 @@
 import re
-from collections import Counter
 from collections.abc import Sequence
 from functools import cache, lru_cache
 from typing import Literal
@@ -192,79 +191,6 @@ PREC_TYPE_TO_COMP_DIFF = {k: Composition(formula=v) for k, v in PREC_TYPE_TO_FOR
 PREC_TYPE_TO_CMF_COMP_DIFF = {
     k: Composition(formula=v) for k, v in PREC_TYPE_TO_CMF_FORMULA_DIFF.items()
 }
-
-
-def masster_has_valid_ion(
-    mol: Chem.Mol,
-    precursor_type: str,
-    max_h_transfer: int,
-    include_cmf: bool,
-    h_transfer_bound: str = "none",
-) -> bool:
-    """Check whether an uncut component can supply any configured ion channel.
-
-    Counts and masses match MASSter's graph chemistry. If a connected component
-    cannot supply the removed elements, none of its smaller fragments can either.
-    This check runs on CPU before spectra enter a training/evaluation batch.
-
-    When ``h_transfer_bound`` is not ``"none"``, hydrogen transfer draws from the
-    complementary neutral fragment, so a component can gain at most the hydrogens the rest of
-    the molecule holds -- none for a single-component molecule. This keeps the filter's notion
-    of reachability aligned with ``MassterModel``'s; leave it at the model's own setting.
-    Only hydrogen-free molecules change verdict (2 of 35,025 in NIST20), and correctly so: a
-    molecule with no hydrogen cannot form ``[M-H]-``.
-
-    Args:
-        mol: Molecule to test.
-        precursor_type: Adduct string.
-        max_h_transfer: Width of the hydrogen-transfer ladder.
-        include_cmf: Whether charge-migration channels are enabled.
-        h_transfer_bound: Matching ``masster_h_transfer_bound`` setting. The valence
-            term needs per-fragment cut counts and so does not apply to this whole-component
-            admissibility check; ``"valence"`` therefore behaves as ``"complement"`` here.
-    """
-    channels = [
-        (PREC_TYPE_TO_COMP_DIFF[precursor_type], PREC_TYPE_TO_MASS_DIFF[precursor_type], shift)
-        for shift in range(-max_h_transfer, max_h_transfer + 1)
-    ]
-    if (
-        include_cmf
-        and precursor_type in PREC_TYPE_TO_CMF_COMP_DIFF
-        and cmf_duplicate_crf_h_shift(precursor_type, max_h_transfer) is None
-    ):
-        channels.extend(
-            (
-                PREC_TYPE_TO_CMF_COMP_DIFF[precursor_type],
-                PREC_TYPE_TO_CMF_MASS_DIFF[precursor_type],
-                shift,
-            )
-            for shift in range(-max_h_transfer, max_h_transfer + 1)
-        )
-    molecule_hydrogens = sum(atom.GetTotalNumHs() for atom in mol.GetAtoms()) + sum(
-        atom.GetAtomicNum() == 1 for atom in mol.GetAtoms()
-    )
-    for component in Chem.GetMolFrags(mol, asMols=True):
-        counts = Counter(atom.GetSymbol() for atom in component.GetAtoms())
-        counts["H"] += sum(atom.GetTotalNumHs() for atom in component.GetAtoms())
-        mass = sum(
-            PERIODIC_TABLE.GetMostCommonIsotopeMass(element) * count
-            for element, count in counts.items()
-        )
-        complement_hydrogens = molecule_hydrogens - counts["H"]
-        for delta, mass_delta, shift in channels:
-            if h_transfer_bound != "none" and shift > complement_hydrogens:
-                continue
-            if (
-                counts["H"] + delta.get("H", 0) + shift >= 0
-                and all(
-                    counts[element] + count >= 0
-                    for element, count in delta.items()
-                    if element != "H"
-                )
-                and mass + mass_delta + shift * H_MASS > 0.0
-            ):
-                return True
-    return False
 
 
 # A precursor delta can only make a fragment's ion formula impossible through the elements it

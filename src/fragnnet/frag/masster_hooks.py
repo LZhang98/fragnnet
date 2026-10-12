@@ -135,6 +135,16 @@ class MassterHooks(ModelHooks):
                 "cross_ev_fragment_loss_weight > 0 requires masster_share_proposal_across_ev=True"
             )
 
+    def filter_dataset(self, dataset: Any, config: dict[str, Any]) -> None:
+        from fragnnet.frag.masster_dataset_filter import filter_masster_spectra
+
+        filter_masster_spectra(
+            dataset,
+            config["masster_max_h_transfer"],
+            config["masster_include_cmf"],
+            config.get("masster_h_transfer_bound", "none"),
+        )
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:

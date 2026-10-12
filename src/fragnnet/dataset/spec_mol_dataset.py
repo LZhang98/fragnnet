@@ -3,9 +3,9 @@ import logging
 from torch_geometric.data import Batch
 from tqdm import tqdm
 
+from fragnnet import registry
 from fragnnet.dataset import BaseDataset
 from fragnnet.utils.feat_utils import get_mol_fp, get_mol_graph
-from fragnnet.utils.formula_utils import masster_has_valid_ion
 from fragnnet.utils.misc_utils import get_mol_graph_size
 
 logger = logging.getLogger(__name__)
@@ -55,12 +55,11 @@ class SpecMolDataset(BaseDataset):
             spec_params=spec_params,
             enable_progress_bar=pl_enable_progress_bar,
         )
-        if kwargs.get("model_type") == "masster":
-            self._filter_masster_spectra(
-                kwargs["masster_max_h_transfer"],
-                kwargs["masster_include_cmf"],
-                kwargs.get("masster_h_transfer_bound", "none"),
-            )
+        # Model-specific filtering (MASSter drops pairs without a valid ion), after the frames are
+        # built and before preprocessing. Unknown, legacy or missing types filter nothing.
+        registry.get_model_hooks(kwargs.get("model_type"), strict=False).filter_dataset(
+            self, kwargs
+        )
 
         if spec_pp_sd is None:
             spec_pp_sd = {}
@@ -70,55 +69,6 @@ class SpecMolDataset(BaseDataset):
         self.mol_params = mol_params
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
-
-    def _filter_masster_spectra(
-        self,
-        max_h_transfer: int,
-        include_cmf: bool,
-        h_transfer_bound: str = "none",
-    ) -> None:
-        """Drop incompatible molecule/adduct pairs before preprocessing and batching."""
-        valid_pairs = {
-            (mol_id, prec_type): masster_has_valid_ion(
-                self.mol_df.loc[mol_id, "mol"],
-                prec_type,
-                max_h_transfer,
-                include_cmf,
-                h_transfer_bound,
-            )
-            for mol_id, prec_type in self.spec_df[["mol_id", "prec_type"]]
-            .drop_duplicates()
-            .itertuples(index=False, name=None)
-        }
-        keep = [
-            valid_pairs[pair]
-            for pair in self.spec_df[["mol_id", "prec_type"]].itertuples(index=False, name=None)
-        ]
-        removed = len(keep) - sum(keep)
-        if not removed:
-            return
-        logging.getLogger(__name__).warning(
-            "MASSter filtered %d/%d spectra with no chemically valid ion channels",
-            removed,
-            len(keep),
-        )
-        self.spec_df = self.spec_df.loc[keep].reset_index(drop=True)
-        self.mol_df = self.mol_df.loc[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
-        self.um_spec_df = self.um_spec_df.loc[
-            [
-                valid_pairs.get(pair, False)
-                for pair in self.um_spec_df[["mol_id", "prec_type"]].itertuples(
-                    index=False, name=None
-                )
-            ]
-        ].copy()
-        self.split_df = self.split_df.loc[
-            self.split_df["spec_id"].isin(self.um_spec_df["spec_id"])
-        ].copy()
-        if self.spec_df.empty:
-            raise ValueError("MASSter dataset has no chemically valid spectra after filtering")
-        self._setup_isotope_peak_cleanup()
-        self._compute_counts()
 
     @staticmethod
     def get_data_dict_types() -> list[str]:

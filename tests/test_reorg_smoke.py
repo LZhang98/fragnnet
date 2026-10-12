@@ -34,8 +34,9 @@ the filter, including through the legacy ``mass_shatter`` spelling.
 Phase 1 and later change paths, and the edits that follow are made in the same PR as the move:
 ``get_model_cls`` and ``get_dataset_cls`` stay importable from ``fragnnet.utils.setup_utils`` as
 thin wrappers (plan, registry table), ``fragnnet.utils.data_utils`` and
-``fragnnet.utils.formula_utils`` stay in core, and ``masster_has_valid_ion`` (which Phase 4 moves
-into MASSter) is reached only through the dataset constructor, never imported here. The
+``fragnnet.utils.formula_utils`` stay in core, and ``masster_has_valid_ion`` (in MASSter's
+``frag/masster_dataset_filter`` since Phase 4) is reached only through the dataset constructor,
+never imported here. The
 Graphormer loader that the MassFormer case patches is found through the model classes, not a
 literal module path, so moving the baseline out of core does not break the patch.
 
@@ -838,7 +839,7 @@ def test_smoke_cases_cover_every_retained_model_type() -> None:
 # --------------------------------------------------------------------------------------------
 
 # Butane has no oxygen to lose, so no [M-H2O+H]+ ion channel exists for it
-# (formula_utils.masster_has_valid_ion); its protonated spectrum is chemically valid.
+# (masster_dataset_filter.masster_has_valid_ion); its protonated spectrum is chemically valid.
 FILTER_SMILES = ("CCO", "CC(=O)O", "CCCC", "Oc1ccccc1")
 LOSS_ADDUCT = "[M-H2O+H]+"
 FILTER_SPECTRA = (

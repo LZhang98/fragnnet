@@ -72,6 +72,17 @@ class ModelHooks:
             ValueError: If the config enables one of this model's settings.
         """
 
+    def filter_dataset(self, dataset: Any, config: dict[str, Any]) -> None:
+        """Drop spectra the model cannot use.
+
+        ``SpecMolDataset.__init__`` calls it after building the frames and before preprocessing,
+        so every way of building a dataset applies it.
+
+        Args:
+            dataset: The dataset, modified in place.
+            config: The constructor's keyword arguments (the resolved config).
+        """
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:
