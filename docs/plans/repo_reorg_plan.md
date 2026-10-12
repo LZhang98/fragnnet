@@ -768,8 +768,8 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
   - The Phase 3 gate is enforced by `test_phase3_isolation_gate`, in a stricter form: the eight
     Phase 3 entry modules load no module outside core. NEIMS, ChemLM, precursor, GNN, MCES and
     CLIP selections load core only. FraGNNet and MASSter load `fragmentation/` and their own
-    modules, never each other's. AST violations: 11 at the end of Phase 1, now 5 (`script_utils`
-    and `runner`, which go in Phase 4).
+    modules, never each other's. AST violations: 11 at the end of Phase 1, now 4, all in
+    `script_utils` (Phase 4).
   - Departures from the step text:
     - Step 1: the validator went to `misc_utils` with its name kept, so its 37 call sites in
       `bond_fragment_heads` are unchanged.
