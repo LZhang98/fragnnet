@@ -751,3 +751,43 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
   - `_spectral_ce_auxiliary` takes the caller's `sparse_ce_fn`, because the models build it
     with different `oos_tolerance_multiple` values. FraGNNet's `oos_loss` branch, which no
     record reaches, is covered by `tests/test_reorg_shared_objectives.py`.
+- 2026-10-11: Phase 3 committed.
+  - Commits: `0efe7e28` (step 1, validator to core `misc_utils`), `e0d74390` (step 2, core
+    `model/output_schema.py`), `582a6d12` (step 3, size constants in `formula_utils`), `0bebecd0`
+    (step 4, `fragmentation/` with `smarts_prepass`, `candidate_support`, `cut_bond_encoder`,
+    `hydrogen_cap`), `c5f46353` (step 5, `frag_utils` split into `formula_utils`, the new core
+    `utils/dag_format_utils.py` and the FraGNNet remnant), `9557c48d` (step 6, `get_frag_graph`
+    and `batch_mols_frags` to the FraGNNet-owned `utils/frag_feat_utils.py`).
+  - Checks at each step:
+    - the full suite, with no new failures;
+    - a byte-identity check of every moved definition;
+    - an import audit (all unique `fragnnet` import statements in tracked files resolve, apart
+      from `run_inference` in `scripts/eval/run_save_entropy.py`, which was already broken);
+    - the string-path audit;
+    - an attribute-access audit of removed names.
+  - The Phase 3 gate is enforced by `test_phase3_isolation_gate`, in a stricter form: the eight
+    Phase 3 entry modules load no module outside core. NEIMS, ChemLM, precursor, GNN, MCES and
+    CLIP selections load core only. FraGNNet and MASSter load `fragmentation/` and their own
+    modules, never each other's. AST violations: 11 at the end of Phase 1, now 5 (`script_utils`
+    and `runner`, which go in Phase 4).
+  - Departures from the step text:
+    - Step 1: the validator went to `misc_utils` with its name kept, so its 37 call sites in
+      `bond_fragment_heads` are unchanged.
+    - Step 2: the output-schema module holds the gated key set and the per-model switch defaults
+      only. The exporter keeps its annotation-name literals (deriving them was optional), so no
+      unused constants were added.
+    - Step 5: the four functions with no callers were deleted.
+    - Step 6: the DAG feature indexing (`NODE_FEAT_TO_IDX`, `EDGE_FEAT_TO_IDX`,
+      `get_node_feats`, `get_edge_feats`) already sat in the FraGNNet remnant after step 5, so it
+      did not move again.
+    - The `multi_cut_bfs` stub in `tests/test_spectrum_pl_utils.py` was dropped. It could also
+      leak a `MagicMock` module into later tests.
+  - A three-lens review workflow (serialization, equivalence, consumers) with two skeptics per
+    finding found no regression. Real DAG pickles and HDF5 groups load through the moved readers.
+  - Behavior change: Ctrl-C. Importing the compiled `compute_frags` replaces the process SIGINT
+    handler with one that only sets a flag, and only the `compute_frags` loop checks that flag.
+    Before Phase 3 every core entry module imported it, so Ctrl-C was ignored in any training
+    run. Now only processes that load FraGNNet code or `script_utils` ignore it. MASSter, NEIMS
+    and the other core-only runs get a normal `KeyboardInterrupt`.
+  - The untracked `.claude/commands/add-smarts-rule.md` was updated locally to the new
+    `smarts_prepass` path.
