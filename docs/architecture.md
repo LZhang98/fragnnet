@@ -59,6 +59,7 @@
 src/fragnnet/
   dataset/ utils/                    core: shared datasets, samplers and utilities
   layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases
+  inference/                         core: checkpoint loading and the prediction exporters
   runner.py registry.py hooks.py     core: entry point, model registry, hook interface
   export_adapter.py                  core: what the inference exporters call on a model
   output_schema.py                   core: model-output names that core reads
@@ -128,9 +129,10 @@ src/fragnnet/
   binning, CE and batch helpers), `spec_similarity` (peak matching, Hungarian assignment,
   similarity metrics), `scatter_utils` (grouped reductions), `ce_utils` (NCE/ACE),
   `clean_spectra_utils` and `spec_parse_utils` (preprocessing), `parallel_utils`, `migrations`
-  (config and checkpoint migrations), `dag_format_utils` (per-molecule DAG files), `script_utils` (inference
-  exporters), `misc_utils` (constants, seeding, progress). The dataset's isotope-peak cleanup is
-  `dataset/isotope_cleanup.py`.
+  (config and checkpoint migrations), `dag_format_utils` (per-molecule DAG files), `misc_utils`
+  (constants, seeding, progress). The dataset's isotope-peak cleanup is
+  `dataset/isotope_cleanup.py`. Inference and export are the core package
+  [inference/](../src/fragnnet/inference/): `checkpoint`, `export_columns`, `batch_rows`, `runners`.
   Scientific assumptions must be checked against code and the relevant findings or references.
 - Tests: [tests/](../tests/), discovery in [pytest.ini](../pytest.ini), tooling in
   [pyproject.toml](../pyproject.toml). See the [session workflow](workflow/session.md) for checks.

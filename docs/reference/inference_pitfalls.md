@@ -26,7 +26,7 @@ Both concern the `pred_formula_adducts` export in `process_batch_to_tabular_row`
 
 - **"`frag_formula_cumsizes.cpu()` needs a None-check."** It cannot be None at the annotation
   block: `batch_filter_by_peak_intensity` runs unconditionally first and its rebase dereferences
-  the field (popping it dies earlier in `script_utils.py`). The later None-check serves models
+  the field (popping it dies earlier in `inference/batch_rows.py`). The later None-check serves models
   with no formula axis (NEIMS). A guard was added and then removed as unreachable; a comment
   states the invariant.
 - **"`pred_formula_strs` and `pred_formula_adducts` can disagree in the ragged family."** The two

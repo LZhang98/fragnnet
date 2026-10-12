@@ -468,7 +468,7 @@ cc bitmasks, and ~2.4 TB and ~8.3 GB of joint rows. The node count was threshold
 before the fix, so the left column is also what `--min_intensity 10.0` used to produce.
 
 **MASSter (2026-09-25).** MASSter checkpoints emit the same columns under the same flags. It
-has no DAG, so `masster_annotation_tables` in `src/fragnnet/utils/script_utils.py` builds the
+has no DAG, so `masster_annotation_tables` in `src/fragnnet/models/masster/masster_export.py` builds the
 formula, joint and node tables for each batch from the model's output pathways (fragment × ion
 mode × H shift). The exporter then filters, rebases and writes them the same way it does
 FraGNNet's. The reading code above works unchanged. The differences:
@@ -523,7 +523,7 @@ exports, not the annotation. On CPU the two exports are bit-identical.
 Moved here from the project-state handoff (2026-09-24 entries) on 2026-10-06.
 
 - **One row per peak.** MASSter emits candidate rows, about 4.5 connected fragments per peak
-  m/z. For `MassterPL` only, `process_batch_to_tabular_row` (`src/fragnnet/utils/script_utils.py`,
+  m/z. For `MassterPL` only, `process_batch_to_tabular_row` (`src/fragnnet/inference/batch_rows.py`,
   called by every exporter) sums candidates within 4-decimal m/z groups with
   `aggregate_peaks_exact_mz` before the base-peak rescale and before `--min_peak_int`. The exact
   m/z is kept (intensity-weighted mean where members differ). Rounded m/z moved binned

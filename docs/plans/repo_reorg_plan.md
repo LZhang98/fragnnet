@@ -1019,5 +1019,15 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     `kl_div`/`js_div`, `scatter_argtopk`, `NestedDefaultDict` and `get_best_ckpt_from_wandb`
     (notebooks and cluster job scripts import them from the package), `plot_utils`,
     `retrieval_utils`, the `setup_utils` shim, `networkx`.
-  - Not done: moving `script_utils` to an `inference/` package, and the DAG HDF5 layer to
-    `models/fragnnet/dag/` (separate decisions).
+  - Done afterwards (user request): see the next entry.
+- 2026-10-12: `script_utils` and the DAG HDF5 layer (user request).
+  - `596eaa83`: the packed `dags.h5` layer (format constants, writer, readers, the legacy
+    per-group reader) and `available_frag_mol_ids` to `models/fragnnet/dag/storage.py`;
+    `utils/dag_format_utils.py` keeps the per-molecule pickle layout that `base_dataset` reads.
+  - `24a07e88`, `953fd17a`: `utils/script_utils.py` became the core package
+    `fragnnet/inference/`: `checkpoint`, `export_columns`, `batch_rows` and `runners` (history
+    follows `runners`). Monkeypatches were retargeted to where each name is looked up (the
+    defining module, which `scripts/run_inference.py` binds when CLI tests run it, plus every
+    inference module that calls it). `_export_adapter` became `get_export_adapter`.
+  - Both: definitions moved verbatim (checked), no boundary violations, full suite with no new
+    failures.

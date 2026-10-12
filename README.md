@@ -30,6 +30,7 @@ src/fragnnet/
   layers/                            shared torch building blocks (GNN cells, pooling, heads)
   loss/                              spectrum losses and distances
   pl_model/                          Lightning base classes (SpectrumPL, BinnedPL)
+  inference/                         checkpoint loading and the prediction exporters
   runner.py registry.py hooks.py     training entry point, model registry, per-model hooks
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/                   FraGNNet: DAG builders (Cython), datasets, samplers, model
