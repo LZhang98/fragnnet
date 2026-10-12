@@ -23,9 +23,10 @@ code imports core and `fragmentation/` only (see the
 - **MassFormer** needs `mol_params.mf: True`, which only `SpecMolMFDataset` honors; the shared
   `SpecMolDataset` raises if it is set. Its Graphormer input uses the Cython extension
   `baselines/massformer/algos.pyx`, built by `setup.py` with the other extensions.
-- **NEIMS** is a baseline but stays a core model (`model/neims_model.py`, `pl_model/neims_pl.py`),
-  by user decision (2026-10-12). Its binned head (`NeimsBlock`, `SpecFFN`) is shared with the GNN
-  model and MassFormer through `BinnedPL`.
+- **NEIMS** is a baseline but lives with the models, in
+  [models/neims/](../../src/fragnnet/models/neims/), by user decision (2026-10-12, reorganization
+  Phase 8). Its binned head (`NeimsBlock`, `SpecFFN` in `layers/binned_head.py`) and `BinnedPL`
+  (`pl_model/binned_pl.py`) stay shared, because the GNN model and MassFormer use them too.
 
 Train with the shared entry point, for example:
 

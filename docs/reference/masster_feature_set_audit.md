@@ -1,6 +1,6 @@
 # MASSter Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-27 &nbsp;·&nbsp; findings §7.1-§7.8
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12 &nbsp;·&nbsp; findings §7.1-§7.8
 > are **FIXED for MASSter** and are now the default; see §11. §12 and §13 add the 2026-09-22
 > GLACIER parity work: graph features, which both models can now enable, and the candidate
 > token's complement composition.
@@ -26,7 +26,7 @@ MASSter consumes features at five sites. Everything else is derived.
 
 | Site | Code | Inputs |
 |------|------|--------|
-| Precursor GNN | `GNN` in [nn_blocks.py](../../src/fragnnet/model/nn_blocks.py) | `mol_pyg.x` (atom feats), `mol_pyg.edge_attr` (bond feats), optionally `context` |
+| Precursor GNN | `GNN` in [layers/gnn.py](../../src/fragnnet/layers/gnn.py) | `mol_pyg.x` (atom feats), `mol_pyg.edge_attr` (bond feats), optionally `context` |
 | Bond break head | `BondFocusedBreakHead` / `EndpointBondBreakHead` | endpoint atom embeddings, `chemical_bond_attr`, `context` |
 | Charge affinity head | `AtomChargeAffinityHead` | atom embeddings, `context` |
 | Candidate intensity head | `CandidateIntensityTransformerHead` | 3 pooled embeddings + `context` + 3 scalars (+2 optional) |

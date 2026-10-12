@@ -1,6 +1,6 @@
 # FraGNNet Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-22
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > Which atom/bond/fragment/conditioning features are wired. The 2026-06-09 body below is
 > **stale on the "open gaps" line**: `a_ring_size` and `b_ring` are implemented and enabled in
@@ -144,5 +144,5 @@ for charge-remote fragmentation modeling; notable engineering cost due to prepro
 1. `a_ring_size` — zero preprocessing cost, directly relevant to fragmentation energetics,
    easy new `@register_atom_feat` class in `feat_utils.py`.
 2. `b_ring` — already implemented, one-line config change.
-3. Precursor m/z as model input — small embedding path in `base_model.py`, mirrors CE path.
+3. Precursor m/z as model input — small embedding path in `layers/metadata_embedding.py`, mirrors CE path.
 4. Gasteiger charges (`a_charge`) — high value, but requires preprocessing pipeline changes.

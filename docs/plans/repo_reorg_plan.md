@@ -1,7 +1,7 @@
 # Repository reorganization: FraGNNet and MASSter at the center
 
 > **Status:** ACTIVE · **Updated:** 2026-10-12
-> Phases 0–7 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step. Phase 8 (naming and model packages) is proposed, not started. ICEBERG is retired in favor of external ms-pred, and the main environment is DGL-free.
+> Phases 0–8 are implemented and committed on `refactor/fragnnet-masster-reorg` (not pushed or merged), one commit per step. ICEBERG is retired in favor of external ms-pred, and the package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged).
 > Line and path references in the plan body were measured at commit `13b1599d`, before the moves; the [architecture map](../architecture.md#package-layout-and-dependency-rule) describes the current layout.
 
 ## Current summary
@@ -9,8 +9,8 @@
 - **Goal.** FraGNNet and MASSter become owner packages over a model-agnostic core. GRAFF and MassFormer become baseline subpackages; ICEBERG moves to external ms-pred. The dependency rule below is enforced by tests.
 - **Main finding.** Directories are the small part of the work. The coupling sits in shared code: runner, exporter, dataset, samplers, `SpectrumPL`, `pl_utils`, and `frag_utils`. `frag_utils` is FraGNNet's DAG module, but core reads it, so it is split rather than moved.
 - **Order.** Phase 0 is a safety net of recorded, deterministic CPU outputs. Then Phase 1 (registry, ICEBERG/DGL retirement, baselines out of core), Phase 2 (shared loss helpers), Phase 3 (`fragmentation/`, core constants, `frag_utils` split), Phase 4 (hooks), Phase 5 (packaging), Phase 6 (directory moves) and Phase 7 (doc paths).
-- **Done.** All eight phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; FraGNNet and MASSter live in `fragnnet.models.{fragnnet,masster}`, GRAFF and MassFormer in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
-- **Next action.** Phase 8 ([naming and model packages](#phase-8--naming-and-model-packages-proposed-2026-10-12-not-started)) is proposed and waits for the user's go. Then review and merge the branch; the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
+- **Done.** All nine phases are committed (2026-10-11 to 2026-10-12). Core imports no model code; every model has its own package (`fragnnet.models.{fragnnet,masster,neims,precursor,gnn}`), GRAFF and MassFormer live in `fragnnet.baselines.*`, the shared bond-cut chemistry in `fragnnet.fragmentation`, shared building blocks in `fragnnet.layers` and spectrum losses in `fragnnet.loss`; model-specific steps go through registry hooks. The full suite has no failures beyond the 28 stale tests of the Phase 0 baseline, and the Phase 0 records are unchanged. Commits and checks per phase: [Progress](#progress) and the [plan log](../history/repo_reorg_plan_log.md).
+- **Next action.** Review and merge the branch. The [Phase 8 follow-ups](#phase-8--naming-and-model-packages-done-2026-10-12) are separate, optional steps; the user deletes `output/p6_quarantine/` (stale builds moved out of `src/`) and refreshes the environments' editable installs when convenient.
 
 ## Goal
 
@@ -642,7 +642,7 @@ and after open decisions 1-2.
   Repoint what is live. Frozen findings, plans and history keep their links; add one line to `docs/rules/documentation.md`: "paths in frozen records are as of `13b1599d`; use git history to resolve them".
 - **Phase 1 docs** are done in Phase 1, not here.
 
-### Phase 8 — Naming and model packages (proposed 2026-10-12, not started)
+### Phase 8 — Naming and model packages (done 2026-10-12)
 
 The ownership audit after Phase 7 found the dependency rule clean but the shared `model/` package
 ambiguous next to `models/`: it held whole models (NEIMS, precursor, GNN) beside building blocks,
@@ -850,8 +850,10 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
       while they existed carries them, and that checkpoint's config must still resolve as a
       custom config (`test_load_config_of_c0_as_a_custom_config` caught this);
     - the W&B cleanup script's protection of MCES runs;
-    - `notebooks/data_notebooks/biostructure.ipynb`;
-    - the MCES distance data under `data/`.
+    - `notebooks/data_notebooks/biostructure.ipynb` (removed later the same day, `a1298e0a`);
+    - the MCES distance data under `data/` (`data/proc/mces` and the ChemBERTa weights were
+      deleted later the same day at the user's request; `data/mces-data` and
+      `data/split/mces_nist23_ma_mi_inchikey` remain, with a deletion script offered).
   - `test_every_tracked_config_still_resolves` now pins 13 known-broken configs instead of 18:
     the other five were MCES fine-tuning configs, deleted here.
   - Docs: the fine-tuning guide points at the `nps_pcdl_nist23_ft` example and a generic
@@ -884,3 +886,39 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     `retrieval_eval_size`) stay inert; the real legacy `mass_shatter` checkpoint carries them.
   - `test_every_tracked_config_still_resolves` pins 10 known-broken configs: the three
     `config/clip/` configs were among the 13.
+
+- 2026-10-12: Phase 8 done (user go), eleven commits `73420fdc`..`84f867da`; each step ran the
+  reorg tests, the import audit and the full CPU suite (no failures beyond the 28 stale ones).
+  - Step 0 (`73420fdc`): the `model/` and `pl_model/` initializers re-export nothing (16 importer
+    sites retargeted). Deleted as dead: GAT, GATv2, GGNN, `Set2SetPooling`, the `set_transformer`
+    and `equilibrium` pool branches (an unknown pool type now raises `ValueError`), the uncalled
+    `sparse_cosine_distance` and four Hungarian pairwise functions, `list_to_batch_tensor`, the
+    write-only epoch counters and an unreachable precursor line. None of the 166 local
+    checkpoints selects a deleted GNN or pool type.
+  - Step 1 (`4e503f3e`, `7aa5ff97`): `output_schema.py` to `fragnnet/output_schema.py`.
+  - Step 2 (`85980034`, `f7a93b3f`): NEIMS, precursor and GNN to `models/<name>/`.
+    `tests/reorg_layers.py` derives a layer per package under `models/` and `baselines/`; the
+    boundary test pins the exact layer set.
+  - Step 3 (`6d43675d`): FraGNNet's scalers and context embedding to
+    `models/fragnnet/fragnnet_conditioning.py`.
+  - Steps 4-6 (`d5c8e0ae`, `a01e9872`, `2ee5ff7e`): pure `git mv` of `model/` to `layers/` and
+    `loss.py` to `loss/cross_entropy.py`, then the split into the modules of the target layout
+    (every definition moved verbatim; the cross-module helpers became public), then the rewrite
+    of 41 importer files. `validate_hellinger_auxiliary_weights` was inlined into
+    `SpectrumPL._validate_spectral_auxiliary_weights`; `_x_log_x` is `misc_utils.x_log_x`. A test
+    bans binding any fragnnet package or module to the name `nn`.
+  - Step 8 (`84f867da`): the metric builder to `pl_model/spectrum_metrics.py` behind a one-line
+    `_setup_metric_fns` delegate, with `get_split_fn` (metric-only, and not the same function as
+    `script_utils.get_split_fn`, which drops empty batch indices); `ragged_to_batch`,
+    `primary_ce_to_batch` and `select_context_ce_values` to `utils/spec_utils.py`.
+    `spectrum_pl.py` went from 2,691 to 1,821 lines.
+  - Checks: the 10 checkpoint records (strict loads of FraGNNet, both MASSter checkpoints,
+    GRAFF and NEIMS; seeded random inits of precursor, GNN, NEIMS, GRAFF and MassFormer) are
+    identical before and after; state_dict keys, shapes and seeded values of every `gnn_type`,
+    pool type and `MLPBlocks` (21 records) are identical between step 3 and step 6; all 112
+    fragnnet modules import. An adversarial review (3 reviewers, each finding verified) confirmed
+    one stale docstring (`tests/reorg_layers.py`), fixed in step 7 with four config comments that
+    still named `_build_loss_chunks`.
+  - Not done (follow-ups above): `candidate_support` to `loss/`, `ExportAdapter`, the `pl_utils`
+    split, `GINE_GSA` to `models/masster/`. The stale `src/fragnnet/model/__pycache__` keeps
+    `fragnnet.model` importable as an empty namespace package until the user deletes it.

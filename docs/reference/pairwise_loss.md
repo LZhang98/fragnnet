@@ -2,7 +2,7 @@
 
 > **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
-> Design of the shipped pairwise loss + sampler (`model/loss.py`, `dataset/data_sampler.py`).
+> Design of the shipped pairwise loss + sampler (`loss/pairwise.py`, `dataset/data_sampler.py`).
 
 ## Overview
 
@@ -19,7 +19,7 @@ ground-truth pattern — encouraging consistent relative structure across predic
 
 ---
 
-## Implemented Loss Functions (`src/fragnnet/model/loss.py`)
+## Implemented Loss Functions (`src/fragnnet/loss/pairwise.py`)
 
 All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matrix.
 

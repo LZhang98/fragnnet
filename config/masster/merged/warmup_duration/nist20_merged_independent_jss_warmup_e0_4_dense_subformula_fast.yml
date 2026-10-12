@@ -20,7 +20,7 @@
 #       unique-fragment mode, one proposal mixture, zero mask/fragment/ion probability
 #       floors, SMARTS off. Requires a compatible CUDA toolkit for the first native build.
 #   loss_batch_size: 8 -> 32
-#       Ceiling on sparse-CE chunk width in _build_loss_chunks; the inner guard still
+#       Ceiling on sparse-CE chunk width in build_loss_chunks; the inner guard still
 #       breaks a chunk once padding stops paying. A partition changes float association
 #       order only, so the loss curves should overlay.
 #

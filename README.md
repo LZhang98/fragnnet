@@ -26,11 +26,15 @@ now runs from the external [ms-pred](https://github.com/coleygroup/ms-pred) repo
 
 ```
 src/fragnnet/
-  dataset/ model/ pl_model/ utils/   shared, model-agnostic code and the core models
+  dataset/ utils/                    shared datasets, samplers and utilities
+  layers/                            shared torch building blocks (GNN cells, pooling, heads)
+  loss/                              spectrum losses and distances
+  pl_model/                          Lightning base classes (SpectrumPL, BinnedPL)
   runner.py registry.py hooks.py     training entry point, model registry, per-model hooks
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/                   FraGNNet: DAG builders (Cython), datasets, samplers, model
   models/masster/                    MASSter: candidate builders (Cython/CUDA), model
+  models/neims/ models/precursor/ models/gnn/
   baselines/graff/ baselines/massformer/
 ```
 

@@ -1,7 +1,7 @@
 # Architecture map
 
 > **Status:** REFERENCE · **Updated:** 2026-10-12 · Package layout and dependency rule after the
-> reorganization (Phases 0-7 of the [plan](plans/repo_reorg_plan.md)); MASSter backend boundary
+> reorganization (Phases 0-8 of the [plan](plans/repo_reorg_plan.md)); MASSter backend boundary
 > updated 2026-09-17.
 
 ## Entry points and data flow
@@ -19,12 +19,16 @@
    [Package layout](#package-layout-and-dependency-rule)). The
    [batch reference](reference/dataloader_data.md) is a starting point; check actual consumers
    before changing a field or shape.
-4. [Models](../src/fragnnet/model/) implement prediction; [Lightning modules](../src/fragnnet/pl_model/)
-   connect predictions to losses and training/evaluation. Those two directories hold the shared
-   base classes and the core models (NEIMS, precursor, GNN). FraGNNet,
-   which uses fragmentation DAGs, lives in [models/fragnnet/](../src/fragnnet/models/fragnnet/);
-   MASSter, with its own candidate construction, in [models/masster/](../src/fragnnet/models/masster/);
-   GRAFF and MassFormer in [baselines/](../src/fragnnet/baselines/) ([reference](reference/baselines.md)).
+4. Each model lives in its own package under [models/](../src/fragnnet/models/): a torch module
+   that predicts and a Lightning module that connects predictions to losses and
+   training/evaluation. FraGNNet, which uses fragmentation DAGs, is in
+   [models/fragnnet/](../src/fragnnet/models/fragnnet/); MASSter, with its own candidate
+   construction, in [models/masster/](../src/fragnnet/models/masster/); NEIMS, precursor and GNN in
+   `models/neims/`, `models/precursor/` and `models/gnn/`. GRAFF and MassFormer are in
+   [baselines/](../src/fragnnet/baselines/) ([reference](reference/baselines.md)). Shared building
+   blocks are in [layers/](../src/fragnnet/layers/), spectrum losses in
+   [loss/](../src/fragnnet/loss/), and the Lightning base classes (`SpectrumPL`, `BinnedPL`) in
+   [pl_model/](../src/fragnnet/pl_model/).
    The local ICEBERG fork was retired on 2026-10-11 in favor of external ms-pred
    ([reorganization plan](plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment)).
    MCES pretraining (`mces_pretraining`, a Siamese molecule encoder meant to initialize FraGNNet
@@ -53,18 +57,25 @@
 
 ```
 src/fragnnet/
-  dataset/ model/ pl_model/ utils/   core: shared, model-agnostic code and the core models
+  dataset/ utils/                    core: shared datasets, samplers and utilities
+  layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases
   runner.py registry.py hooks.py     core: entry point, model registry, hook interface
+  output_schema.py                   core: model-output names that core reads
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/  models/masster/  the two owner models
+  models/neims/  models/precursor/  models/gnn/
   baselines/graff/  baselines/massformer/
 ```
 
 - Core imports no model, baseline or `fragmentation/` code. `fragmentation/` imports core only.
-  Each model or baseline imports core and `fragmentation/`, never another model or baseline.
-  Tests may import any layer. `tests/test_reorg_boundary.py` enforces the rule on every import,
-  module- and function-level, with the layer of each module taken from its directory
-  (`tests/reorg_layers.py`).
+  Each package under `models/` or `baselines/` is a layer of its own: it imports core and
+  `fragmentation/`, never another model or baseline. A layer more than one model uses therefore
+  stays in core: the binned head (`layers/binned_head.py`) and `BinnedPL` serve NEIMS, GNN and
+  MassFormer. Tests may import any layer. `tests/test_reorg_boundary.py` enforces the rule on
+  every import, module- and function-level, with the layer of each module taken from its
+  directory (`tests/reorg_layers.py`), so a new model package needs no table entry.
+- Package initializers re-export nothing; import a name from its defining module. `nn` always
+  means `torch.nn`: no fragnnet package or module is bound to that name (tested).
 - Core reaches a model only through [registry.py](../src/fragnnet/registry.py): `model_type`
   maps to `"module:Class"` strings for the Lightning module, the dataset and a hooks class,
   imported on first use. The registry also holds the `fragnnet` alias for `frag_gnn` and the
@@ -74,16 +85,17 @@ src/fragnnet/
 - Model-specific steps that core runs go through [hooks.py](../src/fragnnet/hooks.py).
   `ModelHooks`, looked up by `model_type`, covers config and checkpoint migration, config
   validation, batch samplers and dataloader/trainer options, the dataset filter and the
-  inference-config overlay. FraGNNet, MASSter and GRAFF override what they need; the core models
-  and MassFormer use the no-op defaults. `ExportHooks`
+  inference-config overlay. FraGNNet, MASSter and GRAFF override what they need; NEIMS,
+  precursor, GNN and MassFormer use the no-op defaults. `ExportHooks`
   is a mixin on `FraGNNetPL` and `MassterPL` for the inference exporters' annotation columns.
   Hook modules import nothing model-specific at module level, so validating a config loads no
   model or compiled extension.
 - Anything core reads, such as the annotation output keys, the size constants and the DAG
   storage format, stays in core even when only the fragment models produce it.
 - Frozen records (findings, plans, `docs/history/`) cite the pre-reorganization paths
-  (`src/fragnnet/frag/`, `src/fragnnet/graff/`, model files under `model/` and `pl_model/`).
-  Resolve them in git history at `13b1599d`.
+  (`src/fragnnet/frag/`, `src/fragnnet/graff/`, `model/nn_blocks.py`, `model/loss.py`,
+  `model/base_model.py` and the model files under `model/` and `pl_model/`). Resolve them in git
+  history at `13b1599d`. `model/` became `layers/` and `loss/` in Phase 8 (plan, Phase 8 table).
 
 ## Boundaries and canonical references
 

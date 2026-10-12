@@ -4,8 +4,8 @@ See docs/plans/repo_reorg_plan.md ("Target layout", Phase 0 item 10). Since Phas
 module's layer follows from its directory, and since Phase 8 every model package is a layer of
 its own:
 
-- ``core``: model-agnostic code (dataset/, model/, pl_model/, utils/, runner, registry, hooks,
-  output_schema).
+- ``core``: model-agnostic code (dataset/, layers/, loss/, pl_model/, utils/, runner, registry,
+  hooks, output_schema); any module outside fragmentation/, models/ and baselines/.
 - ``fragmentation``: bond-cut chemistry shared by both fragment models (fragmentation/).
 - ``<name>``: each package ``models/<name>/`` (fragnnet, masster, neims, precursor, gnn).
 - ``baseline:<name>``: each package ``baselines/<name>/`` (graff, massformer) and the retired

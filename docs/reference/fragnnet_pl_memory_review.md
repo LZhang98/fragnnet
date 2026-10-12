@@ -1,6 +1,6 @@
 # FraGNNetPL Training Loop Memory Review
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-12
 >
 > Memory pressure points in the Lightning training loop.
 
@@ -162,12 +162,12 @@ usually enough.
 
 Relevant code:
 
-- `src/fragnnet/models/fragnnet/fragnnet_pl.py:1313` (cosine), `:1343` (JSS), `:1373`
+- `src/fragnnet/models/fragnnet/fragnnet_pl.py:1314` (cosine), `:1344` (JSS), `:1374`
   (cross-entropy)
-- `src/fragnnet/model/loss.py`: `get_pairwise_cossim` (2296), `get_pairwise_jss_sim` (2411),
-  `get_pairwise_cross_entropy` (2506)
+- `src/fragnnet/loss/pairwise.py`: `get_pairwise_cossim` (42), `get_pairwise_jss_sim` (157),
+  `get_pairwise_cross_entropy` (252)
 
-(Line numbers re-anchored on 2026-10-12; the earlier ones had drifted.)
+(Line numbers re-anchored on 2026-10-12, after the loss functions moved to `loss/`.)
 
 ### What happens
 
