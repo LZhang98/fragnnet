@@ -98,7 +98,7 @@ The scripts attempts to detect your CUDA version and install the appropriate pac
 This project supports dynamic batching to avoid OOM and a formula-based hard-negative sampler for contrastive/pairwise training.
 
 - `formula_hard_negative_dynamic_sampler` (bool): when True the runner will attempt to use the combined formula-based hard-negative dynamic batch sampler during training. See the runner integration at [src/fragnnet/runner.py](src/fragnnet/runner.py).
-- `dynamic_batch_sampler_mode` (string): either `frag_node` or `frag_edge`. Passed as `limited_by` to the dynamic batch samplers and selects whether batching budgets are computed from `frag_pyg.num_nodes` (`frag_node`) or `frag_pyg.num_edges` (`frag_edge`). Implementations live in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
+- `dynamic_batch_sampler_mode` (string): either `frag_node` or `frag_edge`. Passed as `limited_by` to the dynamic batch samplers and selects whether batching budgets are computed from `frag_pyg.num_nodes` (`frag_node`) or `frag_pyg.num_edges` (`frag_edge`). Implementations live in [src/fragnnet/dataset/frag_data_sampler.py](src/fragnnet/dataset/frag_data_sampler.py).
 - `dynamic_batch_sampler_max` (int): maximum number of nodes/edges per batch used by dynamic samplers.
 - `formula_hard_negative_min_specs_per_formula` (int): minimum spectra per formula required for formula-based grouping; formulas with fewer spectra are skipped.
 
@@ -112,5 +112,5 @@ requires fixed-size, non-grouped training batches and must reach the full datase
 before `max_epochs`.
 
 Notes:
-- `FormulaHardNegativeDynamicBatchSampler` groups spectra by molecular formula then builds dynamic batches that respect the chosen `limited_by` metric (nodes or edges). See `FormulaHardNegativeDynamicBatchSampler` and `SpecMolFragDynamicBatchSampler` in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
+- `FormulaHardNegativeDynamicBatchSampler` groups spectra by molecular formula then builds dynamic batches that respect the chosen `limited_by` metric (nodes or edges). See `FormulaHardNegativeDynamicBatchSampler` and `SpecMolFragDynamicBatchSampler` in [src/fragnnet/dataset/frag_data_sampler.py](src/fragnnet/dataset/frag_data_sampler.py).
 - The runner enforces valid modes (`frag_node` or `frag_edge`). See the config checks in [src/fragnnet/runner.py](src/fragnnet/runner.py).

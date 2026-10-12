@@ -791,3 +791,78 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
     and the other core-only runs get a normal `KeyboardInterrupt`.
   - The untracked `.claude/commands/add-smarts-rule.md` was updated locally to the new
     `smarts_prepass` path.
+- 2026-10-12: Phase 4 committed.
+  - Commits: `361bc9ab` (step 1, `ModelHooks`, registry dispatch and MASSter's migrations),
+    `2e668262` (step 2, config validation), `fc079022` (step 3, samplers and batching),
+    `c057b136` (step 4, MASSter's dataset filter), `60bc92f6` (step 5a, inference-config
+    overlays), `6057b11e` (step 5b, export hooks), `90d73518` (step 6, gate).
+  - Hook classes: `FraGNNetHooks` (`frag/fragnnet_hooks.py`, registered for `frag_gnn` and
+    `fragnnet`), `MassterHooks` (`frag/masster_hooks.py`) and `GrAFFHooks` (`graff/hooks.py`).
+    Each imports core only at module level, so config validation and checkpoint migration load
+    no model code or compiled extension. Moved modules: FraGNNet samplers to
+    `dataset/frag_data_sampler.py`, MASSter's to `dataset/masster_data_sampler.py`, the MASSter
+    filter to `frag/masster_dataset_filter.py`, its annotation tables to `frag/masster_export.py`.
+    Every moved definition is byte- or AST-identical (the MASSter filter with `self` renamed).
+  - Checks at each step:
+    - the full suite, with no new failures;
+    - the Phase 0 records (migrations, samplers, export, losses), all unchanged;
+    - the import audit, with no new failures;
+    - mutation checks: replacing each hook implementation with a no-op or empty result fails
+      tests.
+  - Validation equivalence against the old `validate_sampler_config`: 0 accept/reject
+    differences over 6000 random configs, and `tests/test_reorg_validation.py` records all 1080
+    single-change outcomes (golden `validation.json`).
+  - The Phase 4 gate is enforced by `test_phase4_isolation_gate`: every entry module, including
+    `script_utils`, loads no module outside core, and the AST boundary check finds no violation
+    (4 at the end of Phase 3). The legacy-checkpoint gate is the Phase 0 migration record,
+    unchanged.
+  - Departures from the hook table:
+    - `owned_config_keys` became `reject_foreign_config`: each model rejects a config that
+      switches on its own settings for another model, with the old messages. A general
+      owned-keys check seeded from the template banners was not built; it would reject configs
+      that load today.
+    - `sampler_epoch_reset` became the capability `advances_sampler_each_epoch`. Both
+      `_seed_dataloader` branches stay in core. `_seed_dataloader` looks hooks up by
+      `hparams.model_type`, so the Phase 0 sampler stubs gained `model_type`.
+    - The export hooks are a class-dispatched `ExportHooks` mixin on `FraGNNetPL` and
+      `MassterPL`, not registry hooks, because the exporters hold a model object, not a
+      `model_type`. Objects without it get the peak-only defaults. `formula_row_deltas` and
+      `node_hash_features` became `export_formula_row_deltas` and `export_node_ccs`; added were
+      `export_node_rules` and `nb_index_vars` (FraGNNet's `nb_iso` index names).
+    - `dataloader_options` covers persistent workers; the `num_workers` reload workaround went
+      to a separate `trainer_options` hook.
+    - The GRAFF `apply_inference_config` hook, planned for Phase 1, landed in step 5a.
+    - The `frag_params.include_cmf` check moved from `run_training` into
+      `FraGNNetHooks.validate_config`.
+    - `match_sweep_schedule` keeps its list of sampler keys (including `masster_batch_sampler`)
+      in core. It reads config keys only and imports nothing.
+  - Behavior changes, all intended:
+    - a config with several problems may report a different first error;
+    - in a MASSter config that uses its own sampler, turning on a FraGNNet sampler reports
+      "can only be used with frag_gnn model" instead of "mutually exclusive";
+    - `apply_inference_config` no longer edits `frag_params` or `ann_params` for models that do
+      not own them;
+    - `include_cmf` is no longer checked for non-FraGNNet models, which never read it.
+  - A four-lens review (config, samplers, export, consumers), each reviewer reproducing at
+    `fa18f7f0` and `90d73518`, found no regression. It covered 5796 validation cases, 78
+    synthetic checkpoints through `get_pl_hparams`, `apply_inference_config` for 10 model types,
+    and the index-variable grid. `README.md` still pointed at `data_sampler.py` for the FraGNNet
+    samplers; it now points at `frag_data_sampler.py`.
+    By design, external code importing the moved samplers from `dataset.data_sampler`, or
+    star-importing them from `fragnnet.dataset`, now fails (no re-exports in core).
+- 2026-10-12: Phase 5 committed (`32e99fea`).
+  - `pyproject.toml`: `requires-python = ">=3.10,<3.13"`; `omegaconf` dropped; `scikit-learn`
+    moved into `dev` and a new `scripts` extra; `pyyaml`, `networkx` and `pillow` declared;
+    `torch_scatter` kept.
+  - `omegaconf` removed from the install lists of the four `env/` scripts, the eight
+    `scripts/manual_slurm` scripts and `scripts/setup_job_cc.py`; each edit removes only that
+    line. `INSTALL.md` and `README.md` describe the extras and the Python range.
+  - Lock: `env/fragnnet_gpu_py311.lock.txt`, a pip freeze of `FRAGNNET-GPU` (Python 3.11.13,
+    torch 2.4.1+cu121) with the PyTorch and PyG wheel indexes. It leaves out the project,
+    ICEBERG's graph library, `omegaconf` with its antlr4 runtime, and pip. The live environment
+    still has those installed.
+  - Full suite: no new failures (28 baseline failures, 5349 passed).
+  - Not done: the stale `env_setup_gpu_py310_cu118.sh` reference in `INSTALL.md` (Phase 7), and
+    the `README.md` section on the formula hard-negative sampler and its
+    `formula_hard_negative_*` keys, which no longer exist in `src/` or the template (stale
+    before this reorg).
