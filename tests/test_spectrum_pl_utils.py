@@ -1,4 +1,6 @@
-"""Unit tests for the standalone helpers in spectrum_pl.py.
+"""Unit tests for the batch helpers that SpectrumPL uses (in utils/spec_utils.py since
+reorganization Phase 8, and get_split_fn in pl_model/spectrum_metrics.py), and for SpectrumPL
+hooks that need no model.
 
 Covers the functions touched or added by the feiw_v2 ↔ ccx_run merge:
   - get_split_fn   : merged HEAD assertion + ccx_run th.bincount
@@ -14,13 +16,9 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from fragnnet.pl_model.spectrum_pl import (
-    SpectrumPL,
-    get_split_fn,
-    primary_ce_to_batch,
-    ragged_to_batch,
-    select_context_ce_values,
-)
+from fragnnet.pl_model.spectrum_metrics import get_split_fn
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
+from fragnnet.utils.spec_utils import primary_ce_to_batch, ragged_to_batch, select_context_ce_values
 
 
 def test_select_context_ce_values_uses_per_instrument_axis():

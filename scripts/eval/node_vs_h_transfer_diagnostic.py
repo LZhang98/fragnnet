@@ -14,7 +14,6 @@ import pandas as pd
 import torch as th
 from tqdm import tqdm
 
-from fragnnet.pl_model.spectrum_pl import primary_ce_to_batch
 from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.misc_utils import booltype, to_device
 from fragnnet.utils.script_utils import (
@@ -24,7 +23,7 @@ from fragnnet.utils.script_utils import (
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_utils import calculate_match_mzs, primary_ce_to_batch
 
 
 def get_args() -> argparse.Namespace:

@@ -409,6 +409,123 @@ def transform_ce(ce: th.Tensor | float, ce_mean: float, ce_std: float) -> th.Ten
             return th.tensor(ce)
 
 
+def ragged_to_batch(
+    feat: th.Tensor, batch_idx: th.Tensor, pad_value: float = 0
+) -> tuple[th.Tensor, th.Tensor]:
+    assert batch_idx.ndim == 1
+    assert feat.size(0) == batch_idx.size(0)
+
+    device = feat.device
+    N = batch_idx.size(0)
+
+    lengths = th.bincount(batch_idx)
+    B = lengths.size(0)
+    max_len = lengths.max()
+
+    offsets = th.cumsum(lengths, dim=0)
+    offsets = th.cat([th.zeros(1, device=device, dtype=offsets.dtype), offsets[:-1]])
+    local_idx = th.arange(N, device=device) - offsets[batch_idx]
+    assert feat.ndim == 1
+
+    out = th.full((B, max_len), pad_value, device=device, dtype=feat.dtype)
+    out[batch_idx, local_idx] = feat
+    return out
+
+
+def primary_ce_to_batch(
+    spec_ce: th.Tensor, spec_ce_batch_idxs: th.Tensor | None, batch_size: int
+) -> th.Tensor:
+    """Extract one collision energy value per batch element.
+
+    Args:
+        spec_ce: Collision energy tensor. This is typically flattened by collation and has
+            shape (num_ce_values,) or (batch_size, num_ce_values_per_sample).
+        spec_ce_batch_idxs: Batch indices for flattened CE values of shape (num_ce_values,).
+        batch_size: Number of samples in the batch.
+
+    Returns:
+        Collision energy tensor of shape (batch_size,).
+    """
+    if spec_ce.ndim == 2:
+        if spec_ce.size(1) == 1:
+            # batch_func produced (total_ces, 1) — squeeze trailing dim and
+            # fall through to the sparse batch_idxs path below.
+            spec_ce = spec_ce.squeeze(-1)
+        elif spec_ce.size(0) == batch_size:
+            # Dense layout (batch_size, num_ces) — take first CE per sample.
+            return spec_ce[:, 0].detach().cpu()
+        else:
+            raise ValueError(
+                "Expected spec_ce to have batch_size rows when it is 2D, "
+                f"got shape {tuple(spec_ce.shape)} and batch_size={batch_size}"
+            )
+
+    flat_spec_ce = spec_ce.reshape(-1).detach().cpu()
+    if spec_ce_batch_idxs is None:
+        if flat_spec_ce.numel() != batch_size:
+            raise ValueError(
+                "spec_ce_batch_idxs is required when spec_ce is flattened and does not "
+                f"already have one value per batch item; got {flat_spec_ce.numel()} values "
+                f"for batch_size={batch_size}"
+            )
+        return flat_spec_ce
+
+    flat_batch_idxs = spec_ce_batch_idxs.reshape(-1).detach().cpu().long()
+    if flat_batch_idxs.numel() != flat_spec_ce.numel():
+        raise ValueError(
+            "spec_ce and spec_ce_batch_idxs must have the same number of elements; "
+            f"got {flat_spec_ce.numel()} and {flat_batch_idxs.numel()}"
+        )
+
+    ce_primary = th.full((batch_size,), float("nan"), dtype=flat_spec_ce.dtype)
+    for batch_idx in range(batch_size):
+        batch_mask = flat_batch_idxs == batch_idx
+        if batch_mask.any():
+            ce_primary[batch_idx] = flat_spec_ce[batch_mask][0]
+    return ce_primary
+
+
+def select_context_ce_values(
+    batch: dict,
+    batch_size: int,
+    inst_types: list[str],
+    ce_key_by_inst: dict[str, str],
+) -> th.Tensor:
+    """Select the sampler's configured CE axis for every spectrum."""
+    ce_by_key = {}
+    for ce_key in set(ce_key_by_inst.values()):
+        values = batch[f"spec_{ce_key}"]
+        batch_idxs = batch[f"spec_{ce_key}_batch_idxs"]
+        valid = th.isfinite(values) & (values >= 0)
+        value_sums = scatter_reduce(
+            th.where(valid, values, 0.0),
+            batch_idxs,
+            reduce="sum",
+            dim_size=batch_size,
+            include_self=False,
+        )
+        valid_counts = scatter_reduce(
+            valid.to(values.dtype),
+            batch_idxs,
+            reduce="sum",
+            dim_size=batch_size,
+            include_self=False,
+        )
+        mean_values = value_sums / valid_counts.clamp(min=1)
+        mean_values = th.where(
+            valid_counts > 0,
+            th.round(mean_values * 1.0e6) / 1.0e6,
+            th.full_like(mean_values, float("nan")),
+        )
+        ce_by_key[ce_key] = mean_values
+    inst_idxs = batch["spec_inst_type"].reshape(-1)
+    ce_values = ce_by_key[next(iter(ce_by_key))].new_full((batch_size,), float("nan"))
+    for inst_idx, inst_type in enumerate(sorted(inst_types)):
+        ce_key = ce_key_by_inst[inst_type]
+        ce_values[inst_idxs == inst_idx] = ce_by_key[ce_key][inst_idxs == inst_idx]
+    return ce_values
+
+
 def batch_func(*lists, offset_flags: list[bool] | None = None) -> tuple[th.Tensor]:
     """ """
 

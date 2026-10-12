@@ -50,7 +50,7 @@ from fragnnet.models.masster.masster_templates import (
 )
 from fragnnet.models.masster.rt_ccs import property_regression_terms
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
-from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.pl_utils import (
@@ -61,6 +61,7 @@ from fragnnet.utils.spec_utils import (
     aggregate_peaks_exact_mz,
     calculate_match_mzs,
     get_ints_transform_func,
+    select_context_ce_values,
 )
 
 _CUT_COUNT_BUCKETS = {
