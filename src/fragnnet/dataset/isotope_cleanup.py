@@ -1,3 +1,8 @@
+"""Isotope-peak detection for cleaning training spectra: the formula-aware detectors
+(pyopenms isotopologue offsets), the M+k intensity-ratio gates, and the DAG and subformula
+formula sources the datasets use (moved from ``utils/isotope_utils.py``).
+"""
+
 import math
 from collections.abc import Callable, Mapping
 

@@ -479,7 +479,8 @@ from `0.675` to `0.716`.
 ## Implementation Notes
 
 - `_expected_mk_ratio` and `_parse_adduct_counts` are in
-  `src/fragnnet/utils/isotope_utils.py` (the `spec_utils` aliases were removed on 2026-10-12).
+  `src/fragnnet/dataset/isotope_cleanup.py` (was `utils/isotope_utils.py`; the `spec_utils`
+  aliases were removed on 2026-10-12).
 - DAG M+0 lookup uses `formula_peak_mzs[:, 0]`; `idx_to_formula` keys align
   with the row indices of this array.
 - The `DagInfo` helper class in `scripts/debug/isotopes/debug_dag_iso_peak_detection.py`

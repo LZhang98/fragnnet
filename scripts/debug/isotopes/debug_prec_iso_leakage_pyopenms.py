@@ -26,12 +26,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils.formula_utils import parse_formula
-from fragnnet.utils.isotope_utils import (
+from fragnnet.dataset.isotope_cleanup import (
     detect_isotope_peaks_for_training,
     detect_isotope_peaks_formula_aware,
     isotope_offsets_from_formula,
 )
+from fragnnet.utils.formula_utils import parse_formula
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -751,12 +751,12 @@ def eval_mode(df: pd.DataFrame) -> None:
     nofire_f_median_vals: list[float] = []
 
     # Import helpers needed for FN sub-classification
-    from fragnnet.utils.formula_utils import C13_SPACING as _C13
-    from fragnnet.utils.formula_utils import parse_formula as _parse_formula
-    from fragnnet.utils.isotope_utils import (
+    from fragnnet.dataset.isotope_cleanup import (
         _expected_mk_ratio,
         _parse_adduct_counts,
     )
+    from fragnnet.utils.formula_utils import C13_SPACING as _C13
+    from fragnnet.utils.formula_utils import parse_formula as _parse_formula
 
     _ratio_lo = 0.05  # must match detect_isotope_peaks_for_training default
     _ratio_hi = 10.0

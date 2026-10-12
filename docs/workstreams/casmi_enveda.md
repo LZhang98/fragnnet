@@ -56,7 +56,7 @@
 | [Subformula isotope detection plan](../plans/subformula_isotope_detection_plan.md) | LANDED (2026-10-06) | Pluggable formula source for isotope cleanup |
 | [5 ppm subformula filtering, NIST20-HR](../findings/subformula_filter_ft_qtof.md) | FINDING (2026-10-06) | Census, instrument tolerance, Cl/Na fix |
 | [NIST human review guide](../guides/nist_human_review.md) | GUIDE (linked only) | Manual spectral review procedure |
-| [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`isotope_utils.detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |
+| [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`dataset/isotope_cleanup.py`: `detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |
 | [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) | linked only | Per-class SMARTS gate |
 
 Shared data quality (NIST20 diagnostics, subformula filter, isotope detection) is listed here because no other hub owns it; Spectraverse filter screens are in [the Spectraverse hub](spectraverse.md).
