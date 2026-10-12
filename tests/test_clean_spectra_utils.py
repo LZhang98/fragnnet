@@ -274,12 +274,12 @@ def test_carrier_retaining_fragments_still_match_with_cmf(precursor_type):
 )
 def test_budgets_are_precursor_ions_including_the_migrated_one(precursor_type, budget_hydrogens):
     """Each budget is an ion the fragment could have come from, not the bare neutral."""
-    budgets = [
-        clean_spectra_utils._apply_comp_diff({"C": 1, "H": 4}, comp_diff)
+    hydrogens = [
+        4 + comp_diff.get("H", 0)
         for comp_diff in clean_spectra_utils._precursor_ion_budgets(precursor_type)
     ]
 
-    assert [counts["H"] for counts in budgets] == budget_hydrogens
+    assert hydrogens == budget_hydrogens
 
 
 def test_charge_migration_reaches_one_hydrogen_past_the_sodiated_ion():

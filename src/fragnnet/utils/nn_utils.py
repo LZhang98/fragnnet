@@ -186,19 +186,6 @@ def decompile_jit_ckpt(ckpt: dict[str, Any]) -> dict[str, Any]:
     return ckpt
 
 
-def is_ckpt_compiled(ckpt: dict[str, Any]) -> bool:
-    """Check if a checkpoint is from a compiled PyTorch model.
-
-    Args:
-        ckpt: Checkpoint dictionary to check
-
-    Returns:
-        True if checkpoint contains compiled model keys (with '_orig_mod'), False otherwise
-    """
-    state_dict = ckpt["state_dict"]
-    return any("_orig_mod" in key for key in state_dict)
-
-
 def get_optimizer_class(optimizer_name: str) -> type:
     """Get PyTorch optimizer class by name.
 

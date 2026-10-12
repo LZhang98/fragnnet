@@ -52,7 +52,6 @@ ELEMENT_TO_VE = {
     "Pb": 4,  # organolead (tetraethyllead)
 }
 HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
-NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
 ELEMENTS = HEAVY_ELEMENTS + ["H"]
 NUM_ELEMENTS = len(ELEMENTS)
 
@@ -392,15 +391,6 @@ def isotope_offsets_from_formula(
         for mass, intensity in peaks[1:]
         if (intensity / mono_intensity) >= threshold
     ]
-
-
-def get_elements_set(formula: str) -> set[str]:
-    """
-    method to get set of elements in a formula
-    Args:
-        formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
-    """
-    return set(parse_formula(formula).keys())
 
 
 def formula_arr_to_str(

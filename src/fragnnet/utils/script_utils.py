@@ -24,10 +24,8 @@ from fragnnet.utils.formula_utils import (
 )
 from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.misc_utils import (
-    LOG_ZERO,
     flatten_lol,
     get_best_ckpt_from_wandb,
-    scatter_reduce,
     to_device,
 )
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
@@ -133,61 +131,6 @@ def log_mean(
         Log of mean along specified dimension
     """
     return th.logsumexp(log_p, dim=dim) - np.log(log_p.shape[dim])
-
-
-def log_std(
-    log_p: th.Tensor,
-    dim: int = 0,
-    correction: int = 1,
-) -> th.Tensor:
-    """Compute logarithm of standard deviation in log-probability space.
-
-    Computes standard deviation using Bessel's correction.
-
-    Args:
-        log_p: Log-probability tensor
-        dim: Dimension along which to compute standard deviation (default: 0)
-        correction: Bessel's correction factor (default: 1 for unbiased estimate)
-
-    Returns:
-        Log of standard deviation along specified dimension
-    """
-    support_size = log_p.shape[dim]
-    log_mean_p = log_mean(log_p, dim=dim)
-    log_mean_p_sq = log_mean(2 * log_p, dim=dim)
-    log_var = th.log(th.exp(log_mean_p_sq) - th.exp(2 * log_mean_p))
-    return 0.5 * (log_var + np.log(support_size) - np.log(support_size - correction))
-
-
-def sparse_kl(
-    log_p: th.Tensor,
-    log_q: th.Tensor,
-    b_idx: th.Tensor,
-    dim_size: int,
-) -> th.Tensor:
-    """Compute sparse Kullback-Leibler divergence.
-
-    Computes KL(P || Q) using scatter reduction for sparse operations.
-    KL is clamped to [0, inf) to handle numerical precision issues.
-
-    Args:
-        log_p: Log-probability tensor for distribution P
-        log_q: Log-probability tensor for distribution Q
-        b_idx: Batch indices for scatter reduction
-        dim_size: Size of dimension for scatter reduction
-
-    Returns:
-        KL divergence per batch element
-    """
-    p = th.exp(log_p)
-    kl = scatter_reduce(
-        p * (log_p - th.clamp(log_q, min=LOG_ZERO(log_p.dtype))),
-        b_idx,
-        reduce="sum",
-        dim_size=dim_size,
-    )
-    kl = th.clamp(kl, min=0.0)
-    return kl
 
 
 def pearson_r(

@@ -9,7 +9,6 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-import networkx as nx
 import numpy as np
 import scipy
 import torch as th
@@ -180,36 +179,6 @@ class MolGraph:
             "bond_feats": bond_feats,
             "bond_tuples": bond_tuples,
         }
-
-    def get_networkx_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> nx.Graph:
-        """Convert a molecule into a NetworkX graph with feature attributes.
-
-        Args:
-            mol: RDKit molecule object.
-            bigraph: Whether to create bidirectional edges.
-
-        Returns:
-            NetworkX graph with node features 'h' and edge features 'e'.
-        """
-        mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
-
-        bond_inds = mol_graph["bond_tuples"]
-        bond_feats = mol_graph["bond_feats"]
-        atom_feats = mol_graph["atom_feats"]
-
-        g = nx.Graph()
-        g.add_nodes_from(range(atom_feats.shape[0]))
-        g.add_edges_from(bond_inds)
-
-        node_attr_dict = {i: atom_feats[i] for i in range(atom_feats.shape[0])}
-        nx.set_node_attributes(g, values=node_attr_dict, name="h")
-        edge_attr_dict = {
-            (int(bond_inds[i, 0]), int(bond_inds[i, 1])): bond_feats[i]
-            for i in range(bond_inds.shape[0])
-        }
-        nx.set_edge_attributes(g, values=edge_attr_dict, name="e")
-
-        return g
 
     def get_pyg_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> Data:
         """Convert molecule to PyTorch Geometric Data object with features.

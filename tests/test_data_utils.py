@@ -42,16 +42,6 @@ def test_par_apply_falls_back_for_older_joblib():
     assert parallel_cls.call_args_list[1].kwargs["return_as"] == "generator"
 
 
-class TestNormalizeInts:
-    """Tests for normalize_ints."""
-
-    def test_normalize_basic(self):
-        vals = [1.0, 2.0, 3.0]
-        norm = du.normalize_ints(vals)
-        assert pytest.approx(sum(norm), rel=1e-9) == 1.0
-        assert norm == [pytest.approx(1 / 6), pytest.approx(2 / 6), pytest.approx(3 / 6)]
-
-
 class TestFormulaMass:
     """Tests for formula mass data used by subformula filtering."""
 
@@ -59,32 +49,6 @@ class TestFormulaMass:
         expected_mass = du.ELEMENT_TO_MASS["C"] + 4 * du.ELEMENT_TO_MASS["H"]
 
         assert du.formula_to_mass("CH4") == pytest.approx(expected_mass)
-
-
-class TestSplitSmiles:
-    """Tests for split_smiles tokenizer."""
-
-    @pytest.mark.parametrize(
-        "smiles,expected",
-        [
-            ("CCO", ["C", "C", "O"]),
-            ("C1=CC=CC=C1", ["C", "1", "=", "C", "C", "=", "C", "C", "=", "C", "1"]),
-            ("[NH4+]", ["[NH4+]"]),
-            ("C12CC1CC2", ["C", "1", "2", "C", "C", "1", "C", "C", "2"]),
-        ],
-    )
-    def test_split_smiles_tokens(self, smiles, expected):
-        tokens = du.split_smiles(smiles)
-        assert tokens == expected
-
-
-class TestListReplace:
-    """Tests for list_replace mapping."""
-
-    def test_mapping(self):
-        vals = [0, 1, 2]
-        mapping = {0: "a", 1: "b", 2: "c"}
-        assert du.list_replace(vals, mapping) == ["a", "b", "c"]
 
 
 class TestParseAceNce:
@@ -210,11 +174,7 @@ class TestMolProperties:
 
 
 class TestCheckMolHelpers:
-    """Tests for check_neutral_charge and check_single_mol."""
-
-    def test_neutral_molecule_is_neutral(self):
-        mol = du.mol_from_smiles("CCO", ml_standardize=False)
-        assert du.check_neutral_charge(mol) is True
+    """Tests for check_single_mol."""
 
     def test_single_connected_mol(self):
         mol = du.mol_from_smiles("CCO", ml_standardize=False)
@@ -405,37 +365,9 @@ class TestFillMissingCe:
         assert np.isnan(result)
 
 
-class TestRandomizeSmiles:
-    """Tests for randomize_smiles."""
-
-    def test_rseed_minus1_returns_original(self):
-        smiles = "CCO"
-        assert du.randomize_smiles(smiles, rseed=-1) == smiles
-
-    @pytest.mark.xfail(
-        reason="randomize_smiles uses `rng.shuffle()` on the value yielded by "
-        "np_temp_seed, which yields None (not a Generator); bug in misc_utils.py",
-        strict=True,
-    )
-    def test_same_seed_same_output(self):
-        smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
-        out1 = du.randomize_smiles(smiles, rseed=42)
-        out2 = du.randomize_smiles(smiles, rseed=42)
-        assert out1 == out2
-
-    @pytest.mark.xfail(
-        reason="same np_temp_seed / Generator mismatch as test_same_seed_same_output",
-        strict=True,
-    )
-    def test_different_seeds_may_differ(self):
-        smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
-        outputs = {du.randomize_smiles(smiles, rseed=i) for i in range(10)}
-        assert len(outputs) > 1
-
-
 class TestTautomerCanonicalization:
-    """Tests for the canonicalize_tautomers flag in rdkit_ml_standardize,
-    mol_from_smiles, and mol_from_inchi.
+    """Tests for the canonicalize_tautomers flag in rdkit_ml_standardize and
+    mol_from_smiles.
 
     Uses the 2-hydroxypyridine / 2-pyridinone pair, a classic RDKit tautomer test case.
     """
@@ -475,18 +407,6 @@ class TestTautomerCanonicalization:
         # With the flag off the enol form is preserved; with the flag on RDKit may
         # pick a different canonical tautomer — at minimum the results must differ.
         assert smi_canon != smi_raw
-
-    def test_mol_from_inchi_flag_passes_through(self):
-        """mol_from_inchi with canonicalize_tautomers=False must return a valid mol."""
-        inchi = "InChI=1S/C5H5NO/c7-5-3-1-2-4-6-5/h1-4H,(H,6,7)"  # 2-pyridinone
-        mol = du.mol_from_inchi(inchi, canonicalize_tautomers=False)
-        assert mol is not None and not (isinstance(mol, float) and np.isnan(mol))
-
-    def test_mol_from_inchi_flag_true_returns_valid_mol(self):
-        inchi = "InChI=1S/C5H5NO/c7-5-3-1-2-4-6-5/h1-4H,(H,6,7)"
-        mol = du.mol_from_inchi(inchi, canonicalize_tautomers=True)
-        assert mol is not None and not (isinstance(mol, float) and np.isnan(mol))
-
 
 def test_rdkit_ml_standardize_neutralizes_phosphorus_oxide() -> None:
     mol = du.mol_from_smiles("CCCC[P+](O)(O)[O-]")

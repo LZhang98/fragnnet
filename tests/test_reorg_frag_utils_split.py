@@ -32,7 +32,6 @@ MOVED = {
         "MAX_NUM_EDGES",
         "MAX_NUM_NODES",
         "NUM_ELEMENTS",
-        "NUM_HEAVY_ELEMENTS",
         "formula_arr_to_str",
         "th_long_to_mask",
         "th_mask_to_long",

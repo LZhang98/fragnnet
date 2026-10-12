@@ -47,8 +47,3 @@ def test_element_whitelist_contains_metals():
         assert metal in ELEMENT_TO_VE, f"{metal} missing from ELEMENT_TO_VE"
 
 
-def test_num_heavy_elements_matches_whitelist():
-    """NUM_HEAVY_ELEMENTS must equal len(ELEMENT_TO_VE)."""
-    from fragnnet.utils.formula_utils import ELEMENT_TO_VE, NUM_HEAVY_ELEMENTS
-
-    assert len(ELEMENT_TO_VE) == NUM_HEAVY_ELEMENTS

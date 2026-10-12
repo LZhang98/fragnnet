@@ -7,15 +7,12 @@ and torch/pandas friendly for use in data loading, model code, and scripts.
 """
 
 import glob
-import importlib.util
 import logging
 import multiprocessing
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-import threading
 import time
 from collections import defaultdict
 from collections.abc import (
@@ -25,32 +22,26 @@ from collections.abc import (
     Iterator,
     Mapping,
     MutableMapping,
-    Sequence,
 )
 from contextlib import contextmanager
 from distutils.util import strtobool
 from functools import wraps
 from typing import Any, TypeVar
 
-import joblib
 import numpy as np
 import pandas as pd
 import torch as th
 import torch_geometric as pyg
-import tqdm
 
 T = TypeVar("T")
 R = TypeVar("R")
 
-TQDM_DISABLE = False
 PPM = 1 / 1000000
 EPS = 1e-7
-LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
 LOG_ZERO_FP32 = float(th.finfo(th.float32).min)
 LOG_ZERO_FP16 = float(th.finfo(th.float16).min)
 LOG_ZERO_BP16 = float(th.finfo(th.bfloat16).min)
-MAX_CROSS_ENTROPY = 1e19
 TOLERANCE_MIN_MZ = 200.0
 
 
@@ -162,79 +153,14 @@ def np_temp_seed(seed: int) -> Generator[None, None, None]:
         np.random.set_state(state)  # noqa: NPY002
 
 
-@contextmanager
-def th_temp_seed(seed: int) -> Generator[None, None, None]:
-    """Temporarily set the torch random seed within the context."""
-
-    state = th.get_rng_state()
-    th.manual_seed(seed)
-    try:
-        yield
-    finally:
-        th.set_rng_state(state)
-
-
-@contextmanager
-def th_temp_generator(seed: int) -> Generator[th.Generator, None, None]:
-    """Yield an independent torch Generator seeded with ``seed`` without touching global RNG."""
-    gen = th.Generator()
-    gen.manual_seed(seed)
-    try:
-        yield gen
-    finally:
-        pass
-
-
 def flatten_lol(lol: Iterable[Iterable[T]]) -> list[T]:
     """Flatten a list of iterables into a single list."""
 
     return [item for sublist in lol for item in sublist]
 
 
-def wandb_symlink(run_dir: str, wandb_symlink_dp: str, job_id: str | int) -> None:
-    """Create or refresh a symlink for a W&B run directory."""
-
-    symlink_dst = os.path.join(wandb_symlink_dp, str(job_id))
-    symlink_src = os.path.split(os.path.abspath(run_dir))[0]
-    if os.path.islink(symlink_dst):
-        os.unlink(symlink_dst)
-    os.symlink(symlink_src, symlink_dst)
-
-
-def list_str2float(str_list: Iterable[str]) -> list[float]:
-    """Convert an iterable of strings to a list of floats."""
-
-    return [float(str_item) for str_item in str_list]
-
-
-# https://stackoverflow.com/a/58936697/6937913
-@contextmanager
-def tqdm_joblib(tqdm_object: tqdm.tqdm) -> Iterator[tqdm.tqdm]:
-    """Patch joblib to report progress into the provided tqdm instance."""
-
-    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-        def __call__(self, *args, **kwargs):
-            tqdm_object.update(n=self.batch_size)
-            return super().__call__(*args, **kwargs)
-
-    old_batch_callback = joblib.parallel.BatchCompletionCallBack
-    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
-    try:
-        yield tqdm_object
-    finally:
-        joblib.parallel.BatchCompletionCallBack = old_batch_callback
-        tqdm_object.close()
-
-
 # some utils for function timeout
 # adapted from https://stackoverflow.com/questions/366682/how-to-limit-execution-time-of-a-function-call
-
-
-class TimeoutException(Exception):
-    """Raised when a function exceeds a specified timeout."""
 
 
 # @contextmanager
@@ -249,52 +175,6 @@ class TimeoutException(Exception):
 #       yield
 #   finally:
 #       signal.alarm(0)
-
-
-def timeout_func(
-    func: Callable[..., R],
-    args: Sequence[Any] | None = None,
-    kwargs: Mapping[str, Any] | None = None,
-    timeout: int = 30,
-    default: R | None = None,
-) -> R:
-    """Run ``func`` with a timeout, raising if exceeded."""
-
-    class InterruptableThread(threading.Thread):
-        def __init__(self) -> None:
-            threading.Thread.__init__(self)
-            self.result: R = default  # type: ignore[assignment]
-            self.exc_info: tuple[type | None, BaseException | None, Any | None] = (
-                None,
-                None,
-                None,
-            )
-
-        def run(self) -> None:
-            try:
-                self.result = func(*(args or ()), **(kwargs or {}))
-            except Exception:
-                self.exc_info = sys.exc_info()
-
-        def suicide(self) -> None:
-            raise TimeoutException(f"{func.__name__} timeout (taking more than {timeout} sec)")
-
-    it = InterruptableThread()
-    it.start()
-    it.join(timeout)
-    if it.exc_info[0] is not None:
-        exc_type, exc_value, exc_tb = it.exc_info
-        raise Exception(exc_type, exc_value, exc_tb)
-    if it.is_alive():
-        it.suicide()
-        raise RuntimeError
-    return it.result
-
-
-def my_tqdm(*args: Any, **kwargs: Any) -> tqdm.tqdm:
-    """Wrapper around tqdm respecting the module-level disable flag."""
-
-    return tqdm.tqdm(*args, **kwargs, disable=TQDM_DISABLE)
 
 
 def get_tensor_memory_usage(tensor: th.Tensor) -> int:
@@ -425,12 +305,6 @@ def scatter_logsoftmax(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
     return logits
 
 
-def scatter_softmax(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Softmax over grouped logits defined by ``subset_idxs``."""
-
-    return th.exp(scatter_logsoftmax(logits, subset_idxs))
-
-
 def scatter_l1normalize(vals: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
     """Apply L1 normalization within each group of ``subset_idxs``."""
 
@@ -457,28 +331,6 @@ def scatter_logl2normalize(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tens
     c = scatter_logsumexp(2 * logits, subset_idxs)
     logits = logits - 0.5 * c[subset_idxs]
     return logits
-
-
-def scatter_var(
-    src: th.Tensor,
-    index: th.Tensor,
-    dim_size: int | None = None,
-    correction: int = 1,
-    sqrt: bool = False,
-) -> th.Tensor:
-    """Compute grouped variance (optionally sqrt) across ``index`` groups."""
-
-    if dim_size is None:
-        dim_size = th.max(index) + 1
-    else:
-        assert dim_size >= th.max(index) + 1
-    m = scatter_reduce(src=src, index=index, reduce="mean", dim_size=dim_size, include_self=False)
-    v_num = scatter_reduce(src=(src - m[index]) ** 2, index=index, reduce="sum", dim_size=dim_size)
-    v_den = scatter_reduce(src=th.ones_like(src), index=index, reduce="sum", dim_size=dim_size)
-    v = v_num / th.clamp(v_den - correction, min=EPS)
-    if sqrt:
-        v = th.sqrt(v)
-    return v
 
 
 def scatter_argmax(
@@ -606,62 +458,6 @@ def x_log_x(values: th.Tensor) -> th.Tensor:
     return values * values.clamp_min(th.finfo(values.dtype).tiny).log()
 
 
-def batchwise_max(xs: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
-    """Compute max per batch index (debug helper)."""
-
-    batch_size = th.max(batch_idxs) + 1
-    maxs = th.zeros([batch_size], device=xs.device, dtype=xs.dtype)
-    for b in range(batch_size):
-        maxs[b] = th.max(xs[batch_idxs == b])
-    return maxs
-
-
-def batchwise_lse(xs: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
-    """Compute logsumexp per batch index (debug helper)."""
-
-    batch_size = th.max(batch_idxs) + 1
-    lses = th.zeros([batch_size], device=xs.device, dtype=xs.dtype)
-    for b in range(batch_size):
-        lses[b] = th.logsumexp(xs[batch_idxs == b], 0)
-    return lses
-
-
-def dedup_peaks(
-    mzs: th.Tensor, logprobs: th.Tensor, batch_idxs: th.Tensor
-) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-    """Deduplicate peaks by ``mzs`` and aggregate log probabilities."""
-
-    b_mzs = th.stack([batch_idxs.type(mzs.dtype), mzs], dim=1)
-    dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(b_mzs, *[("lse", logprobs), ("amax", batch_idxs)])
-    dd_b_mzs = dd_b_mzs[:, 1]
-    return dd_b_mzs, dd_logprobs, dd_batch_idxs
-
-
-def dedup(
-    keys: th.Tensor, *agg_vals_tups: tuple[str, th.Tensor], dim: int = 0
-) -> tuple[th.Tensor, ...]:
-    """Deduplicate rows in ``keys`` and aggregate associated values."""
-
-    un_keys, inv_keys = th.unique(keys, dim=dim, return_inverse=True)
-    res: list[th.Tensor] = [un_keys]
-    for agg_vals_tup in agg_vals_tups:
-        agg, vals = agg_vals_tup
-        assert agg in ["lse", "sum", "min", "mean", "amax"]
-        assert vals.shape[0] == keys.shape[0]
-        if agg == "lse":
-            un_vals = scatter_logsumexp(vals, inv_keys, dim_size=un_keys.shape[0])
-        else:
-            un_vals = scatter_reduce(
-                vals,
-                inv_keys,
-                reduce=agg,
-                dim_size=un_keys.shape[0],
-                include_self=False,
-            )
-        res.append(un_vals)
-    return tuple(res)
-
-
 def to_cpu(
     data_d: dict[str, Any], non_blocking: bool = True, detach: bool = False
 ) -> dict[str, Any]:
@@ -766,15 +562,6 @@ def check_pyg_full_compile() -> bool:
     return pyg_major_version >= 2 and pyg_minor_version >= 5
 
 
-# wandb stuff
-def check_import_wandb() -> bool:
-    """Return whether wandb is importable, warning once when it is not."""
-    if importlib.util.find_spec("wandb") is None:
-        logging.warning("wandb is not installed; install it with 'pip install wandb' if needed.")
-        return False
-    return True
-
-
 def get_best_ckpt_from_wandb(
     saved_dp: str,
     run_id: str,
@@ -817,43 +604,6 @@ def get_best_ckpt_from_wandb(
         print(f"> Save ckpt {ckpt_fp}")
         shutil.copy(f"{tmp_dir}/{ckpt_file}", ckpt_fp)
     return ckpt_fp
-
-
-def get_wandb_runs_by_grp(
-    group_name: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> list[Any]:
-    """Return all runs in a W&B group."""
-
-    import wandb
-
-    api = wandb.Api()
-    runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters={"group": group_name})
-    return list(runs)
-
-
-def get_wandb_runids_by_grp(
-    group_name: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> list[str]:
-    """Return run IDs for all runs in a W&B group."""
-
-    runs = get_wandb_runs_by_grp(group_name, entity=entity, project=project)
-    run_ids = [run.id for run in runs]
-    return run_ids
-
-
-def delete_ckpt_from_wandb(
-    run_id: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> None:
-    """Delete checkpoint files for a given W&B run."""
-
-    import wandb
-
-    api = wandb.Api()
-    run = api.run(f"{entity}/{project}/{run_id}")
-
-    for file in run.files():
-        if file.name.startswith("ckpt/model-epoch="):
-            file.delete()
 
 
 class NestedDefaultDict(defaultdict):

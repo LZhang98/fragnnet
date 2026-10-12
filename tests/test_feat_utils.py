@@ -575,16 +575,6 @@ class TestMolGraph:
         assert (ring_bits[:, 1] == 1).any(), "Expected some ring bonds"
         assert (ring_bits[:, 0] == 1).any(), "Expected some chain bonds"
 
-    def test_get_networkx_graph(self):
-        """Test NetworkX graph creation."""
-        mol_graph = MolGraph()
-        mol = Chem.MolFromSmiles("CCO")
-        g = mol_graph.get_networkx_graph(mol, bigraph=False)
-
-        assert g.number_of_nodes() == 3
-        assert g.number_of_edges() == 2
-
-
 class TestGetMolFeaturesSizes:
     """Tests for get_mol_feats_sizes function."""
 

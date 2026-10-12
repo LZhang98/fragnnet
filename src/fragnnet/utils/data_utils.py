@@ -1,4 +1,3 @@
-import copy
 import importlib
 import logging
 import os
@@ -12,12 +11,11 @@ import joblib
 import numpy as np
 import pandas as pd
 import pyteomics
-import torch as th
 from pyteomics.mass import Composition
 from tqdm import tqdm
 
 from fragnnet.utils.formula_utils import ELECTRON_MASS, MASS, NEUTRON_MASS
-from fragnnet.utils.misc_utils import none_or_nan, np_temp_seed
+from fragnnet.utils.misc_utils import none_or_nan
 
 VALID_ELEMENTS = (
     "C",
@@ -67,89 +65,6 @@ def rdkit_import(*module_strs: str) -> tuple:
     for module_str in module_strs:
         modules.append(importlib.import_module(module_str))
     return tuple(modules)
-
-
-def normalize_ints(ints: list[float]) -> list[float]:
-    """normalize intensities to 0-1.0
-
-    Args:
-            ints (List[float]): list of intensities
-
-    Returns:
-            List[float]: normalized intensities
-    """
-    total_ints = sum(ints)
-    ints = [ints[i] / total_ints for i in range(len(ints))]
-    return ints
-
-
-def randomize_smiles(smiles: str, rseed: int, isomeric: bool = False, kekule: bool = False) -> str:
-    """Perform a randomization of a SMILES string must be RDKit sanitizable"""
-    if rseed == -1:
-        return smiles
-    modules = rdkit_import("rdkit.Chem")
-    Chem = modules[0]
-    m = Chem.MolFromSmiles(smiles)
-    assert m is not None
-    ans = list(range(m.GetNumAtoms()))
-    # np_temp_seed now yields a local RNG (numpy.random.Generator)
-    with np_temp_seed(rseed) as rng:
-        # use the generator's in-place shuffle to avoid touching global state
-        rng.shuffle(ans)
-    nm = Chem.RenumberAtoms(m, ans)
-    smiles = Chem.MolToSmiles(nm, canonical=False, isomericSmiles=isomeric, kekuleSmiles=kekule)
-    assert smiles is not None
-    return smiles
-
-
-def split_smiles(smiles_str: str) -> list:
-    """Tokenize a SMILES molecule use regex
-
-    Args:
-            smiles_str (str): _description_
-
-    Returns:
-            List: tokens
-    """
-    token_list = []
-    pattern = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
-    regex = re.compile(pattern)
-    token_list = list(regex.findall(smiles_str))
-    assert smiles_str == "".join(token_list)
-    return token_list
-
-
-def list_replace(values: list, d: dict) -> list:
-    return [d[data] for data in values]
-
-
-def mol_from_inchi(
-    inchi: str, ml_standardize: bool = True, canonicalize_tautomers: bool = True
-) -> "Chem.rdchem.Mol":
-    """return a rdkit mol from inchi str
-
-    Args:
-            inchi (str): inchi string, np.nan if fails
-            ml_standardize (bool, optional): Whether to apply ML-specific standardization
-                    that includes cleanup, parent fragment extraction,
-                    and tautomer canonicalization. Defaults to True.
-            canonicalize_tautomers (bool, optional): Whether to canonicalize tautomers
-                    during standardization. Only used when ml_standardize=True.
-                    Set to False to preserve the input tautomeric form. Defaults to True.
-    Returns:
-            rdkit.Chem.rdchem.Mol: rdkit mol object
-    """
-    modules = rdkit_import("rdkit.Chem")
-    Chem = modules[0]
-    try:
-        mol = Chem.MolFromInchi(inchi)
-        if ml_standardize:
-            mol = rdkit_ml_standardize(mol, canonicalize_tautomers=canonicalize_tautomers)
-    except Exception:
-        mol = np.nan
-    if none_or_nan(mol):
-        mol = np.nan
-    return mol
 
 
 def rdkit_ml_standardize(
@@ -437,19 +352,6 @@ def mol_to_num_radicals(mol: "Chem.rdchem.Mol") -> int | float:
     return num_radicals
 
 
-def check_neutral_charge(mol: "Chem.rdchem.Mol") -> bool:
-    """check if mol is nertral
-
-    Args:
-            mol (rdkit.Chem.rdchem.Mol): _description_
-
-    Returns:
-            bool: _description_
-    """
-    valid = mol_to_charge(mol) == 0
-    return valid
-
-
 def check_single_mol(mol: "Chem.rdchem.Mol") -> bool:
     """check if mol object is a single mol (connected graph)
     Args:
@@ -466,57 +368,6 @@ def check_single_mol(mol: "Chem.rdchem.Mol") -> bool:
         num_frags = np.nan
     valid = num_frags == 1
     return valid
-
-
-def inchi_to_smiles(inchi: str) -> str | float:
-    """convert between inchi and smiles
-
-    Args:
-            inchi (str): inchi string
-
-    Returns:
-            str: smiles string
-    """
-    try:
-        mol = mol_from_inchi(inchi)
-        smiles = mol_to_smiles(mol)
-    except Exception:
-        smiles = np.nan
-    return smiles
-
-
-def smiles_to_selfies(smiles: str) -> str:
-    """convert from smiles to selfies string
-
-    Args:
-            smiles (str): smiles string
-
-    Returns:
-            str: selfies
-    """
-    sf, Chem = rdkit_import("selfies", "rdkit.Chem")
-    try:
-        # canonicalize, strip isomeric information, kekulize
-        mol = Chem.MolFromSmiles(smiles)
-        smiles = Chem.MolToSmiles(mol, canonical=False, isomericSmiles=False, kekuleSmiles=True)
-        selfies = sf.encoder(smiles)
-    except Exception:
-        selfies = np.nan
-    return selfies
-
-
-def get_tanmimoto(fp: Any, other_fp: Any) -> float:
-    """return tanmimoto distance, does not work with np yet
-
-    Args:
-            fp (_type_): _description_
-            other_fp (_type_): _description_
-
-    Returns:
-            _type_: _description_
-    """
-    ds = rdkit_import("rdkit.DataStructs")[0]
-    return ds.DiceSimilarity(fp, other_fp)
 
 
 def make_morgan_fingerprint(
@@ -594,30 +445,6 @@ def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
     fp_arr = np.zeros(1)
     ds.ConvertToNumpyArray(fp, fp_arr)
     return fp_arr
-
-
-def remove_stereochemistry(mol: "Chem.rdchem.Mol") -> None:
-    """_summary_
-
-    Args:
-            mol (rdkit.Chem.rdchem.Mol): _description_
-    """
-    chem = rdkit_import("rdkit.Chem")[0]
-    mol = chem.RemoveStereochemistry(mol)
-
-
-def split_selfies(selfies_str: str) -> list[str]:
-    """method to splt selfies strngs to list of tokens
-
-    Args:
-            selfies_str (str): selfies string
-
-    Returns:
-             List[str]: list of tokens
-    """
-    selfies = importlib.import_module("selfies")
-    selfies_tokens = list(selfies.split_selfies(selfies_str))
-    return selfies_tokens
 
 
 def seq_apply(iterator: Iterable, func: Callable, need_unpack: bool = False) -> list:
@@ -715,33 +542,6 @@ def par_apply_series(
     return result_series
 
 
-def seq_apply_series(
-    series: pd.Series, func: Callable, tqdm_leave: bool = True, use_tqdm: bool = True
-) -> pd.Series:
-    """Apply a function to each item in a pandas Series in sequence.
-
-    Args:
-            series (pd.Series): The Series to process.
-            func (callable): The function to apply to each item.
-            tqdm_leave (bool, optional): Whether to leave the tqdm progress bar after completion. Defaults to True.
-
-    Returns:
-            pd.Series: The results of applying the function to each item.
-    """
-    series_iter = (
-        tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
-        if use_tqdm
-        else series.items()
-    )
-
-    def series_func(tup: tuple) -> Any:
-        return func(tup[1])
-
-    result_list = seq_apply(series_iter, series_func)
-    result_series = pd.Series(result_list, index=series.index)
-    return result_series
-
-
 def par_apply_df_rows(df: pd.DataFrame, func: Callable, use_tqdm: bool = True) -> pd.Series:
     """Apply a function to each row of a DataFrame in parallel.
 
@@ -789,30 +589,6 @@ def par_apply_df_rows_t(
 
     result_list = par_apply(df_iter, df_func)
     result_series = tuple([pd.Series(rl, index=df.index) for rl in zip(*result_list)])
-    return result_series
-
-
-def seq_apply_df_rows(df: pd.DataFrame, func: Callable, use_tqdm: bool = True) -> pd.Series:
-    """Apply a function to each row of a DataFrame in sequence, returning multiple Series.
-
-    Args:
-            df (pd.DataFrame): The DataFrame to process.
-            func (callable): The function to apply to each row.
-
-    Returns:
-            tuple[pd.Series, ...]: The results of applying the function to each row.
-    """
-    df_iter = (
-        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
-    )
-
-    def df_func(tup: tuple) -> Any:
-        return func(tup[1])
-
-    result_list = seq_apply(df_iter, df_func)
-    if isinstance(result_list[0], tuple):
-        raise NotImplementedError("Use seq_apply_df_rows_t for multiple return values")
-    result_series = pd.Series(result_list, index=df.index)
     return result_series
 
 
@@ -882,12 +658,6 @@ def parse_nce_str(ce_str: str) -> float:
         if re.match(k, ce_str):
             return v(ce_str)
     return np.nan
-
-
-# def parse_ramp_ce_str(ce_str):
-
-#   r"^[\d]+[.]?[\d]*->[\d]+[.]?[\d]*%$": (float(x.split("->")[0]),float(x.split("->")[1].rstrip("%"))),
-#   r"[\d]+[.]?[\d]*-[\d]+[.]?[\d]*": lambda x: (float(x.split("-")[0]),float(x.split("-")[1])),
 
 
 # Retired instrument-type labels. "FT" was split into the two Orbitrap labels on 2026-09-28, and
@@ -1374,66 +1144,6 @@ def compute_mol_df_props(
     return mol_df
 
 
-def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
-    """get some basic properties of the mol object
-    Args:
-            mol (rdkit.Chem.rdchem.Mol): mol object
-    Returns:
-            dict: dictionary of properties
-    """
-    import rdkit
-    import rdkit.Chem as Chem
-    from rdkit.Chem.Descriptors import MolWt
-
-    mol_dict = {}
-    mol_dict["num_atoms"] = mol.GetNumHeavyAtoms()
-    mol_dict["num_bonds"] = mol.GetNumBonds(onlyHeavy=True)
-    mol_dict["mol_weight"] = MolWt(mol)
-    mol_dict["num_rings"] = len(list(Chem.GetSymmSSSR(mol)))
-    mol_dict["max_ring_size"] = max(
-        [-1] + [len(list(atom_iter)) for atom_iter in Chem.GetSymmSSSR(mol)]
-    )
-    cnops_counts = {"C": 0, "N": 0, "O": 0, "P": 0, "S": 0, "Cl": 0, "other": 0}
-    bond_counts = {"single": 0, "double": 0, "triple": 0, "aromatic": 0}
-    cnops_bond_counts = {"C": [-1], "N": [-1], "O": [-1], "P": [-1], "S": [-1], "Cl": [-1]}
-    h_counts = 0
-    other_atoms = set()
-    for atom in mol.GetAtoms():
-        atom_symbol = atom.GetSymbol()
-        if atom_symbol in cnops_counts:
-            cnops_counts[atom_symbol] += 1
-            cnops_bond_counts[atom_symbol].append(len(atom.GetBonds()))
-        else:
-            cnops_counts["other"] += 1
-            other_atoms.add(atom_symbol)
-        h_counts += atom.GetNumImplicitHs()
-    for bond in mol.GetBonds():
-        bond_type = bond.GetBondType()
-        if bond_type == rdkit.Chem.rdchem.BondType.SINGLE:
-            bond_counts["single"] += 1
-        elif bond_type == rdkit.Chem.rdchem.BondType.DOUBLE:
-            bond_counts["double"] += 1
-        elif bond_type == rdkit.Chem.rdchem.BondType.TRIPLE:
-            bond_counts["triple"] += 1
-        else:
-            assert bond_type == rdkit.Chem.rdchem.BondType.AROMATIC
-            bond_counts["aromatic"] += 1
-    mol_dict["other_atoms"] = ",".join(sorted(other_atoms))
-    mol_dict["H_counts"] = h_counts
-    for k, v in cnops_counts.items():
-        mol_dict[f"{k}_counts"] = v
-    for k, v in bond_counts.items():
-        mol_dict[f"{k}_counts"] = v
-    for k, v in cnops_bond_counts.items():
-        mol_dict[f"{k}_max_bond_counts"] = max(v)
-    return mol_dict
-
-
-def check_num_bonds(mol: "Chem.rdchem.Mol") -> bool:
-    valid = mol.GetNumBonds() > 0
-    return valid
-
-
 CHARGE_FACTOR_MAP = {1: 1.00, 2: 0.90, 3: 0.85, 4: 0.80, 5: 0.75, "large": 0.75}
 
 
@@ -1608,27 +1318,3 @@ def parse_mass_gym_ce_str(ce_str: str) -> tuple[float, bool, bool]:
     return ce, normalized, ramped
 
 
-def deep_copy_data_dict(data_dict: dict) -> dict:
-    """Deep copy data dict, used to avoid modifying the original dict.
-
-    Handles key-tensor pairs and key-ROMol pairs specifically.
-
-    Args:
-            data_dict (dict): Data dict to copy.
-
-    Returns:
-            dict: Deep copied dict.
-    """
-    copied_dict = {}
-    for key, value in data_dict.items():
-        if isinstance(value, th.Tensor):
-            # Use .clone() for tensors to create a deep copy
-            # make sure tensors are detached to from computation graph
-            copied_dict[key] = value.detach().clone()
-        elif isinstance(value, dict):
-            copied_dict[key] = deep_copy_data_dict(value)
-        else:
-            # Use deepcopy for other types
-            copied_dict[key] = copy.deepcopy(value)
-
-    return copied_dict

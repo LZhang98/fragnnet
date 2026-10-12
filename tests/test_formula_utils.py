@@ -25,11 +25,6 @@ class TestParseFormula:
         with pytest.raises(ValueError):
             fu.parse_formula("CH4*")
 
-    def test_get_elements_set(self):
-        elems = fu.get_elements_set("C2H6O")
-        assert elems == {"C", "H", "O"}
-
-
 class TestMassAndIsotopes:
     """Mass table and isotope-related helpers."""
 

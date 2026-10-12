@@ -40,11 +40,6 @@ INSTRUMENT_TOLERANCES = {
 MERGE_METHODS = ("common_overlap", "naive_centroid")
 
 
-def ppm_error(observed_mz: float, theoretical_mz: float) -> float:
-    """Return the absolute mass error in parts per million."""
-    return abs(observed_mz - theoretical_mz) / theoretical_mz * 1e6
-
-
 def merge_peaks(
     peaks: list[tuple[float, float]],
     tolerance_ppm: float,
@@ -174,14 +169,6 @@ def _budget_ion_masses(neutral_counts: dict[str, int], comp_diff, charge: int) -
     masses = masses[masses > 0]
     ion_masses = masses - charge * ELECTRON_MASS
     return ion_masses[ion_masses > 0]
-
-
-def _apply_comp_diff(element_counts: dict[str, int], comp_diff) -> dict:
-    """Return the ion element counts for one adduct delta applied to a neutral formula."""
-    return {
-        element: element_counts.get(element, 0) + comp_diff.get(element, 0)
-        for element in set(element_counts) | set(comp_diff)
-    }
 
 
 def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
