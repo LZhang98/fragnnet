@@ -44,13 +44,39 @@ def _probe_all(targets: tuple[str, ...]) -> dict:
     return dict(zip(targets, results))
 
 
+@pytest.fixture(scope="module")
+def isolation() -> dict[str, dict]:
+    """Non-core modules loaded by each entry module and by each model selection."""
+    selection = _probe_all(tuple(f"model_type:{t}" for t in MODEL_TYPES))
+    return {
+        "entry_modules": _probe_all(ENTRY_MODULES),
+        "model_selection": {k.split(":", 1)[1]: v for k, v in selection.items()},
+    }
+
+
 @pytest.mark.parametrize("group", ["entry_modules", "model_selection"])
-def test_isolation_gate_matches_golden(group: str) -> None:
-    if group == "entry_modules":
-        current = _probe_all(ENTRY_MODULES)
-    else:
-        current = {
-            k.split(":", 1)[1]: v
-            for k, v in _probe_all(tuple(f"model_type:{t}" for t in MODEL_TYPES)).items()
-        }
-    ratchet_json("boundary", f"isolation_{group}", current)
+def test_isolation_gate_matches_golden(isolation: dict[str, dict], group: str) -> None:
+    ratchet_json("boundary", f"isolation_{group}", isolation[group])
+
+
+def test_phase1_isolation_gate(isolation: dict[str, dict]) -> None:
+    """The plan's Phase 1 gate, enforced independently of the golden file.
+
+    No entry module loads a baseline or DGL, and selecting a model loads no DGL and no baseline
+    other than its own.
+    """
+    entry_offenders = {
+        module: sorted(layer for layer in loaded if layer.startswith("baseline:") or layer == "dgl")
+        for module, loaded in isolation["entry_modules"].items()
+    }
+    assert {m: v for m, v in entry_offenders.items() if v} == {}
+    own = {"graff": "baseline:graff", "massformer": "baseline:massformer"}
+    selection_offenders = {
+        model_type: sorted(
+            layer
+            for layer in loaded
+            if layer == "dgl" or (layer.startswith("baseline:") and layer != own.get(model_type))
+        )
+        for model_type, loaded in isolation["model_selection"].items()
+    }
+    assert {t: v for t, v in selection_offenders.items() if v} == {}

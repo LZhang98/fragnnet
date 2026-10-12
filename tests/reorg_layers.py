@@ -58,8 +58,22 @@ BASELINE_PACKAGES = {
 # Lazy package exports introduced in Phase 1 (PEP 562 ``__getattr__`` in a package
 # ``__init__``): {package: {exported name: defining module}}. The resolver follows these so a
 # core module importing a model class through its package is still caught, and the shim's own
-# deferred import is exempt from the rule. Empty until Phase 1 step 5.
-COMPAT_SHIMS: dict[str, dict[str, str]] = {}
+# deferred import is exempt from the rule. Added in Phase 1 step 5; removed by Phase 6, which moves
+# the owner classes out of these packages. Must match each package's ``_LAZY_EXPORTS``.
+COMPAT_SHIMS: dict[str, dict[str, str]] = {
+    "fragnnet.dataset": {
+        "IterableSpecMolFragDataset": "fragnnet.dataset.iterable_spec_mol_frag_dataset",
+        "SpecMolFragDataset": "fragnnet.dataset.spec_mol_frag_dataset",
+    },
+    "fragnnet.model": {
+        "FraGNNetModel": "fragnnet.model.fragnnet_model",
+        "MassterModel": "fragnnet.model.masster_model",
+    },
+    "fragnnet.pl_model": {
+        "FraGNNetPL": "fragnnet.pl_model.fragnnet_pl",
+        "MassterPL": "fragnnet.pl_model.masster_pl",
+    },
+}
 
 OWNER_LAYERS = ("fragnnet", "masster")
 

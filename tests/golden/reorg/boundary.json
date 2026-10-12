@@ -1,19 +1,7 @@
 {
   "ast_violations": {
-    "fragnnet.dataset -> fragnnet.dataset.iterable_spec_mol_frag_dataset": [
-      "IterableSpecMolFragDataset"
-    ],
-    "fragnnet.dataset -> fragnnet.dataset.spec_mol_frag_dataset": [
-      "SpecMolFragDataset"
-    ],
     "fragnnet.dataset.base_dataset -> fragnnet.utils.frag_utils": [
       "load_frag_d"
-    ],
-    "fragnnet.model -> fragnnet.model.fragnnet_model": [
-      "FraGNNetModel"
-    ],
-    "fragnnet.model -> fragnnet.model.masster_model": [
-      "MassterModel"
     ],
     "fragnnet.model.candidate_features -> fragnnet.utils.frag_utils": [
       "CANONICAL_ELEMENT_ORDER",
@@ -24,12 +12,6 @@
     ],
     "fragnnet.model.masster_model -> fragnnet.utils.frag_utils": [
       "CANONICAL_ELEMENT_ORDER"
-    ],
-    "fragnnet.pl_model -> fragnnet.pl_model.fragnnet_pl": [
-      "FraGNNetPL"
-    ],
-    "fragnnet.pl_model -> fragnnet.pl_model.masster_pl": [
-      "MassterPL"
     ],
     "fragnnet.pl_model.spectrum_pl -> fragnnet.model.fragnnet_model": [
       "EXPLAINABILITY_OUTPUT_KEYS"
@@ -71,8 +53,6 @@
         "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.utils.frag_utils"
@@ -83,8 +63,6 @@
         "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.utils.frag_utils"
@@ -95,8 +73,6 @@
         "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.utils.frag_utils"
@@ -104,26 +80,14 @@
     },
     "fragnnet.pl_model.spectrum_pl": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "fragnnet.runner": {
@@ -131,8 +95,6 @@
         "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.utils.frag_utils"
@@ -160,8 +122,6 @@
         "fragnnet.model.candidate_support"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
@@ -184,54 +144,26 @@
   "isolation_model_selection": {
     "chemlm": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "clip": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "frag_gnn": {
@@ -240,7 +172,6 @@
         "fragnnet.model.candidate_support"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
         "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
@@ -250,14 +181,7 @@
         "fragnnet.utils.frag_utils"
       ],
       "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
+        "fragnnet.model.bond_fragment_heads"
       ]
     },
     "fragnnet": {
@@ -266,7 +190,6 @@
         "fragnnet.model.candidate_support"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
         "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
@@ -276,40 +199,19 @@
         "fragnnet.utils.frag_utils"
       ],
       "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
+        "fragnnet.model.bond_fragment_heads"
       ]
     },
     "gnn": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "graff": {
@@ -322,28 +224,14 @@
         "fragnnet.graff.pl_model"
       ],
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "massformer": {
@@ -357,28 +245,14 @@
         "fragnnet.massformer.pl_model"
       ],
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "masster": {
@@ -387,13 +261,10 @@
         "fragnnet.model.candidate_support"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
       ],
       "masster": [
@@ -409,106 +280,50 @@
     },
     "mces_pretraining": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "neims": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "precursor": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     },
     "spec_mol_clip_pretraining": {
       "fragmentation": [
-        "fragnnet.frag.smarts_prepass",
-        "fragnnet.model.candidate_support"
+        "fragnnet.frag.smarts_prepass"
       ],
       "fragnnet": [
-        "fragnnet.dataset.iterable_spec_mol_frag_dataset",
-        "fragnnet.dataset.spec_mol_frag_dataset",
         "fragnnet.frag.compute_frags",
         "fragnnet.frag.multi_cut_bfs",
         "fragnnet.model.fragment_competition",
         "fragnnet.model.fragnnet_model",
-        "fragnnet.pl_model.fragnnet_pl",
         "fragnnet.utils.frag_utils"
-      ],
-      "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
       ]
     }
   }
