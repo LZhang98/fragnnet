@@ -12,4 +12,3 @@ from .neims_pl import NeimsPL
 from .precursor_pl import PrecursorPL
 from .gnn_pl import GNNPL
 from .spectrum_mol_clip_pl import SpectrumMolClipPL
-from .chemlm_pl import ChemLMPL

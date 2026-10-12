@@ -3,6 +3,8 @@
 #   fragnnet                     the project itself; install it with `pip install --no-deps -e .`
 #   ICEBERG's graph library      removed from the main environment (reorg Phase 1)
 #   omegaconf, antlr4-python3-runtime   nothing imports omegaconf; antlr4 came in only through it
+#   transformers, tokenizers, huggingface_hub, safetensors, regex   only ChemLM used them
+#                                (retired 2026-10-12); the live environment still has them
 #   pip
 # Recreate: pip install -r env/fragnnet_gpu_py311.lock.txt, then pip install --no-deps -e . (INSTALL.md).
 --extra-index-url https://download.pytorch.org/whl/cu121
@@ -59,7 +61,6 @@ h5py==3.14.0
 hf-xet==1.6.0
 httpcore==1.0.9
 httpx==0.28.1
-huggingface_hub==0.36.2
 identify==2.6.16
 idna==3.10
 iniconfig==2.3.0
@@ -177,7 +178,6 @@ PyYAML==6.0.3
 pyzmq==27.0.2
 rdkit==2022.9.5
 referencing==0.36.2
-regex==2026.9.10
 requests==2.32.5
 rfc3339-validator==0.1.4
 rfc3986-validator==0.1.1
@@ -185,7 +185,6 @@ rfc3987-syntax==1.1.0
 rich==15.0.0
 rpds-py==0.27.1
 ruff==0.14.12
-safetensors==0.8.0
 scikit-learn==1.7.2
 scipy==1.15.2
 seaborn==0.13.2
@@ -202,7 +201,6 @@ terminado==0.18.1
 textual==8.2.7
 threadpoolctl==3.6.0
 tinycss2==1.4.0
-tokenizers==0.20.3
 torch==2.4.1+cu121
 torch-geometric==2.6.1
 torch_scatter==2.1.2+pt24cu121
@@ -210,7 +208,6 @@ torchmetrics==1.8.1
 tornado==6.5.2
 tqdm==4.67.1
 traitlets==5.14.3
-transformers==4.46.3
 triton==3.0.0
 types-python-dateutil==2.9.0.20250822
 typing_extensions==4.12.2

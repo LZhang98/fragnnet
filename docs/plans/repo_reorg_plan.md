@@ -762,3 +762,18 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     the other five were MCES fine-tuning configs, deleted here.
   - Docs: the fine-tuning guide points at the `nps_pcdl_nist23_ft` example and a generic
     checkpoint; the architecture map and the FraGNNet hub's Settled list record the retirement.
+- 2026-10-12: ChemLM retired (user decision; the ChemBERTa-3 runs barely beat a structure-blind
+  prior, [results](chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)). A three-scout
+  inventory with a completeness critic found ChemLM the only user of the `transformers` stack.
+  `BinnedPL`, `SpecFFN`/`NeimsBlock`, the conditioning mixins and `neims_bottleneck_factor` are
+  shared with NEIMS, GNN and MassFormer and stay.
+  - Removed: `ChemLMModel`, `ChemLMPL`, the registry entry, `config/massspecgym/chemlm/` (including
+    the never-run NEIMS arm `e4_neims.yml`), `tests/test_chemlm.py`, the smoke case and its
+    tiny-RoBERTa writer, the `chemlm` extra in `pyproject.toml`, the `INSTALL.md` paragraph, the
+    `setup_job_cc.py` checkpoint staging and Hugging Face install with its test, and the five
+    Hugging Face packages from the environment lock.
+  - `chemlm` is in `RETIRED_MODEL_TYPES` (archive `13b1599d`, `registry.CHEMLM_ARCHIVE_SHA`). The
+    five `chemlm_*` template keys stay as an inert block, like MCES's. The plan's banner is now
+    CLOSED NULL.
+  - Not done here: `docs/workstreams/msgym.md` still lists ChemBERTa-3 as an open thread and its
+    configs; it holds another session's uncommitted edits.

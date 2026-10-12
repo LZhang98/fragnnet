@@ -21,7 +21,7 @@
    before changing a field or shape.
 4. [Models](../src/fragnnet/model/) implement prediction; [Lightning modules](../src/fragnnet/pl_model/)
    connect predictions to losses and training/evaluation. Those two directories hold the shared
-   base classes and the core models (NEIMS, ChemLM, precursor, GNN, CLIP). FraGNNet,
+   base classes and the core models (NEIMS, precursor, GNN, CLIP). FraGNNet,
    which uses fragmentation DAGs, lives in [models/fragnnet/](../src/fragnnet/models/fragnnet/);
    MASSter, with its own candidate construction, in [models/masster/](../src/fragnnet/models/masster/);
    GRAFF and MassFormer in [baselines/](../src/fragnnet/baselines/) ([reference](reference/baselines.md)).
@@ -29,7 +29,9 @@
    ([reorganization plan](plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment)).
    MCES pretraining (`mces_pretraining`, a Siamese molecule encoder meant to initialize FraGNNet
    fine-tuning) was retired on 2026-10-12 because it did not help; its code and configs are at
-   revision `13b1599d`.
+   revision `13b1599d`. ChemLM (`chemlm`, a ChemBERTa-3 SMILES encoder with the NEIMS head) was
+   retired the same day: it barely beat a structure-blind prior
+   ([results](plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)); code at `13b1599d`.
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
    in [pl_utils.py](../src/fragnnet/utils/pl_utils.py) renames them wherever a config is loaded.
@@ -64,7 +66,7 @@ src/fragnnet/
 - Core reaches a model only through [registry.py](../src/fragnnet/registry.py): `model_type`
   maps to `"module:Class"` strings for the Lightning module, the dataset and a hooks class,
   imported on first use. The registry also holds the aliases (`fragnnet` for `frag_gnn`, `clip`
-  for `spec_mol_clip_pretraining`) and the retired types (ICEBERG, MCES pretraining). The legacy
+  for `spec_mol_clip_pretraining`) and the retired types (ICEBERG, MCES pretraining, ChemLM). The legacy
   `mass_shatter` name never reaches it: `migrate_legacy_masster_name` in `utils/pl_utils.py`
   renames it to `masster` wherever a config or checkpoint is loaded.
 - Model-specific steps that core runs go through [hooks.py](../src/fragnnet/hooks.py).

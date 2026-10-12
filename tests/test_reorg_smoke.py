@@ -7,12 +7,8 @@ forward outputs, loss terms and gradient summary is recorded in ``tests/golden/r
 The digest holds behavior only (keys, dtypes, shapes, values), never class names or module paths,
 because Phase 1 changes some of those (``massformer`` moves to ``SpecMolMFDataset``).
 
-Two types need deliberate handling, and neither is faked:
-
-- ``chemlm`` reads a Hugging Face checkpoint. The test writes a tiny random RoBERTa checkpoint and
-  a byte-level tokenizer to ``tmp_path`` (as ``test_chemlm.py`` does), so it neither downloads nor
-  reads the untracked ``data/pretrained`` checkpoint. It skips without ``transformers``.
-- ``mces_pretraining`` was retired on 2026-10-12, like the ICEBERG pair, so it has no case.
+Retired types (the ICEBERG pair, and ``mces_pretraining`` and ``chemlm`` since 2026-10-12) have no
+case.
 
 Each case also records an eval-mode forward pass (after the training forward, so BatchNorm
 running statistics are those of one training batch); it must return the same output keys.
@@ -43,7 +39,6 @@ import contextlib
 import copy
 import importlib
 import io
-import json
 import math
 from collections import Counter
 from collections.abc import Callable, Iterator
@@ -69,13 +64,13 @@ from fragnnet.utils.formula_utils import NEUTRON_MASS
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 GOLDEN = "smoke"
-RETIRED_TYPES = ("iceberg_gen", "iceberg_inten", "mces_pretraining")
+RETIRED_TYPES = ("iceberg_gen", "iceberg_inten", "mces_pretraining", "chemlm")
 SMOKE_TYPES = tuple(t for t in MODEL_TYPES if t not in RETIRED_TYPES)
 ELECTRON_MASS = 0.00054858
 STEP_SEED = 1234
 TIMING_SUFFIX = "_ms"
 
-# Overrides shared by the binned-output baselines (NEIMS, GNN, ChemLM, MassFormer). The output
+# Overrides shared by the binned-output baselines (NEIMS, GNN, MassFormer). The output
 # is 2000 bins instead of the template's 150000, and the MLP and GNN shrink to 16 units.
 BINNED_OVERRIDES: dict[str, Any] = {
     "loss_type": "cosine_distance",
@@ -101,12 +96,6 @@ MASSFORMER_OVERRIDES: dict[str, Any] = {
     "mol_params": {"pyg": False, "mf": True, "preprocess": False},
     "mf_lr_schedule": False,
     "ff_prec_mz_offset": 50,
-}
-CHEMLM_OVERRIDES: dict[str, Any] = {
-    **BINNED_OVERRIDES,
-    "chemlm_num_layers": 2,
-    "chemlm_p_trav": 0.0,
-    "weight_decay_exclude_norm_bias": True,
 }
 GRAFF_OVERRIDES: dict[str, Any] = {
     "mol_params": {"pyg": False, "graff": True, "preprocess": False},
@@ -318,53 +307,6 @@ def _build_precursor(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
     return _spectrum_case("precursor", root, trains=False)
 
 
-def _write_tiny_roberta(ckpt: Path, num_layers: int = 4) -> str:
-    """Write a random RoBERTa-MLM checkpoint with a hand-built byte-level tokenizer.
-
-    The vocabulary is the special tokens plus the 256 byte-level symbols and there are no merges,
-    so the tokenizer needs no training and is identical on every run.
-
-    Args:
-        ckpt: Directory to create.
-        num_layers: Encoder layers of the checkpoint.
-
-    Returns:
-        The checkpoint directory.
-    """
-    transformers = pytest.importorskip("transformers", reason="chemlm needs transformers")
-    tokenizers = pytest.importorskip("tokenizers", reason="chemlm needs tokenizers")
-    ckpt.mkdir()
-    special = ["<s>", "<pad>", "</s>", "<unk>", "<mask>"]
-    alphabet = sorted(tokenizers.pre_tokenizers.ByteLevel.alphabet())
-    vocab = {token: idx for idx, token in enumerate(special + alphabet)}
-    (ckpt / "vocab.json").write_text(json.dumps(vocab))
-    (ckpt / "merges.txt").write_text("#version: 0.2\n")
-    tokenizer = transformers.RobertaTokenizerFast(
-        vocab_file=str(ckpt / "vocab.json"), merges_file=str(ckpt / "merges.txt")
-    )
-    tokenizer.save_pretrained(str(ckpt))
-    config = transformers.RobertaConfig(
-        vocab_size=len(tokenizer),
-        hidden_size=32,
-        num_hidden_layers=num_layers,
-        num_attention_heads=4,
-        intermediate_size=64,
-        max_position_embeddings=66,
-        pad_token_id=tokenizer.pad_token_id,
-        bos_token_id=tokenizer.bos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        type_vocab_size=1,
-    )
-    th.manual_seed(0)
-    transformers.RobertaForMaskedLM(config).save_pretrained(str(ckpt))
-    return str(ckpt)
-
-
-def _build_chemlm(root: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
-    ckpt = _write_tiny_roberta(root / "tiny_chemlm")
-    return _spectrum_case("chemlm", root / "data", CHEMLM_OVERRIDES, {"chemlm_ckpt_dp": ckpt})
-
-
 def _massformer_nn_utils() -> ModuleType:
     """The module that defines the Graphormer embedder and its pretrained-weight loaders.
 
@@ -507,7 +449,6 @@ CASES: dict[str, CaseBuilder] = {
     "fragnnet": _build_fragnnet,
     "masster": _build_masster,
     "neims": _build_neims,
-    "chemlm": _build_chemlm,
     "massformer": _build_massformer,
     "graff": _build_graff,
     "precursor": _build_precursor,

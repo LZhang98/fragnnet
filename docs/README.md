@@ -29,7 +29,7 @@ Each hub has "Where it stands", "Open threads", "Settled — read before re-prop
 | --- | --- |
 | [masster_generalization.md](workstreams/masster_generalization.md) | MASSter train/val gap on NIST20 (`i1`→`i4`): memorization routes, error analyses, intensity displacement, SMARTS pathway, QET/NCE input, ORB instruments, closed nulls (isotope envelope, JEPA) |
 | [masster_core.md](workstreams/masster_core.md) | MASSter design, architecture and regularization screens, losses, candidate/proposal machinery, ion-H channels, speed/GPU, feature and information audits |
-| [msgym.md](workstreams/msgym.md) | MassSpecGym training, formula-track retrieval, GLACIER comparisons, ChemBERTa-3, annotation-aware retrieval |
+| [msgym.md](workstreams/msgym.md) | MassSpecGym training, formula-track retrieval, GLACIER comparisons, ChemBERTa-3 (retired), annotation-aware retrieval |
 | [spectraverse.md](workstreams/spectraverse.md) | Spectraverse v1.0.2 pipeline, folds, data audits, oracle ceiling, prepared arms |
 | [nist23_ei.md](workstreams/nist23_ei.md) | MASSter on nominal NIST23 EI |
 | [casmi_enveda.md](workstreams/casmi_enveda.md) | CASMI 2026 data, Enveda-180, combined PCDL/NIST23/Enveda split, shared NIST data quality and isotope/subformula detection |

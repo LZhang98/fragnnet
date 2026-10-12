@@ -23,7 +23,7 @@ import yaml
 from reorg_golden import ratchet_json
 from reorg_layers import MODEL_TYPES, RETIRED_MODEL_TYPES
 
-from fragnnet.registry import ICEBERG_ARCHIVE_SHA, MCES_ARCHIVE_SHA
+from fragnnet.registry import CHEMLM_ARCHIVE_SHA, ICEBERG_ARCHIVE_SHA, MCES_ARCHIVE_SHA
 from fragnnet.runner import load_config
 from fragnnet.utils.script_utils import get_config_from_ckpt, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -47,10 +47,6 @@ EXPECTED_MAPPING = {
     ),
     "neims": (
         "fragnnet.pl_model.neims_pl:NeimsPL",
-        "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
-    ),
-    "chemlm": (
-        "fragnnet.pl_model.chemlm_pl:ChemLMPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "massformer": (
@@ -144,6 +140,7 @@ RETIREMENT_MARKERS = {
     "iceberg_gen": ("ms-pred", ICEBERG_ARCHIVE_SHA),
     "iceberg_inten": ("ms-pred", ICEBERG_ARCHIVE_SHA),
     "mces_pretraining": ("did not help", MCES_ARCHIVE_SHA),
+    "chemlm": ("did not help", CHEMLM_ARCHIVE_SHA),
 }
 
 

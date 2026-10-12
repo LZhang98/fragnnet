@@ -44,7 +44,6 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
         hooks="fragnnet.models.masster.masster_hooks:MassterHooks",
     ),
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
-    "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),
     "massformer": ModelEntry(
         "fragnnet.baselines.massformer.pl_model:MassFormerPL",
         "fragnnet.baselines.massformer.dataset:SpecMolMFDataset",
@@ -84,12 +83,22 @@ _MCES_RETIRED = (
     "checkpoint (finetune_* keys) is unaffected."
 )
 
+# ChemLM (a pretrained ChemBERTa-3 SMILES encoder with the NEIMS binned head) was removed on
+# 2026-10-12: it did not beat the structure-blind prior (docs/plans/chemberta3_msgym_plan.md).
+CHEMLM_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_CHEMLM_RETIRED = (
+    "model_type {model_type!r} is retired: ChemLM (ChemBERTa-3 encoder with the NEIMS head) did "
+    "not help and was removed on 2026-10-12 (docs/plans/chemberta3_msgym_plan.md). Its model, "
+    f"configs and tests belong to revision {CHEMLM_ARCHIVE_SHA}. NEIMS is unaffected."
+)
+
 # Model types that were removed; selecting one raises an actionable error instead of the generic
 # unknown-type error.
 RETIRED_MODEL_TYPES: dict[str, str] = {
     "iceberg_gen": _ICEBERG_RETIRED,
     "iceberg_inten": _ICEBERG_RETIRED,
     "mces_pretraining": _MCES_RETIRED,
+    "chemlm": _CHEMLM_RETIRED,
 }
 
 

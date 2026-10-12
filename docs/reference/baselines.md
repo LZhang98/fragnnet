@@ -24,7 +24,8 @@ code imports core and `fragmentation/` only (see the
   `SpecMolDataset` raises if it is set. Its Graphormer input uses the Cython extension
   `baselines/massformer/algos.pyx`, built by `setup.py` with the other extensions.
 - **NEIMS** is a baseline but stays a core model (`model/neims_model.py`, `pl_model/neims_pl.py`),
-  because ChemLM shares its head and reads `neims_bottleneck_factor`.
+  by user decision (2026-10-12). Its binned head (`NeimsBlock`, `SpecFFN`) is shared with the GNN
+  model and MassFormer through `BinnedPL`.
 
 Train with the shared entry point, for example:
 

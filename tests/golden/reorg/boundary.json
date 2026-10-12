@@ -12,7 +12,6 @@
     "fragnnet.utils.script_utils": {}
   },
   "isolation_model_selection": {
-    "chemlm": {},
     "clip": {},
     "frag_gnn": {
       "fragmentation": [

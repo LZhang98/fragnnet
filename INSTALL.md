@@ -85,16 +85,6 @@ scripts). To run the scripts without the development tools:
 pip install -e ".[scripts]"
 ```
 
-For the `chemlm` model (a pretrained SMILES language model), also install its pinned
-Hugging Face packages:
-```bash
-pip install -e ".[chemlm]"
-```
-
-It loads a local checkpoint directory, by default `data/pretrained/ChemBERTa-100M-MLM`
-(Hugging Face `DeepChem/ChemBERTa-100M-MLM`, revision in its `REVISION` file), and never
-downloads.
-
 ## Verify Installation
 
 After installation, verify everything works:

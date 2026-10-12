@@ -120,7 +120,6 @@ class TestTemplateLayout:
             "masster",
             "massformer",
             "neims",
-            "chemlm",
             "graff",
             "clip",
             "spec_mol_clip_pretraining",
@@ -131,7 +130,7 @@ class TestTemplateLayout:
 
     def test_retired_model_types_are_not_valid(self):
         """Retired types keep their inert template section but cannot be selected."""
-        assert {"iceberg_gen", "iceberg_inten", "mces_pretraining"} == set(RETIRED_MODEL_TYPES)
+        assert {"iceberg_gen", "iceberg_inten", "mces_pretraining", "chemlm"} == set(RETIRED_MODEL_TYPES)
         assert not set(RETIRED_MODEL_TYPES) & set(VALID_MODEL_TYPES)
 
 

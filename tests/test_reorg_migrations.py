@@ -141,7 +141,6 @@ FAMILIES = (
     "masster",
     "mass_shatter",
     "neims",
-    "chemlm",
     "massformer",
     "graff",
     "precursor",

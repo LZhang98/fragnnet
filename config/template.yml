@@ -213,8 +213,8 @@ mol_params:
 # Model Architecture
 # ============================================================================
 # Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
-# masster, neims, chemlm, massformer, graff, precursor, gnn, clip, spec_mol_clip_pretraining.
-# iceberg_gen, iceberg_inten and mces_pretraining are retired (RETIRED_MODEL_TYPES).
+# masster, neims, massformer, graff, precursor, gnn, clip, spec_mol_clip_pretraining.
+# iceberg_gen, iceberg_inten, mces_pretraining and chemlm are retired (RETIRED_MODEL_TYPES).
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
@@ -1277,19 +1277,14 @@ neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 
 
 # ==========================================================================
 # ChemLM only
-# model_type: chemlm
+# model_type: chemlm (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
-# A pretrained SMILES language model (ChemBERTa-3) trained end to end with the NEIMS binned
-# head, which also reads neims_bottleneck_factor. Needs `transformers`, and
-# weight_decay_exclude_norm_bias: True; compile and activation_checkpointing are rejected.
-# docs/plans/chemberta3_msgym_plan.md
-chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM  # local HF checkpoint dir; never downloaded
-chemlm_num_layers: 6  # encoder layers kept from the input side (the checkpoint has 12)
-chemlm_encoder_lr: 0.00003  # encoder LR, embeddings included; the head uses `lr`
-# Probability that a training SMILES is replaced by one unrestricted random SMILES of the same
-# molecule, seeded from `seed`. Evaluation always reads the canonical string. 0 = off.
+# Inert: nothing reads these keys. They stay because every checkpoint saved while ChemLM
+# existed carries them in its hparams, and such a config must still resolve.
+chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM
+chemlm_num_layers: 6
+chemlm_encoder_lr: 0.00003
 chemlm_p_trav: 0.0
-# Recompute each encoder layer in backward: same gradients, less activation memory.
 chemlm_gradient_checkpointing: False
 
 # ==========================================================================
