@@ -1,7 +1,7 @@
 # Shared loss consolidation plan
 
-> **Status:** PROPOSED · **Updated:** 2026-10-12
-> Consolidate repeated preparation and bookkeeping in `src/fragnnet/loss/` after fixing the remaining numerical defects. Implementation has not started.
+> **Status:** LANDED · **Updated:** 2026-10-12
+> Remaining numerical fixes and consolidation implemented with regression coverage; changes are in the working tree for review. BCE retirement is committed in `0bfe032b`.
 
 ## Objective and baseline
 
@@ -179,11 +179,70 @@ pass. Record before/after production line counts and helper counts; do not set a
 line-reduction quota or claim a speedup without measurement. Unmeasured GPU behavior and
 any deferred contract decisions must be explicit in the handoff.
 
-## Current state and next action
+## Completion and validation (2026-10-12)
 
-- **Completed:** audit, first two bug fixes, and the user-authorized Phase 1 BCE retirement.
-- **Proposed:** Phase 0 and Phases 2–4. Retirement changes remain unstaged; no benchmark
-  or experiment was performed.
-- **Next action:** add the three Phase 0 regressions and establish the corrected baseline.
-  Each later phase remains independently reviewable. Update this plan and the two
-  workstream hubs as phases finish.
+Phases 0, 2, 3 and 4 are implemented. Phase 1 was committed separately in `0bfe032b`.
+The loss package keeps its public signatures, chunk policies, normalization choices,
+matching rules and model/config interfaces. Remaining unrelated numerical contracts
+(empty binned predictions and sequential/vectorized OOS entropy differences) are deferred.
+
+- **Numerical fixes:** normalize Hungarian JSD by positive mass, use a benign denominator
+  for zero mass (including the JS-gain assignment helper), replace `log(0)` before entropy
+  multiplication, and honor absolute per-spectrum Gaussian widths. Sequential OOS entropy
+  also handles exact-zero target peaks without `-inf * 0`.
+- **Pairwise:** one sparse bin-preparation path; compact with inverse indices; share sorted
+  rows and row pointers between cosine and CE. Cross-JSS compacts both supports together.
+- **Padding:** paired counts and boundaries transfer to CPU once. JSD and leakage reuse
+  layouts; CE broadcasts row tolerances instead of gathering/slicing/padding peak arrays.
+  Preserve the historical within-row argsort order: skipping it changed float32 reductions
+  and optimizer snapshots despite equivalent mathematics.
+- **Local reductions:** one CE forwarding closure, one channel Gaussian likelihood helper,
+  one L1 normalization for peak-list objectives and entropy, one entropy rescaling helper.
+  JSS memory documentation and unused Hungarian `log_min` documentation are corrected.
+
+Loss-package source shrank from **3,085 to 3,003 lines**; private helper count rose
+from 10 to 16 as repeated preparation moved into small functions. The shared assignment
+helper also changed in `utils/spec_similarity.py`.
+
+### Tests
+
+Two new files contain **230 parameterized cases** (229 CPU passes and one CUDA-only skip):
+`tests/test_loss_numerical_contracts.py` and `tests/test_loss_consolidation.py`.
+They cover independent dense values and gradients, exhaustive feasible JS assignments,
+independent intensity shifts, exact zeros and `-inf`, conditional/OOS entropy, Gaussian
+widths and truncation, duplicate peaks, shuffled inputs, non-default bin geometry,
+ragged/empty rows, chunk boundaries, CE asymmetry, cosine/JSS symmetry, escape mass,
+and posterior/Hungarian channel targets with detached priors.
+
+Against the saved pre-fix implementation, the 76 numerical cases produced **27 failures
+and 49 passes**; all 76 pass after the fixes. This includes a constrained assignment where
+an EPS normalization floor selected the wrong feasible permutation.
+
+Focused loss/model validation: **834 passed, 21 skipped** (before the final six assignment
+cases were added); those six also passed. All **17 training-step golden tests pass unchanged**.
+No golden files were regenerated. The additional run covering spectrum utilities, shared objectives and both new test
+files passed **284 tests with one CUDA skip** (overlaps the first run). All **5,753 repository tests collect successfully**; the full suite
+was not executed. Ruff on the changed source/tests and `git diff --check` pass.
+CUDA/NVML is unavailable, so GPU values, mixed-precision GPU execution and peak allocated
+GPU memory remain unverified. No validation-set training/evaluation or cluster job ran.
+
+### Bounded CPU timing probe
+
+One thread, float32, seed 73, eight spectra with peak counts `[8,32,5,96,11,24,7,48]`,
+chunk size 3, three warmups and 20 forward-plus-backward repetitions. Compare the corrected
+pre-refactor implementations with the new code; all seven cases had exactly equal outputs
+and prediction gradients. These one-off measurements are checks for gross regressions,
+not a general speed claim. Autograd memory was not profiled.
+
+| Path | Before (ms) | After (ms) |
+| --- | ---: | ---: |
+| Pairwise cosine | 1.674 | 1.684 |
+| Pairwise JSS | 2.248 | 2.149 |
+| Pairwise CE | 2.194 | 2.162 |
+| Gaussian CE | 6.225 | 6.121 |
+| Leakage | 2.404 | 2.158 |
+| Hungarian JSD | 6.541 | 6.127 |
+| Peak-list Hellinger plus entropy | 8.525 | 7.706 |
+
+**Next:** review the unstaged implementation and tests; run GPU validation when available.
+Other concurrent MASSter and documentation changes were preserved.

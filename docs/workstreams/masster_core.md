@@ -6,7 +6,7 @@
 ## Where it stands
 
 - **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–7 are committed on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
-- **Shared loss consolidation proposed:** [plan](../plans/loss_consolidation_plan.md), backed by the [audit](../findings/loss_simplification_audit_2026_10_12.md). First fixes are committed in `6b359293`; next establish the remaining numerical contracts, then share binning, padding and dispatch.
+- **Shared loss consolidation implemented:** [plan](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12); numerical fixes, shared preparation and reductions have regression coverage. BCE retirement is committed; remaining changes await review.
 - **RT/CCS:** [RTHead and CCSHead](../plans/masster/masster_rt_ccs_plan.md) with independent label sets completed a new 10-epoch GPU debug run; full Enveda arm remains prepared, heads default off.
 - Matched 128-epoch screen on the merged MA/MI base: control `c4a_base_s1` = **0.7270** `val_cos_sim` (tail mean epochs 118-127, replicate spread 0.0007, gate +-0.005), config `config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml`.
 - Real levers: `a1_prenorm` (`q4t4udee`) **+0.0056**, the only clean single-key architecture pass; cosine LR decay with 1000-step warmup `d3` (`rcfzf67p`) 0.7357 (+0.0072 at epoch 121, n=1); the 2026-09-20 feature bundle is worth about +0.006/+0.007; EMA gained +0.0102 on `i1` (see generalization hub).
@@ -21,7 +21,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | PROPOSED | Add Phase 0 numerical regressions, then consolidate preparation in bounded changes |
+| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Matched Enveda multitask/control evaluation; coordinated in the [CASMI/Enveda hub](casmi_enveda.md) |
 | [Architecture review todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED | `a1_prenorm` seed replicate; `a5` read against `a3`; RWSE needs the `random_walk_pe` fix ported |
 | [Regularization sweep / `wd10`](../plans/masster/masster_regularization_sweep_plan.md) | PREPARED | Generate on Fir with `submit_masster_regularization.sh wd10` if the gap question is reopened |
@@ -68,7 +68,7 @@
 - [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) — PREPARED: implementation, label evidence and experiment protocol.
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | PROPOSED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
+| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Reproduced correctness issues and prioritized simplifications |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | Shared heads, label evidence, completed GPU debug training and full experiment |
 | [repo_reorg_plan](../plans/repo_reorg_plan.md) | ACTIVE (2026-10-12) | Cross-model reorg: registry and hooks, `fragmentation/`, `frag_utils` split, `models/` and `baselines/` packages, external ICEBERG via ms-pred, DGL-free env; Phases 0–7 committed on `refactor/fragnnet-masster-reorg`, awaiting merge |

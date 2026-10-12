@@ -12,6 +12,7 @@ from fragnnet.loss.padding import (
     build_padded_batch_layout,
     pad_flat_by_batch,
     pad_flat_with_layout,
+    paired_batch_offsets,
 )
 from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ
 from fragnnet.utils.scatter_utils import x_log_x
@@ -120,10 +121,9 @@ def sparse_outside_window_intensity_fraction(
     pred_intensities = pred_intensities[pred_sort_idx]
     pred_batch_idxs = pred_batch_idxs[pred_sort_idx]
 
-    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
-    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
-    true_cumsum = th.cat([true_batch_idxs.new_zeros(1), true_counts.cumsum(0)]).tolist()
-    pred_cumsum = th.cat([pred_batch_idxs.new_zeros(1), pred_counts.cumsum(0)]).tolist()
+    true_counts, pred_counts, true_cumsum, pred_cumsum = paired_batch_offsets(
+        true_batch_idxs, pred_batch_idxs, batch_size
+    )
 
     fractions = pred_intensities.new_zeros(batch_size)
     tiny = th.finfo(pred_intensities.dtype).tiny
@@ -137,14 +137,20 @@ def sparse_outside_window_intensity_fraction(
         bl_true_batch_idxs = true_batch_idxs[bl_true] - bl_lower
         bl_pred_batch_idxs = pred_batch_idxs[bl_pred] - bl_lower
 
-        padded_pred_ints, pred_valid = pad_flat_by_batch(
-            pred_intensities[bl_pred], bl_pred_batch_idxs, bl_batch_size, 0.0
+        pred_sort, pred_indices, pred_valid, pred_max = build_padded_batch_layout(
+            bl_pred_batch_idxs,
+            bl_batch_size,
+            assume_sorted=False,
+            counts=pred_counts[bl_lower:bl_upper],
+            max_count=max(pred_cumsum[i + 1] - pred_cumsum[i] for i in range(bl_lower, bl_upper)),
         )
+        pred_layout = (pred_sort, pred_indices, bl_batch_size, pred_max)
+        padded_pred_ints = pad_flat_with_layout(
+            pred_intensities[bl_pred], *pred_layout, pad_value=0.0
+        )
+        padded_pred_mzs = pad_flat_with_layout(pred_mzs[bl_pred], *pred_layout, pad_value=0.0)
         padded_true_mzs, true_valid = pad_flat_by_batch(
             true_mzs[bl_true], bl_true_batch_idxs, bl_batch_size, 0.0
-        )
-        padded_pred_mzs, _ = pad_flat_by_batch(
-            pred_mzs[bl_pred], bl_pred_batch_idxs, bl_batch_size, 0.0
         )
         total_intensity = padded_pred_ints.sum(dim=1)
 
@@ -336,8 +342,9 @@ def sparse_peak_list_distance(
             f"{pred_dump_intensities.shape[0]} for {batch_size} spectra"
         )
 
-    true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
-    pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    true_batch_counts, pred_batch_counts, true_batch_cumsum, pred_batch_cumsum = (
+        paired_batch_offsets(true_batch_idxs, pred_batch_idxs, batch_size)
+    )
     empty_spectra = (true_batch_counts == 0) | (pred_batch_counts == 0)
     if bool(empty_spectra.any().item()):
         first_empty = int(empty_spectra.nonzero()[0, 0].item())
@@ -355,17 +362,6 @@ def sparse_peak_list_distance(
         first_zero = int((pred_batch_totals <= 0).nonzero()[0, 0].item())
         raise ValueError(f"predicted spectrum {first_zero} has zero total intensity")
 
-    packed_batch_cumsums = th.cat(
-        (
-            true_batch_idxs.new_zeros(1),
-            true_batch_counts.cumsum(0),
-            pred_batch_idxs.new_zeros(1),
-            pred_batch_counts.cumsum(0),
-        )
-    ).tolist()
-    cumsum_size = batch_size + 1
-    true_batch_cumsum: list[int] = packed_batch_cumsums[:cumsum_size]
-    pred_batch_cumsum: list[int] = packed_batch_cumsums[cumsum_size:]
     loss_chunks = build_loss_chunks(true_batch_cumsum, pred_batch_cumsum, loss_batch_size)
 
     primary_losses = true_intensities.new_empty(batch_size)
@@ -468,6 +464,9 @@ def sparse_peak_list_distance(
         distance_pred = aligned_pred.to(dtype=distance_dtype)
         distance_true = aligned_true.to(dtype=distance_dtype)
 
+        pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
+        true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
+
         if objective == "cosine_distance":
             similarity = (distance_pred * distance_true).sum(dim=1) / (
                 th.linalg.vector_norm(distance_pred, dim=1)
@@ -475,8 +474,6 @@ def sparse_peak_list_distance(
             )
             primary_losses[bl_lower:bl_upper] = 1.0 - similarity
         else:
-            pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
-            true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
             if objective == "hellinger_distance":
                 coefficient = _bhattacharyya_coefficient(
                     pred_distribution,
@@ -509,10 +506,8 @@ def sparse_peak_list_distance(
                     positive_true, divergence_terms, th.zeros_like(divergence_terms)
                 ).sum(dim=1)
 
-        entropy_pred_distribution = distance_pred / distance_pred.sum(dim=1, keepdim=True)
-        entropy_true_distribution = distance_true / distance_true.sum(dim=1, keepdim=True)
-        pred_entropy = -x_log_x(entropy_pred_distribution).sum(dim=1)
-        true_entropy = -x_log_x(entropy_true_distribution).sum(dim=1)
+        pred_entropy = -x_log_x(pred_distribution).sum(dim=1)
+        true_entropy = -x_log_x(true_distribution).sum(dim=1)
         entropy_losses[bl_lower:bl_upper] = (pred_entropy - true_entropy).square()
 
     return primary_losses, entropy_losses

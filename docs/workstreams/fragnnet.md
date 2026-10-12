@@ -4,19 +4,19 @@
 > FraGNNet (NodeMLP over the bond-cut fragmentation DAG): DAG generation, recall and pruning, oracle ceilings, intensity ranking, FluxMPNN, contender-pair training, GLACIER gap, and the cross-model conditioning and reranking plans.
 
 ## Where it stands
-- **Shared loss consolidation proposed:** [plan](../plans/loss_consolidation_plan.md), backed by the [audit](../findings/loss_simplification_audit_2026_10_12.md). First fixes are committed in `6b359293`; next establish the remaining numerical contracts, then share binning, padding and dispatch.
+- **Shared loss consolidation implemented:** [plan](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12); numerical fixes, shared preparation and reductions have regression coverage. BCE retirement is committed; remaining changes await review.
 - **Simplification audit complete:** [findings](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). Its cc-mask padding leak (rest pooling and the cc-corruption probe pulled atoms from other molecules in the batch) is fixed in the working tree, not committed, with a regression test. Next: remove dead loss branches, then deduplicate DAG insertion and head conditioning.
 - **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–9 are committed on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
 - **No active FraGNNet work.** project-state shows all work since September 2026 on MASSter (see [MASSter core](masster_core.md)); Stage A is STOPPED; the other plans are deferred, proposed, landed or closed.
 - **Best FraGNNet numbers cited in docs:** `pqx7ywc9` scores 0.7555 `cos_hun_inst_tol` on the NIST20 test split (`nist20_ma_mi_inchikey`, 96,128 spectra) and 0.7612 on FT `[M+H]+` at 0.1 Da bins, 0.077 below GLACIER's 0.838 ([gap finding](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md)). The DAG oracle ceiling is 0.937 cos_hun (0.959 at instrument tolerance), so the gap is intensity ranking and allocation, not coverage ([ceiling](../findings/fragnnet/dag_oracle_ceiling_nist20.md)).
 - **Stopped:** precursor and CE-switch BCE retired at user request. Stage A configs and generator removed; see the [loss plan](../plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 - **User decision:** no SMARTS for FraGNNet (VRAM); SMARTS work is MASSter only ([pathway plan](../plans/masster/masster_smarts_pathway_plan.md), CLOSED NULL for MASSter). Production FraGNNet DAGs are `..._smpFalse` ([usage audit](../findings/smarts_usage_audit_2026_09_23.md)).
-- **Next:** review BCE retirement, then address remaining numerical loss findings.
+- **Next:** review completed loss consolidation; GPU validation when available.
 
 ## Open threads
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | PROPOSED | Add Phase 0 numerical regressions, then consolidate preparation in bounded changes |
+| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Code simplification audit](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md) | FINDING | Padding leak fixed (uncommitted); remove dead loss branches, then deduplicate operations |
 | [FT contender-pair training](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md) | STOPPED | Objective retired; do not submit |
 | [Global fragment intensity ranking](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) | PROPOSED | Phase 2 gates on an unfiltered matched NodeMLP export; after Stage A |
@@ -59,7 +59,7 @@
 ## All documents
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | PROPOSED (2026-10-12) | Numerical contracts, shared preparation, dispatch and validation gates |
+| [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Numerical contracts, shared preparation, dispatch and validation gates |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Two reproduced correctness issues and bounded simplifications |
 | [fragnnet_simplification_audit_2026_10_12](../findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | cc-mask padding leak (fixed) and prioritized behavior-preserving cleanup |
 | [cc_corruption_probe_finding](../findings/fragnnet/cc_corruption_probe_finding.md) | FINDING (2026-10-12) | Fragment identity representation is used |

@@ -8,7 +8,13 @@ from collections.abc import Callable
 
 import torch as th
 
-from fragnnet.loss.padding import build_loss_chunks, build_padded_batch_layout, pad_flat_with_layout
+from fragnnet.loss.entropy import _plogp
+from fragnnet.loss.padding import (
+    build_loss_chunks,
+    build_padded_batch_layout,
+    pad_flat_with_layout,
+    paired_batch_offsets,
+)
 from fragnnet.utils.misc_utils import LOG_ZERO
 from fragnnet.utils.spec_similarity import calculate_match_mzs
 
@@ -216,24 +222,15 @@ def sparse_cross_entropy_seq(
     tol_per_sample: th.Tensor | None = None,
     min_mz_per_sample: th.Tensor | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
-    """compute sparse cross entropy in squence
+    """Score each spectrum independently, including conditional observed OOS entropy.
 
-    Args:
-        true_mzs (_type_): groundtruth mzs
-        true_logprobs (_type_): groundtruth log prob of each mz aka intensities
-        true_batch_idxs (_type_): spec idx signed to each groundtruth
-        pred_mzs (_type_): predicted mzs
-        pred_logprobs (_type_): predicted log prob of each mz aka intensities
-        pred_batch_idxs (_type_): pec idx signed to each prediction
-        ce_fn (_type_, optional): _description_. Defaults to mog_log_prob.
-        tolerance (_type_, optional): _description_. Defaults to 1e-3.
-        relative (bool, optional): _description_. Defaults to False.
-        oos_tolerance_multiple (int, optional): _description_.
-        gaussian_renormalize (bool, optional): _description_.
-        pm_tolerance_multiple (int, optional): _description_.
+    Batch indices may be unsorted. Empty target subsets contribute zero CE;
+    empty predictions with observed mass require truncated matching. Tolerances
+    are scalar defaults overridden by each supplied per-spectrum vector.
 
     Returns:
-        tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]: ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
+        In-support CE, OOS CE, observed OOS log mass, and conditional OOS entropy,
+        each a vector with one entry per predicted OOS log probability.
     """
 
     mask_value = LOG_ZERO(true_logprobs.dtype)
@@ -292,15 +289,14 @@ def sparse_cross_entropy_seq(
         )
         # calculate oos logprobs
         b_true_oos_logprobs = th.logsumexp(
-            mask_value * b_true_match_mask.to(b_true_logprobs.dtype)
-            + b_true_logprobs * (~b_true_match_mask).to(b_true_logprobs.dtype),
+            b_true_logprobs.masked_fill(
+                b_true_match_mask | th.isneginf(b_true_logprobs), mask_value
+            ),
             dim=0,
         )
-        b_true_oos_entropy = -th.sum(
-            th.exp(b_true_logprobs[~b_true_match_mask] - b_true_oos_logprobs)
-            * (b_true_logprobs[~b_true_match_mask] - b_true_oos_logprobs),
-            dim=0,
-        )
+        b_true_oos_entropy = -_plogp(
+            b_true_logprobs[~b_true_match_mask] - b_true_oos_logprobs
+        ).sum()
         b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
         b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
         # combine
@@ -332,6 +328,7 @@ def sparse_cross_entropy_vec(
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
 
+    Inputs must be sorted by batch index; empty rows are retained.
     Each loss chunk is padded per spectrum before peak matching. Chunk boundaries
     ensure the resulting ``[chunk, max_true_peaks, max_pred_peaks]`` pairwise tensors
     are no larger than the Cartesian product of all flattened peaks in that chunk.
@@ -358,7 +355,8 @@ def sparse_cross_entropy_vec(
     Returns:
         ios_ce: In-sample cross-entropy per batch.
         oos_ce: Out-of-sample cross-entropy per batch.
-        0., 1.: Placeholders for compatibility.
+        true_oos_logprobs: Observed mass outside the prediction windows, in log space.
+        true_oos_entropies: Zeros; conditional OOS entropy is only computed by the sequential path.
     """
 
     # 1. Set up types and constants.
@@ -371,19 +369,9 @@ def sparse_cross_entropy_vec(
     # Compute cumulative sum of counts for batch slicing.
     # .tolist() transfers batch_size+1 ints once, turning loop-body indexing into Python-int
     # slicing (no GPU→CPU sync per iteration). th.bincount is O(N) vs th.unique's O(N log N).
-    true_batch_counts = th.bincount(true_batch_idxs, minlength=batch_size)
-    pred_batch_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
-    packed_batch_cumsums = th.cat(
-        (
-            true_batch_idxs.new_zeros(1),
-            true_batch_counts.cumsum(0),
-            pred_batch_idxs.new_zeros(1),
-            pred_batch_counts.cumsum(0),
-        )
-    ).tolist()
-    cumsum_size = batch_size + 1
-    true_batch_cumsum: list[int] = packed_batch_cumsums[:cumsum_size]
-    pred_batch_cumsum: list[int] = packed_batch_cumsums[cumsum_size:]
+    true_batch_counts, pred_batch_counts, true_batch_cumsum, pred_batch_cumsum = (
+        paired_batch_offsets(true_batch_idxs, pred_batch_idxs, batch_size)
+    )
     loss_chunks = build_loss_chunks(
         true_batch_cumsum,
         pred_batch_cumsum,
@@ -405,22 +393,10 @@ def sparse_cross_entropy_vec(
     else:
         _log_trunc_factor = 0.0
 
-    # 3. Initialize outputs and per-peak tolerances.
+    # 3. Initialize per-spectrum outputs.
     ios_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     oos_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     true_oos_logprobs = th.zeros(batch_size, dtype=float_dtype, device=device)
-
-    # Expand per-sample tolerances to per-peak if provided
-    if tol_per_sample is not None:
-        tol_per_true_peak = tol_per_sample[true_batch_idxs].to(float_dtype)
-        min_mz_per_true_peak = min_mz_per_sample[true_batch_idxs].to(float_dtype)
-        tol_per_pred_peak = tol_per_sample[pred_batch_idxs].to(float_dtype)
-        min_mz_per_pred_peak = min_mz_per_sample[pred_batch_idxs].to(float_dtype)
-    else:
-        tol_per_true_peak = None
-        min_mz_per_true_peak = None
-        tol_per_pred_peak = None
-        min_mz_per_pred_peak = None
 
     # 4. Evaluate padded, block-diagonal loss chunks.
     for bl_lower, bl_upper in loss_chunks:
@@ -439,28 +415,6 @@ def sparse_cross_entropy_vec(
         bl_true_mzs = true_mzs[bl_true_lower:bl_true_upper]
         bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
         bl_pred_oos_logprobs = pred_oos_logprobs[bl_lower:bl_upper]
-
-        # Slice per-peak tolerance arrays for this loss batch
-        bl_tol_per_true = (
-            tol_per_true_peak[bl_true_lower:bl_true_upper]
-            if tol_per_true_peak is not None
-            else None
-        )
-        bl_min_mz_per_true = (
-            min_mz_per_true_peak[bl_true_lower:bl_true_upper]
-            if min_mz_per_true_peak is not None
-            else None
-        )
-        bl_tol_per_pred = (
-            tol_per_pred_peak[bl_pred_lower:bl_pred_upper]
-            if tol_per_pred_peak is not None
-            else None
-        )
-        bl_min_mz_per_pred = (
-            min_mz_per_pred_peak[bl_pred_lower:bl_pred_upper]
-            if min_mz_per_pred_peak is not None
-            else None
-        )
 
         # Pad spectra independently so pairwise tensors have shape
         # [batch, max_true_peaks, max_pred_peaks], without cross-spectrum pairs.
@@ -515,27 +469,14 @@ def sparse_cross_entropy_vec(
         bl_min_mz_per_true_padded = None
         bl_tol_per_pred_padded = None
         bl_min_mz_per_pred_padded = None
-        if bl_tol_per_true is not None:
-            bl_tol_per_true_padded = pad_flat_with_layout(
-                bl_tol_per_true,
-                *true_layout,
-                pad_value=tolerance,
-            )
-            bl_min_mz_per_true_padded = pad_flat_with_layout(
-                bl_min_mz_per_true,
-                *true_layout,
-                pad_value=tolerance_min_mz,
-            )
-            bl_tol_per_pred_padded = pad_flat_with_layout(
-                bl_tol_per_pred,
-                *pred_layout,
-                pad_value=tolerance,
-            )
-            bl_min_mz_per_pred_padded = pad_flat_with_layout(
-                bl_min_mz_per_pred,
-                *pred_layout,
-                pad_value=tolerance_min_mz,
-            )
+        if tol_per_sample is not None:
+            row_tol = tol_per_sample[bl_lower:bl_upper].to(float_dtype)[:, None]
+            row_min_mz = min_mz_per_sample[bl_lower:bl_upper].to(float_dtype)[:, None]
+            # Preserve padding fill values as well as the real-peak tolerances.
+            bl_tol_per_true_padded = th.where(bl_true_valid, row_tol, tolerance)
+            bl_tol_per_pred_padded = th.where(bl_pred_valid, row_tol, tolerance)
+            bl_min_mz_per_true_padded = th.where(bl_true_valid, row_min_mz, tolerance_min_mz)
+            bl_min_mz_per_pred_padded = th.where(bl_pred_valid, row_min_mz, tolerance_min_mz)
 
         # 5. Match peaks and compute Gaussian-mixture probabilities within each spectrum.
         bl_valid_pairs = bl_true_valid.unsqueeze(2) & bl_pred_valid.unsqueeze(1)
@@ -572,7 +513,11 @@ def sparse_cross_entropy_vec(
                 else:
                     bl_stds = th.clamp(bl_pred_mzs_padded, min=tolerance_min_mz) * tolerance
             else:
-                bl_stds = tolerance * th.ones_like(bl_pred_mzs_padded)
+                bl_stds = (
+                    bl_tol_per_pred_padded
+                    if bl_tol_per_pred_padded is not None
+                    else tolerance * th.ones_like(bl_pred_mzs_padded)
+                )
             bl_vars = bl_stds**2
 
             bl_ios_log_probs = (
@@ -643,51 +588,32 @@ def get_sparse_cross_entropy_fn(
         )
         raise NotImplementedError(msg)
 
+    tolerance_multiple = oos_tolerance_multiple if dist == "gaussian" else pm_tolerance_multiple
+    common = {
+        "tolerance": tolerance,
+        "relative": relative,
+        "tolerance_min_mz": tolerance_min_mz,
+        "gaussian_renormalize": gaussian_renormalize,
+    }
     if vectorized:
-        # The window multiple is distribution-specific, matching the sequential path.
-        vec_tolerance_multiple = (
-            oos_tolerance_multiple if dist == "gaussian" else pm_tolerance_multiple
+        implementation = sparse_cross_entropy_vec
+        fixed = dict(
+            common,
+            oos_tolerance_multiple=tolerance_multiple,
+            loss_batch_size=loss_batch_size,
+            dist=dist,
         )
-
-        def sce_fn(
-            *args: th.Tensor,
-            tol_per_sample: th.Tensor | None = None,
-            min_mz_per_sample: th.Tensor | None = None,
-        ) -> th.Tensor:
-            return sparse_cross_entropy_vec(
-                *args,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-                oos_tolerance_multiple=vec_tolerance_multiple,
-                gaussian_renormalize=gaussian_renormalize,
-                loss_batch_size=loss_batch_size,
-                tol_per_sample=tol_per_sample,
-                min_mz_per_sample=min_mz_per_sample,
-                dist=dist,
-            )
-
     else:
-        if dist == "gaussian":
-            tolerance_multiple = oos_tolerance_multiple
-        else:
-            tolerance_multiple = pm_tolerance_multiple
+        implementation = sparse_cross_entropy_seq
+        fixed = dict(common, ce_fn=ce_fn, tolerance_multiple=tolerance_multiple)
 
-        def sce_fn(
-            *args: th.Tensor,
-            tol_per_sample: th.Tensor | None = None,
-            min_mz_per_sample: th.Tensor | None = None,
-        ) -> th.Tensor:
-            return sparse_cross_entropy_seq(
-                *args,
-                ce_fn=ce_fn,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-                tolerance_multiple=tolerance_multiple,
-                gaussian_renormalize=gaussian_renormalize,
-                tol_per_sample=tol_per_sample,
-                min_mz_per_sample=min_mz_per_sample,
-            )
+    def sce_fn(
+        *args: th.Tensor,
+        tol_per_sample: th.Tensor | None = None,
+        min_mz_per_sample: th.Tensor | None = None,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        return implementation(
+            *args, **fixed, tol_per_sample=tol_per_sample, min_mz_per_sample=min_mz_per_sample
+        )
 
     return sce_fn

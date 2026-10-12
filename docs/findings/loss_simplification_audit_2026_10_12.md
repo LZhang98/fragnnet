@@ -290,3 +290,29 @@ audit. Both implementations, training plumbing and experiment configs are remove
 Disabled legacy settings migrate away; enabled legacy objectives raise an explicit error.
 The [consolidation plan](../plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce)
 records the scope and validation. Earlier BCE findings above are historical.
+
+## Consolidation outcome (2026-10-12)
+
+The remaining requested work is implemented; the [completion record](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12)
+is canonical for scope, tests and CPU timings. Hungarian JSD no longer divides tiny positive
+mass by EPS, including when choosing assignments. Zero-mass denominators are replaced by
+one, preserving the zero distribution and avoiding overflowing backward derivatives.
+Entropy handles exact zero probabilities before multiplication, including sequential OOS
+entropy. Absolute Gaussian widths now honor per-spectrum values.
+
+Normalization, binning, row-pointer setup, padded layouts, tolerance broadcasting, dispatch
+and local reductions are consolidated. Historical within-row sort order is retained: its
+removal caused small reduction differences which Adam amplified. Restoring that order made
+all 17 existing optimizer-step golden tests pass without modifying their expectations.
+
+Two new files add 230 parameterized cases. Of the 76 numerical cases, 27 fail against the
+pre-fix implementation; all pass now. Focused suites passed 834 tests (21 skips) and another
+284 (one skip, overlapping), plus the final six assignment cases. New source/tests pass Ruff;
+all 5,753 repository tests collect. Full-suite execution, CUDA validation and validation-set
+model evaluation were not performed. Small ragged CPU timing probes found no material
+regression; they do not establish general runtime or GPU-memory improvements.
+
+Intentional numerical differences affect tiny-mass Hungarian JSD, exact-zero entropy and
+per-spectrum absolute Gaussian CE. Historical runs exercising those cases are not exact
+numerical baselines for the corrected objectives. The former follow-up findings on these
+three issues are resolved; deferred empty-binned and path-specific OOS contracts remain.

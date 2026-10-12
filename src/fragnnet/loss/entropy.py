@@ -6,6 +6,23 @@ from fragnnet.utils.misc_utils import EPS
 from fragnnet.utils.scatter_utils import safelog, scatter_logsumexp, scatter_reduce
 
 
+def _plogp(logprobs: th.Tensor) -> th.Tensor:
+    # Replace log(0) before multiplying: masking a NaN product poisons backward.
+    finite_logs = th.where(th.isneginf(logprobs), th.zeros_like(logprobs), logprobs)
+    return logprobs.exp() * finite_logs
+
+
+def _rescale_entropy(
+    entropy: th.Tensor, max_entropy: th.Tensor, label: str
+) -> tuple[th.Tensor, th.Tensor]:
+    max_entropy = th.clamp(max_entropy, min=EPS)
+    entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
+    norm_entropy = entropy / max_entropy
+    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
+        raise ValueError(f"Normalized {label} out of bounds [0, 1]")
+    return entropy, norm_entropy
+
+
 def sparse_entropy_fn(
     logprobs: th.Tensor,
     batch_idxs: th.Tensor,
@@ -20,8 +37,7 @@ def sparse_entropy_fn(
             oos_logprobs = oos_logprobs - logpartition
         logprobs = logprobs - th.gather(input=logpartition, index=batch_idxs, dim=0)
     logprobs = th.clamp(logprobs, max=0.0)
-    probs = th.exp(logprobs)
-    plogp = probs * logprobs
+    plogp = _plogp(logprobs)
     batch_size = int(th.max(batch_idxs).item() + 1)
     entropy = -scatter_reduce(
         src=plogp,
@@ -41,16 +57,10 @@ def sparse_entropy_fn(
     support_size += support_size_delta
     if oos_logprobs is not None:
         assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape, batch_size)
-        entropy = entropy - th.exp(oos_logprobs) * oos_logprobs
+        entropy = entropy - _plogp(oos_logprobs)
         support_size = support_size + 1.0
     max_entropy = safelog(support_size)
-    # rescale entropy
-    max_entropy = th.clamp(max_entropy, min=EPS)
-    entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
-    norm_entropy = entropy / max_entropy
-    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
-        raise ValueError("Normalized entropy out of bounds [0, 1]")
-    return entropy, norm_entropy
+    return _rescale_entropy(entropy, max_entropy, "entropy")
 
 
 def sparse_conditional_entropy_fn(
@@ -66,7 +76,7 @@ def sparse_conditional_entropy_fn(
     marginal_logprobs = th.clamp(marginal_logprobs, max=0.0)
     conditional_logprobs = th.clamp(conditional_logprobs, max=0.0)
     marginal_probs = th.exp(marginal_logprobs)
-    conditional_plogp = th.exp(conditional_logprobs) * conditional_logprobs
+    conditional_plogp = _plogp(conditional_logprobs)
     conditional_entropy = -scatter_reduce(
         conditional_plogp, index=conditional_idxs, reduce="sum", dim_size=marginal_support_size
     )
@@ -92,10 +102,4 @@ def sparse_conditional_entropy_fn(
         reduce="sum",
         dim_size=batch_size,
     )
-    # rescale entropy
-    max_entropy = th.clamp(max_entropy, min=EPS)
-    entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
-    norm_entropy = entropy / max_entropy
-    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
-        raise ValueError("Normalized conditional entropy out of bounds [0, 1]")
-    return entropy, norm_entropy
+    return _rescale_entropy(entropy, max_entropy, "conditional entropy")

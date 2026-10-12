@@ -5,6 +5,27 @@ memory.
 import torch as th
 
 
+def paired_batch_offsets(
+    true_batch_idxs: th.Tensor, pred_batch_idxs: th.Tensor, batch_size: int
+) -> tuple[th.Tensor, th.Tensor, list[int], list[int]]:
+    """Count both peak lists and transfer cumulative offsets together.
+
+    Offsets describe contiguous slices only when each input is sorted by batch index.
+    Empty rows are retained. Callers own sorting, empty-input policy and chunk selection.
+    """
+    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
+    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    offsets = th.cat(
+        (
+            true_counts.new_zeros(1),
+            true_counts.cumsum(0),
+            pred_counts.new_zeros(1),
+            pred_counts.cumsum(0),
+        )
+    ).tolist()
+    return true_counts, pred_counts, offsets[: batch_size + 1], offsets[batch_size + 1 :]
+
+
 def build_padded_batch_layout(
     batch_idxs: th.Tensor,
     batch_size: int,

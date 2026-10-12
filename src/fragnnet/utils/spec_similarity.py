@@ -156,8 +156,10 @@ def align_sparse_peak_support(
                 invalid_cost[:, None, None].expand_as(mass_distance),
             )
         else:
-            true_probs = F.normalize(true_intensities, p=1, dim=1)
-            pred_probs = F.normalize(pred_intensities, p=1, dim=1)
+            true_total = true_intensities.sum(dim=1, keepdim=True)
+            pred_total = pred_intensities.sum(dim=1, keepdim=True)
+            true_probs = true_intensities / th.where(true_total > 0, true_total, 1.0)
+            pred_probs = pred_intensities / th.where(pred_total > 0, pred_total, 1.0)
             pair_mass = true_probs[:, :, None] + pred_probs[:, None, :]
             assignment_score = 0.5 * (
                 pair_mass * th.log(pair_mass + EPS)

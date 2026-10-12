@@ -16,6 +16,34 @@ from fragnnet.utils.scatter_utils import (
 from fragnnet.utils.spec_utils import batched_bin_func
 
 
+def _bin_spectra(
+    mzs: th.Tensor, logprobs: th.Tensor, batch_idxs: th.Tensor, mz_max: float, mz_bin_res: float
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Coalesce peaks and strip batch offsets; keep normalization caller-specific."""
+    bins, values, rows = batched_bin_func(
+        mzs, logprobs, batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True
+    )
+    return bins % validate_bin_geometry(mz_max, mz_bin_res), values, rows
+
+
+def _prepare_binned_spectra(
+    mzs: th.Tensor, logprobs: th.Tensor, batch_idxs: th.Tensor, mz_max: float, mz_bin_res: float
+) -> tuple[th.Tensor, th.Tensor, th.Tensor, int]:
+    bins, values, rows = _bin_spectra(mzs, logprobs, batch_idxs, mz_max, mz_bin_res)
+    occupied, columns = th.unique(bins, return_inverse=True)
+    return columns, values, rows, occupied.numel()
+
+
+def _prepare_rows(
+    batch_idxs: th.Tensor, bin_idxs: th.Tensor, probs: th.Tensor, batch_size: int
+) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+    order = th.argsort(batch_idxs)
+    rows = batch_idxs[order]
+    counts = th.bincount(rows, minlength=batch_size)
+    row_ptr = th.cat((counts.new_zeros(1), counts.cumsum(0))).detach().cpu()
+    return rows, bin_idxs[order], probs[order], row_ptr
+
+
 def _build_dense_chunk(
     sorted_batch_idxs: th.Tensor,
     sorted_bin_idxs: th.Tensor,
@@ -77,42 +105,19 @@ def get_pairwise_cossim(
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Binning
-    bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
-        mzs, logprobs, batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True
+    compact_bin_idxs, bin_logprobs, bin_batch_idxs, num_unique_bins = _prepare_binned_spectra(
+        mzs, logprobs, batch_idxs, mz_max, mz_bin_res
     )
 
     # Normalize (L2 on probabilities)
     norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
     norm_probs = norm_logprobs.exp()
 
-    # batched_bin_func returns batch-offset bin indices (batch element k uses range [k*num_bins,
-    # (k+1)*num_bins)). Strip the offset to get per-spectrum bin positions so that the same m/z
-    # bin in different spectra maps to the same column in the V matrix, enabling valid dot-product
-    # cosine similarity. Without this, every spectrum occupies exclusively different columns and
-    # all off-diagonal similarities are zero by construction.
-    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
-    intra_bin_idxs = bin_idxs % num_bins
-
-    # Compact bin space: avoids 150k-wide matrices when only a few bins are occupied
-    unique_bins = th.unique(intra_bin_idxs)
-    num_unique_bins = unique_bins.numel()
-    bin_idx_map = th.full(
-        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
-    )
-    bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
-
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    sort_idx = th.argsort(bin_batch_idxs)
-    sorted_batch_idxs = bin_batch_idxs[sort_idx]
-    sorted_bin_idxs = compact_bin_idxs[sort_idx]
-    sorted_probs = norm_probs[sort_idx]
-    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-    row_ptr[1:] = th.cumsum(counts, dim=0)
-    row_ptr_cpu = row_ptr.detach().cpu()
+    sorted_batch_idxs, sorted_bin_idxs, sorted_probs, row_ptr_cpu = _prepare_rows(
+        bin_batch_idxs, compact_bin_idxs, norm_probs, batch_size
+    )
 
     S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=norm_probs.dtype)
 
@@ -164,8 +169,9 @@ def get_pairwise_jss_sim(
 ) -> th.Tensor:
     """Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
 
-    Avoids materializing the full [batch_size, num_unique_bins] dense matrix by
-    building chunk-sized row slices on the fly.
+    Stores a dense [batch_size, occupied_bins] probability matrix. Chunking bounds
+    each pairwise mixture block to [chunk_size, chunk_size, occupied_bins];
+    autograd may retain intermediates from multiple blocks until backward.
 
     Args:
         mzs: m/z values.
@@ -190,30 +196,13 @@ def get_pairwise_jss_sim(
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Binning
-    bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
-        mzs, logprobs, batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True
+    compact_bin_idxs, bin_logprobs, bin_batch_idxs, num_unique_bins = _prepare_binned_spectra(
+        mzs, logprobs, batch_idxs, mz_max, mz_bin_res
     )
 
     # Normalize (L1 on probabilities)
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
-
-    # Strip batch offsets (same fix as get_pairwise_cossim): batched_bin_func returns
-    # batch-offset bin indices; without stripping, each spectrum occupies exclusively
-    # different columns, making all pairwise mixtures trivially equal to 0.5*(P+0)=0.5*P
-    # and H(M) collapses to a function of individual entropies only.
-    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
-    intra_bin_idxs = bin_idxs % num_bins
-
-    # Compact bin space
-    unique_bins = th.unique(intra_bin_idxs)
-    num_unique_bins = unique_bins.numel()
-    bin_idx_map = th.full(
-        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
-    )
-    bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
@@ -284,40 +273,19 @@ def get_pairwise_cross_entropy(
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Binning
-    bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
-        mzs, logprobs, batch_idxs, mz_max=mz_max, mz_bin_res=mz_bin_res, agg="lse", sparse=True
+    compact_bin_idxs, bin_logprobs, bin_batch_idxs, num_unique_bins = _prepare_binned_spectra(
+        mzs, logprobs, batch_idxs, mz_max, mz_bin_res
     )
 
     # Normalize to get probabilities (L1 normalization)
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
-    # Strip batch offsets: batched_bin_func returns batch-offset bin indices; without
-    # stripping, each spectrum occupies exclusively different columns so P and Q never
-    # share any bin and cross-entropy reduces to -sum(P*log(eps)) for all off-diagonal
-    # pairs — masking any real signal from shared peaks.
-    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
-    intra_bin_idxs = bin_idxs % num_bins
-
-    unique_bins = th.unique(intra_bin_idxs)
-    num_unique_bins = unique_bins.numel()
-    bin_idx_map = th.full(
-        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
-    )
-    bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
-
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    sort_idx = th.argsort(bin_batch_idxs)
-    sorted_batch_idxs = bin_batch_idxs[sort_idx]
-    sorted_bin_idxs = compact_bin_idxs[sort_idx]
-    sorted_probs = probs[sort_idx]
-    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
-    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
-    row_ptr[1:] = th.cumsum(counts, dim=0)
-    row_ptr_cpu = row_ptr.detach().cpu()
+    sorted_batch_idxs, sorted_bin_idxs, sorted_probs, row_ptr_cpu = _prepare_rows(
+        bin_batch_idxs, compact_bin_idxs, probs, batch_size
+    )
 
     CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
 
@@ -412,24 +380,11 @@ def get_cross_jss_contrastive(
     if true_mzs.numel() == 0 or pred_mzs.numel() == 0:
         return th.zeros(batch_size, device=device, dtype=dtype)
 
-    # Bin both spectra into sparse COO representation
-    true_bin_idxs, true_bin_lp, true_bin_bidxs = batched_bin_func(
-        true_mzs,
-        true_logprobs,
-        true_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg="lse",
-        sparse=True,
+    true_intra, true_bin_lp, true_bin_bidxs = _bin_spectra(
+        true_mzs, true_logprobs, true_batch_idxs, mz_max, mz_bin_res
     )
-    pred_bin_idxs, pred_bin_lp, pred_bin_bidxs = batched_bin_func(
-        pred_mzs,
-        pred_logprobs,
-        pred_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg="lse",
-        sparse=True,
+    pred_intra, pred_bin_lp, pred_bin_bidxs = _bin_spectra(
+        pred_mzs, pred_logprobs, pred_batch_idxs, mz_max, mz_bin_res
     )
 
     # L1-normalise
@@ -446,18 +401,10 @@ def get_cross_jss_contrastive(
     true_probs = true_lp.exp()
     pred_probs = pred_lp.exp()
 
-    # Strip batch offsets and build a shared compact bin space across both sets
-    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
-    true_intra = true_bin_idxs % num_bins
-    pred_intra = pred_bin_idxs % num_bins
-
-    all_intra = th.cat([true_intra, pred_intra])
-    unique_bins = th.unique(all_intra)
+    # Compact once across both sets, so corresponding m/z bins share columns.
+    unique_bins, inverse = th.unique(th.cat((true_intra, pred_intra)), return_inverse=True)
     K = unique_bins.numel()
-    bin_idx_map = th.full((int(all_intra.max().item()) + 1,), -1, device=device, dtype=th.long)
-    bin_idx_map[unique_bins] = th.arange(K, device=device, dtype=th.long)
-    true_compact = bin_idx_map[true_intra]
-    pred_compact = bin_idx_map[pred_intra]
+    true_compact, pred_compact = inverse.split((true_intra.numel(), pred_intra.numel()))
 
     # Dense [B, K] probability matrices
     P = true_probs.new_zeros((batch_size, K))

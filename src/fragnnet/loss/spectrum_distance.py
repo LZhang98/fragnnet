@@ -6,7 +6,11 @@ import math
 
 import torch as th
 
-from fragnnet.loss.padding import pad_flat_by_batch
+from fragnnet.loss.padding import (
+    build_padded_batch_layout,
+    pad_flat_with_layout,
+    paired_batch_offsets,
+)
 from fragnnet.utils.misc_utils import EPS, LOG_ZERO, TOLERANCE_MIN_MZ
 from fragnnet.utils.scatter_utils import (
     scatter_logl2normalize,
@@ -69,7 +73,8 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
 
     The batch spans every spectrum referenced by either peak list. A spectrum with
     no observed or no predicted mass scores one, matching the scalar
-    ``sparse_jensen_shannon_divergence_hungarian``.
+    ``sparse_jensen_shannon_divergence_hungarian``. ``log_min`` is retained for
+    call compatibility but does not affect either Hungarian implementation.
     """
     true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
         true_mzs, true_logprobs, true_batch_idxs, agg="lse"
@@ -91,10 +96,9 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
         loss_batch_size = batch_size
     loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
 
-    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
-    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
-    true_cumsum = th.cat([true_batch_idxs.new_zeros(1), true_counts.cumsum(0)]).tolist()
-    pred_cumsum = th.cat([pred_batch_idxs.new_zeros(1), pred_counts.cumsum(0)]).tolist()
+    true_counts, pred_counts, true_cumsum, pred_cumsum = paired_batch_offsets(
+        true_batch_idxs, pred_batch_idxs, batch_size
+    )
 
     jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
     log2 = math.log(2.0)
@@ -115,18 +119,26 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
         bl_true_ints = th.exp(true_logprobs[bl_true_lower:bl_true_upper])
         bl_pred_ints = th.exp(pred_logprobs[bl_pred_lower:bl_pred_upper])
 
-        batch_true_mzs, true_valid = pad_flat_by_batch(
-            bl_true_mzs, bl_true_batch_idxs, bl_batch_size, 0.0
+        true_sort, true_indices, true_valid, true_max = build_padded_batch_layout(
+            bl_true_batch_idxs,
+            bl_batch_size,
+            assume_sorted=False,
+            counts=true_counts[bl_lower:bl_upper],
+            max_count=max(true_cumsum[i + 1] - true_cumsum[i] for i in range(bl_lower, bl_upper)),
         )
-        batch_pred_mzs, pred_valid = pad_flat_by_batch(
-            bl_pred_mzs, bl_pred_batch_idxs, bl_batch_size, 0.0
+        pred_sort, pred_indices, pred_valid, pred_max = build_padded_batch_layout(
+            bl_pred_batch_idxs,
+            bl_batch_size,
+            assume_sorted=False,
+            counts=pred_counts[bl_lower:bl_upper],
+            max_count=max(pred_cumsum[i + 1] - pred_cumsum[i] for i in range(bl_lower, bl_upper)),
         )
-        batch_true_ints, _ = pad_flat_by_batch(
-            bl_true_ints, bl_true_batch_idxs, bl_batch_size, 0.0
-        )
-        batch_pred_ints, _ = pad_flat_by_batch(
-            bl_pred_ints, bl_pred_batch_idxs, bl_batch_size, 0.0
-        )
+        true_layout = (true_sort, true_indices, bl_batch_size, true_max)
+        pred_layout = (pred_sort, pred_indices, bl_batch_size, pred_max)
+        batch_true_mzs = pad_flat_with_layout(bl_true_mzs, *true_layout, pad_value=0.0)
+        batch_true_ints = pad_flat_with_layout(bl_true_ints, *true_layout, pad_value=0.0)
+        batch_pred_mzs = pad_flat_with_layout(bl_pred_mzs, *pred_layout, pad_value=0.0)
+        batch_pred_ints = pad_flat_with_layout(bl_pred_ints, *pred_layout, pad_value=0.0)
 
         if batch_true_mzs.shape[1] == 0 or batch_pred_mzs.shape[1] == 0:
             graph_zero = bl_pred_ints.sum() * 0.0
@@ -170,13 +182,12 @@ def sparse_jensen_shannon_divergence_hungarian_vec(
             matching="js_gain_hungarian",
         )
         # A chunk can mix comparable spectra with ones that hold no observed or no
-        # predicted mass. Clamping the normalizer keeps those rows finite instead of
+        # predicted mass. Replacing zero normalizers keeps those rows finite instead of
         # 0/0, because a NaN branch of th.where would still poison the backward pass.
         true_total = aligned_true.sum(dim=1, keepdim=True)
         pred_total = aligned_pred.sum(dim=1, keepdim=True)
-        distribution_tiny = th.finfo(aligned_pred.dtype).tiny
-        true_distribution = aligned_true / true_total.clamp_min(distribution_tiny)
-        pred_distribution = aligned_pred / pred_total.clamp_min(distribution_tiny)
+        true_distribution = aligned_true / th.where(true_total > 0, true_total, 1.0)
+        pred_distribution = aligned_pred / th.where(pred_total > 0, pred_total, 1.0)
         mixture = 0.5 * (true_distribution + pred_distribution)
         divergence = (
             0.5 * x_log_x(true_distribution).sum(dim=1)
@@ -361,7 +372,7 @@ def sparse_jensen_shannon_divergence_hungarian(
         tolerance: m/z matching tolerance.
         relative: Whether tolerance is relative to m/z.
         tolerance_min_mz: Minimum m/z for relative tolerance.
-        log_min: Minimum log value to avoid log(0).
+        log_min: Retained for call compatibility; unused by this Hungarian objective.
 
     Returns:
         Tensor of Jensen-Shannon divergences per batch (normalized to [0,1]).
@@ -394,12 +405,15 @@ def sparse_jensen_shannon_divergence_hungarian(
         b_pred_logprobs = pred_logprobs_list[batch_idx]
 
         # Normalize probabilities (sum to 1) without GPU sync.
-        # clamp(min=EPS) avoids division-by-zero; when all probs are ~0, sum≈0/EPS=0 anyway.
+        # Only replace zero totals: an EPS floor distorts tiny positive spectra,
+        # while dividing zero mass by dtype.tiny can overflow its backward derivative.
         b_true_probs = th.exp(b_true_logprobs)
-        b_true_probs = b_true_probs / b_true_probs.sum().clamp(min=EPS)
+        true_total = b_true_probs.sum()
+        b_true_probs = b_true_probs / th.where(true_total > 0, true_total, 1.0)
 
         b_pred_probs = th.exp(b_pred_logprobs)
-        b_pred_probs = b_pred_probs / b_pred_probs.sum().clamp(min=EPS)
+        pred_total = b_pred_probs.sum()
+        b_pred_probs = b_pred_probs / th.where(pred_total > 0, pred_total, 1.0)
 
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance

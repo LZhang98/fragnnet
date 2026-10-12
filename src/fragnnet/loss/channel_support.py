@@ -200,6 +200,23 @@ def matched_peak_candidate_pairs(
     return peak_idxs[matched], candidate_idxs[matched]
 
 
+def _pair_gaussian_log_likelihood(
+    true_mzs: th.Tensor,
+    peak_idxs: th.Tensor,
+    channel_idxs: th.Tensor,
+    channel_mzs: th.Tensor,
+    channel_log_priors: th.Tensor,
+    channel_stds: th.Tensor,
+) -> th.Tensor:
+    """Log prior plus Gaussian log density, omitting the common log(sqrt(2*pi))."""
+    pair_stds = channel_stds[channel_idxs]
+    mass_errors = true_mzs[peak_idxs] - channel_mzs[channel_idxs]
+    mass_log_likelihood = (-0.5 * (mass_errors / pair_stds) ** 2 - th.log(pair_stds)).to(
+        channel_log_priors
+    )
+    return channel_log_priors[channel_idxs] + mass_log_likelihood
+
+
 def _gaussian_posterior_targets(
     *,
     true_mzs: th.Tensor,
@@ -219,12 +236,9 @@ def _gaussian_posterior_targets(
     num_channels = channel_stds.shape[0]
     if peak_idxs.numel() == 0:
         return channel_log_priors.new_zeros(num_channels)
-    pair_stds = channel_stds[channel_idxs]
-    mass_errors = true_mzs[peak_idxs] - channel_mzs[channel_idxs]
-    mass_log_likelihood = (-0.5 * (mass_errors / pair_stds) ** 2 - th.log(pair_stds)).to(
-        channel_log_priors
+    pair_log_likelihood = _pair_gaussian_log_likelihood(
+        true_mzs, peak_idxs, channel_idxs, channel_mzs, channel_log_priors, channel_stds
     )
-    pair_log_likelihood = channel_log_priors[channel_idxs] + mass_log_likelihood
     peak_maxima = scatter_reduce(
         pair_log_likelihood,
         peak_idxs,
@@ -272,12 +286,9 @@ def _hungarian_targets(
     targets = channel_log_priors.new_zeros(channel_stds.shape[0])
     if peak_idxs.numel() == 0:
         return targets
-    pair_stds = channel_stds[channel_idxs]
-    mass_errors = true_mzs[peak_idxs] - channel_mzs[channel_idxs]
-    mass_log_likelihood = (-0.5 * (mass_errors / pair_stds) ** 2 - th.log(pair_stds)).to(
-        channel_log_priors
+    pair_log_likelihood = _pair_gaussian_log_likelihood(
+        true_mzs, peak_idxs, channel_idxs, channel_mzs, channel_log_priors, channel_stds
     )
-    pair_log_likelihood = channel_log_priors[channel_idxs] + mass_log_likelihood
     pair_batch_idxs = channel_batch_idxs[channel_idxs]
     pair_order = th.argsort(pair_batch_idxs, stable=True)
     pair_bounds = th.zeros(batch_size + 1, dtype=th.long, device=targets.device)
