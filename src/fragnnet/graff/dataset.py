@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import torch as th
 from pyteomics.mass import Composition
+from torch_geometric.data import Batch
 from tqdm import tqdm
 
 from fragnnet.dataset import BaseDataset, SpecMolDataset
@@ -298,6 +299,9 @@ class SpecMolAnnDataset(SpecMolDataset):
         keys.remove("ann_formula_idxs")
         keys.remove("ann_isotope_idxs")
         # keys.remove("ann_dup_idxs")
+        if "mol_graff" in keys:
+            collate_data["mol_graff"] = Batch.from_data_list(collate_data["mol_graff"])
+            keys.remove("mol_graff")
         SpecMolDataset._special_collate(keys, collate_data)
 
     @staticmethod

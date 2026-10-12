@@ -37,7 +37,9 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     "masster": ModelEntry("fragnnet.pl_model.masster_pl:MassterPL", _SPEC_MOL_DATASET),
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),
-    "massformer": ModelEntry("fragnnet.massformer.pl_model:MassFormerPL", _SPEC_MOL_DATASET),
+    "massformer": ModelEntry(
+        "fragnnet.massformer.pl_model:MassFormerPL", "fragnnet.massformer.dataset:SpecMolMFDataset"
+    ),
     "graff": ModelEntry(
         "fragnnet.graff.pl_model:GrAFFPL", "fragnnet.graff.dataset:SpecMolAnnDataset"
     ),

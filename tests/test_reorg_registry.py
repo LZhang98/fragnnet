@@ -4,7 +4,8 @@ The expected mapping below is the contract every later phase must keep. It chang
 deliberately, in the same PR as the code:
 
 - Phase 1 step 2 replaced the ICEBERG rows with retirement-error checks (below); Phase 1 step 3
-  maps ``massformer`` to ``SpecMolMFDataset`` (equivalence shown by the Phase 0 baseline records).
+  mapped ``massformer`` to ``SpecMolMFDataset`` (equivalence shown by the Phase 0 baseline
+  records in ``test_reorg_baselines.py``, which did not change).
 - Phase 6 changes module paths only; class names and behavior stay.
 
 The resolved configs of every model type are also recorded, as one shared base plus per-type
@@ -54,7 +55,7 @@ EXPECTED_MAPPING = {
     ),
     "massformer": (
         "fragnnet.massformer.pl_model:MassFormerPL",
-        "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
+        "fragnnet.massformer.dataset:SpecMolMFDataset",
     ),
     "graff": (
         "fragnnet.graff.pl_model:GrAFFPL",
@@ -191,3 +192,39 @@ def test_retired_model_types_raise_the_retirement_error_on_every_path(
     with pytest.raises(ValueError) as excinfo:
         get_config_from_ckpt(str(ckpt_fp), str(empty_custom), TEMPLATE_DIR)
     _assert_retirement_error(excinfo, model_type)
+
+
+def test_no_module_hard_codes_the_shared_dataset_for_massformer() -> None:
+    """MassFormer's Graphormer input is built only by ``SpecMolMFDataset`` (Phase 1 step 3).
+
+    A script that maps ``massformer`` to the shared ``SpecMolDataset`` by hand would silently
+    build batches without ``mol_mf_*`` keys.
+    """
+    import re
+    import subprocess
+
+    pattern = r"[\"']massformer[\"']\s*:\s*SpecMolDataset\b"
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "*.py"], cwd=REPO_TEMPLATE.parents[1], text=True
+    ).split()
+    offenders = [
+        path
+        for path in tracked
+        if re.search(pattern, (REPO_TEMPLATE.parents[1] / path).read_text(errors="ignore"))
+    ]
+    assert offenders == []
+
+
+def test_shared_dataset_rejects_the_massformer_input_flag(tmp_path) -> None:
+    """``mol_params.mf`` on a dataset that cannot build ``mol_mf`` fails at the first molecule.
+
+    The check sits where the removed ``mol_mf`` code read the flag (``_process_mol``), so it
+    fires during preprocessing or, without it, on the first item.
+    """
+    import reorg_fixtures as F
+
+    data = F.write_synth_data(tmp_path, dag_backend=None)
+    config = F.make_config("masster", data, {"mol_params": {"mf": True}})
+    with pytest.raises(ValueError, match="mol_params.mf needs MassFormer's dataset"):
+        dataset, _ = F.init_split(config, "train")
+        dataset[0]

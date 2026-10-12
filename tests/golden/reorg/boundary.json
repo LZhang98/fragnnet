@@ -9,9 +9,6 @@
     "fragnnet.dataset.base_dataset -> fragnnet.utils.frag_utils": [
       "load_frag_d"
     ],
-    "fragnnet.dataset.spec_mol_dataset -> fragnnet.massformer.data_utils": [
-      "*"
-    ],
     "fragnnet.model -> fragnnet.model.fragnnet_model": [
       "FraGNNetModel"
     ],
@@ -76,11 +73,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -99,11 +91,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -121,11 +108,6 @@
     "fragnnet.dataset.spec_mol_dataset": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"
@@ -174,11 +156,6 @@
     "fragnnet.runner": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"
@@ -233,11 +210,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -272,11 +244,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -308,11 +275,6 @@
     "clip": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"
@@ -346,11 +308,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -383,11 +340,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -419,11 +371,6 @@
     "gnn": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"
@@ -465,11 +412,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -506,6 +448,7 @@
         "fragnnet.massformer",
         "fragnnet.massformer.algos",
         "fragnnet.massformer.data_utils",
+        "fragnnet.massformer.dataset",
         "fragnnet.massformer.model",
         "fragnnet.massformer.nn_utils",
         "fragnnet.massformer.pl_model"
@@ -542,11 +485,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -578,11 +516,6 @@
     "mces_pretraining": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"
@@ -616,11 +549,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -653,11 +581,6 @@
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
       ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
-      ],
       "dgl": [
         "dgl"
       ],
@@ -689,11 +612,6 @@
     "spec_mol_clip_pretraining": {
       "baseline:iceberg": [
         "fragnnet.utils.dgl_compat_utils"
-      ],
-      "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils"
       ],
       "dgl": [
         "dgl"

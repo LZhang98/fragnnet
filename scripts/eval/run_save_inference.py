@@ -7,6 +7,7 @@ import wandb
 from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
 from fragnnet.graff.pl_model import GrAFFPL
+from fragnnet.massformer.dataset import SpecMolMFDataset
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
 from fragnnet.runner import init_dataloader, load_config
@@ -108,7 +109,7 @@ if __name__ == "__main__":
 
     model_type_to_ds_cls = {
         "neims": SpecMolDataset,
-        "massformer": SpecMolDataset,
+        "massformer": SpecMolMFDataset,
         "fragnnet_d3": SpecMolFragDataset,
         "fragnnet_d4": SpecMolFragDataset,
         "graff": SpecMolAnnDataset,
