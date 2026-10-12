@@ -27,7 +27,7 @@ from rdkit.Chem.Descriptors import ExactMolWt
 from torch_geometric.data import Batch
 
 import fragnnet.models.masster.masster_model as masster_model_module
-from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder
+from fragnnet.layers.cut_bond_encoder import CutBondEncoder
 from fragnnet.models.masster.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     boundary_bond_endpoint_orientation,

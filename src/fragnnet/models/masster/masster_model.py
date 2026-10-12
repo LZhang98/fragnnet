@@ -40,7 +40,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Batch
 
-from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
+from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder

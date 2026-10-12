@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as th_checkpoint
 import torch_geometric as pyg
 
-from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
+from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import CEModel, FragModeModel, InstModel, PrecModel

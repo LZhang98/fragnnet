@@ -15,7 +15,6 @@
     "frag_gnn": {
       "fragmentation": [
         "fragnnet.fragmentation",
-        "fragnnet.fragmentation.cut_bond_encoder",
         "fragnnet.fragmentation.hydrogen_cap",
         "fragnnet.fragmentation.smarts_prepass"
       ],
@@ -35,7 +34,6 @@
     "fragnnet": {
       "fragmentation": [
         "fragnnet.fragmentation",
-        "fragnnet.fragmentation.cut_bond_encoder",
         "fragnnet.fragmentation.hydrogen_cap",
         "fragnnet.fragmentation.smarts_prepass"
       ],
@@ -83,7 +81,6 @@
     "masster": {
       "fragmentation": [
         "fragnnet.fragmentation",
-        "fragnnet.fragmentation.cut_bond_encoder",
         "fragnnet.fragmentation.smarts_prepass"
       ],
       "masster": [
