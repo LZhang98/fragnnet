@@ -347,7 +347,8 @@ def sparse_cross_entropy_vec(
         tolerance: m/z matching tolerance.
         relative: Whether tolerance is relative to m/z.
         tolerance_min_mz: Minimum m/z for relative tolerance.
-        oos_tolerance_multiple: Multiplier for OOS tolerance.
+        oos_tolerance_multiple: Multiplier for OOS tolerance. For Gaussian mixtures,
+            ``-1`` disables truncation and requires ``gaussian_renormalize=False``.
         gaussian_renormalize: Whether to renormalize Gaussian.
         loss_batch_size: Batch size for loss computation.
         dist: Output distribution. ``"gaussian"`` weights each matched candidate by a
@@ -537,23 +538,27 @@ def sparse_cross_entropy_vec(
             )
 
         # 5. Match peaks and compute Gaussian-mixture probabilities within each spectrum.
-        bl_match_mask = calculate_match_mzs(
-            bl_true_mzs_padded,
-            bl_pred_mzs_padded,
-            tolerance=oos_tolerance_multiple * tolerance,
-            relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
-            tol_per_true=(
-                oos_tolerance_multiple * bl_tol_per_true_padded
-                if bl_tol_per_true_padded is not None
-                else None
-            ),
-            min_mz_per_true=bl_min_mz_per_true_padded,
-        )
-        bl_match_mask = th.as_tensor(bl_match_mask, device=device)
         bl_valid_pairs = bl_true_valid.unsqueeze(2) & bl_pred_valid.unsqueeze(1)
-        bl_both_mask = bl_valid_pairs & bl_match_mask
-        del bl_valid_pairs, bl_match_mask
+        if use_gaussian and oos_tolerance_multiple == -1:
+            # Untruncated mixtures include every real candidate of the same spectrum.
+            bl_both_mask = bl_valid_pairs
+        else:
+            bl_match_mask = calculate_match_mzs(
+                bl_true_mzs_padded,
+                bl_pred_mzs_padded,
+                tolerance=oos_tolerance_multiple * tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+                tol_per_true=(
+                    oos_tolerance_multiple * bl_tol_per_true_padded
+                    if bl_tol_per_true_padded is not None
+                    else None
+                ),
+                min_mz_per_true=bl_min_mz_per_true_padded,
+            )
+            bl_both_mask = bl_valid_pairs & th.as_tensor(bl_match_mask, device=device)
+            del bl_match_mask
+        del bl_valid_pairs
 
         bl_true_both_mask = th.any(bl_both_mask, dim=2)
 

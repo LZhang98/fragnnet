@@ -63,9 +63,8 @@ def batch_overrides(model_type: str, n_train: int) -> dict[str, Any]:
 
     ``train_batch_size`` equal to the spectrum count makes FraGNNet's manual optimization step
     inside ``training_step`` (``record_one_step`` asserts ``global_step == 1``). The template
-    default ``oos_tolerance_multiple`` of -1 turns FraGNNet's vectorized Gaussian CE match window
-    negative, so no true peak matches and ``spectral_ce_auxiliary`` is exactly zero. Tracked
-    configs use 1.
+    default ``oos_tolerance_multiple`` of -1 selects untruncated Gaussian CE. Keep the
+    recorded fixture's finite window of 1, matching its original tracked configuration.
 
     Args:
         model_type: ``"frag_gnn"`` or ``"masster"``.

@@ -310,10 +310,15 @@ def sparse_cosine_distance_hungarian(
             b_true_logprobs[b_true_match_mzs].detach().unsqueeze(1)
             + b_pred_logprobs[b_pred_match_mzs].detach().unsqueeze(0)
         )
-        # Mask out unmatched pairs with LOG_ZERO
-        b_score[~b_match_mzs[b_true_match_mzs][:, b_pred_match_mzs]] = LOG_ZERO(b_score.dtype)
+        valid_matches = b_match_mzs[b_true_match_mzs][:, b_pred_match_mzs]
+        # Infeasible pairs contribute no cosine, including when the solver must
+        # complete an assignment through them. Zero also preserves feasible score differences.
+        b_score[~valid_matches] = 0.0
         # Hungarian algorithm for optimal matching (maximizing score)
         b_true_idxs, b_pred_idxs = linear_sum_assignment(b_score, maximize=True)
+        feasible = valid_matches[b_true_idxs, b_pred_idxs]
+        b_true_idxs = b_true_idxs[feasible]
+        b_pred_idxs = b_pred_idxs[feasible]
         # Compute log-cosine similarity for matched pairs
         b_log_cos_hun = th.logsumexp(
             b_true_logprobs[b_true_match_mzs][b_true_idxs]
