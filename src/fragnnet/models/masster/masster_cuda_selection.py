@@ -21,7 +21,7 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.frag.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
+from fragnnet.models.masster.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
 
 _BUILD_LOCK = Lock()
 _MAX_BONDS = 2048

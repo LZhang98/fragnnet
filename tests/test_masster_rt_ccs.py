@@ -12,8 +12,8 @@ from torch_geometric.data import Batch
 from fragnnet.dataset.base_dataset import BaseDataset
 from fragnnet.dataset.property_labels import join_rt_ccs_labels
 from fragnnet.dataset.spec_mol_dataset import SpecMolDataset
-from fragnnet.model.rt_ccs import property_regression_terms
-from fragnnet.pl_model import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.models.masster.rt_ccs import property_regression_terms
 from fragnnet.runner import load_config
 from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph

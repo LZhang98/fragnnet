@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag import masster_cuda_topology
-from fragnnet.frag.masster_candidates import (
+from fragnnet.models.masster import masster_cuda_topology
+from fragnnet.models.masster.masster_candidates import (
     MassterStaticGraph,
     _build_local_topology,
     _merge_forced_masks,
@@ -16,11 +16,11 @@ from fragnnet.frag.masster_candidates import (
     _TopologyInput,
     build_masster_candidates,
 )
-from fragnnet.frag.masster_cuda_candidates import (
+from fragnnet.models.masster.masster_cuda_candidates import (
     _build_cuda_candidates,
     _validate_grouped_topology,
 )
-from fragnnet.frag.masster_cuda_topology import CudaTopologyBatch, CudaTopologyCounts
+from fragnnet.models.masster.masster_cuda_topology import CudaTopologyBatch, CudaTopologyCounts
 
 
 def _fixture(target):
@@ -238,7 +238,7 @@ def test_cuda_candidates_match_cpu_topology_fields_and_probability_gradients(tar
 def test_cuda_hybrid_model_preserves_predictions_and_parameter_gradients(monkeypatch):
     from test_masster_model import _build_batch, _build_model
 
-    import fragnnet.model.masster_model as model_module
+    import fragnnet.models.masster.masster_model as model_module
 
     batch = _build_batch(("CCO", "C1CC1", "CCO")).cuda()
     model = (

@@ -25,8 +25,8 @@ import pandas as pd
 import torch
 from rdkit import Chem, RDLogger, rdBase
 
-from fragnnet.frag.masster_templates import _is_connected, formed_bond_count
 from fragnnet.fragmentation.smarts_prepass import NeutralLossRule, SmartsFragRule
+from fragnnet.models.masster.masster_templates import _is_connected, formed_bond_count
 from fragnnet.utils.formula_utils import nominal_isotope_pattern
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -266,7 +266,7 @@ def main() -> None:
     source_paths = [
         Path(__file__),
         Path("scripts/debug/smarts/debug_masster_smarts_g0_ceiling.py"),
-        Path("src/fragnnet/model/masster_model.py"),
+        Path("src/fragnnet/models/masster/masster_model.py"),
         Path("src/fragnnet/utils/formula_utils.py"),
     ]
     provenance = {

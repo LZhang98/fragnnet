@@ -6,8 +6,8 @@ from lightning import LightningModule
 from rdkit import Chem
 from torch_geometric.data import Batch
 
-from fragnnet.frag.masster_templates import build_masster_templates
-from fragnnet.pl_model.masster_pl import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.models.masster.masster_templates import build_masster_templates
 from fragnnet.utils.feat_utils import get_mol_graph
 from scripts.eval.masster_ion_h_top_k_sweep import (
     build_selections,

@@ -136,7 +136,7 @@ class MassterHooks(ModelHooks):
             )
 
     def filter_dataset(self, dataset: Any, config: dict[str, Any]) -> None:
-        from fragnnet.frag.masster_dataset_filter import filter_masster_spectra
+        from fragnnet.models.masster.masster_dataset_filter import filter_masster_spectra
 
         filter_masster_spectra(
             dataset,
@@ -150,7 +150,7 @@ class MassterHooks(ModelHooks):
     ) -> Any | None:
         if not config_d["masster_batch_sampler"]:
             return None
-        from fragnnet.dataset.masster_data_sampler import MassterCEContextDynamicBatchSampler
+        from fragnnet.models.masster.masster_data_sampler import MassterCEContextDynamicBatchSampler
 
         split = ds.split
         return_batch_at = (

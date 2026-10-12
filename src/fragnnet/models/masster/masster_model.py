@@ -40,21 +40,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Batch
 
-from fragnnet.frag.masster_candidates import (
-    MassterCandidateBatch,
-    MassterStaticGraph,
-    build_masster_candidates,
-)
-from fragnnet.frag.masster_fast_gnn import build_fast_gnn_candidates
-from fragnnet.frag.masster_templates import (
-    MASSTER_NUM_RULES,
-    MASSTER_RULE_NAME_HASHES,
-    MassterTemplate,
-    filter_masster_templates,
-)
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pairs
 from fragnnet.model.base_model import QET_ACE_OFFSET, QETEnergyEncoder
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.model.form_embedder import get_embedder
+from fragnnet.model.nn_blocks import GNN
+from fragnnet.models.masster.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
     CandidateIntensityTransformerHead,
@@ -73,7 +63,7 @@ from fragnnet.model.bond_fragment_heads import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
-from fragnnet.model.candidate_features import (
+from fragnnet.models.masster.candidate_features import (
     COMPOSITION_FEATURE_DIM,
     COMPOSITION_HYDROGEN_COLUMN,
     CandidateFeatureInputs,
@@ -84,9 +74,19 @@ from fragnnet.model.candidate_features import (
     element_counts_by_group,
     resolve_candidate_features,
 )
-from fragnnet.model.form_embedder import get_embedder
-from fragnnet.model.nn_blocks import GNN
-from fragnnet.model.rt_ccs import CCSHead, RTHead, pool_property_atoms
+from fragnnet.models.masster.masster_candidates import (
+    MassterCandidateBatch,
+    MassterStaticGraph,
+    build_masster_candidates,
+)
+from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.models.masster.masster_templates import (
+    MASSTER_NUM_RULES,
+    MASSTER_RULE_NAME_HASHES,
+    MassterTemplate,
+    filter_masster_templates,
+)
+from fragnnet.models.masster.rt_ccs import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
     CANONICAL_ELEMENT_ORDER,
     H_MASS,
@@ -1295,7 +1295,7 @@ class MassterModel(nn.Module):
                 ``pred_escape_intensities`` for ``sparse_peak_list_distance``.
             candidate_features: Names of the descriptor columns appended to each candidate's
                 intensity token, resolved against
-                :data:`~fragnnet.model.candidate_features.CANDIDATE_FEATURE_SPECS`, which
+                :data:`~fragnnet.models.masster.candidate_features.CANDIDATE_FEATURE_SPECS`, which
                 documents what each one measures. The list is a set: columns are concatenated
                 in that module's canonical order, not the order given here. The default is the
                 pair of columns that used to be unconditional.

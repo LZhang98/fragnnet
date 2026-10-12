@@ -12,12 +12,13 @@ from rdkit import Chem
 from rdkit.Chem.rdMolDescriptors import CalcExactMolWt
 from torch_geometric.data import Batch
 
-import fragnnet.model.masster_model as masster_model_module
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import MassterTemplate, build_masster_templates
+import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.masster_model import (
+from fragnnet.models.fragnnet import compute_frags
+from fragnnet.models.fragnnet.frag_utils import extract_mol_info
+from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_candidates import MassterStaticGraph
+from fragnnet.models.masster.masster_model import (
     MassterModel,
     _absolute_binary_channel_keep_mask,
     _cmf_duplicate_crf_shift,
@@ -30,9 +31,8 @@ from fragnnet.model.masster_model import (
     _relative_joint_channel_keep_mask,
     _top_k_fragment_keep_mask,
 )
-from fragnnet.models.fragnnet import compute_frags
-from fragnnet.models.fragnnet.frag_utils import extract_mol_info
-from fragnnet.pl_model.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.masster_templates import MassterTemplate, build_masster_templates
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
 
@@ -990,7 +990,7 @@ def test_absolute_support_floor_is_evaluation_only_and_keeps_each_spectrum_nonem
 def test_masster_shares_one_ce_independent_proposal_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fragnnet.frag import masster_core
+    from fragnnet.models.masster import masster_core
 
     batch = _build_batch(("CCCO",) * 5)
     model = _build_model(

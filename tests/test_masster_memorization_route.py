@@ -19,15 +19,15 @@ import torch as th
 
 from fragnnet import runner
 from fragnnet.fragmentation.cut_bond_encoder import CutBondEncoder
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.model.nn_blocks import GINE, GINE_GSA
+from fragnnet.models.masster.bond_fragment_heads import (
     CandidateIntensityTransformerHead,
     _drop_set_keys,
     _InducedCandidateAttentionLayer,
     _substitute_set_message,
 )
-from fragnnet.model.masster_model import MassterModel
-from fragnnet.model.nn_blocks import GINE, GINE_GSA
-from fragnnet.pl_model.masster_pl import MassterPL
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_pl import MassterPL
 from tests.test_masster_model import _build_batch, _build_model
 
 UNIQUE_KWARGS = {"max_masks": 4, "max_enumerated_masks": 8, "unique_fragment_mode": True}

@@ -80,11 +80,14 @@ def test_migration_and_validation_load_no_model_code() -> None:
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     loaded = set(json.loads(out.stdout.strip().splitlines()[-1]))
-    assert {"fragnnet.frag.masster_hooks", "fragnnet.models.fragnnet.fragnnet_hooks"} <= loaded
+    assert {
+        "fragnnet.models.masster.masster_hooks",
+        "fragnnet.models.fragnnet.fragnnet_hooks",
+    } <= loaded
     heavy = {
-        "fragnnet.pl_model.masster_pl",
-        "fragnnet.model.masster_model",
-        "fragnnet.frag.masster_core",
+        "fragnnet.models.masster.masster_pl",
+        "fragnnet.models.masster.masster_model",
+        "fragnnet.models.masster.masster_core",
         "fragnnet.models.fragnnet.fragnnet_pl",
         "fragnnet.models.fragnnet.fragnnet_model",
         "fragnnet.models.fragnnet.frag_utils",

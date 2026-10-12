@@ -17,7 +17,7 @@ from pathlib import Path
 import lightning as L
 import torch as th
 
-from fragnnet.pl_model import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 
 LOGGER = logging.getLogger(__name__)

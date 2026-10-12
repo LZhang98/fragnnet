@@ -30,10 +30,10 @@ import sys
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model import MassterModel, bond_fragment_heads
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.masster_model import MassterContextEncoder
 from fragnnet.model.nn_blocks import GNN
+from fragnnet.models.masster import bond_fragment_heads
+from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_model import MassterContextEncoder, MassterModel
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.nn_utils import build_lr_scheduler
 from fragnnet.utils.pl_utils import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name

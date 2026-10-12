@@ -25,7 +25,7 @@ import logging
 
 import torch as th
 
-from fragnnet.pl_model.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

@@ -13,7 +13,8 @@ objective differs. Three scans are available:
   universe, plus a decomposition of unreached mass by fragment size.
 - ``implementations``: exact emitted-set comparison against an alternative beam module supplied
   with ``--beam-implementation``, for example a historical revision extracted with
-  ``git show <rev>:src/fragnnet/frag/masster_fast_gnn.py``.
+  ``git show <rev>:src/fragnnet/frag/masster_fast_gnn.py`` (``src/fragnnet/models/masster/`` for
+  revisions after reorg Phase 6).
 
 Bond logits are synthetic by default, so the sweep tests whether *any* learned logits could
 remove the effect. Pass ``--checkpoint`` to capture **trained** bond logits from a MASSter
@@ -40,13 +41,13 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.frag.masster_candidates import (
+from fragnnet.models.masster.masster_candidates import (
     MassterCandidateBatch,
     build_masster_candidates,
 )
-from fragnnet.frag.masster_fast_gnn import build_fast_gnn_candidates
-from fragnnet.model.masster_model import MassterModel
-from fragnnet.pl_model import MassterPL
+from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.pl_utils import migrate_legacy_masster_name
 

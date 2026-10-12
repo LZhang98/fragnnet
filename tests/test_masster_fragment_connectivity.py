@@ -21,11 +21,11 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet import runner
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.models.masster.bond_fragment_heads import (
     component_membership_rows,
     fragment_internal_edges,
 )
-from fragnnet.pl_model.masster_pl import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
 from tests.test_masster_model import _build_batch, _build_model
 
 UNIQUE_KWARGS = {"max_masks": 4, "max_enumerated_masks": 8, "unique_fragment_mode": True}

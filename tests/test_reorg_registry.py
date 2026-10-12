@@ -42,7 +42,7 @@ EXPECTED_MAPPING = {
         "fragnnet.models.fragnnet.spec_mol_frag_dataset:SpecMolFragDataset",
     ),
     "masster": (
-        "fragnnet.pl_model.masster_pl:MassterPL",
+        "fragnnet.models.masster.masster_pl:MassterPL",
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "neims": (

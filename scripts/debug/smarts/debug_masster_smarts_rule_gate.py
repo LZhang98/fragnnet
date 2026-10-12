@@ -31,17 +31,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tests"))
 
 from test_masster_model import _build_model  # noqa: E402
 
-from fragnnet.frag.masster_templates import (  # noqa: E402
-    _MASSTER_PRECURSOR_TYPES,
-    MASSTER_FRAG_RULES,
-    MASSTER_NL_RULES,
-    _is_connected,
-)
 from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     NeutralLossRule,
     SmartsFragRule,
     _apply_nl_prepass,
     _apply_smarts_prepass,
+)
+from fragnnet.models.masster.masster_templates import (  # noqa: E402
+    _MASSTER_PRECURSOR_TYPES,
+    MASSTER_FRAG_RULES,
+    MASSTER_NL_RULES,
+    _is_connected,
 )
 from fragnnet.utils.feat_utils import get_mol_graph  # noqa: E402
 

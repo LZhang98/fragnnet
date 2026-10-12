@@ -5,16 +5,16 @@ import torch as th
 from rdkit import Chem
 from test_masster_cuda_candidates import _assert_candidates_match, _fixture
 
-from fragnnet.frag.masster_candidates import (
+from fragnnet.models.masster.masster_candidates import (
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.frag.masster_cuda_full_candidates import (
+from fragnnet.models.masster.masster_cuda_full_candidates import (
     _prepare_graph_batch,
     _template_forced_masks,
     build_masster_candidates_cuda,
 )
-from fragnnet.frag.masster_templates import MassterTemplate, build_masster_templates
+from fragnnet.models.masster.masster_templates import MassterTemplate, build_masster_templates
 
 # Real templates: a disconnected product (sulfonamide, diaryl ketone, sulfonate SO2), and none
 # for xanthone, saccharin or ethanol, whose ring-rule and duplicate templates MASSter drops.

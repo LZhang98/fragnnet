@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from fragnnet.dataset import MassterCEContextDynamicBatchSampler
+from fragnnet.models.masster.masster_data_sampler import MassterCEContextDynamicBatchSampler
 from fragnnet.runner import init_dataloader, validate_sampler_config
 
 

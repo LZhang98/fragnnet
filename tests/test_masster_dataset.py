@@ -5,7 +5,10 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.dataset import SpecMolDataset
-from fragnnet.frag.masster_dataset_filter import filter_masster_spectra, masster_has_valid_ion
+from fragnnet.models.masster.masster_dataset_filter import (
+    filter_masster_spectra,
+    masster_has_valid_ion,
+)
 
 
 @pytest.mark.parametrize(

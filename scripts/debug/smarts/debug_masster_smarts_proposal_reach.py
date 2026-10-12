@@ -43,9 +43,9 @@ from rdkit import Chem
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-import fragnnet.model.masster_model as masster_model
-from fragnnet.frag.masster_core import top_mixture_bond_sets_raw
-from fragnnet.frag.masster_templates import (
+import fragnnet.models.masster.masster_model as masster_model
+from fragnnet.models.masster.masster_core import top_mixture_bond_sets_raw
+from fragnnet.models.masster.masster_templates import (
     _is_connected,
     build_masster_templates,
     filter_masster_templates,

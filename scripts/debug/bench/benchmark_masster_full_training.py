@@ -58,7 +58,7 @@ def _sha256(path: Path) -> str:
 def _install_reference(directory: Path) -> dict:
     """Load frozen kernels and their Python caller before importing any model."""
     names = ("masster_core", "masster_candidates")
-    if any(f"fragnnet.frag.{name}" in sys.modules for name in names):
+    if any(f"fragnnet.models.masster.{name}" in sys.modules for name in names):
         raise RuntimeError("reference modules must be installed before importing MASSter")
     extensions = list(directory.glob("masster_core*.so"))
     if len(extensions) != 1:
@@ -66,10 +66,10 @@ def _install_reference(directory: Path) -> dict:
     paths = (extensions[0], directory / "masster_candidates.py")
     if not all(path.is_file() for path in paths):
         raise ValueError("reference directory must contain masster_candidates.py")
-    package = importlib.import_module("fragnnet.frag")
+    package = importlib.import_module("fragnnet.models.masster")
     installed = {}
     for name, path in zip(names, paths, strict=True):
-        module_name = f"fragnnet.frag.{name}"
+        module_name = f"fragnnet.models.masster.{name}"
         spec = importlib.util.spec_from_file_location(module_name, path.resolve())
         if spec is None or spec.loader is None:
             raise RuntimeError(f"cannot import reference {path}")
@@ -78,12 +78,12 @@ def _install_reference(directory: Path) -> dict:
         spec.loader.exec_module(module)
         setattr(package, name, module)
         installed[module_name] = str(path.resolve())
-    timings = sys.modules["fragnnet.frag.masster_candidates"].MassterCandidateTimings
+    timings = sys.modules["fragnnet.models.masster.masster_candidates"].MassterCandidateTimings
     adapter = None
     if "topology_assembly_ms" not in timings.__dataclass_fields__:
         timings.topology_assembly_ms = property(lambda self: self.topology_ms + self.assembly_ms)
         adapter = "topology_assembly_ms = topology_ms + assembly_ms (serial reference only)"
-    candidates = sys.modules["fragnnet.frag.masster_candidates"]
+    candidates = sys.modules["fragnnet.models.masster.masster_candidates"]
     original_builder = candidates.build_masster_candidates
     backend_adapter = None
     if "candidate_backend" not in inspect.signature(original_builder).parameters:
@@ -100,7 +100,7 @@ def _install_reference(directory: Path) -> dict:
 
 def _enable_cuda_prototype(statistics: list[dict], backend: str) -> None:
     """Collect diagnostics on the public CUDA path or enable topology-only comparison."""
-    module = importlib.import_module("fragnnet.model.masster_model")
+    module = importlib.import_module("fragnnet.models.masster.masster_model")
     original = module.build_masster_candidates
 
     if backend not in ("cuda_topology", "cuda_full"):
@@ -409,7 +409,7 @@ def main() -> None:
     import lightning as L
     from lightning.fabric.utilities.data import _auto_add_worker_init_fn
 
-    from fragnnet.pl_model import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     from fragnnet.runner import init_dataloader, init_dataset, load_config
 
     cuda_candidate_statistics: list[dict] = []
@@ -486,10 +486,10 @@ def main() -> None:
         "config": Path(args.config),
     }
     for name in (
-        "fragnnet.frag.masster_core",
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.model.masster_model",
-        "fragnnet.pl_model.masster_pl",
+        "fragnnet.models.masster.masster_core",
+        "fragnnet.models.masster.masster_candidates",
+        "fragnnet.models.masster.masster_model",
+        "fragnnet.models.masster.masster_pl",
         "fragnnet.utils.pl_utils",
         "fragnnet.runner",
     ):
@@ -500,13 +500,15 @@ def main() -> None:
             "masster_cuda_topology",
             "masster_cuda_utils",
         ):
-            source_paths[name] = Path(importlib.import_module(f"fragnnet.frag.{name}").__file__)
+            module = importlib.import_module(f"fragnnet.models.masster.{name}")
+            source_paths[name] = Path(module.__file__)
         source_paths["cuda_topology_kernel"] = source_paths[
             "masster_cuda_topology"
         ].with_suffix(".cu")
         if args.candidate_backend == "cuda_full":
             for name in ("masster_cuda_full_candidates", "masster_cuda_selection"):
-                source_paths[name] = Path(importlib.import_module(f"fragnnet.frag.{name}").__file__)
+                module = importlib.import_module(f"fragnnet.models.masster.{name}")
+                source_paths[name] = Path(module.__file__)
             source_paths["cuda_selection_kernel"] = source_paths[
                 "masster_cuda_selection"
             ].with_suffix(".cu")

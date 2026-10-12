@@ -17,16 +17,16 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.frag.masster_candidates import (
+from fragnnet.models.masster.masster_candidates import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     MassterStaticGraph,
     _packed_long_chunk_tensors,
     _score_mask_log_probabilities,
 )
-from fragnnet.frag.masster_cuda_candidates import _expand_topology_views
-from fragnnet.frag.masster_cuda_topology import CudaTopologyCounts, CudaTopologyGraph
-from fragnnet.frag.masster_templates import MassterTemplate, _connected_piece_count
+from fragnnet.models.masster.masster_cuda_candidates import _expand_topology_views
+from fragnnet.models.masster.masster_cuda_topology import CudaTopologyCounts, CudaTopologyGraph
+from fragnnet.models.masster.masster_templates import MassterTemplate, _connected_piece_count
 
 
 @dataclass(frozen=True)
@@ -554,8 +554,8 @@ def build_masster_candidates_cuda(
     input_ms = (perf_counter() - total_start) * 1000.0
 
     # 2. Select exact forced-prefix CSR on GPU, then feed it directly to GPU topology.
-    from fragnnet.frag.masster_cuda_selection import rank_batch_cuda
-    from fragnnet.frag.masster_cuda_topology import build_cuda_topology_device_masks
+    from fragnnet.models.masster.masster_cuda_selection import rank_batch_cuda
+    from fragnnet.models.masster.masster_cuda_topology import build_cuda_topology_device_masks
 
     selection_start = perf_counter()
     ranked = rank_batch_cuda(

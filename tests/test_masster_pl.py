@@ -15,17 +15,16 @@ from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
 from fragnnet.dataset import SpecMolDataset
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import build_masster_templates
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.model.loss import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
 )
 from fragnnet.model.nn_blocks import GINEGraphormer
 from fragnnet.models.fragnnet.spec_mol_frag_dataset import SpecMolFragDataset
-from fragnnet.pl_model import MassterPL, SpectrumPL
-from fragnnet.pl_model.masster_pl import (
+from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_candidates import MassterStaticGraph
+from fragnnet.models.masster.masster_pl import (
+    MassterPL,
     _balanced_binary_support_loss,
     _candidate_coverage_by_cut_count,
     _candidate_weighted_recall,
@@ -36,6 +35,8 @@ from fragnnet.pl_model.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
+from fragnnet.models.masster.masster_templates import build_masster_templates
+from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.pl_utils import get_pl_hparams
@@ -1773,7 +1774,7 @@ def test_selection_only_loss_skips_unrequested_channel_diagnostics(
         raise AssertionError("dense channel matching must stay off unless requested")
 
     monkeypatch.setattr(
-        "fragnnet.pl_model.masster_pl._observational_channel_targets",
+        "fragnnet.models.masster.masster_pl._observational_channel_targets",
         unexpected_channel_target,
     )
     actual = model.loss_fn(
@@ -2330,7 +2331,7 @@ def test_masster_primary_loss_uses_candidate_only_sparse_cross_entropy(
         raise AssertionError("CE candidate_wrecall must not compute cut-bucket metrics")
 
     monkeypatch.setattr(
-        "fragnnet.pl_model.masster_pl._candidate_coverage_by_cut_count",
+        "fragnnet.models.masster.masster_pl._candidate_coverage_by_cut_count",
         unexpected_bucket_matching,
     )
     actual = model.loss_fn(

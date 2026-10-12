@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag import masster_candidates
-from fragnnet.frag.masster_templates import MassterTemplate
+from fragnnet.models.masster import masster_candidates
+from fragnnet.models.masster.masster_templates import MassterTemplate
 
 
 def _pack_masks(masks: Sequence[Sequence[int]]) -> tuple[np.ndarray, np.ndarray]:

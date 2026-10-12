@@ -13,7 +13,7 @@ from time import perf_counter
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.frag.masster_candidates import (
+from fragnnet.models.masster.masster_candidates import (
     MassterCandidateBatch,
     MassterCandidateTimings,
 )

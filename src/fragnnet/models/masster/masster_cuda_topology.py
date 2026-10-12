@@ -23,10 +23,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 
-from fragnnet.frag.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
+from fragnnet.models.masster.masster_cuda_utils import default_cuda_cache_dir, resolve_cuda_home
 
 if TYPE_CHECKING:
-    from fragnnet.frag.masster_candidates import _TopologyInput
+    from fragnnet.models.masster.masster_candidates import _TopologyInput
 
 _BUILD_LOCK = Lock()
 _META_WIDTH = 15

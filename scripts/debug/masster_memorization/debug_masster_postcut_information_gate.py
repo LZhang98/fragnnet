@@ -83,7 +83,7 @@ import torch as th
 from rdkit import Chem, RDLogger
 from torch.utils.data import DataLoader
 
-from fragnnet.frag.masster_templates import (
+from fragnnet.models.masster.masster_templates import (
     MASSTER_RULE_NAMES,
     build_masster_templates,
     filter_masster_templates,

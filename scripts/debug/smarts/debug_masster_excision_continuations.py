@@ -56,7 +56,7 @@ from rdkit import Chem
 from torch.utils.data import DataLoader, Subset
 from torch_geometric.data import Batch
 
-from fragnnet.frag.masster_templates import (
+from fragnnet.models.masster.masster_templates import (
     MASSTER_RULE_NAMES,
     _is_connected,
     build_masster_templates,

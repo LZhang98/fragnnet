@@ -33,7 +33,7 @@ HELPERS = {
 
 
 @pytest.mark.parametrize(
-    "module", ["fragnnet.models.fragnnet.fragnnet_pl", "fragnnet.pl_model.masster_pl"]
+    "module", ["fragnnet.models.fragnnet.fragnnet_pl", "fragnnet.models.masster.masster_pl"]
 )
 def test_models_use_the_shared_helpers_not_copies(module: str) -> None:
     tree = ast.parse(Path(importlib.util.find_spec(module).origin).read_text())

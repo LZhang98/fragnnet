@@ -17,7 +17,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
-    from fragnnet.frag.masster_templates import MassterTemplate
+    from fragnnet.models.masster.masster_templates import MassterTemplate
 
 
 _CPU_POOL: ThreadPoolExecutor | None = None
@@ -183,7 +183,7 @@ class _TopologyInput:
 
 
 def _build_local_topology(request: _TopologyInput) -> _TopologyCache:
-    from fragnnet.frag.masster_core import build_component_arrays_raw
+    from fragnnet.models.masster.masster_core import build_component_arrays_raw
 
     (
         cut_counts, component_mask_indices, component_cut_counts, atom_indices,
@@ -287,7 +287,7 @@ def _top_mixture_bond_sets(
         concatenated cut bond indices. Bond sets are ordered by descending mixture
         probability, ties broken by ascending lexicographic bond order.
     """
-    from fragnnet.frag.masster_core import top_mixture_bond_sets_raw
+    from fragnnet.models.masster.masster_core import top_mixture_bond_sets_raw
 
     return top_mixture_bond_sets_raw(
         np.ascontiguousarray(logits, dtype=np.float64),
@@ -586,7 +586,7 @@ def build_masster_candidates(
     if candidate_backend == "cuda" or _cuda_full:
         if _cuda_topology or _cuda_topology_stats is not None:
             raise ValueError("full CUDA and topology-only prototypes are mutually exclusive")
-        from fragnnet.frag.masster_cuda_full_candidates import (
+        from fragnnet.models.masster.masster_cuda_full_candidates import (
             build_masster_candidates_cuda,
         )
 
@@ -905,7 +905,7 @@ def build_masster_candidates(
             topology_representatives.append(leader)
 
     if _cuda_topology:
-        from fragnnet.frag.masster_cuda_candidates import _build_cuda_candidates
+        from fragnnet.models.masster.masster_cuda_candidates import _build_cuda_candidates
 
         return _build_cuda_candidates(
             bond_logits=bond_logits,
@@ -1033,7 +1033,7 @@ def build_masster_candidates(
 
         smarts_start = perf_counter()
         if molecule_templates:
-            from fragnnet.frag.masster_templates import formed_bond_count
+            from fragnnet.models.masster.masster_templates import formed_bond_count
 
             smarts_lookup = (
                 None

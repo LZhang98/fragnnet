@@ -39,9 +39,9 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     "frag_gnn": _FRAGNNET,
     "fragnnet": _FRAGNNET,
     "masster": ModelEntry(
-        "fragnnet.pl_model.masster_pl:MassterPL",
+        "fragnnet.models.masster.masster_pl:MassterPL",
         _SPEC_MOL_DATASET,
-        hooks="fragnnet.frag.masster_hooks:MassterHooks",
+        hooks="fragnnet.models.masster.masster_hooks:MassterHooks",
     ),
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),

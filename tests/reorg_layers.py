@@ -47,36 +47,19 @@ FRAGNNET = {
     "fragnnet.models.fragnnet.frag_utils",
 }
 MASSTER = {
-    "fragnnet.dataset.masster_data_sampler",
-    "fragnnet.frag.bond_mask_generator",
-    "fragnnet.model.bond_fragment_heads",
-    "fragnnet.model.candidate_features",
-    "fragnnet.model.masster_model",
-    "fragnnet.model.rt_ccs",
-    "fragnnet.pl_model.masster_pl",
+    "fragnnet.models.masster.masster_data_sampler",
+    "fragnnet.models.masster.bond_mask_generator",
+    "fragnnet.models.masster.bond_fragment_heads",
+    "fragnnet.models.masster.candidate_features",
+    "fragnnet.models.masster.masster_model",
+    "fragnnet.models.masster.rt_ccs",
+    "fragnnet.models.masster.masster_pl",
 }
-MASSTER_PREFIXES = ("fragnnet.frag.masster_",)
+MASSTER_PREFIXES = ("fragnnet.models.masster.",)
 BASELINE_PACKAGES = {
     "fragnnet.baselines.graff": "baseline:graff",
     "fragnnet.baselines.massformer": "baseline:massformer",
     "fragnnet.iceberg": "baseline:iceberg",
-}
-
-# Lazy package exports introduced in Phase 1 (PEP 562 ``__getattr__`` in a package
-# ``__init__``): {package: {exported name: defining module}}. The resolver follows these so a
-# core module importing a model class through its package is still caught, and the shim's own
-# deferred import is exempt from the rule. Added in Phase 1 step 5; removed by Phase 6, which moves
-# the owner classes out of these packages. Must match each package's ``_LAZY_EXPORTS``.
-COMPAT_SHIMS: dict[str, dict[str, str]] = {
-    "fragnnet.dataset": {
-        "MassterCEContextDynamicBatchSampler": "fragnnet.dataset.masster_data_sampler",
-    },
-    "fragnnet.model": {
-        "MassterModel": "fragnnet.model.masster_model",
-    },
-    "fragnnet.pl_model": {
-        "MassterPL": "fragnnet.pl_model.masster_pl",
-    },
 }
 
 OWNER_LAYERS = ("fragnnet", "masster")
@@ -184,30 +167,15 @@ def _resolve_from(module: str, is_package: bool, node: ast.ImportFrom) -> str | 
     return f"{base}.{node.module}" if node.module else base
 
 
-def _is_shim_import(module: str, node: ast.AST, tree: ast.Module) -> bool:
-    """True for an import inside a package ``__getattr__`` listed in COMPAT_SHIMS."""
-    if module not in COMPAT_SHIMS:
-        return False
-    return any(
-        isinstance(top, ast.FunctionDef)
-        and top.name == "__getattr__"
-        and any(sub is node for sub in ast.walk(top))
-        for top in tree.body
-    )
-
-
 def import_edges() -> dict[tuple[str, str], set[str]]:
     """All ``fragnnet`` import edges in src, module- and function-level.
 
     Returns {(importer, imported module): {names}}. Names imported from a package are resolved to
-    the submodule that defines them when the package re-exports them (eagerly or via
-    COMPAT_SHIMS).
+    the submodule that defines them when the package re-exports them.
     """
     files = _module_files()
     known = set(files) | _compiled_modules()
     reexports = _static_reexports(files)
-    for package, names in COMPAT_SHIMS.items():
-        reexports.setdefault(package, {}).update(names)
     edges: dict[tuple[str, str], set[str]] = {}
 
     def add(src: str, dst: str, name: str) -> None:
@@ -220,8 +188,6 @@ def import_edges() -> dict[tuple[str, str], set[str]]:
         is_package = path.name == "__init__.py"
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                if _is_shim_import(module, node, tree):
-                    continue
                 base = _resolve_from(module, is_package, node)
                 if base is None or not base.startswith("fragnnet"):
                     continue
@@ -234,8 +200,6 @@ def import_edges() -> dict[tuple[str, str], set[str]]:
                     else:
                         add(module, base, alias.name)
             elif isinstance(node, ast.Import):
-                if _is_shim_import(module, node, tree):
-                    continue
                 for alias in node.names:
                     if alias.name.startswith("fragnnet"):
                         add(module, alias.name, "*")

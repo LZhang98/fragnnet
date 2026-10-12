@@ -6,7 +6,7 @@ setup(
     ext_modules=cythonize(
         [
             "src/fragnnet/models/fragnnet/compute_frags.pyx",
-            "src/fragnnet/frag/masster_core.pyx",
+            "src/fragnnet/models/masster/masster_core.pyx",
             "src/fragnnet/models/fragnnet/multi_cut_bfs.pyx",
             "src/fragnnet/baselines/massformer/algos.pyx",
         ],

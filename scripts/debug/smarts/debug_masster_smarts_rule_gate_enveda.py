@@ -44,17 +44,17 @@ from debug_masster_smarts_rule_gate import (  # noqa: E402
     summarize,
 )
 
-from fragnnet.frag.masster_templates import (  # noqa: E402
-    _MASSTER_PRECURSOR_TYPES,
-    MASSTER_FRAG_RULES,
-    MASSTER_NL_RULES,
-    _is_connected,
-)
 from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     FRAG_RULES,
     NL_RULES,
     NeutralLossRule,
     SmartsFragRule,
+)
+from fragnnet.models.masster.masster_templates import (  # noqa: E402
+    _MASSTER_PRECURSOR_TYPES,
+    MASSTER_FRAG_RULES,
+    MASSTER_NL_RULES,
+    _is_connected,
 )
 
 RDLogger.DisableLog("rdApp.*")

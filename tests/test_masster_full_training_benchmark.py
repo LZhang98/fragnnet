@@ -111,7 +111,7 @@ def test_repeated_loader_preserves_equal_samples_and_loading_settings():
 
 
 def test_reference_import_uses_frozen_python_and_extension_and_records_adapter(tmp_path):
-    core_spec = importlib.util.find_spec("fragnnet.frag.masster_core")
+    core_spec = importlib.util.find_spec("fragnnet.models.masster.masster_core")
     core_path = Path(core_spec.origin)
     (tmp_path / core_path.name).symlink_to(core_path)
     (tmp_path / "masster_candidates.py").write_text(
@@ -131,7 +131,7 @@ spec = importlib.util.spec_from_file_location('benchmark', sys.argv[1])
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 report = benchmark._install_reference(Path(sys.argv[2]))
-from fragnnet.frag import masster_core, masster_candidates
+from fragnnet.models.masster import masster_core, masster_candidates
 report['marker'] = masster_candidates.MARKER
 report['combined_ms'] = masster_candidates.MassterCandidateTimings(2, 3).topology_assembly_ms
 report['core_file'] = masster_core.__file__

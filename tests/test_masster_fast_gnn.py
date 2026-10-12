@@ -7,7 +7,7 @@ import torch as th
 import torch.nn.functional as F
 from test_masster_model import _build_batch, _build_model
 
-from fragnnet.frag.masster_fast_gnn import build_fast_gnn_candidates
+from fragnnet.models.masster.masster_fast_gnn import build_fast_gnn_candidates
 from fragnnet.runner import load_config
 
 
@@ -246,7 +246,7 @@ def test_lightning_loss_and_staged_training(output_mode, loss_type, device):
     from rdkit import Chem
     from torch_geometric.data import Batch
 
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     from fragnnet.utils.feat_utils import get_mol_graph
 
     config = _small_pl_config()
@@ -313,7 +313,7 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
     from rdkit import Chem
     from torch_geometric.data import Batch
 
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     from fragnnet.utils.feat_utils import get_mol_graph
 
     config = _small_pl_config()
@@ -402,7 +402,7 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
     ],
 )
 def test_prepared_beam_arms_log_candidate_coverage(config_path):
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     config = load_config("config", config_path, None)
     assert config["masster_candidate_coverage_metrics"] is True
     model = MassterPL(**config)
@@ -447,7 +447,7 @@ def test_merged_jss_beam_arm_matches_its_baseline_apart_from_the_proposal() -> N
 def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
     import lightning as L
 
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     from fragnnet.utils.pl_utils import get_pl_hparams
 
     config = _small_pl_config()
@@ -485,7 +485,7 @@ def test_checkpoint_proposal_roundtrip_and_legacy_migration(tmp_path, legacy):
 
 
 def test_config_arm_resolves_and_constructs():
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     config = load_config(
         "config",
         "config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_gnn_proposal.yml",
@@ -635,7 +635,7 @@ def test_original_proposal_names_migrate_in_configs_and_checkpoints(tmp_path, ol
     import lightning as L
     import yaml
 
-    from fragnnet.pl_model.masster_pl import MassterPL
+    from fragnnet.models.masster.masster_pl import MassterPL
     from fragnnet.utils.pl_utils import get_pl_hparams
 
     old_key = "masster_proposal_type"

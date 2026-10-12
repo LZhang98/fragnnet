@@ -8,10 +8,10 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag import masster_cuda_utils as cuda_utils
-from fragnnet.frag.masster_candidates import _TopologyInput
-from fragnnet.frag.masster_core import build_component_arrays_raw
-from fragnnet.frag.masster_cuda_topology import (
+from fragnnet.models.masster import masster_cuda_utils as cuda_utils
+from fragnnet.models.masster.masster_candidates import _TopologyInput
+from fragnnet.models.masster.masster_core import build_component_arrays_raw
+from fragnnet.models.masster.masster_cuda_topology import (
     CudaTopologyGraph,
     _prepare_inputs,
     build_cuda_topology,

@@ -7,7 +7,7 @@ import pytest
 import torch as th
 
 import fragnnet.runner as runner
-from fragnnet.pl_model import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils.spec_utils import get_ints_untransform_func
 from tests.test_masster_model import _build_batch, _build_model
 

@@ -24,13 +24,6 @@ import numpy as np
 import torch as th
 from rdkit import Chem
 
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_export import masster_annotation_tables
-from fragnnet.frag.masster_hooks import migrate_masster_rt_ccs_hparams
-from fragnnet.frag.masster_templates import (
-    MassterTemplate,
-    build_masster_templates,
-)
 from fragnnet.fragmentation.candidate_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
@@ -41,15 +34,22 @@ from fragnnet.fragmentation.candidate_support import (
     observational_channel_targets as _observational_channel_targets,
 )
 from fragnnet.hooks import ExportHooks
-from fragnnet.model import MassterModel
-from fragnnet.model.candidate_features import describe_candidate_features
 from fragnnet.model.loss import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
     sparse_peak_list_distance,
 )
 from fragnnet.model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
-from fragnnet.model.rt_ccs import property_regression_terms
+from fragnnet.models.masster.candidate_features import describe_candidate_features
+from fragnnet.models.masster.masster_candidates import MassterStaticGraph
+from fragnnet.models.masster.masster_export import masster_annotation_tables
+from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_templates import (
+    MassterTemplate,
+    build_masster_templates,
+)
+from fragnnet.models.masster.rt_ccs import property_regression_terms
 from fragnnet.pl_model.spectrum_pl import SpectrumPL, select_context_ce_values
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.misc_utils import scatter_reduce

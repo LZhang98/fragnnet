@@ -11,7 +11,7 @@ import numpy as np
 import torch as th
 from pyteomics.mass import Composition
 
-from fragnnet.frag.masster_templates import MASSTER_RULE_VOCABULARY
+from fragnnet.models.masster.masster_templates import MASSTER_RULE_VOCABULARY
 from fragnnet.utils.formula_utils import (
     ELEMENT_TO_IDX,
     MASK_SIZE,

@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.pl_model import MassterPL
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils import script_utils
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, round_aggregate_peaks
 

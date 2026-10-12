@@ -13,13 +13,13 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.model.nn_blocks import GNN
+from fragnnet.models.masster.bond_fragment_heads import (
     BondFocusedBreakHead,
     CandidateIntensityTransformerHead,
     PairwiseMassBias,
     _BiasedSelfAttention,
 )
-from fragnnet.model.nn_blocks import GNN
 
 HEAD_KWARGS = {
     "fragment_embedding_dim": 4,

@@ -10,7 +10,7 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.models.masster.bond_fragment_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
     CandidateIntensityTransformerHead,

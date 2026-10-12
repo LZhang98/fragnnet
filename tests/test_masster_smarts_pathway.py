@@ -15,8 +15,10 @@ import torch as th
 from rdkit import Chem
 
 from fragnnet import runner
-from fragnnet.frag.masster_candidates import MassterStaticGraph, build_masster_candidates
-from fragnnet.frag.masster_templates import (
+from fragnnet.models.masster.masster_candidates import MassterStaticGraph, build_masster_candidates
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.models.masster.masster_templates import (
     _MASSTER_RULE_INDEX,
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,
@@ -26,8 +28,6 @@ from fragnnet.frag.masster_templates import (
     build_masster_templates,
     formed_bond_count,
 )
-from fragnnet.model.masster_model import MassterModel
-from fragnnet.pl_model.masster_pl import MassterPL
 from tests.test_masster_model import _build_batch, _build_model
 
 # N-phenyl benzenesulfonamide: aryl_sulfonamide_so2 (rule 1, both polarities) loses SO2 and

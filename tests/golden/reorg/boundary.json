@@ -82,16 +82,16 @@
         "fragnnet.fragmentation.smarts_prepass"
       ],
       "masster": [
-        "fragnnet.frag.masster_candidates",
-        "fragnnet.frag.masster_export",
-        "fragnnet.frag.masster_fast_gnn",
-        "fragnnet.frag.masster_hooks",
-        "fragnnet.frag.masster_templates",
-        "fragnnet.model.bond_fragment_heads",
-        "fragnnet.model.candidate_features",
-        "fragnnet.model.masster_model",
-        "fragnnet.model.rt_ccs",
-        "fragnnet.pl_model.masster_pl"
+        "fragnnet.models.masster.bond_fragment_heads",
+        "fragnnet.models.masster.candidate_features",
+        "fragnnet.models.masster.masster_candidates",
+        "fragnnet.models.masster.masster_export",
+        "fragnnet.models.masster.masster_fast_gnn",
+        "fragnnet.models.masster.masster_hooks",
+        "fragnnet.models.masster.masster_model",
+        "fragnnet.models.masster.masster_pl",
+        "fragnnet.models.masster.masster_templates",
+        "fragnnet.models.masster.rt_ccs"
       ]
     },
     "mces_pretraining": {},
