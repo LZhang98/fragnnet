@@ -3,7 +3,7 @@
 - builder: molecule info, the Cython enumeration (compute_frags, multi_cut_bfs), the SMARTS/NL
   prepass injection, and batch generation into HDF5.
 - layout: dtypes, size constants, node and edge feature columns, boundary masks.
-- formula: fragment formulas from connected-component bitmasks.
+- formula: fragment formulas from connected-component bitmasks, and their isotope peaks.
 - hashing: Weisfeiler-Lehman subgraph hashes for nb-isomorphism grouping.
 - stats: peak statistics of generated DAGs.
 - graph: one DAG as a PyG graph, and DAG batching.

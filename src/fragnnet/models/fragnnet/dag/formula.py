@@ -1,5 +1,5 @@
-"""Formulas of DAG fragments: atom indices of a connected-component bitmask and the
-fragment formula arrays.
+"""Formulas of DAG fragments: atom indices of a connected-component bitmask, the fragment
+formula arrays, and the isotope peaks of a formula (pyopenms).
 """
 
 from typing import Literal

@@ -976,3 +976,17 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     the model imports only `dag.layout` (isolation golden updated).
   - A stale setuptools `build/` tree (from before Phase 6) still holds the old layout, and a
     wheel built from this checkout picks it up; delete `build/` before building wheels here.
+- 2026-10-12: Phase 9 follow-ups (user requests).
+  - `1e9f2570`: `fragnnet_iterable_dataset.py` merged into `fragnnet_dataset.py`.
+  - `a719b69f`: model-only code out of `utils/formula_utils.py`: MASSter's nominal-mass isotope
+    model to `models/masster/masster_isotopes.py`; the DAG builder's formula isotope peaks to
+    `dag/formula.py`; FraGNNet's precursor-delta handling of formula rows to
+    `models/fragnnet/fragnnet_adducts.py`. A transitive usage scan of every `utils/` name found no
+    single-model utils module. Kept in core although one model calls them today: the DAG storage
+    format (core loads DAG files), formula constants and mask encoders both models use, the
+    scatter ops, `aggregate_peaks_exact_mz`, `par_apply` and the progress helpers.
+  - Reproducibility finding: DAG isotope probabilities (`formula_peak_probs`) are not
+    bit-reproducible. pyopenms' `CoarseIsotopePatternGenerator` returns different last bits for
+    the same formulas depending on which native libraries were imported first (and from run to
+    run when torch is imported first); the DAG differences seen across runs are 1-3e-7 relative.
+    Compare DAGs structurally with a tolerance on these probabilities, not by file hash.
