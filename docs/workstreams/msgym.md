@@ -1,7 +1,7 @@
 # MassSpecGym (MSGYM) workstream
 
 > **Status:** HUB · **Updated:** 2026-10-10
-> MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring and the ChemBERTa-3 basic model.
+> MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring. The ChemBERTa-3 basic model was retired on 2026-10-12.
 
 ## Where it stands
 - **Proposed:** [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md), within the existing benchmark subset; measured edit-effect transfer with partial ratio labels proposed; training-only rarity/edge census first, no code or runs.
@@ -23,7 +23,6 @@
 | [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | PREPARED | Fir login/checkout, measure worst-case GPU memory, submit array. |
 | [Annotation-aware retrieval](../plans/annotation_aware_retrieval_plan.md) | ACTIVE | `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val; Gate 1 baseline fixed by the user. |
 | [Retrieval runner](../guides/run_msgym_retrieval.md) | built, not run on a cluster | Submit a test-fold job for a new checkpoint after re-selecting `loglik_cal` on val. |
-| [ChemBERTa-3 basic model](../plans/chemberta3_msgym_plan.md) | DEFERRED | User decides; E4 (NEIMS) is the matched check, exact-mass stages the structural route. |
 | GLACIER CF NIST'20 shortcut | argument only | Needs MAGMa labelling and a retrain; judged not worth it ([swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md)). |
 
 ## Settled — read before re-proposing
@@ -43,7 +42,7 @@
 - GLACIER-parity features arm: no gain (0.5669 vs 0.5695 tail); both MSGYM recipes peak near epoch 60 and drift down ([arms plan](../plans/masster/masster_msgym_training_arms_plan.md)).
 - User scope decision 2026-09-24: benchmark subset only, no extra MassSpecGym data (`ms_gym_all_1_5` would add 9,313 molecules).
 - [Marginal selection](../plans/masster/masster_fragment_marginal_selection_plan.md) — CLOSED NULL on NIST; U128 ties U256 at 1.65x speed.
-- [ChemBERTa-3 E1/T2](../plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished) — peak after epoch 0 at val 0.199/0.194, end 0.169/0.152; structure-blind prior scores 0.194; random SMILES hurt.
+- [ChemBERTa-3 E1/T2](../plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished) — peak after epoch 0 at val 0.199/0.194, end 0.169/0.152; structure-blind prior scores 0.194; random SMILES hurt. `chemlm` retired 2026-10-12 (E4 never ran); code at `13b1599d`.
 
 ## All documents
 | Doc | Status (updated) | One-line content |
@@ -53,7 +52,7 @@
 | [msgym_val_loss_sweep_48](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | PREPARED (2026-10-08) | W&B sweep `tiwhun9q`, 48 trials, Fir launch recipe; base moved to pow0.75 + lb16. |
 | [masster_fragment_marginal_selection_plan](../plans/masster/masster_fragment_marginal_selection_plan.md) | CLOSED NULL (2026-10-06) | NIST marginal-selection null; holds the MSGYM U256/E1024 config list. |
 | [annotation_aware_retrieval_plan](../plans/annotation_aware_retrieval_plan.md) | ACTIVE (2026-10-06) | Retrieval scoring plan, frozen full-track protocol, calibration. |
-| [chemberta3_msgym_plan](../plans/chemberta3_msgym_plan.md) | DEFERRED (2026-10-06) | ChemBERTa-3 first 6 layers end to end with NEIMS head; results and deferred stages. |
+| [chemberta3_msgym_plan](../plans/chemberta3_msgym_plan.md) | CLOSED NULL (2026-10-12) | ChemBERTa-3 first 6 layers end to end with NEIMS head; results; model retired. |
 | [masster_msgym_vs_glacier_released_ckpt](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md) | FINDING (2026-10-06) | Test cosine comparison, peak over-prediction, instrument audit. |
 | [masster_msgym_arm_screen_formula_retrieval](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md) | FINDING (2026-10-07) | Val table of all 18 screen checkpoints; formula test retrieval for `wd10`, `pow075`, `ll04i00m` with paired CIs. |
 | [masster_msgym_formula_retrieval_full](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md) | FINDING (2026-10-06) | Full val+test formula retrieval, GLACIER matching, calibrated likelihood. |
@@ -69,9 +68,8 @@
 Neighbours: [MASSter core](masster_core.md) · [MASSter generalization](masster_generalization.md) · [Spectraverse](spectraverse.md) · [NIST23 EI](nist23_ei.md) · [CASMI / Enveda](casmi_enveda.md) · [FraGNNet](fragnnet.md).
 
 ## Key artifacts
-- Configs: `config/masster/massspecgym/` (control `…_cuda_k1_ema999_fourier.yml`; arms `…_<arm>.yml`; `msgym_u256_e1024_*.yml`; `msgym_val_loss_sweep_40gb.yml`); ChemBERTa configs `config/massspecgym/chemlm/{e1,e4,t2}*.yml`.
+- Configs: `config/masster/massspecgym/` (control `…_cuda_k1_ema999_fourier.yml`; arms `…_<arm>.yml`; `msgym_u256_e1024_*.yml`; `msgym_val_loss_sweep_40gb.yml`).
 - Sweep: `sweep/masster/msgym_val_loss_48_40gb.yml`, W&B [tiwhun9q](https://wandb.ai/frag-gnn/frag-gnn/sweeps/tiwhun9q); launcher `scripts/manual_slurm/fir/prepare_msgym_val_loss_sweep.sh`.
 - Runs: `ll04i00m` (checkpoint uploaded), `1imawkx1` (no checkpoint), ChemBERTa E1 `tm9qwq78`, T2 `ku742mhq`.
 - Retrieval code: `scripts/ms2c/run_msgym_retrieval.py`, `scripts/manual_slurm/prepare_msgym_retrieval.sh`, `scripts/eval/score_retrieval_candidates.py`, `scripts/eval/summarize_retrieval.py`, `src/fragnnet/utils/retrieval_utils.py`.
 - Retrieval outputs: `output/msgym_formula_retrieval_2026_10_02/`, `output/glacier_msg_eval_2026_09_24/`, pilot `output/annotation_retrieval_pilot_2026_10_02/`.
-- ChemBERTa weights: `data/pretrained/ChemBERTa-100M-MLM`.
