@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils import ce_utils, spec_parse_utils
+from fragnnet.utils import spec_parse_utils, spec_utils
 from fragnnet.utils.misc_utils import booltype
 
 # Set up logging
@@ -37,9 +37,9 @@ def ion_mode_from_prec_type(prec_type: str) -> str:
     wrong value silently drops every spectrum of that mode.
 
     EI maps to "P", matching ``NIST_EI_ION_MODE`` in ``01_prepare_df.py``
-    (``ce_utils.get_charge`` returns +1 for "EI").
+    (``spec_utils.get_charge`` returns +1 for "EI").
     """
-    charge = ce_utils.get_charge(prec_type)
+    charge = spec_utils.get_charge(prec_type)
     if charge == 0:
         raise ValueError(f"Could not infer ion mode from neutral precursor type: {prec_type}")
     return "P" if charge > 0 else "N"

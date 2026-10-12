@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from fragnnet.utils import ce_utils, formula_utils, mol_utils, parallel_utils, spec_parse_utils
+from fragnnet.utils import formula_utils, mol_utils, parallel_utils, spec_parse_utils, spec_utils
 
 
 def test_par_apply_uses_unordered_generator():
@@ -95,18 +95,18 @@ class TestChargeAndEnergy:
     """Tests for charge parsing and energy conversions."""
 
     def test_get_charge(self):
-        assert ce_utils.get_charge("[M+H]+") == 1
-        assert ce_utils.get_charge("[M+H]2+") == 2
-        assert ce_utils.get_charge("[M-H]-") == -1
-        assert ce_utils.get_charge("EI") == 1
+        assert spec_utils.get_charge("[M+H]+") == 1
+        assert spec_utils.get_charge("[M+H]2+") == 2
+        assert spec_utils.get_charge("[M-H]-") == -1
+        assert spec_utils.get_charge("EI") == 1
 
     def test_nce_ace_roundtrip(self):
         nce = 30.0
         charge = 2  # factor 0.9
         prec_mz = 500.0
-        ace = ce_utils.nce_to_ace_helper(nce, charge, prec_mz)
+        ace = spec_utils.nce_to_ace_helper(nce, charge, prec_mz)
         assert ace == pytest.approx(27.0)
-        back_nce = ce_utils.ace_to_nce_helper(ace, charge, prec_mz)
+        back_nce = spec_utils.ace_to_nce_helper(ace, charge, prec_mz)
         assert back_nce == pytest.approx(nce)
 
 
@@ -341,27 +341,27 @@ class TestFillMissingCe:
 
     def test_fill_missing_nce_from_ace(self):
         row = self._make_row(nce=np.nan, ace=27.0)
-        result = ce_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
+        result = spec_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
         assert not np.isnan(result)
 
     def test_fill_missing_nce_keeps_existing(self):
         row = self._make_row(nce=30.0, ace=27.0)
-        result = ce_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
+        result = spec_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
         assert result == pytest.approx(30.0)
 
     def test_fill_missing_ace_from_nce(self):
         row = self._make_row(nce=30.0, ace=np.nan)
-        result = ce_utils.fill_missing_ace(row, ace_colname="ace", nce_colname="nce")
+        result = spec_utils.fill_missing_ace(row, ace_colname="ace", nce_colname="nce")
         assert not np.isnan(result)
 
     def test_fill_missing_ace_keeps_existing(self):
         row = self._make_row(nce=30.0, ace=27.0)
-        result = ce_utils.fill_missing_ace(row, ace_colname="ace", nce_colname="nce")
+        result = spec_utils.fill_missing_ace(row, ace_colname="ace", nce_colname="nce")
         assert result == pytest.approx(27.0)
 
     def test_both_missing_returns_nan(self):
         row = self._make_row(nce=np.nan, ace=np.nan)
-        result = ce_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
+        result = spec_utils.fill_missing_nce(row, ace_colname="ace", nce_colname="nce")
         assert np.isnan(result)
 
 

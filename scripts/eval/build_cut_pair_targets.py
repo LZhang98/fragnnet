@@ -66,7 +66,6 @@ from fragnnet.models.fragnnet.fragnnet_adducts import (
     tracked_element_counts,
 )
 from fragnnet.utils import parallel_utils
-from fragnnet.utils.ce_utils import CHARGE_FACTOR_MAP, get_charge
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
@@ -74,6 +73,7 @@ from fragnnet.utils.formula_utils import (
     th_long_to_mask,
 )
 from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import CHARGE_FACTOR_MAP, get_charge
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import (  # noqa: E402
