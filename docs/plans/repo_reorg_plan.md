@@ -1001,8 +1001,8 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     notebooks that use it) and the unwired cross-CE orphan prototype with its test and notebook.
   - Fixes: one `get_split_fn` (spec_utils); `booltype` no longer needs `distutils` (gone in
     Python 3.12; same results as `strtobool` on 21 spellings); retrieval uses `x_log_x`;
-    `get_formulae_hill_notation` documents that it sorts alphabetically (not Hill notation) and a
-    test pins the order the export uses; the legacy HDF5 DAG writer moved into its test.
+    `get_formulae_hill_notation` now writes real Hill notation (it sorted alphabetically; a
+    test pins the 14 precursor-delta renderings, which do not change); the legacy HDF5 DAG writer moved into its test.
   - Script-only code left the package: `ms2c_utils` to
     `preproc_scripts/ms2c_pubchem/candidate_db.py`, the clean-spectra command line and spectrum
     selection to `preproc_scripts/clean_spectra.py`, the statistics helpers to
@@ -1019,5 +1019,4 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     (notebooks and cluster job scripts import them from the package), `plot_utils`,
     `retrieval_utils`, the `setup_utils` shim, `networkx`.
   - Not done: moving `script_utils` to an `inference/` package, and the DAG HDF5 layer to
-    `models/fragnnet/dag/` (separate decisions); making `get_formulae_hill_notation` real Hill
-    notation (changes exported formula strings).
+    `models/fragnnet/dag/` (separate decisions).

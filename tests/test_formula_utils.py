@@ -89,9 +89,41 @@ class TestHillNotation:
         result = fu.get_formulae_hill_notation({"O": 1, "H": 2})
         assert result == "H2O"
 
-    def test_order_is_alphabetical_not_hill(self):
-        """Carbon does not come first: the export's formula strings depend on this order."""
-        assert fu.get_formulae_hill_notation({"C": 1, "Br": 1, "H": 3}) == "BrCH3"
+    @pytest.mark.parametrize(
+        ("counts", "expected"),
+        [
+            ({"C": 1, "Br": 1, "H": 3}, "CH3Br"),  # carbon: C, H, then alphabetical
+            ({"C": 6, "F": 3, "H": 4}, "C6H4F3"),
+            ({"Cl": 2, "C": 1}, "CCl2"),  # carbon without hydrogen
+            ({"Cl": 1, "H": 1}, "ClH"),  # no carbon: alphabetical, H included
+            ({"O": 1, "H": 2, "N": 0}, "H2O"),  # zero counts are left out
+        ],
+    )
+    def test_hill_order(self, counts, expected):
+        assert fu.get_formulae_hill_notation(counts) == expected
+
+    def test_precursor_delta_renderings_are_pinned(self):
+        """Every delta the precursor tables produce renders as before the Hill fix.
+
+        These strings fill the export's ``pred_formula_adducts`` column and the MGF adducts.
+        """
+        expected = {
+            "Br1": "+Br",
+            "C1H1O2": "+CHO2",
+            "C2H3O2": "+C2H3O2",
+            "Cl1": "+Cl",
+            "H-1": "-H",
+            "H-1C-1O-2": "-CHO2",
+            "H-2N-1": "-H2N",
+            "H-3O-1": "-H3O",
+            "H1": "+H",
+            "K1": "+K",
+            "N1H4": "+H4N",
+            "Na1": "+Na",
+            "O-1H-1": "-HO",
+            "O-2H-3": "-H3O2",
+        }
+        assert {d: fu.formula_delta_to_signed_str(d) for d in expected} == expected
 
 
 class TestPrecTypeDiffs:

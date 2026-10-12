@@ -238,26 +238,27 @@ def cmf_duplicate_crf_h_shift(
 
 
 def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
-    """Render element counts as a formula string, elements in alphabetical order.
+    """Render element counts as a formula string in Hill notation.
 
-    Despite the name this is not Hill notation (which puts C, then H, first when carbon is
-    present): ``{"C": 1, "Br": 1, "H": 3}`` renders as ``"BrCH3"``. A count of 1 gets no
-    suffix, and an element with count 0 is still written, so callers drop zero counts.
+    With carbon present, C comes first, then H, then the other elements alphabetically;
+    without carbon, every element (H included) is alphabetical. A count of 1 gets no suffix
+    and elements with a count of 0 are left out: ``{"C": 1, "Br": 1, "H": 3}`` renders as
+    ``"CH3Br"`` and ``{"Cl": 1, "H": 1}`` as ``"ClH"``.
 
     Args:
         element_counts: Element counts, e.g. ``{"C": 6, "H": 7, "O": 6}``.
 
     Returns:
-        The formula string, e.g. ``"BrClH2Si"``.
+        The formula string, e.g. ``"C6H7O6"``.
     """
-    formulae_string = ""
-    sorted_keys = list(element_counts.keys())
-    sorted_keys.sort()
-    for element in sorted_keys:
-        formulae_string += element
-        if element_counts[element] > 1:
-            formulae_string += str(element_counts[element])
-    return formulae_string
+    counts = {element: n for element, n in element_counts.items() if n != 0}
+    elements = sorted(counts)
+    if "C" in counts:
+        first = ["C", "H"] if "H" in counts else ["C"]
+        elements = first + [element for element in elements if element not in first]
+    return "".join(
+        element + (str(counts[element]) if counts[element] > 1 else "") for element in elements
+    )
 
 
 @lru_cache(maxsize=64)
