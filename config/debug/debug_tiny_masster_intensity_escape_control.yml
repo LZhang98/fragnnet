@@ -94,7 +94,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 8
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 # The escape is part of the distribution, so it reaches the entropy term too. Held at 0 here so
 # the smoke run isolates the primary objective.
 masster_intensity_entropy_match_weight: 0.0

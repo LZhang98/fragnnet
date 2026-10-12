@@ -87,7 +87,7 @@ class Spectrum:
     inst_type: str = "ORB"
 
 
-# Default table. Group 0 (ethanol, two CEs) is a CE-pair-eligible group with literal peaks: A is
+# Default table. Group 0 (ethanol, two CEs) is a two-energy group with literal peaks: A is
 # the base peak at the low CE and B at the high CE. Group 1 is a single-CE group. Groups 2-4 have
 # two CEs with DAG-derived peaks; group 5 is single-CE.
 DEFAULT_SPECTRA = (
@@ -308,18 +308,14 @@ MODEL_OVERRIDES: dict[str, dict[str, Any]] = {
 }
 MODEL_OVERRIDES["fragnnet"] = MODEL_OVERRIDES["frag_gnn"]
 
-# Everything Phase 0 item 4 needs to activate CE-pair, spectral leak and spectral CE auxiliary.
+# Everything Phase 0 item 4 needs to activate spectral leak and spectral CE auxiliary.
 ENABLED_LOSS_OVERRIDES: dict[str, dict[str, Any]] = {
     "shared": {
         "loss_type": "hellinger_distance",
         "loss_vectorized": True,
         "spectral_leak_loss_weight": 0.1,
         "spectral_ce_auxiliary_weight": 0.1,
-        "ce_pair_loss_weight": 0.1,
-        "ce_pair_min_endpoint_confidence": 0.2,
         "target_rel_ints_thresh": 0.05,
-        "ce_pair_eligible_inst_types": ["ORB"],
-        "ce_pair_eligible_prec_types": ["[M+H]+"],
         "inst_type_loss_tol": {"ORB": {"rel": 1.0e-5, "min_mz": 200.0}},
         "train_sample_weight": "none",
     },
@@ -365,7 +361,7 @@ def make_config(
         model_type: Any registered model type.
         data: The synthetic dataset; its paths are filled in when given.
         *overrides: Extra override mappings, applied last and in order.
-        enabled_losses: Add ``ENABLED_LOSS_OVERRIDES`` (CE-pair, leak, auxiliary).
+        enabled_losses: Add ``ENABLED_LOSS_OVERRIDES`` (leak, auxiliary).
 
     Returns:
         The config, after ``runner.validate_sampler_config``.
@@ -507,7 +503,6 @@ _LOSS_INPUT_KEYS = (
     "pred_logprobs",
     "pred_intensities",
     "pred_batch_idxs",
-    "ce_pair_ce_values",
     "tol_per_sample",
     "min_mz_per_sample",
 )

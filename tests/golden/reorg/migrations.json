@@ -54,9 +54,7 @@
     "error": "ValueError",
     "paths": [
       "ce_context_ce_key_by_inst.FT",
-      "ce_pair_eligible_inst_types[0]",
       "inst_type_loss_tol.FT",
-      "precursor_pair_eligible_inst_types[0]",
       "spec_params.inst_types[0]",
       "spec_params.merge_tolerance_by_inst.FT"
     ]
@@ -110,7 +108,7 @@
       "masster"
     ],
     "n_in": 437,
-    "n_out": 444,
+    "n_out": 432,
     "renamed": [
       "mass_shatter_apply_channel_selection_in_training",
       "mass_shatter_base_ce_weight",
@@ -678,8 +676,8 @@
       "use_ace": false,
       "use_nce": true
     },
-    "n_in": 421,
-    "n_out": 444,
+    "n_in": 409,
+    "n_out": 432,
     "spec_params_backfilled": {
       "ccs": false,
       "ccs_labels_fp": null,
@@ -764,7 +762,7 @@
       "masster_rt_loss_weight",
       "masster_rt_scale"
     ],
-    "n_c0_keys": 437
+    "n_c0_keys": 425
   },
   "load_config:cli_overrides": {
     "current_key": {

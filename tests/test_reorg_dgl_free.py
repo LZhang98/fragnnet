@@ -78,6 +78,8 @@ def test_no_tracked_module_imports_dgl() -> None:
     ).split()
     offenders = {}
     for path in tracked:
+        if not (REPO / path).is_file():
+            continue
         tree = ast.parse((REPO / path).read_text(), filename=path)
         hits = sorted(
             name

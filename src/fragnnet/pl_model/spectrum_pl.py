@@ -23,7 +23,6 @@ from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet import registry
 from fragnnet.loss.peak_list import sparse_outside_window_intensity_fraction
-from fragnnet.loss.peak_pair_bce import ce_switch_pair_bce
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
 from fragnnet.utils.migrations import migrate_legacy_hparams
@@ -39,7 +38,6 @@ from fragnnet.utils.spec_utils import (
     get_ints_transform_func,
     get_ints_untransform_func,
     primary_ce_to_batch,
-    select_context_ce_values,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,79 +248,6 @@ class SpectrumPL(L.LightningModule):
         )
         return ios_ce + oos_ce if include_oos else ios_ce
 
-    def _build_ce_pair_loss_fn(
-        self,
-    ) -> Callable[..., tuple[th.Tensor, th.Tensor]]:
-        """CE-pair loss function, with its eligibility tensors built once at setup.
-
-        The term only applies to configured instrument/adduct combinations. Their names become
-        the sorted label indices the batch carries (the sort order the models use).
-
-        Returns:
-            ``fn(batch, batch_size, reference, tol_per_sample, min_mz_per_sample)`` giving the
-            per-sample pair loss and eligible-endpoint count, each of length ``batch_size``. When
-            ``batch["ce_pair_enabled"]`` is false both are zeros with ``reference``'s dtype and
-            device (the term is train-only, but its logged keys exist on every split).
-        """
-        inst_types = sorted(self.hparams.spec_params["inst_types"])
-        prec_types = sorted(self.hparams.spec_params["prec_types"])
-        eligible_inst_idxs = th.empty(0, dtype=th.long)
-        eligible_prec_idxs = th.empty(0, dtype=th.long)
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            eligible_inst_idxs = th.tensor(
-                [
-                    inst_types.index(inst_type)
-                    for inst_type in self.hparams.ce_pair_eligible_inst_types
-                ],
-                dtype=th.long,
-            )
-            eligible_prec_idxs = th.tensor(
-                [
-                    prec_types.index(prec_type)
-                    for prec_type in self.hparams.ce_pair_eligible_prec_types
-                ],
-                dtype=th.long,
-            )
-
-        def ce_pair_loss_fn(
-            batch: dict[str, Any],
-            batch_size: int,
-            reference: th.Tensor,
-            tol_per_sample: th.Tensor | None,
-            min_mz_per_sample: th.Tensor | None,
-        ) -> tuple[th.Tensor, th.Tensor]:
-            pair_loss = reference.new_zeros(batch_size)
-            eligible_endpoints = reference.new_zeros(batch_size)
-            if batch["ce_pair_enabled"]:
-                # Only spectra from a configured instrument *and* adduct take part; elsewhere
-                # the observed winner switch is too noisy to supervise.
-                inst_idxs = batch["spec_inst_type"].reshape(-1)
-                prec_idxs = batch["spec_prec_type"].reshape(-1)
-                eligible_samples = th.isin(
-                    inst_idxs, eligible_inst_idxs.to(inst_idxs.device)
-                ) & th.isin(prec_idxs, eligible_prec_idxs.to(prec_idxs.device))
-                # Supervises which of two adjacent-CE spectra ranks the observed winner higher.
-                # It reads the ``ce_pair_*`` peak lists, which ``_common_step`` passes through
-                # without the filtering and intensity transform applied to the primary targets.
-                pair_loss, eligible_endpoints = ce_switch_pair_bce(
-                    true_mzs=batch["ce_pair_true_mzs"],
-                    true_ints=batch["ce_pair_true_ints"],
-                    true_batch_idxs=batch["ce_pair_true_batch_idxs"],
-                    pred_mzs=batch["ce_pair_pred_mzs"],
-                    pred_logprobs=batch["ce_pair_pred_logprobs"],
-                    pred_batch_idxs=batch["ce_pair_pred_batch_idxs"],
-                    group_ids=batch["group_id"].reshape(-1),
-                    ce_values=batch["ce_pair_ce_values"],
-                    eligible_samples=eligible_samples,
-                    batch_size=batch_size,
-                    min_endpoint_confidence=self.hparams.ce_pair_min_endpoint_confidence,
-                    min_contender_relative_intensity=self.hparams.target_rel_ints_thresh,
-                    tol_per_sample=tol_per_sample,
-                    min_mz_per_sample=min_mz_per_sample,
-                )
-            return pair_loss, eligible_endpoints
-
-        return ce_pair_loss_fn
 
     def _setup_spec_fns(self):
         """
@@ -733,50 +658,6 @@ class SpectrumPL(L.LightningModule):
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            if pred_logprobs is None:
-                raise ValueError("ce_pair_loss_weight requires probability output")
-            ce_values = select_context_ce_values(
-                batch=batch,
-                batch_size=int(batch_size),
-                inst_types=self.hparams.spec_params["inst_types"],
-                ce_key_by_inst=self.hparams.ce_context_ce_key_by_inst,
-            )
-            train_d.update(
-                {
-                    "ce_pair_enabled": split == "train",
-                    "ce_pair_true_mzs": true_mzs,
-                    "ce_pair_true_ints": true_ints,
-                    "ce_pair_true_batch_idxs": true_batch_idxs,
-                    "ce_pair_pred_mzs": pred_mzs,
-                    "ce_pair_pred_logprobs": pred_logprobs,
-                    "ce_pair_pred_batch_idxs": pred_batch_idxs,
-                    "ce_pair_ce_values": ce_values,
-                    "group_id": batch["group_id"],
-                    "spec_inst_type": batch["spec_inst_type"],
-                    "spec_prec_type": batch["spec_prec_type"],
-                }
-            )
-        if self.hparams.precursor_pair_loss_weight != 0.0:
-            if pred_logprobs is None:
-                raise ValueError("precursor_pair_loss_weight requires probability output")
-            nce_values = primary_ce_to_batch(
-                batch["spec_nce"], batch.get("spec_nce_batch_idxs"), int(batch_size)
-            )
-            train_d.update(
-                {
-                    "precursor_pair_true_mzs": true_mzs,
-                    "precursor_pair_true_ints": true_ints,
-                    "precursor_pair_true_batch_idxs": true_batch_idxs,
-                    "precursor_pair_pred_mzs": pred_mzs,
-                    "precursor_pair_pred_logprobs": pred_logprobs,
-                    "precursor_pair_pred_batch_idxs": pred_batch_idxs,
-                    "precursor_pair_nce_values": nce_values,
-                    "spec_prec_mz": batch["spec_prec_mz"],
-                    "spec_inst_type": batch["spec_inst_type"],
-                    "spec_prec_type": batch["spec_prec_type"],
-                }
-            )
 
         loss_d = self.loss_fn(**train_d)
         loss = loss_d["loss"]

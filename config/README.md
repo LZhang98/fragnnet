@@ -39,8 +39,8 @@ model (`magma_params`, `magma_dp`, `ann_params`, `ann_fp`, `spectrum_encoder_par
 `retrieval_eval_size`) are declared there by name. Adding an unprefixed key to a model's block
 means editing that list, which is the moment to ask whether it should be prefixed instead.
 
-Ownership follows the reader, not the prefix, when the two disagree: `precursor_pair_*` is the
-`SpectrumPL` loss rather than `model_type: precursor`, so it lives in the shared core.
+Precursor BCE and CE-switch BCE are retired. Legacy disabled `precursor_pair_*` and
+`ce_pair_*` settings are discarded on load; nonzero loss weights raise an error.
 
 Custom configs are validated against the template, **recursively**: a typo inside `spec_params`
 fails as loudly as one at the top level. Mappings whose sub-keys are data rather than schema

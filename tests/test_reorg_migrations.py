@@ -57,6 +57,7 @@ from fragnnet.utils.migrations import (
     migrate_legacy_masster_key,
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,
+    retire_pair_bce_hparams,
 )
 from fragnnet.utils.setup_utils import get_model_cls
 
@@ -397,8 +398,10 @@ def test_c0_checkpoint_hparams_are_refused_as_stored(c0_raw: dict) -> None:
     with pytest.raises(ValueError, match="retired instrument type") as caught:
         _pl_hparams(c0_raw)
     paths = ast.literal_eval(re.search(r"at (\[.*?\])\.", str(caught.value)).group(1))
-    assert sorted(paths) == sorted(find_retired_inst_type_refs(c0_raw))
-    assert len(paths) == 6
+    active = copy.deepcopy(c0_raw)
+    retire_pair_bce_hparams(active)
+    assert sorted(paths) == sorted(find_retired_inst_type_refs(active))
+    assert len(paths) == 4
     ratchet_json(
         GOLDEN, "get_pl_hparams:c0_refusal", {"error": "ValueError", "paths": sorted(paths)}
     )
@@ -419,6 +422,7 @@ def test_get_pl_hparams_on_relabelled_c0(c0_orb: dict) -> None:
         assert migrated[migrate_legacy_masster_key(old_key)] == c0_orb[old_key], old_key
 
     carried = {key: value for key, value in c0_orb.items() if key not in renamed}
+    retire_pair_bce_hparams(carried)
     unchanged = {key for key in carried if key not in ("model_type", "spec_params")}
     assert all(migrated[key] == carried[key] for key in unchanged)
     added = {
@@ -432,7 +436,8 @@ def test_get_pl_hparams_on_relabelled_c0(c0_orb: dict) -> None:
     }
     spec_kept = {k: v for k, v in c0_orb["spec_params"].items() if k in migrated["spec_params"]}
     assert all(migrated["spec_params"][k] == v for k, v in spec_kept.items())
-    assert len(migrated) == len(c0_orb) + 7 == 444
+    retired_count = sum(k.startswith(("ce_pair_", "precursor_pair_")) for k in c0_orb)
+    assert len(migrated) == len(c0_orb) - retired_count + 7
     assert set(added) == set(MASSTER_RT_CCS_KEYS)
     assert added["masster_rt_scale"] == 60.0 and added["masster_ccs_scale"] == 100.0
     assert added["masster_predict_rt_ccs"] is False
@@ -487,6 +492,7 @@ def test_get_pl_hparams_oldest_masster_stub(c0_orb: dict) -> None:
     spec_backfilled = {key: migrated["spec_params"][key] for key in SPEC_PARAMS_KEYS}
     assert spec_backfilled["merge_ce_aggregation"] == "legacy"
     # Every other key is carried over, the ``mass_shatter_*`` ones under their new name.
+    retire_pair_bce_hparams(oldest)
     for key, value in oldest.items():
         if key.startswith("mass_shatter_"):
             assert migrated[migrate_legacy_masster_key(key)] == value
@@ -934,6 +940,7 @@ def test_load_config_of_c0_as_a_custom_config(tmp_path: Path, c0_orb: dict) -> N
     custom_fp = _write_yaml(tmp_path, "c0_custom.yml", c0_orb)
     config = _quiet(load_config, F.CONFIG_DIR, custom_fp, None)
     expected = copy.deepcopy(c0_orb)
+    retire_pair_bce_hparams(expected)
     migrate_legacy_masster_name(expected)
     assert config["model_type"] == "masster"
     assert _legacy_leftovers(config) == []

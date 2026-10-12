@@ -34,7 +34,6 @@ MUTATIONS = {
     "dag_size_curriculum": [False, True],
     "bond_size_curriculum": [False, True],
     "cross_ev_fragment_loss_weight": [0.0, 0.5, -1, True],
-    "ce_pair_loss_weight": [0.0, 0.5],
     "devices": [1, "auto"],
     "dynamic_batch_sampler_mode": ["frag_edge", "frag_node", "bad"],
     "dynamic_batch_sampler_max": [None, 1000],
@@ -49,7 +48,6 @@ MUTATIONS = {
     "dag_size_curriculum_epochs": [1, 5, 200],
     "bond_size_curriculum_epochs": [1, 200],
     "ce_context_spectra_per_context": [1, 2, 4],
-    "precursor_pair_loss_weight": [0.0, 0.3],
 }
 DELETABLE = (
     "masster_batch_sampler",

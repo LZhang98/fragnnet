@@ -34,6 +34,7 @@ from fragnnet.utils.migrations import (
     migrate_legacy_masster_key,
     migrate_legacy_masster_name,
     migrate_masster_proposal_method,
+    retire_pair_bce_hparams,
 )
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
@@ -164,6 +165,7 @@ def load_config(
             raise FileNotFoundError(f"custom config not found: {custom_fp}")
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
+        retire_pair_bce_hparams(custom_d)
         migrate_legacy_masster_name(custom_d)
 
     # 1. Load the template every model shares.
@@ -171,6 +173,7 @@ def load_config(
     with open(resolved_template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
     # A template saved inside a pre-rename checkpoint still spells MASSter `mass_shatter`.
+    retire_pair_bce_hparams(config_d)
     migrate_legacy_masster_name(config_d)
     # A caller-supplied model_type (a checkpoint's) outranks the template default, so an
     # inference config that stays silent about the model does not silently become frag_gnn.
@@ -209,6 +212,9 @@ def load_config(
                 proposal_override = {dotted_key: yaml.safe_load(value)}
                 migrate_masster_proposal_method(proposal_override)
                 config_d.update(proposal_override)
+                continue
+            if dotted_key.startswith(("ce_pair_", "precursor_pair_")):
+                retire_pair_bce_hparams({dotted_key: yaml.safe_load(value)})
                 continue
             key_path = dotted_key.split(".")
             section = config_d
@@ -427,147 +433,6 @@ def validate_sampler_config(config_d: dict) -> None:
                 f"{sorted(missing_inst_types)}"
             )
 
-    pair_weight = config_d["ce_pair_loss_weight"]
-    if (
-        not isinstance(pair_weight, (int, float))
-        or isinstance(pair_weight, bool)
-        or pair_weight < 0
-    ):
-        raise ValueError("ce_pair_loss_weight must be a non-negative number")
-    if pair_weight > 0:
-        if not uses_ce_context_sampler:
-            raise ValueError("ce_pair_loss_weight > 0 requires a CE-context batch sampler")
-        confidence = config_d["ce_pair_min_endpoint_confidence"]
-        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
-            raise ValueError(
-                "ce_pair_min_endpoint_confidence must be set when ce_pair_loss_weight > 0"
-            )
-        if not 0.0 < confidence <= 1.0:
-            raise ValueError("ce_pair_min_endpoint_confidence must be in (0, 1]")
-        contender_floor = config_d["target_rel_ints_thresh"]
-        if (
-            not isinstance(contender_floor, (int, float))
-            or isinstance(contender_floor, bool)
-            or not 0.0 < contender_floor < 1.0
-        ):
-            raise ValueError(
-                "ce_pair_loss_weight > 0 requires target_rel_ints_thresh in (0, 1) "
-                "as the temporary observed-contender floor"
-            )
-        if config_d["ce_pair_min_endpoint_reliability"] is not None:
-            raise ValueError(
-                "ce_pair_min_endpoint_reliability is reserved until the replicate "
-                "reliability table is implemented"
-            )
-        if config_d["ce_pair_subset"] != "switches":
-            raise ValueError("CE pair loss v1 supports ce_pair_subset='switches' only")
-        if config_d["train_sample_weight"] != "none":
-            raise ValueError("CE pair loss v1 requires train_sample_weight='none'")
-        inst_types = set(config_d["spec_params"]["inst_types"])
-        prec_types = set(config_d["spec_params"]["prec_types"])
-        if not config_d["ce_pair_eligible_inst_types"] or not set(
-            config_d["ce_pair_eligible_inst_types"]
-        ).issubset(inst_types):
-            raise ValueError("ce_pair_eligible_inst_types must be configured instrument types")
-        if not config_d["ce_pair_eligible_prec_types"] or not set(
-            config_d["ce_pair_eligible_prec_types"]
-        ).issubset(prec_types):
-            raise ValueError("ce_pair_eligible_prec_types must be configured precursor types")
-        tolerance_by_inst = config_d["inst_type_loss_tol"]
-        eligible_inst_types = set(config_d["ce_pair_eligible_inst_types"])
-        if not isinstance(tolerance_by_inst, dict) or not eligible_inst_types.issubset(
-            tolerance_by_inst
-        ):
-            raise ValueError("inst_type_loss_tol must define every ce_pair_eligible_inst_type")
-        for inst_type in eligible_inst_types:
-            tolerance = tolerance_by_inst[inst_type]
-            if not isinstance(tolerance, dict) or set(tolerance) != {"rel", "min_mz"}:
-                raise ValueError(
-                    "Each eligible inst_type_loss_tol entry must define rel and min_mz"
-                )
-            if (
-                not isinstance(tolerance["rel"], (int, float))
-                or isinstance(tolerance["rel"], bool)
-                or tolerance["rel"] <= 0
-                or not isinstance(tolerance["min_mz"], (int, float))
-                or isinstance(tolerance["min_mz"], bool)
-                or tolerance["min_mz"] <= 0
-            ):
-                raise ValueError(
-                    "Eligible inst_type_loss_tol rel and min_mz must be positive numbers"
-                )
-
-    precursor_pair_weight = config_d["precursor_pair_loss_weight"]
-    if (
-        not isinstance(precursor_pair_weight, (int, float))
-        or isinstance(precursor_pair_weight, bool)
-        or precursor_pair_weight < 0
-    ):
-        raise ValueError("precursor_pair_loss_weight must be a non-negative number")
-    if precursor_pair_weight > 0:
-        spec_params = config_d["spec_params"]
-        if not spec_params["nce"] and not spec_params["ace"]:
-            raise ValueError(
-                "precursor_pair_loss_weight > 0 requires spec_params.nce or "
-                "spec_params.ace so NCE metadata is loaded"
-            )
-        if spec_params["merge"] or spec_params["merge_train_only"]:
-            raise ValueError("precursor_pair_loss_weight > 0 requires unmerged spectra")
-        nce_min = config_d["precursor_pair_nce_min"]
-        nce_max = config_d["precursor_pair_nce_max"]
-        if (
-            not isinstance(nce_min, (int, float))
-            or isinstance(nce_min, bool)
-            or not isinstance(nce_max, (int, float))
-            or isinstance(nce_max, bool)
-            or nce_min < 0
-            or nce_max <= nce_min
-        ):
-            raise ValueError("precursor_pair_nce_min/max must define a non-negative interval")
-        absent_floor = config_d["precursor_pair_absent_intensity_floor"]
-        if (
-            not isinstance(absent_floor, (int, float))
-            or isinstance(absent_floor, bool)
-            or not 0.0 <= absent_floor < 1.0
-        ):
-            raise ValueError("precursor_pair_absent_intensity_floor must be in [0, 1)")
-        inst_types = set(config_d["spec_params"]["inst_types"])
-        prec_types = set(config_d["spec_params"]["prec_types"])
-        eligible_inst_types = set(config_d["precursor_pair_eligible_inst_types"])
-        eligible_prec_types = set(config_d["precursor_pair_eligible_prec_types"])
-        if not eligible_inst_types or not eligible_inst_types.issubset(inst_types):
-            raise ValueError(
-                "precursor_pair_eligible_inst_types must be configured instrument types"
-            )
-        if not eligible_prec_types or not eligible_prec_types.issubset(prec_types):
-            raise ValueError(
-                "precursor_pair_eligible_prec_types must be configured precursor types"
-            )
-        tolerance_by_inst = config_d["inst_type_loss_tol"]
-        if not isinstance(tolerance_by_inst, dict) or not eligible_inst_types.issubset(
-            tolerance_by_inst
-        ):
-            raise ValueError(
-                "inst_type_loss_tol must define every precursor-pair eligible instrument"
-            )
-        for inst_type in eligible_inst_types:
-            tolerance = tolerance_by_inst[inst_type]
-            if not isinstance(tolerance, dict) or set(tolerance) != {"rel", "min_mz"}:
-                raise ValueError(
-                    "Each precursor-pair eligible tolerance must define rel and min_mz"
-                )
-            if (
-                not isinstance(tolerance["rel"], (int, float))
-                or isinstance(tolerance["rel"], bool)
-                or tolerance["rel"] <= 0
-                or not isinstance(tolerance["min_mz"], (int, float))
-                or isinstance(tolerance["min_mz"], bool)
-                or tolerance["min_mz"] <= 0
-            ):
-                raise ValueError(
-                    "Precursor-pair eligible tolerance rel and min_mz must be positive numbers"
-                )
-
     if config_d["bond_size_curriculum"]:
         if config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
             raise ValueError("Bond-size curriculum requires fixed-size batching")
@@ -653,6 +518,8 @@ def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
         config_d: Resolved run configuration, updated in place.
         saved_run_config: ``dict(wandb.config)`` after ``wandb.init``.
     """
+    saved_run_config = dict(saved_run_config)
+    retire_pair_bce_hparams(saved_run_config)
     for key in list(config_d.keys()):
         if key not in saved_run_config:
             continue

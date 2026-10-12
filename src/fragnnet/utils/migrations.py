@@ -95,6 +95,20 @@ _LEGACY_FRAGNNET_HPARAM_DEFAULTS = {
 _FRAGNNET_MODEL_TYPES = frozenset({"frag_gnn", "fragnnet"})
 
 
+def retire_pair_bce_hparams(config: dict) -> None:
+    """Discard disabled legacy pair-BCE settings; reject enabled retired objectives."""
+    for prefix in ("ce_pair_", "precursor_pair_"):
+        key = prefix + "loss_weight"
+        if config.get(key, 0.0) != 0.0:
+            raise ValueError(
+                f"{key} enables a retired BCE objective; use the original revision "
+                "to reproduce it, or explicitly set its weight to 0.0"
+            )
+    for key in list(config):
+        if key.startswith(("ce_pair_", "precursor_pair_")):
+            del config[key]
+
+
 def migrate_legacy_hparams(config: dict) -> None:
     """Backfill hyperparameters that predate their declaration in ``config/template.yml``.
 
@@ -105,6 +119,8 @@ def migrate_legacy_hparams(config: dict) -> None:
     Args:
         config: Hyperparameter mapping from a config file or a checkpoint.
     """
+    retire_pair_bce_hparams(config)
+
     # 1. Rename the legacy eval-filter key before the shared defaults fill the new one.
     legacy_rank_filter_key = "eval_target_apply_train_peak_filters"
     rank_filter_key = "eval_target_apply_train_rank_filters"
@@ -160,6 +176,7 @@ def get_pl_hparams(ckpt: dict) -> dict:
         ValueError: If the hyperparameters name a retired instrument type.
     """
     hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    retire_pair_bce_hparams(hyper_parameters)
     # Embedding indices follow the sorted label order, which the OB -> ORB rename keeps, but a
     # checkpoint keyed by OB filters out and mis-tolerances every relabelled Orbitrap spectrum.
     retired = find_retired_inst_type_refs(hyper_parameters)

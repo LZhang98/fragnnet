@@ -160,7 +160,6 @@ loss_vectorized: true
 loss_batch_size: 32
 primary_loss_weight: 1.0
 spectral_ce_auxiliary_weight: 0.1
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

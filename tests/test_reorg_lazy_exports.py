@@ -101,6 +101,8 @@ def test_no_fragnnet_import_binds_nn() -> None:
     offenders = []
     for path in _tracked_python_files():
         try:
+            if not path.is_file():
+                continue
             tree = ast.parse(path.read_text())
         except SyntaxError:
             continue

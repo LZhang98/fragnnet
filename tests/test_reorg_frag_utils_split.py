@@ -95,6 +95,8 @@ def test_nothing_imports_a_moved_name_through_the_remnant() -> None:
     files = subprocess.check_output(["git", "ls-files", "*.py"], cwd=REPO, text=True).split()
     found = []
     for f in files:
+        if not (REPO / f).is_file():
+            continue
         text = (REPO / f).read_text()
         if DAG_PACKAGE not in text:
             continue

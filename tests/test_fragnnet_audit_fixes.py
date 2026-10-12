@@ -21,7 +21,6 @@ def _bind_shared_objectives(pl):
     for name in (
         "_validate_spectral_auxiliary_weights",
         "_spectral_leak_loss",
-        "_build_ce_pair_loss_fn",
     ):
         setattr(pl, name, MethodType(getattr(FraGNNetPL, name), pl))
     pl._spectral_ce_auxiliary = FraGNNetPL._spectral_ce_auxiliary

@@ -358,16 +358,6 @@ primary_loss_weight: 1.0
 # tolerance window; CE is the historical coverage-weighted sparse Gaussian score.
 spectral_leak_loss_weight: 0.0
 spectral_ce_auxiliary_weight: 0.0
-# Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
-# requires batch_sampler_type: ce_context, plus ce_pair_min_endpoint_confidence set and
-# target_rel_ints_thresh in (0, 1).
-ce_pair_loss_weight: 0.0
-ce_pair_min_endpoint_confidence: null
-# Reserved for the replicate audit; non-null values fail until the table is wired.
-ce_pair_min_endpoint_reliability: null
-ce_pair_subset: switches
-ce_pair_eligible_inst_types: [ORB, ORB_F]
-ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # Same-fragment adjacent-eV delta supervision for MASSter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
 cross_ev_fragment_loss_weight: 0.0
@@ -542,19 +532,6 @@ log_zero_fp32: null
 share_memory: False
 log_min: 0.000000001 # 1e-9
 eval_test_split: False
-
-# ============================================================================
-# Precursor-pair loss
-# ============================================================================
-# Read by SpectrumPL/FraGNNetPL, not by `model_type: precursor`, so every template carries it.
-# Within-spectrum low-CE precursor-versus-strongest-supported-fragment supervision.
-precursor_pair_loss_weight: 0.0
-precursor_pair_nce_min: 0.0
-precursor_pair_nce_max: 20.0
-# Relative to the observed base peak; used when no precursor peak is observed.
-precursor_pair_absent_intensity_floor: 0.01
-precursor_pair_eligible_inst_types: [ORB, ORB_F]
-precursor_pair_eligible_prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
 
 # ==========================================================================
 # FraGNNet only

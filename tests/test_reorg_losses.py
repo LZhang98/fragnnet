@@ -1,35 +1,9 @@
-"""Enabled-loss records and MASSter training stages (plan Phase 0 items 4 and 5).
+"""Training records for spectral auxiliaries and MASSter training stages.
 
-Phase 2 moves the spectral-leak, spectral-CE-auxiliary and CE-pair code into shared helpers, so
-these records pin what one optimizer step computes before that move. Every record holds each loss
-term, the weighted total and its reductions, the loss inputs, the raw gradients and the parameters
-after the step (see ``reorg_fixtures.record_one_step``), as bit-exact digests in
-``tests/golden/reorg/losses.json``:
-
-- Item 4: FraGNNet (manual optimization, ``_manual_opt``) and MASSter joint training, with
-  ``spectral_leak_loss``, ``spectral_ce_auxiliary`` and ``ce_pair_loss`` all active. A second
-  record per model uses a table where one two-CE group fails each CE-pair eligibility filter, and
-  control steps relax one filter at a time to show that filter alone excluded its group.
-- Item 5a: MASSter proposal-only training with the property heads off. The total loss must be the
-  weighted proposal loss alone (plus the ion-mode proposal term, recorded on a sodium-adduct
-  variant), and the spectral terms must carry no gradient.
-- Item 5b: MASSter joint training with the RT and CCS heads on, using synthetic labels added to the
-  fixture pickles in this file.
-- Item 5c: RT/CCS heads together with ``masster_proposal_only_until_epoch`` must raise.
-
-The main batch is the whole train split of ``reorg_fixtures.DEFAULT_SPECTRA`` (7 spectra, one
-batch, ``train_batch_size`` equal to that count so FraGNNet's manual step fires inside
-``training_step``), in the order the CE-context sampler draws for epoch 0 (``PLAIN_BATCH_ORDER``).
-Groups 0, 2 and 3 are two-CE groups and group 1 has one spectrum, so ``ce_pair_eligible_endpoints``
-is 1 for the six paired spectra and 0 for the single one. The untrained model puts nearly all
-predicted intensity outside the tight match windows (``spectral_leak_loss`` is 0.75 to 0.94), so
-a separate test widens the tolerance and checks that the leak shrinks.
-
-Not covered: FraGNNet's ``oos_loss``/``predict_oos`` terms (off in every fixture config).
-
-Regenerate deliberately, on the environment named in the golden file, never to pass a refactor:
-
-    REORG_UPDATE_GOLDEN=1 pytest tests/test_reorg_losses.py
+BCE objectives were retired on 2026-10-12. Records now cover spectral leak,
+spectral CE auxiliary, proposal-only stages and RT/CCS heads. Golden totals,
+gradients and optimizer steps intentionally reflect removal of CE-switch BCE.
+Regenerate deliberately: REORG_UPDATE_GOLDEN=1 pytest tests/test_reorg_losses.py
 """
 
 from __future__ import annotations
@@ -52,8 +26,6 @@ N_TRAIN = len(TRAIN_SPEC_IDS)
 # The batch the main records train on: the whole train split, in the order the CE-context sampler
 # draws for epoch 0 (the sampler is seeded by (seed, epoch); the epoch is pinned in train_batch).
 PLAIN_BATCH_ORDER = [0, 1, 3, 4, 5, 6, 2]
-# Spectrum of the single-CE group (group 1): no CE pair, so no pair loss and no eligible endpoint.
-SINGLE_CE_SPEC_IDS = [2]
 # BatchNorm statistics change in every training forward pass, with or without a gradient.
 BATCH_NORM_BUFFERS = ("running_mean", "running_var", "num_batches_tracked")
 
@@ -94,7 +66,6 @@ PROPOSAL_ONLY: dict[str, Any] = {**PROPOSAL_STAGE, "masster_proposal_only_until_
 SPECTRAL_OFF: dict[str, Any] = {
     "spectral_leak_loss_weight": 0.0,
     "spectral_ce_auxiliary_weight": 0.0,
-    "ce_pair_loss_weight": 0.0,
 }
 
 # The ion-mode proposal term needs a non-degenerate CMF adduct, so two spectra become [M+Na]+.
@@ -130,7 +101,7 @@ PROPERTY_LOSS_TERMS = (
     "ccs_label_fraction",
     "ccs_mape",
 )
-SPECTRAL_TERMS = ("spectral_leak_loss", "spectral_ce_auxiliary", "ce_pair_loss")
+SPECTRAL_TERMS = ("spectral_leak_loss", "spectral_ce_auxiliary")
 # masster_predict_rt_ccs is the deprecated alias that enables both heads.
 HEAD_FLAG_PROPERTIES = {
     "masster_predict_rt": ("rt",),
@@ -141,111 +112,6 @@ HEAD_FLAG_PROPERTIES = {
 # Wider match windows than the 1e-5 relative one of the main steps: 1e-2 gives a 2 Da window below
 # m/z 200 and 1e-1 a 20 Da one, which covers every predicted peak of the fixture molecules.
 WIDER_TOLERANCES = (1.0e-2, 1.0e-1)
-
-# CE-pair eligibility filters (loss.py, ce_switch_pair_bce, and the instrument/adduct masks in the
-# models). Every group below is ethanol, whose predicted m/z set does not depend on the weights
-# for either model, so literal peaks A and B always sit inside a predicted match window. The
-# groups differ only in what one filter looks at, and each fails exactly one of them:
-#
-#   eligible        A is the base peak at CE 20 and B at CE 40: both endpoints pass.
-#   single_ce       One spectrum, so no CE transition.
-#   low_confidence  At CE 20, A=1000 and B=900: |A-B|/max = 0.1 < ce_pair_min_endpoint_confidence.
-#   weak_contender  At CE 20, B=30 is 3% of the base peak < target_rel_ints_thresh (0.05).
-#   instrument      ORB_F, outside ce_pair_eligible_inst_types (ORB).
-#   adduct          [M-H]-, outside ce_pair_eligible_prec_types ([M+H]+).
-#
-# C2H5+ and CH3O+ of ethanol [M-H]-: both models predict them (checked in the filter_data
-# fixture against the DAG formulas and in the filter tests through the eligible endpoints).
-A_NEG_MZ, B_NEG_MZ = 29.0397, 31.0189
-LOW_CE, HIGH_CE = 20.0, 40.0
-
-
-def ethanol_pair(
-    first_spec_id: int,
-    group_id: int,
-    low: tuple[float, float],
-    high: tuple[float, float],
-    prec_type: str = "[M+H]+",
-    inst_type: str = "ORB",
-    mzs: tuple[float, float] = (F.CE_PAIR_A_MZ, F.CE_PAIR_B_MZ),
-) -> tuple[F.Spectrum, F.Spectrum]:
-    """Two train spectra of ethanol at CE 20 and 40 with literal peaks A and B.
-
-    Args:
-        first_spec_id: ``spec_id`` of the low-CE spectrum; the high-CE one gets the next id.
-        group_id: Shared group of the pair.
-        low: Intensities of (A, B) at CE 20.
-        high: Intensities of (A, B) at CE 40.
-        prec_type: Adduct of both spectra.
-        inst_type: Instrument type of both spectra.
-        mzs: The observed m/z of A and B.
-
-    Returns:
-        The low-CE and the high-CE spectrum.
-    """
-    a_mz, b_mz = mzs
-    return (
-        F.Spectrum(
-            first_spec_id,
-            0,
-            group_id,
-            LOW_CE,
-            "train",
-            ((a_mz, low[0]), (b_mz, low[1])),
-            prec_type,
-            inst_type,
-        ),
-        F.Spectrum(
-            first_spec_id + 1,
-            0,
-            group_id,
-            HIGH_CE,
-            "train",
-            ((a_mz, high[0]), (b_mz, high[1])),
-            prec_type,
-            inst_type,
-        ),
-    )
-
-
-STRONG_HIGH = (300.0, 1000.0)  # B overtakes A at the high CE in every group
-FILTER_SPECTRA = (
-    *ethanol_pair(0, 0, (1000.0, 400.0), STRONG_HIGH),
-    F.Spectrum(2, 1, 1, 30.0, "train"),
-    *ethanol_pair(3, 2, (1000.0, 900.0), STRONG_HIGH),
-    *ethanol_pair(5, 3, (1000.0, 30.0), STRONG_HIGH),
-    *ethanol_pair(7, 4, (1000.0, 400.0), STRONG_HIGH, inst_type="ORB_F"),
-    *ethanol_pair(9, 5, (1000.0, 400.0), STRONG_HIGH, "[M-H]-", mzs=(A_NEG_MZ, B_NEG_MZ)),
-    F.Spectrum(11, 4, 6, 20.0, "val"),
-    F.Spectrum(12, 5, 7, 30.0, "test"),
-)
-FILTER_GROUP_SPEC_IDS = {
-    "eligible": (0, 1),
-    "single_ce": (2,),
-    "low_confidence": (3, 4),
-    "weak_contender": (5, 6),
-    "instrument": (7, 8),
-    "adduct": (9, 10),
-}
-FILTER_TRAIN_IDS = sorted(s.spec_id for s in FILTER_SPECTRA if s.split == "train")
-FILTER_STEPS = {m: batch_overrides(m, len(FILTER_TRAIN_IDS)) for m in MODELS}
-# ORB_F gets the ORB match window, so the instrument filter is the only thing that differs.
-FILTER_CONFIG: dict[str, Any] = {
-    "spec_params": {"prec_types": ["[M+H]+", "[M-H]-"]},
-    "inst_type_loss_tol": {
-        "ORB": {"rel": 1.0e-5, "min_mz": 200.0},
-        "ORB_F": {"rel": 1.0e-5, "min_mz": 200.0},
-    },
-}
-# Relaxing one filter admits exactly the group it excluded (confidence and contender thresholds
-# must stay in (0, 1) in the config, so they are lowered rather than removed).
-FILTER_RELAXATIONS: dict[str, dict[str, Any]] = {
-    "low_confidence": {"ce_pair_min_endpoint_confidence": 0.05},
-    "weak_contender": {"target_rel_ints_thresh": 0.01},
-    "instrument": {"ce_pair_eligible_inst_types": ["ORB", "ORB_F"]},
-    "adduct": {"ce_pair_eligible_prec_types": ["[M+H]+", "[M-H]-"]},
-}
-
 
 @dataclass
 class Step:
@@ -346,11 +212,6 @@ def spec_ids(step: Step) -> list[int]:
     return step.batch["spec_unique_id"].reshape(-1).tolist()
 
 
-def eligible_by_spec(step: Step) -> dict[int, float]:
-    """``ce_pair_eligible_endpoints`` of each spectrum, keyed by ``spec_id``."""
-    return dict(zip(spec_ids(step), step.loss("ce_pair_eligible_endpoints").tolist()))
-
-
 def assert_plain_batch(step: Step) -> None:
     """The step trained on the whole default train split, in the sampler's epoch-0 order.
 
@@ -363,25 +224,12 @@ def assert_plain_batch(step: Step) -> None:
 
 
 def assert_spectral_terms(step: Step) -> None:
-    """The three item-4 terms exist, are finite per spectrum and behave as their definitions say."""
+    """The two auxiliary terms exist, are finite per spectrum and behave as their definitions say."""
     n = int(step.batch["batch_size"])
-    for term in (*SPECTRAL_TERMS, "ce_pair_eligible_endpoints", "loss"):
+    for term in (*SPECTRAL_TERMS, "loss"):
         value = step.loss(term)
         assert value.shape == (n,), (term, value.shape)
         assert th.isfinite(value).all(), (term, value)
-    eligible = step.loss("ce_pair_eligible_endpoints")
-    assert eligible.sum() > 0, eligible
-    # Group 0 (ethanol at two CEs) is eligible by construction; the single-CE group never is.
-    # Other two-CE groups depend on the predicted peak sets, which the record pins.
-    assert eligible[step.batch["group_id"].reshape(-1) == 0].tolist() == [1.0, 1.0]
-    single = th.isin(step.batch["spec_unique_id"].reshape(-1), th.tensor(SINGLE_CE_SPEC_IDS))
-    assert single.sum() == len(SINGLE_CE_SPEC_IDS)
-    assert (eligible[single] == 0).all(), eligible
-    assert set(eligible.tolist()) <= {0.0, 1.0}, eligible
-    # The pair loss is a BCE, positive where a pair exists and exactly zero elsewhere.
-    pair_loss = step.loss("ce_pair_loss")
-    assert (pair_loss[eligible > 0] > 0).all(), pair_loss
-    assert (pair_loss[eligible == 0] == 0).all(), pair_loss
     # The leak is a fraction of predicted intensity outside the match windows.
     leak = step.loss("spectral_leak_loss")
     assert ((leak >= 0) & (leak <= 1)).all(), leak
@@ -492,16 +340,6 @@ def sodium_data(tmp_path_factory: pytest.TempPathFactory) -> F.SynthData:
 
 
 @pytest.fixture(scope="module")
-def filter_data(tmp_path_factory: pytest.TempPathFactory) -> F.SynthData:
-    """Ethanol groups that each fail one CE-pair eligibility filter (see ``FILTER_SPECTRA``)."""
-    data = F.write_synth_data(tmp_path_factory.mktemp("losses_filter"), spectra=FILTER_SPECTRA)
-    candidates = F.dag_candidate_mzs(data.dags[0], "[M-H]-")
-    for mz in (A_NEG_MZ, B_NEG_MZ):
-        assert np.isclose(candidates, mz, atol=1e-6).any(), (mz, candidates)
-    return data
-
-
-@pytest.fixture(scope="module")
 def plain_steps(plain_data: F.SynthData) -> dict[str, Step]:
     """The item-4 step of each model on the default train batch."""
     return {m: run_step(m, plain_data, PLAIN_STEP[m]) for m in MODELS}
@@ -512,7 +350,7 @@ def proposal_runs(plain_data: F.SynthData) -> dict[str, Step]:
     """Proposal-only steps and their controls, with identical weights and batch.
 
     ``only`` is the stage under test. ``joint`` is the same config without the warmup. ``bare`` is
-    ``only`` with the three spectral weights at zero, so its gradient is the proposal loss alone.
+    ``only`` with the remaining spectral weights at zero, so its gradient is the proposal loss alone.
     """
     return {
         "only": run_step("masster", plain_data, MASSTER_OVERRIDES, PROPOSAL_ONLY),
@@ -528,7 +366,7 @@ def proposal_runs(plain_data: F.SynthData) -> dict[str, Step]:
 
 @pytest.mark.parametrize("model_type", MODELS)
 def test_enabled_loss_record(model_type: str, plain_steps: dict[str, Step]) -> None:
-    """Leak, CE auxiliary and CE-pair are all active in one step; the record matches golden."""
+    """Leak and CE auxiliary are active in one step; the record matches golden."""
     step = plain_steps[model_type]
     assert step.config["automatic_optimization"] is (model_type == "masster")
     assert_plain_batch(step)
@@ -575,40 +413,6 @@ def test_wider_match_windows_shrink_the_spectral_leak(
     assert (widest >= 0).all() and (widest < 1e-6).all(), widest
 
 
-@pytest.mark.parametrize("model_type", MODELS)
-def test_ce_pair_filters_exclude_two_ce_groups(model_type: str, filter_data: F.SynthData) -> None:
-    """Two-CE groups that fail a CE-pair filter get no pair loss; the record matches golden.
-
-    Only the eligible ethanol group (specs 0 and 1) takes part, although five other groups have
-    CE-pair-shaped peaks: one fails the endpoint-confidence threshold, one the contender-intensity
-    threshold, one the instrument-type list and one the adduct list.
-    """
-    step = run_step(model_type, filter_data, FILTER_STEPS[model_type], FILTER_CONFIG)
-    assert sorted(spec_ids(step)) == FILTER_TRAIN_IDS
-    expected = {i: 1.0 if i in FILTER_GROUP_SPEC_IDS["eligible"] else 0.0 for i in FILTER_TRAIN_IDS}
-    assert eligible_by_spec(step) == expected
-    assert_spectral_terms(step)
-    assert_reductions(step)
-    assert_joint_total(step)
-    assert_step_updated_weights(step)
-    ratchet_step(f"item4:{model_type}_filtered", step)
-
-
-@pytest.mark.parametrize("model_type", MODELS)
-@pytest.mark.parametrize("group", sorted(FILTER_RELAXATIONS))
-def test_relaxing_one_ce_pair_filter_admits_exactly_its_group(
-    group: str, model_type: str, filter_data: F.SynthData
-) -> None:
-    """With one filter relaxed, the group it excluded becomes eligible and no other one does."""
-    step = run_step(
-        model_type, filter_data, FILTER_STEPS[model_type], FILTER_CONFIG, FILTER_RELAXATIONS[group]
-    )
-    admitted = set(FILTER_GROUP_SPEC_IDS["eligible"]) | set(FILTER_GROUP_SPEC_IDS[group])
-    assert eligible_by_spec(step) == {i: float(i in admitted) for i in FILTER_TRAIN_IDS}
-    pair_loss = dict(zip(spec_ids(step), step.loss("ce_pair_loss").tolist()))
-    assert {i for i, value in pair_loss.items() if value > 0} == admitted
-
-
 # --------------------------------------------------------------------------------------------
 # Item 5a: MASSter proposal-only training, property heads off
 # --------------------------------------------------------------------------------------------
@@ -620,9 +424,8 @@ def test_proposal_only_record(proposal_runs: dict[str, Step]) -> None:
     assert step.config["masster_proposal_only_until_epoch"] == 0
     assert not step.config["masster_predict_rt"] and not step.config["masster_predict_ccs"]
     assert_plain_batch(step)
-    for term in (*SPECTRAL_TERMS, "ce_pair_eligible_endpoints", "proposal_loss"):
+    for term in (*SPECTRAL_TERMS, "proposal_loss"):
         assert th.isfinite(step.loss(term)).all(), term
-    assert step.loss("ce_pair_eligible_endpoints").sum() > 0
     assert_step_updated_weights(step)
     ratchet_step("item5a:proposal_only", step)
 
@@ -654,7 +457,7 @@ def test_proposal_only_spectral_terms_carry_no_gradient(proposal_runs: dict[str,
     assert any(g.abs().sum() > 0 for g in intensity_grads)
     # The warmup gradients are a strict subset of the joint ones.
     assert set(only_names) < set(joint_names)
-    # Zeroing the three spectral weights changes no gradient and no parameter, bit for bit.
+    # Zeroing the remaining spectral weights changes no gradient and no parameter, bit for bit.
     assert_same_update(only, bare)
     ratchet_json(
         GOLDEN,

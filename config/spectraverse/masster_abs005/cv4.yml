@@ -224,7 +224,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 4  # see header 6: chunk padding to the peak tail OOMs at 64
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 # Fixed absolute training window; keep historical instrument-tolerance configs unchanged.
 loss_tolerance_rel: null
 loss_tolerance_abs: 0.05

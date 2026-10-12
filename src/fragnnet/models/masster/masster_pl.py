@@ -1453,10 +1453,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
             "conditional_cross_entropy",
             "cross_entropy",
         }
-        if self.hparams.precursor_pair_loss_weight != 0.0:
-            raise ValueError(
-                "MASSter does not support precursor_pair_loss_weight; set it to 0.0"
-            )
         if independent_output and cross_entropy_loss:
             raise ValueError("independent intensity output requires a direct spectral loss")
         if self.hparams.masster_intensity_escape and not independent_output:
@@ -1475,7 +1471,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
         if independent_output and (
             self.hparams.masster_base_ce_weight != 0.0
             or self.hparams.masster_log_base_ce
-            or self.hparams.ce_pair_loss_weight != 0.0
             or self.hparams.cross_ev_fragment_loss_weight != 0.0
         ):
             raise ValueError(
@@ -1522,8 +1517,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
             )
         if not self.hparams.sparse_cosine_similarity or not self.hparams.sum_ints:
             raise ValueError("MASSter requires sparse_cosine_similarity and sum_ints")
-        if self.hparams.ce_pair_min_endpoint_reliability is not None:
-            raise ValueError("ce_pair_min_endpoint_reliability is not implemented")
         # Predictions are exact monoisotopic m/z values, so targets stay unbinned and
         # are matched against predictions by instrument tolerance instead.
         self.binned_loss = False
@@ -1711,7 +1704,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
                 loss_batch_size=self.hparams.loss_batch_size,
             )
 
-        ce_pair_loss_fn = self._build_ce_pair_loss_fn()
 
         # SpectrumPL calls this with the training dict merged with the model's output
         # dict, so every key MassterModel returns has to be named here or absorbed
@@ -2093,17 +2085,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
                     }
                 )
 
-            if self.hparams.ce_pair_loss_weight != 0.0:
-                # The term is train-only (SpectrumPL sets ``ce_pair_enabled``), but the
-                # keys must exist on every split so the logged metrics stay aligned;
-                # hence the zero vectors when it is skipped.
-                batch_size = int(kwargs["batch_size"])
-                pair_loss, eligible_endpoints = ce_pair_loss_fn(
-                    kwargs, batch_size, pred_logprobs, tolerance_per_sample, minimum_mz_per_sample
-                )
-                loss = loss + self.hparams.ce_pair_loss_weight * pair_loss
-                loss_values["ce_pair_loss"] = pair_loss
-                loss_values["ce_pair_eligible_endpoints"] = eligible_endpoints
             if self.training and self._proposal_only_training:
                 # Phase 1 trains proposal coverage and any dedicated proposal heads.
                 # Intensity-head support and cross-EV losses begin with joint training.
@@ -2174,8 +2155,6 @@ class MassterPL(SpectrumPL, ExportAdapter):
                 loss_names.append("spectral_leak_loss")
             if self.hparams.spectral_ce_auxiliary_weight > 0.0:
                 loss_names.append("spectral_ce_auxiliary")
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            loss_names.extend(["ce_pair_loss", "ce_pair_eligible_endpoints"])
         if proposal_loss_enabled:
             loss_names.append("proposal_loss")
         if ion_h_support_loss_enabled:

@@ -210,7 +210,8 @@ def test_no_module_hard_codes_the_shared_dataset_for_massformer() -> None:
     offenders = [
         path
         for path in tracked
-        if re.search(pattern, (REPO_TEMPLATE.parents[1] / path).read_text(errors="ignore"))
+        if (REPO_TEMPLATE.parents[1] / path).is_file()
+        and re.search(pattern, (REPO_TEMPLATE.parents[1] / path).read_text(errors="ignore"))
     ]
     assert offenders == []
 

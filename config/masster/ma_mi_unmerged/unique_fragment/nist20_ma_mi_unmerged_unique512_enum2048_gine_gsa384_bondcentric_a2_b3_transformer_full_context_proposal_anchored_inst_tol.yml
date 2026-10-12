@@ -116,7 +116,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 8
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 # Use acquisition-aware peak matching for the loss and candidate-support metrics.
 # Unlisted instrument types retain the global 10 ppm / 0.002 Da-floor fallback.

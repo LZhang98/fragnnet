@@ -155,7 +155,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 32
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

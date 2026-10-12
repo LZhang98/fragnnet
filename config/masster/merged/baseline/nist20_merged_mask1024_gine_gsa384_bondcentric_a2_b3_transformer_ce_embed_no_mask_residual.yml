@@ -85,7 +85,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 1
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 # 4. Preserve effective batch 128 while allowing for twice as many candidates.
 dynamic_batch_sampler: False

@@ -19,7 +19,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 | Spectraverse v1.0.2 | [spectraverse](workstreams/spectraverse.md) | Five arms PREPARED, none submitted |
 | NIST23 EI (nominal) | [nist23_ei](workstreams/nist23_ei.md) | e2/e3/e4 PREPARED |
 | CASMI 2026, Enveda-180, shared data quality | [casmi_enveda](workstreams/casmi_enveda.md) | ACTIVE: CASMI train filter decision |
-| FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; Stage A PREPARED |
+| FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; pair BCE retired |
 
 ## MASSter generalization on NIST20
 
@@ -36,6 +36,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## MASSter core
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
+- **Shared loss consolidation:** [plan](plans/loss_consolidation_plan.md) PROPOSED. First fixes committed; next add numerical regressions, then consolidate binning, padding and dispatch. [Evidence](findings/loss_simplification_audit_2026_10_12.md).
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
@@ -84,16 +85,17 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## FraGNNet
 
+- **Shared loss consolidation:** [plan](plans/loss_consolidation_plan.md) PROPOSED. First fixes committed; next add numerical regressions, then consolidate binning, padding and dispatch. [Evidence](findings/loss_simplification_audit_2026_10_12.md).
 - **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed in the working tree with a regression test; probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
 - **Shared reorganization done** (branch, not merged; [progress](plans/repo_reorg_plan.md#progress)): FraGNNet is in `src/fragnnet/models/fragnnet/`. MCES pretraining (and fine-tuning from it), ChemLM and CLIP were retired 2026-10-12.
 
 - **Dormant since September.** Best `pqx7ywc9` 0.7555 `cos_hun_inst_tol` (NIST20 test). The DAG
   oracle is 0.937, so the gap is intensity ranking, not coverage.
-- **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
-  after the 2026-09-26 sampler fix before submitting.
+- **Stopped:** precursor BCE and CE-switch BCE retired at user request; Stage A configs and generator removed. See the [loss plan](plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 
 ## Uncommitted working tree (2026-10-12)
 
+- Shared loss audit, [consolidation plan](plans/loss_consolidation_plan.md), and precursor/CE-switch BCE retirement (code, configs and regression tests); earlier fixes are committed in `6b359293`.
 - FraGNNet cc-mask padding fix in `fragnnet_model.py` + `tests/test_fragnnet_mask_padding.py`; audit and probe-caveat doc edits.
 - Reorganization plan and hub/dashboard updates record the external ICEBERG/ms-pred decision;
   source code and environment are unchanged. Prior RT/CCS and augmentation entries are no

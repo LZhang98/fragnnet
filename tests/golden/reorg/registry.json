@@ -68,18 +68,6 @@
       "ce_insert_merge": false,
       "ce_insert_size": 32,
       "ce_insert_type": "id",
-      "ce_pair_eligible_inst_types": [
-        "ORB",
-        "ORB_F"
-      ],
-      "ce_pair_eligible_prec_types": [
-        "[M+H]+",
-        "[M-H]-"
-      ],
-      "ce_pair_loss_weight": 0.0,
-      "ce_pair_min_endpoint_confidence": null,
-      "ce_pair_min_endpoint_reliability": null,
-      "ce_pair_subset": "switches",
       "ce_scale": false,
       "ce_scaler_hidden_dim": 64,
       "check_gradient_norm": false,
@@ -543,20 +531,6 @@
       "prec_insert_location": "none",
       "prec_insert_size": 32,
       "precision": 32,
-      "precursor_pair_absent_intensity_floor": 0.01,
-      "precursor_pair_eligible_inst_types": [
-        "ORB",
-        "ORB_F"
-      ],
-      "precursor_pair_eligible_prec_types": [
-        "[M+H]+",
-        "[M-H]-",
-        "[M+Na]+",
-        "[M+Cl]-"
-      ],
-      "precursor_pair_loss_weight": 0.0,
-      "precursor_pair_nce_max": 20.0,
-      "precursor_pair_nce_min": 0.0,
       "predict_oos": false,
       "primary_loss_weight": 1.0,
       "profiler": "none",

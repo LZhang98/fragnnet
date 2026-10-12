@@ -114,7 +114,6 @@ ce_context_ce_key_by_inst:
   ORB_F: nce
   QTOF: ace
 dag_size_curriculum: false
-ce_pair_loss_weight: 0.0
 
 train_batch_size: 8
 eval_batch_size: 8
