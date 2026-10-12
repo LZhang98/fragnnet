@@ -709,3 +709,33 @@ Entries before 2026-10-11 (second half) are in the [plan log](../history/repo_re
     precursor-pair validation). Later steps must add no failures beyond these.
   - ICEBERG archive SHA: `13b1599d3cd85ef8f214799894e527adaf3ddd0a` (on `origin/masster`; the
     ICEBERG paths are unchanged since).
+- 2026-10-11: Phase 1 committed.
+  - Commits: `8f05d1dc` (step 1, lazy registry), `0cca948c` (step 2, ICEBERG retired),
+    `4834b9fc` (step 3, `SpecMolMFDataset` and GRAFF collation), `1df261de` (step 4, DGL removed),
+    `59f6b798` (step 5, lazy package exports).
+  - Every step ran the reorg tests, then the full suite against the Phase 0 baseline: no new
+    failures (the same 28 stale tests). The Phase 0 baseline records did not change.
+  - The Phase 1 gate holds and is asserted directly (`test_phase1_isolation_gate`), not only
+    through the golden: no entry module loads a baseline or DGL, and selecting `graff` or
+    `massformer` loads only its own package. AST violations: 28 at the end of Phase 0, 11 now.
+  - FraGNNet and MASSter loads that remain (report-only until Phases 3-4): every entry module
+    except `pl_utils` and `proc_utils` loads `smarts_prepass`, `compute_frags`, `multi_cut_bfs`
+    and `frag_utils`; `spectrum_pl` also loads `fragnnet_model` (through
+    `EXPLAINABILITY_OUTPUT_KEYS`), and so does every model selection; `script_utils` loads both
+    models; `frag_gnn` selection loads `bond_fragment_heads` through `candidate_support`.
+  - Departures from the step text:
+    - Step 3: the `mol_params.mf` guard sits in `SpecMolDataset._process_mol`, where the removed
+      code read the flag. A check in `__init__` broke a test that builds the dataset with
+      `mol_params={}` and stubbed preprocessing.
+    - Step 4: the shell-continuation fix and the count of `fir/` scripts were corrected in the
+      step text above. Each env script was dry-run with stubbed `pip`/`conda`/`module`, and each
+      slurm script compared as joined logical lines: the same calls, minus dgl.
+    - Step 5: `model/` and `pl_model/` have no `__all__`, so a star import from them returns
+      whichever lazy names were already accessed. Nothing star-imports them.
+  - Left outside the PR:
+    - 49 generated `slurm_scripts/*.sh` still install `dgl==2.4.0` until regenerated.
+    - The gitignored `containers/apptainer/fragnnet_cuda128.def` is marked stale.
+    - The live `FRAGNNET-GPU` environment still has DGL installed, and its editable-install
+      metadata lists it until `pip install --no-deps -e .` is re-run.
+    - Bytecode of the deleted modules (`src/fragnnet/iceberg/`, `dgl_compat_utils*.pyc`) needs a
+      user-run cleanup script, because agent `rm -rf` is blocked.
