@@ -156,7 +156,7 @@ mass. This distinction is essential when the retained atoms require a new assemb
 | `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate | FSO3- with an alpha F transferred | Variable (product mapped) | `[M-H]-` |
 
 New rules must match the standardized molecules the model sees, i.e.
-`data_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
+`mol_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
 hydroxamic acids as the hydroximic tautomer `ON=C(O)R`. The old `S=O`-only sulfoxide
 pattern matched no NIST20 molecule for that reason.
 

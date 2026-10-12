@@ -990,3 +990,34 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     the same formulas depending on which native libraries were imported first (and from run to
     run when torch is imported first); the DAG differences seen across runs are 1-3e-7 relative.
     Compare DAGs structurally with a tolerance on these probabilities, not by file hash.
+- 2026-10-12: `utils/` cleanup (user request; plan from a read-only audit of 6 reviewers with a
+  skeptic per deletion claim, 35 agents), commits `d1cf8215`..`7a87d64e`, each with the full
+  suite (no new failures) and, where models could be affected, the checkpoint records (9 of 9
+  identical).
+  - Deleted, verified dead (no user in src, scripts, preproc_scripts, tools, notebooks or
+    configs): about 1,070 lines across misc_utils, data_utils, plot_utils, script_utils,
+    nn_utils, clean_spectra_utils, formula_utils and feat_utils, plus tests that only covered
+    them; the spec_utils isotope aliases, the naive `detect_isotope_peaks` (inlined into the two
+    notebooks that use it) and the unwired cross-CE orphan prototype with its test and notebook.
+  - Fixes: one `get_split_fn` (spec_utils); `booltype` no longer needs `distutils` (gone in
+    Python 3.12; same results as `strtobool` on 21 spellings); retrieval uses `x_log_x`;
+    `get_formulae_hill_notation` documents that it sorts alphabetically (not Hill notation) and a
+    test pins the order the export uses; the legacy HDF5 DAG writer moved into its test.
+  - Script-only code left the package: `ms2c_utils` to
+    `preproc_scripts/ms2c_pubchem/candidate_db.py`, the clean-spectra command line and spectrum
+    selection to `preproc_scripts/clean_spectra.py`, the statistics helpers to
+    `scripts/stats_scripts/stats_helpers.py`.
+  - Splits (every definition moved verbatim, checked): `data_utils` into `mol_utils`,
+    `parallel_utils`, `ce_utils` and `spec_parse_utils` (fingerprints to `feat_utils`, retired
+    instrument types to `migrations`, element tables and formula masses to `formula_utils`);
+    `spec_similarity` out of `spec_utils`; `scatter_utils` out of `misc_utils`;
+    `isotope_utils` became `dataset/isotope_cleanup.py`. Single-owner helpers moved to their
+    owner (`scatter_masked_*` to `fragnnet_model.py`, `get_mol_fp_size` to NEIMS).
+  - Kept although one model or only scripts use them: `init_wandb_ckpt` (the audit called its
+    callers broken; `run_save_inference.py` is not), `timeit` and `print_shapes` (notebooks),
+    `kl_div`/`js_div`, `scatter_argtopk`, `NestedDefaultDict` and `get_best_ckpt_from_wandb`
+    (notebooks and cluster job scripts import them from the package), `plot_utils`,
+    `retrieval_utils`, the `setup_utils` shim, `networkx`.
+  - Not done: moving `script_utils` to an `inference/` package, and the DAG HDF5 layer to
+    `models/fragnnet/dag/` (separate decisions); making `get_formulae_hill_notation` real Hill
+    notation (changes exported formula strings).

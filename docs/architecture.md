@@ -119,7 +119,15 @@ src/fragnnet/
   Cython changes require checking the build in [setup.py](../setup.py) and rebuilding in the
   approved environment (`python setup.py build_ext --inplace`) before testing; an existing
   binary is not evidence for changed source.
-- Shared chemistry, feature, and spectrum operations: [utils/](../src/fragnnet/utils/).
+- Shared chemistry, feature, and spectrum operations: [utils/](../src/fragnnet/utils/), one theme
+  per module: `formula_utils` (element tables, formula parsing and masses), `mol_utils` (RDKit),
+  `feat_utils` (atom/bond featurizers, fingerprints), `spec_utils` (intensity transforms,
+  binning, CE and batch helpers), `spec_similarity` (peak matching, Hungarian assignment,
+  similarity metrics), `scatter_utils` (grouped reductions), `ce_utils` (NCE/ACE),
+  `clean_spectra_utils` and `spec_parse_utils` (preprocessing), `parallel_utils`, `migrations`
+  (config and checkpoint migrations), `dag_format_utils` (DAG storage), `script_utils` (inference
+  exporters), `misc_utils` (constants, seeding, progress). The dataset's isotope-peak cleanup is
+  `dataset/isotope_cleanup.py`.
   Scientific assumptions must be checked against code and the relevant findings or references.
 - Tests: [tests/](../tests/), discovery in [pytest.ini](../pytest.ini), tooling in
   [pyproject.toml](../pyproject.toml). See the [session workflow](workflow/session.md) for checks.
