@@ -760,39 +760,6 @@ def batched_bin_func(
         return bin_spec
 
 
-def merge_sparse_specs(
-    *peakses, renormalize: bool = False, sum_ints: bool = True
-) -> list[tuple[float, float]]:
-    """
-    this will result in peaks that are really close in mass (<5ppm)
-    they are probably the same peak, but our model can handle this type of ambiguity
-    for now, let's keep them unmerged
-
-    Args:
-        renormalize (bool, optional): flag to get renormalize spectra. Defaults to False.
-        sum_ints (bool, optional): flag for sum intensities within the bin, else take max
-
-    Returns:
-        _type_: _description_
-    """
-    merged_peaks = {}
-    # total_intensity = 0.
-    for peaks in peakses:
-        for mz, intensity in peaks:
-            if mz in merged_peaks:
-                if sum_ints:
-                    merged_peaks[mz] += intensity
-                else:
-                    merged_peaks[mz] = max(merged_peaks[mz], intensity)
-            else:
-                merged_peaks[mz] = intensity
-    merged_peaks = sorted(merged_peaks.items(), key=lambda x: x[0])
-    if renormalize:
-        total_intensity = sum([intensity for mz, intensity in merged_peaks])
-        merged_peaks = [(mz, intensity / total_intensity) for mz, intensity in merged_peaks]
-    return merged_peaks
-
-
 def calculate_match_mzs(
     true_mzs: th.Tensor | np.ndarray,
     pred_mzs: th.Tensor | np.ndarray,

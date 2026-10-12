@@ -844,7 +844,8 @@ class TestIsotopeOffsetsFromFormula:
 
     def test_carbon_only_m1_dominates(self):
         """For a carbon-only formula, M+1 should be the largest offset."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_utils import isotope_offsets_from_formula
 
         offsets = isotope_offsets_from_formula(parse_formula("C10H14N2O5"))
         assert len(offsets) >= 1
@@ -853,7 +854,8 @@ class TestIsotopeOffsetsFromFormula:
 
     def test_bromine_m2_larger_than_m1(self):
         """For C10H8Br2, M+2 relative intensity should exceed M+1."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_utils import isotope_offsets_from_formula
 
         offsets = isotope_offsets_from_formula(parse_formula("C10H8Br2"))
         # Build offset → intensity map
@@ -864,12 +866,13 @@ class TestIsotopeOffsetsFromFormula:
         assert m2_rel > 0.4, "Br2 M+2 relative intensity should be ~0.46"
 
     def test_empty_formula_returns_empty(self):
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula
+        from fragnnet.utils.isotope_utils import isotope_offsets_from_formula
 
         assert isotope_offsets_from_formula({}) == []
 
     def test_threshold_filters_low_peaks(self):
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_utils import isotope_offsets_from_formula
 
         ec = parse_formula("C6H12O6")
         offsets_loose = isotope_offsets_from_formula(ec, threshold=0.0001)
@@ -1125,7 +1128,7 @@ class TestRegularIsotopeBranchKnownDefects:
 
     def test_coarse_generator_gives_every_formula_the_same_m2_offset(self):
         """DEFECT 1: the M+2 offset ignores which heavy isotope carries it."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula
+        from fragnnet.utils.isotope_utils import isotope_offsets_from_formula
 
         for formula in ("C10H8Br2", "C6H5Cl", "C20H30N2O3"):
             offsets = dict(isotope_offsets_from_formula(parse_formula(formula), max_isotope=2))

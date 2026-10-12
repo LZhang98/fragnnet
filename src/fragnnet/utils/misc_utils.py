@@ -223,44 +223,6 @@ def get_mol_graph_size(mol_data: Mapping[str, Any], mol_params: Mapping[str, Any
     return mol_graph_size
 
 
-def scatter_masked_softmax(
-    logits: th.Tensor,
-    mask: th.Tensor,
-    subset_idxs: th.Tensor,
-    mask_logprob: float | None = None,
-    log: bool = True,
-) -> th.Tensor:
-    """Apply log-softmax over grouped logits with masking support."""
-
-    if mask_logprob is None:
-        mask_logprob = LOG_ZERO(logits.dtype)
-    # calculate appropriate mask value
-    with th.no_grad():
-        c = scatter_masked_logsumexp(logits, mask, subset_idxs)
-        lm = th.gather(input=c, index=subset_idxs, dim=0)
-        mask_value = mask_logprob + lm
-    # apply mask
-    masked_logits = mask * logits + (1 - mask) * mask_value
-    # normalize
-    masked_logits = scatter_logsoftmax(masked_logits, subset_idxs)
-    if not log:
-        # exponentiate
-        return th.exp(masked_logits)
-    return masked_logits
-
-
-def scatter_masked_logsumexp(
-    logits: th.Tensor, mask: th.Tensor, subset_idxs: th.Tensor, mask_value: float | None = None
-) -> th.Tensor:
-    """Compute logsumexp over groups after applying a mask."""
-
-    if mask_value is None:
-        mask_value = LOG_ZERO(logits.dtype)
-    masked_logits = mask * logits + (1 - mask) * mask_value
-    masked_logsumexp = scatter_logsumexp(masked_logits, subset_idxs)
-    return masked_logsumexp
-
-
 def scatter_logsumexp(
     logits: th.Tensor, subset_idxs: th.Tensor, eps: float = EPS, dim_size: int | None = None
 ) -> th.Tensor:

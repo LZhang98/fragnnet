@@ -10,6 +10,7 @@ from rdkit import Chem
 from torch_geometric.data import Data
 
 from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
+from fragnnet.models.neims.neims_model import get_mol_fp_size
 from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
@@ -31,7 +32,6 @@ from fragnnet.utils.feat_utils import (
     MolGraph,
     get_mol_feats_sizes,
     get_mol_fp,
-    get_mol_fp_size,
     get_mol_graph,
     one_hot_encoding,
     random_walk_pe,

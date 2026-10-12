@@ -16,13 +16,13 @@ import pytest
 import torch as th
 
 from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_reduce
+from fragnnet.utils.proc_utils import merge_sparse_specs
 from fragnnet.utils.spec_utils import (
     batch_func,
     batched_bin_func,
     batched_filter_func,
     get_ints_transform_func,
     get_ints_untransform_func,
-    merge_sparse_specs,
     round_aggregate_peaks,
     transform_ce,
 )

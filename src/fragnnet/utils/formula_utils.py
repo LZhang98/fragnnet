@@ -343,60 +343,6 @@ def parse_formula(formula: str) -> dict[str, int]:
     return element_counts
 
 
-def isotope_offsets_from_formula(
-    element_counts: dict[str, int],
-    max_isotope: int = 4,
-    threshold: float = 0.001,
-) -> list[tuple[float, float]]:
-    """Return isotopologue mass offsets and relative intensities for a molecular formula.
-
-    Uses pyopenms ``CoarseIsotopePatternGenerator`` to compute the exact mass
-    offset of each M+k peak from the monoisotopic M+0 peak.  These offsets
-    differ from ``k * NEUTRON_MASS`` for heavy-isotope elements such as Cl
-    and Br where even-mass isotopes dominate.
-
-    Args:
-        element_counts: Element counts dict as returned by ``parse_formula``.
-        max_isotope: Maximum number of isotope peaks beyond M+0 to return.
-            Defaults to 4.
-        threshold: Minimum relative intensity to include.  Peaks below this
-            threshold are discarded.  Defaults to 0.001.
-
-    Returns:
-        List of ``(offset_da, relative_intensity)`` tuples sorted by offset,
-        excluding M+0 (offset ≈ 0).  Empty list if no peaks pass the threshold.
-
-    Example:
-        >>> ec = parse_formula("C10H8Br2")
-        >>> offsets = isotope_offsets_from_formula(ec)
-        >>> # M+2 ~0.46 dominates (81Br), not M+1 ~0.03
-        >>> offsets[0][0]  # offset_da ≈ 1.0034
-        1.003...
-    """
-    from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
-
-    formula_str = "".join(f"{el}{n}" for el, n in element_counts.items() if n > 0)
-    if not formula_str:
-        return []
-    emp = EmpiricalFormula(formula_str)
-    gen = CoarseIsotopePatternGenerator(max_isotope + 1)
-    iso = gen.run(emp)
-    iso.renormalize()
-    container = iso.getContainer()
-
-    peaks = sorted((p.getMZ(), p.getIntensity()) for p in container)
-    if not peaks:
-        return []
-
-    mono_mass = peaks[0][0]
-    mono_intensity = peaks[0][1]
-    return [
-        (mass - mono_mass, intensity / mono_intensity)
-        for mass, intensity in peaks[1:]
-        if (intensity / mono_intensity) >= threshold
-    ]
-
-
 def formula_arr_to_str(
     formula_arr: np.ndarray, get_h_template: bool = False
 ) -> str | tuple[str, str]:

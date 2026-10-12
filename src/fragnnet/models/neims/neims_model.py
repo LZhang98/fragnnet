@@ -8,10 +8,37 @@ precursor type, and instrument type, and predicts spectra using a feedforward ne
 
 import torch as th
 import torch.nn as nn
+from rdkit import Chem
 
 from fragnnet.layers.binned_head import SpecFFN
 from fragnnet.layers.metadata_embedding import CEModel, InstModel, PrecModel
-from fragnnet.utils.feat_utils import get_mol_fp_size
+from fragnnet.utils.feat_utils import get_mol_fp
+
+
+def get_mol_fp_size(
+    morgan: bool,
+    rdkit: bool,
+    maccs: bool,
+    morgan_radius: int = 3,
+    morgan_nbits: int = 2048,
+    rdkit_nbits: int = 2048,
+) -> int:
+    """Return the length of the concatenated fingerprint vector for a test molecule.
+
+    Args:
+        morgan: Whether to include Morgan fingerprints.
+        rdkit: Whether to include RDKit fingerprints.
+        maccs: Whether to include MACCS fingerprints.
+        morgan_radius: Radius for Morgan fingerprint (default: 3).
+        morgan_nbits: Number of bits for Morgan fingerprint (default: 2048).
+        rdkit_nbits: Number of bits for RDKit fingerprint (default: 2048).
+
+    Returns:
+        Total length of concatenated fingerprint vector.
+    """
+    mol = Chem.MolFromSmiles("CCO")  # type: ignore[attr-defined]
+    fp = get_mol_fp(mol, morgan, rdkit, maccs, morgan_radius, morgan_nbits, rdkit_nbits)
+    return fp.shape[0]
 
 
 class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):

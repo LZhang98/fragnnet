@@ -26,10 +26,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+from fragnnet.utils.formula_utils import parse_formula
 from fragnnet.utils.isotope_utils import (
     detect_isotope_peaks_for_training,
     detect_isotope_peaks_formula_aware,
+    isotope_offsets_from_formula,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")

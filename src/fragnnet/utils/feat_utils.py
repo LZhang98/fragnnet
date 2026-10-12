@@ -816,32 +816,6 @@ def get_mol_fp(
     return fp
 
 
-def get_mol_fp_size(
-    morgan: bool,
-    rdkit: bool,
-    maccs: bool,
-    morgan_radius: int = 3,
-    morgan_nbits: int = 2048,
-    rdkit_nbits: int = 2048,
-) -> int:
-    """Return the length of the concatenated fingerprint vector for a test molecule.
-
-    Args:
-        morgan: Whether to include Morgan fingerprints.
-        rdkit: Whether to include RDKit fingerprints.
-        maccs: Whether to include MACCS fingerprints.
-        morgan_radius: Radius for Morgan fingerprint (default: 3).
-        morgan_nbits: Number of bits for Morgan fingerprint (default: 2048).
-        rdkit_nbits: Number of bits for RDKit fingerprint (default: 2048).
-
-    Returns:
-        Total length of concatenated fingerprint vector.
-    """
-    mol = Chem.MolFromSmiles("CCO")  # type: ignore[attr-defined]
-    fp = get_mol_fp(mol, morgan, rdkit, maccs, morgan_radius, morgan_nbits, rdkit_nbits)
-    return fp.shape[0]
-
-
 def get_mol_graph(
     mol: Chem.rdchem.Mol,
     atom_feats: Sequence[str],
