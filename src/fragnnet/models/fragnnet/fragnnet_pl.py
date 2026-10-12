@@ -16,11 +16,11 @@ except ImportError:
     profiler_available = False
 import os
 
-from fragnnet.fragmentation.candidate_support import (
+from fragnnet.hooks import ExportHooks
+from fragnnet.loss.channel_support import (
     balanced_binary_support_loss,
     observational_channel_targets,
 )
-from fragnnet.hooks import ExportHooks
 from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 from fragnnet.loss.entropy import sparse_conditional_entropy_fn, sparse_entropy_fn
 from fragnnet.loss.pairwise import (

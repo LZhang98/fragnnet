@@ -1,4 +1,7 @@
-"""Shared observational targets and losses for candidate-support heads."""
+"""Observational targets and losses for candidate-support heads (moved from
+``fragmentation/candidate_support.py``): match observed peaks to candidate channels and score
+the support predictions.
+"""
 
 from typing import Literal
 

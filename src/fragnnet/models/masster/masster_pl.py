@@ -24,16 +24,16 @@ import numpy as np
 import torch as th
 from rdkit import Chem
 
-from fragnnet.fragmentation.candidate_support import (
+from fragnnet.hooks import ExportHooks
+from fragnnet.loss.channel_support import (
     balanced_binary_support_loss as _balanced_binary_support_loss,
 )
-from fragnnet.fragmentation.candidate_support import (
+from fragnnet.loss.channel_support import (
     matched_peak_candidate_pairs,
 )
-from fragnnet.fragmentation.candidate_support import (
+from fragnnet.loss.channel_support import (
     observational_channel_targets as _observational_channel_targets,
 )
-from fragnnet.hooks import ExportHooks
 from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
