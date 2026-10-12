@@ -28,9 +28,9 @@ from rdkit import RDLogger
 
 import fragnnet.utils.formula_utils as formula_utils
 import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.frag.compute_frags import MAX_NUM_NODES
 from fragnnet.utils import data_utils
 from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
+from fragnnet.utils.formula_utils import MAX_NUM_NODES
 
 # Suppress RDKit warnings
 RDLogger.DisableLog("rdApp.*")

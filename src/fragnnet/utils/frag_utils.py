@@ -24,11 +24,7 @@ import torch.nn.functional as F
 import torch_geometric as pyg
 
 import fragnnet.frag.compute_frags as compute_frags
-from fragnnet.frag.compute_frags import (
-    MASK_DTYPE,
-    MAX_NUM_EDGES,
-    MAX_NUM_NODES,
-)
+from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
 from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
 from fragnnet.frag.smarts_prepass import (
@@ -39,6 +35,9 @@ from fragnnet.frag.smarts_prepass import (
 )
 from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.formula_utils import (
+    MASK_SIZE,
+    MAX_NUM_EDGES,
+    MAX_NUM_NODES,
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     formula_to_peak_mzs,
@@ -117,9 +116,9 @@ NODE_FEAT_DTYPE = th.int64
 EDGE_FEAT_DTYPE = th.int64
 META_DATA_DTYPE = th.float32
 
-MASK_SIZE = 128
-assert MASK_SIZE >= MAX_NUM_NODES, "MASK_SIZE should be larger than MAX_NUM_NODES"
-assert MASK_SIZE % 64 == 0, "MASK_SIZE should be a multiple of 64"
+# The size limits live in core formula_utils (re-exported here until Phase 6); the Cython
+# builder's compile-time copies must match them.
+assert (compute_frags.MAX_NUM_NODES, compute_frags.MAX_NUM_EDGES) == (MAX_NUM_NODES, MAX_NUM_EDGES)
 
 BOND_TYPE_TO_IDX = {
     Chem.rdchem.BondType.names["AROMATIC"]: 2,

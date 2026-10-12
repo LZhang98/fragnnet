@@ -22,6 +22,15 @@ BR_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Br")
 K_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("K")
 C_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("C")
 
+# Fragment-DAG size limits, shared by the DAG builders, the DAG format and core preprocessing.
+# The Cython builders (``compute_frags.pyx``, ``multi_cut_bfs.pyx``) need compile-time sizes and
+# keep literal copies; ``tests/test_reorg_size_constants.py`` asserts they match.
+MAX_NUM_NODES = 128
+MAX_NUM_EDGES = 4 * MAX_NUM_NODES
+MASK_SIZE = 128
+assert MASK_SIZE >= MAX_NUM_NODES, "MASK_SIZE should be larger than MAX_NUM_NODES"
+assert MASK_SIZE % 64 == 0, "MASK_SIZE should be a multiple of 64"
+
 # NIST ``+Ni`` precursor labels -- ``[M+H+2i]+``, ``[M+H+4i]+``, ``[M-H+2i]-``, ``[M+Na+2i]+``
 # and friends -- are NOT SUPPORTED and are deliberately absent from every table below.
 #

@@ -18,10 +18,6 @@
       "get_node_feats",
       "th_long_to_mask"
     ],
-    "fragnnet.utils.proc_utils -> fragnnet.frag.compute_frags": [
-      "MAX_NUM_EDGES",
-      "MAX_NUM_NODES"
-    ],
     "fragnnet.utils.script_utils -> fragnnet.frag.masster_templates": [
       "MASSTER_RULE_VOCABULARY"
     ],
@@ -103,11 +99,7 @@
       ]
     },
     "fragnnet.utils.pl_utils": {},
-    "fragnnet.utils.proc_utils": {
-      "fragnnet": [
-        "fragnnet.frag.compute_frags"
-      ]
-    },
+    "fragnnet.utils.proc_utils": {},
     "fragnnet.utils.script_utils": {
       "fragmentation": [
         "fragnnet.frag.smarts_prepass",
