@@ -7,7 +7,6 @@ here, so subclasses that extend it after ``super()`` (MASSter) are unchanged.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import torch as th
@@ -23,6 +22,7 @@ from fragnnet.utils.spec_utils import (
     calculate_match_mzs,
     cos_sim_helper,
     get_ints_transform_func,
+    get_split_fn,
     jss_helper,
     ndcg_helper,
     opt_cos_sim_helper,
@@ -32,27 +32,6 @@ from fragnnet.utils.spec_utils import (
 
 if TYPE_CHECKING:
     from fragnnet.pl_model.spectrum_pl import SpectrumPL
-
-
-def get_split_fn(bs_idx: th.Tensor) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
-    """Return a function that splits a packed tensor into its per-batch-element pieces.
-
-    Args:
-        bs_idx: Non-decreasing batch index per row, shape ``[N]``.
-
-    Returns:
-        Callable mapping a tensor of shape ``[N, ...]`` to one tuple entry per batch element.
-    """
-    # check the validity of bs idx
-    diffs = bs_idx[1:] - bs_idx[:-1]
-    assert len(diffs) == 0 or diffs.min() >= 0
-    batch_counts = th.bincount(bs_idx)
-    batch_counts = batch_counts.tolist()
-
-    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
-        return th.split(inp_tensor, batch_counts)
-
-    return split_fn
 
 
 def setup_metric_fns(pl_module: SpectrumPL) -> None:

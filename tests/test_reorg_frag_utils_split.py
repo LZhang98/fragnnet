@@ -49,7 +49,6 @@ MOVED = {
         "_legacy_frag_names",
         "_load_dag_hdf5_packed",
         "_load_pickle_file",
-        "dump_dag_hdf5",
         "dump_dag_hdf5_packed",
         "dump_dag_pickle",
         "get_dag_output_path",

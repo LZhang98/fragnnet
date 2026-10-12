@@ -1,5 +1,6 @@
 """Tests for HDF5 DAG serialization round-trip."""
 
+import json
 from unittest.mock import patch
 
 import h5py
@@ -15,12 +16,96 @@ from fragnnet.utils.dag_format_utils import (
     PACKED_DAG_FORMAT,
     PACKED_DAG_FORMAT_ATTR,
     PACKED_DAG_INDEX_DATASET,
-    dump_dag_hdf5,
     dump_dag_hdf5_packed,
     initialize_packed_dag_hdf5,
     load_dag_hdf5,
     load_dag_hdf5_from_group,
 )
+
+
+# The legacy per-group HDF5 writer. Production writes the packed format and only reads legacy
+# per-group files (load_dag_hdf5_from_group), so the writer lives here to build their fixtures.
+def dump_dag_hdf5(h5_group: h5py.Group, dag_d: dict) -> None:
+    """Write one DAG dictionary into an open h5py group.
+
+    All PyTorch tensors are converted to numpy arrays before writing.
+    Dict-typed fields (``idx_to_formula``, ``idx_by_h_delta``, depth-by-depth
+    counts) are JSON-encoded and stored as group attributes.
+
+    Args:
+        h5_group: An open, writable ``h5py.Group`` for this molecule.
+        dag_d: DAG payload dictionary as returned by ``compute_dags``.
+    """
+
+    dag = dag_d["dag"]
+    g = h5_group.create_group("dag")
+    g.create_dataset("x", data=dag.x.numpy(), compression="gzip", compression_opts=4)
+    g.create_dataset(
+        "edge_index", data=dag.edge_index.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset(
+        "edge_attr", data=dag.edge_attr.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
+    g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(dag, name):
+            g.create_dataset(
+                name, data=getattr(dag, name).numpy(), compression="gzip", compression_opts=4
+            )
+
+    h5_group.create_dataset(
+        "formula_peak_mzs",
+        data=dag_d["formula_peak_mzs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+    h5_group.create_dataset(
+        "formula_peak_probs",
+        data=dag_d["formula_peak_probs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+
+    edges_min_depth = dag_d["edges_min_depth"]
+    nodes_min_depth = dag_d["nodes_min_depth"]
+    h5_group.create_dataset("edges_min_depth", data=edges_min_depth)
+    h5_group.create_dataset("nodes_min_depth", data=nodes_min_depth)
+
+    # JSON-encoded variable-structure fields
+    h5_group.attrs["idx_to_formula"] = json.dumps(
+        {str(k): v for k, v in dag_d["idx_to_formula"].items()}
+    )
+    h5_group.attrs["idx_by_h_delta"] = json.dumps(
+        [sorted(map(int, s)) for s in dag_d["idx_by_h_delta"]]
+    )
+    h5_group.attrs["dag_num_edges_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_edges_by_depth"].items()}
+    )
+    h5_group.attrs["dag_num_nodes_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_nodes_by_depth"].items()}
+    )
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        h5_group.attrs[key] = int(dag_d[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        h5_group.attrs[key] = float(dag_d[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        h5_group.attrs[key] = bool(dag_d[key])
 
 
 def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int, seed: int = 0) -> dict:

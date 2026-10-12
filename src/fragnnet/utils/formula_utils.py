@@ -238,13 +238,17 @@ def cmf_duplicate_crf_h_shift(
 
 
 def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
-    """return formulae in string following hill notation
+    """Render element counts as a formula string, elements in alphabetical order.
+
+    Despite the name this is not Hill notation (which puts C, then H, first when carbon is
+    present): ``{"C": 1, "Br": 1, "H": 3}`` renders as ``"BrCH3"``. A count of 1 gets no
+    suffix, and an element with count 0 is still written, so callers drop zero counts.
 
     Args:
-        element_counts (Dict[str,int]): element configs eg:  {"C":6,"H":7,"O":6,"N":0}
+        element_counts: Element counts, e.g. ``{"C": 6, "H": 7, "O": 6}``.
 
     Returns:
-        str: formulae string eg: BrClH2Si
+        The formula string, e.g. ``"BrClH2Si"``.
     """
     formulae_string = ""
     sorted_keys = list(element_counts.keys())

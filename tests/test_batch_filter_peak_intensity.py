@@ -9,7 +9,8 @@ needs the map; the peak axis does not.
 import pytest
 import torch as th
 
-from fragnnet.utils.script_utils import PredArrays, batch_filter_by_peak_intensity, get_split_fn
+from fragnnet.utils.script_utils import PredArrays, batch_filter_by_peak_intensity
+from fragnnet.utils.spec_utils import get_split_fn
 
 # Three spectra on the exporter's 0-1000 scale. Spectrum 2 has no peak above 1.0, so a
 # threshold of 1.0 empties it.

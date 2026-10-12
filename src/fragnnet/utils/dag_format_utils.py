@@ -171,89 +171,6 @@ def dump_dag_pickle(fp: str, dag_d: dict) -> None:
     _dump_pickle_file(fp, dag_d)
 
 
-def dump_dag_hdf5(h5_group: "_h5py.Group", dag_d: dict) -> None:
-    """Write one DAG dictionary into an open h5py group.
-
-    All PyTorch tensors are converted to numpy arrays before writing.
-    Dict-typed fields (``idx_to_formula``, ``idx_by_h_delta``, depth-by-depth
-    counts) are JSON-encoded and stored as group attributes.
-
-    Args:
-        h5_group: An open, writable ``h5py.Group`` for this molecule.
-        dag_d: DAG payload dictionary as returned by ``compute_dags``.
-    """
-
-    dag = dag_d["dag"]
-    g = h5_group.create_group("dag")
-    g.create_dataset("x", data=dag.x.numpy(), compression="gzip", compression_opts=4)
-    g.create_dataset(
-        "edge_index", data=dag.edge_index.numpy(), compression="gzip", compression_opts=4
-    )
-    g.create_dataset(
-        "edge_attr", data=dag.edge_attr.numpy(), compression="gzip", compression_opts=4
-    )
-    g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
-    g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
-    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
-        if hasattr(dag, name):
-            g.create_dataset(
-                name, data=getattr(dag, name).numpy(), compression="gzip", compression_opts=4
-            )
-
-    h5_group.create_dataset(
-        "formula_peak_mzs",
-        data=dag_d["formula_peak_mzs"].numpy(),
-        compression="gzip",
-        compression_opts=4,
-    )
-    h5_group.create_dataset(
-        "formula_peak_probs",
-        data=dag_d["formula_peak_probs"].numpy(),
-        compression="gzip",
-        compression_opts=4,
-    )
-
-    edges_min_depth = dag_d["edges_min_depth"]
-    nodes_min_depth = dag_d["nodes_min_depth"]
-    h5_group.create_dataset("edges_min_depth", data=edges_min_depth)
-    h5_group.create_dataset("nodes_min_depth", data=nodes_min_depth)
-
-    # JSON-encoded variable-structure fields
-    h5_group.attrs["idx_to_formula"] = json.dumps(
-        {str(k): v for k, v in dag_d["idx_to_formula"].items()}
-    )
-    h5_group.attrs["idx_by_h_delta"] = json.dumps(
-        [sorted(map(int, s)) for s in dag_d["idx_by_h_delta"]]
-    )
-    h5_group.attrs["dag_num_edges_by_depth"] = json.dumps(
-        {str(k): int(v) for k, v in dag_d["dag_num_edges_by_depth"].items()}
-    )
-    h5_group.attrs["dag_num_nodes_by_depth"] = json.dumps(
-        {str(k): int(v) for k, v in dag_d["dag_num_nodes_by_depth"].items()}
-    )
-
-    # Integer scalars
-    for key in [
-        "max_depth",
-        "reached_depth",
-        "max_h_transfer",
-        "dag_num_edges",
-        "dag_num_nodes",
-        "dag_num_nodes_nb",
-        "node_feature_size",
-        "edge_feature_size",
-    ]:
-        h5_group.attrs[key] = int(dag_d[key])
-
-    # Float scalars
-    for key in ["dag_sparsity", "formula_redundancy"]:
-        h5_group.attrs[key] = float(dag_d[key])
-
-    # Bool scalars
-    for key in ["h_prior", "is_directed", "force_stopped"]:
-        h5_group.attrs[key] = bool(dag_d[key])
-
-
 def initialize_packed_dag_hdf5(h5_file: "_h5py.File") -> None:
     """Initialize an open HDF5 file for packed DAG storage.
 
@@ -354,8 +271,8 @@ def load_dag_hdf5(h5_file: "_h5py.File", mol_id: str | int) -> dict:
     """Read one DAG dictionary from an open HDF5 file, packed or legacy format.
 
     Args:
-        h5_file: Open h5py.File written by either :func:`dump_dag_hdf5_packed`
-            or :func:`dump_dag_hdf5`.
+        h5_file: Open h5py.File in the packed format (:func:`dump_dag_hdf5_packed`) or the
+            legacy one-group-per-molecule format.
         mol_id: Molecule identifier to look up.
 
     Returns:
@@ -374,8 +291,8 @@ def load_dag_hdf5_from_group(h5_group: "_h5py.Group") -> dict:
     dtypes.  JSON-encoded attributes are decoded to their original Python types.
 
     Args:
-        h5_group: An open legacy molecule group, as created by
-            :func:`dump_dag_hdf5`.
+        h5_group: An open legacy molecule group (one group per molecule, the layout before
+            the packed format).
 
     Returns:
         DAG payload dictionary compatible with the format returned by

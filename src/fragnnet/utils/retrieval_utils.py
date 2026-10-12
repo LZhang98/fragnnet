@@ -27,6 +27,7 @@ import numpy as np
 import torch as th
 from scipy.stats import bootstrap
 
+from fragnnet.utils.misc_utils import x_log_x
 from fragnnet.utils.spec_utils import (
     _solve_batch_assignment,
     calculate_match_mzs,
@@ -235,10 +236,6 @@ def prepare_sqrt_peaks(
     return m, (s / s.sum() if len(s) else s)
 
 
-def _xlogx(x: th.Tensor) -> th.Tensor:
-    return th.where(x > 0, x * th.log(x.clamp_min(1e-300)), th.zeros_like(x))
-
-
 def entropy_similarity_inst_tol(
     target: tuple[th.Tensor, th.Tensor],
     preds: list[tuple[th.Tensor, th.Tensor]],
@@ -283,7 +280,8 @@ def entropy_similarity_inst_tol(
         pmz, pp = pmz.to(device), pp.to(device)
         tol = peak_tolerance(tmz.clamp(max=mz_max), rel, min_mz)
         mask = calculate_match_mzs(tmz, pmz, tolerance=0.0, relative=False, tol_per_true=tol)
-        w = _xlogx(q[:, :, None] + pp[:, None, :]) - _xlogx(q)[:, :, None] - _xlogx(pp)[:, None, :]
+        # The inputs are probabilities (nonnegative); x_log_x takes the x = 0 limit.
+        w = x_log_x(q[:, :, None] + pp[:, None, :]) - x_log_x(q)[:, :, None] - x_log_x(pp)[:, None, :]
         w = w * mask
         if w.shape[1] == 0:
             out += [0.0] * b

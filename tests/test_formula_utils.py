@@ -89,6 +89,10 @@ class TestHillNotation:
         result = fu.get_formulae_hill_notation({"O": 1, "H": 2})
         assert result == "H2O"
 
+    def test_order_is_alphabetical_not_hill(self):
+        """Carbon does not come first: the export's formula strings depend on this order."""
+        assert fu.get_formulae_hill_notation({"C": 1, "Br": 1, "H": 3}) == "BrCH3"
+
 
 class TestPrecTypeDiffs:
     """PREC_TYPE_TO_MASS_DIFF must be the mass counterpart of PREC_TYPE_TO_FORMULA_DIFF.

@@ -16,9 +16,13 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from fragnnet.pl_model.spectrum_metrics import get_split_fn
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
-from fragnnet.utils.spec_utils import primary_ce_to_batch, ragged_to_batch, select_context_ce_values
+from fragnnet.utils.spec_utils import (
+    get_split_fn,
+    primary_ce_to_batch,
+    ragged_to_batch,
+    select_context_ce_values,
+)
 
 
 def test_select_context_ce_values_uses_per_instrument_axis():

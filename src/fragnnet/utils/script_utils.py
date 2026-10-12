@@ -4,7 +4,7 @@ import logging
 import multiprocessing
 import os
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import chain
 from typing import Any
@@ -30,7 +30,7 @@ from fragnnet.utils.misc_utils import (
 )
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.setup_utils import get_model_cls
-from fragnnet.utils.spec_utils import batched_mf1000_normalize
+from fragnnet.utils.spec_utils import batched_mf1000_normalize, get_split_fn
 
 logger = logging.getLogger(__name__)
 
@@ -1561,36 +1561,6 @@ def run_inference_tabular_iter(
                 return_rule_provenance=return_rule_provenance,
             )
             yield batch_rows
-
-
-def get_split_fn(
-    bs_idx: th.Tensor, batch_size: int | None = None
-) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
-    """Build a splitter for tensors grouped by sorted batch indices.
-
-    Args:
-        bs_idx: Sorted batch index tensor aligned with the tensor to split.
-        batch_size: Expected number of batch entries. When provided, empty groups
-            are preserved with zero-length splits, which keeps per-spectrum outputs
-            aligned after filtering removes all entries for some batch indices.
-
-    Returns:
-        A function that splits any tensor aligned with ``bs_idx`` into per-batch
-        chunks.
-    """
-    # check the validity of bs idx
-    if len(bs_idx) > 1:
-        assert (bs_idx[1:] - bs_idx[:-1]).min() >= 0
-    if batch_size is None:
-        _, batch_counts = th.unique(bs_idx, return_counts=True)
-    else:
-        batch_counts = th.bincount(bs_idx.long(), minlength=batch_size)
-    batch_counts = batch_counts.detach().cpu().tolist()
-
-    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
-        return th.split(inp_tensor, batch_counts)
-
-    return split_fn
 
 
 def process_batch_to_tabular_row(

@@ -395,6 +395,31 @@ def transform_ce(ce: th.Tensor | float, ce_mean: float, ce_std: float) -> th.Ten
             return th.tensor(ce)
 
 
+def get_split_fn(
+    bs_idx: th.Tensor, batch_size: int | None = None
+) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
+    """Build a splitter for tensors grouped by sorted batch indices.
+
+    Args:
+        bs_idx: Sorted batch index tensor aligned with the tensor to split.
+        batch_size: Number of batch entries. Indices below it without rows (trailing ones
+            included) get zero-length splits, which keeps per-spectrum outputs aligned after
+            filtering removes every entry of a spectrum. Without it, the splits run to the
+            largest index in ``bs_idx``.
+
+    Returns:
+        A function that splits any tensor aligned with ``bs_idx`` into per-batch chunks.
+    """
+    if len(bs_idx) > 1:
+        assert (bs_idx[1:] - bs_idx[:-1]).min() >= 0
+    batch_counts = th.bincount(bs_idx.long(), minlength=batch_size or 0).detach().cpu().tolist()
+
+    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
+        return th.split(inp_tensor, batch_counts)
+
+    return split_fn
+
+
 def ragged_to_batch(
     feat: th.Tensor, batch_idx: th.Tensor, pad_value: float = 0
 ) -> tuple[th.Tensor, th.Tensor]:

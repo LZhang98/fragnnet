@@ -24,7 +24,6 @@ from collections.abc import (
     MutableMapping,
 )
 from contextlib import contextmanager
-from distutils.util import strtobool
 from functools import wraps
 from typing import Any, TypeVar
 
@@ -73,10 +72,24 @@ def timeit(func: Callable[..., R]) -> Callable[..., R]:
     return timeit_wrapper
 
 
-def booltype(x: str) -> bool:
-    """Convert a string to boolean using distutils.strtobool."""
+_TRUE_STRINGS = frozenset({"y", "yes", "t", "true", "on", "1"})
+_FALSE_STRINGS = frozenset({"n", "no", "f", "false", "off", "0"})
 
-    return bool(strtobool(x))
+
+def booltype(x: str) -> bool:
+    """Parse a command-line boolean the way ``distutils.util.strtobool`` did.
+
+    ``distutils`` was removed in Python 3.12, so the accepted spellings are listed here.
+
+    Raises:
+        ValueError: If ``x`` is not one of the accepted spellings (case-insensitive).
+    """
+    value = x.lower()
+    if value in _TRUE_STRINGS:
+        return True
+    if value in _FALSE_STRINGS:
+        return False
+    raise ValueError(f"invalid truth value {x!r}")
 
 
 def none_or_nan(thing: Any) -> bool:
