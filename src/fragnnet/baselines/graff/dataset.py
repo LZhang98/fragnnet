@@ -7,7 +7,7 @@ from torch_geometric.data import Batch
 from tqdm import tqdm
 
 from fragnnet.dataset import BaseDataset, SpecMolDataset
-from fragnnet.graff.data_utils import fit_ann_library, graff_preprocess
+from fragnnet.baselines.graff.data_utils import fit_ann_library, graff_preprocess
 from fragnnet.utils.data_utils import composition_to_string
 from fragnnet.utils.formula_utils import NEUTRON_MASS
 from fragnnet.utils.misc_utils import get_tensor_dict_memory_usage, scatter_reduce

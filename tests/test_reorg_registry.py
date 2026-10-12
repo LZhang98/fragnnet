@@ -54,12 +54,12 @@ EXPECTED_MAPPING = {
         "fragnnet.dataset.spec_mol_dataset:SpecMolDataset",
     ),
     "massformer": (
-        "fragnnet.massformer.pl_model:MassFormerPL",
-        "fragnnet.massformer.dataset:SpecMolMFDataset",
+        "fragnnet.baselines.massformer.pl_model:MassFormerPL",
+        "fragnnet.baselines.massformer.dataset:SpecMolMFDataset",
     ),
     "graff": (
-        "fragnnet.graff.pl_model:GrAFFPL",
-        "fragnnet.graff.dataset:SpecMolAnnDataset",
+        "fragnnet.baselines.graff.pl_model:GrAFFPL",
+        "fragnnet.baselines.graff.dataset:SpecMolAnnDataset",
     ),
     "precursor": (
         "fragnnet.pl_model.precursor_pl:PrecursorPL",

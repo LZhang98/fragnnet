@@ -57,8 +57,8 @@ MASSTER = {
 }
 MASSTER_PREFIXES = ("fragnnet.frag.masster_",)
 BASELINE_PACKAGES = {
-    "fragnnet.graff": "baseline:graff",
-    "fragnnet.massformer": "baseline:massformer",
+    "fragnnet.baselines.graff": "baseline:graff",
+    "fragnnet.baselines.massformer": "baseline:massformer",
     "fragnnet.iceberg": "baseline:iceberg",
 }
 

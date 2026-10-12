@@ -48,8 +48,8 @@ from rdkit import Chem
 from reorg_golden import ratchet_records
 from torch.utils.data import RandomSampler, SequentialSampler
 
-import fragnnet.massformer.data_utils as mf_data_utils
-from fragnnet.graff.data_utils import fit_ann_library, graff_preprocess
+import fragnnet.baselines.massformer.data_utils as mf_data_utils
+from fragnnet.baselines.graff.data_utils import fit_ann_library, graff_preprocess
 from fragnnet.utils.data_utils import composition_to_string, formula_to_mass
 from fragnnet.utils.formula_utils import NEUTRON_MASS
 
@@ -226,7 +226,7 @@ def offline_tiny_graphormer(monkeypatch: pytest.MonkeyPatch) -> None:
     zenodo URL (nn_utils.py ``load_pretrained_model``). The stub returns the state dict of an
     equally shaped random embedder, and the shrink keeps the model at about 250k parameters.
     """
-    import fragnnet.massformer.nn_utils as mf_nn
+    import fragnnet.baselines.massformer.nn_utils as mf_nn
 
     base_args = mf_nn.set_graphormer_base_architecture_args
 
@@ -890,7 +890,7 @@ def test_algos_extension_is_built() -> None:
     or stale build fails here by name rather than inside every item record. Tests never build
     it: that would write into ``src/``.
     """
-    import fragnnet.massformer.algos as algos
+    import fragnnet.baselines.massformer.algos as algos
 
     assert Path(algos.__file__).suffix == ".so"
     dist, path = algos.floyd_warshall(np.array([[0, 1], [1, 0]], dtype=bool))

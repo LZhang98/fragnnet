@@ -4,7 +4,7 @@ from rdkit import Chem
 from rdkit.Chem import rdchem
 from torch_geometric.data import Data
 
-import fragnnet.massformer.algos as algos
+import fragnnet.baselines.massformer.algos as algos
 
 # allowable multiple choice node and edge features
 allowable_features = {

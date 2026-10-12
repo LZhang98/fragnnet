@@ -55,23 +55,23 @@
     "gnn": {},
     "graff": {
       "baseline:graff": [
-        "fragnnet.graff",
-        "fragnnet.graff.data_utils",
-        "fragnnet.graff.dataset",
-        "fragnnet.graff.model",
-        "fragnnet.graff.nn_utils",
-        "fragnnet.graff.pl_model"
+        "fragnnet.baselines.graff",
+        "fragnnet.baselines.graff.data_utils",
+        "fragnnet.baselines.graff.dataset",
+        "fragnnet.baselines.graff.model",
+        "fragnnet.baselines.graff.nn_utils",
+        "fragnnet.baselines.graff.pl_model"
       ]
     },
     "massformer": {
       "baseline:massformer": [
-        "fragnnet.massformer",
-        "fragnnet.massformer.algos",
-        "fragnnet.massformer.data_utils",
-        "fragnnet.massformer.dataset",
-        "fragnnet.massformer.model",
-        "fragnnet.massformer.nn_utils",
-        "fragnnet.massformer.pl_model"
+        "fragnnet.baselines.massformer",
+        "fragnnet.baselines.massformer.algos",
+        "fragnnet.baselines.massformer.data_utils",
+        "fragnnet.baselines.massformer.dataset",
+        "fragnnet.baselines.massformer.model",
+        "fragnnet.baselines.massformer.nn_utils",
+        "fragnnet.baselines.massformer.pl_model"
       ]
     },
     "masster": {

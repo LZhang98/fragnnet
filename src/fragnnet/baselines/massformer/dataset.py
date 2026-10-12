@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import fragnnet.massformer.data_utils as mf_data_utils
+import fragnnet.baselines.massformer.data_utils as mf_data_utils
 from fragnnet.dataset import SpecMolDataset
 
 

@@ -46,12 +46,13 @@ MODEL_REGISTRY: dict[str, ModelEntry] = {
     "neims": ModelEntry("fragnnet.pl_model.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
     "chemlm": ModelEntry("fragnnet.pl_model.chemlm_pl:ChemLMPL", _SPEC_MOL_DATASET),
     "massformer": ModelEntry(
-        "fragnnet.massformer.pl_model:MassFormerPL", "fragnnet.massformer.dataset:SpecMolMFDataset"
+        "fragnnet.baselines.massformer.pl_model:MassFormerPL",
+        "fragnnet.baselines.massformer.dataset:SpecMolMFDataset",
     ),
     "graff": ModelEntry(
-        "fragnnet.graff.pl_model:GrAFFPL",
-        "fragnnet.graff.dataset:SpecMolAnnDataset",
-        hooks="fragnnet.graff.hooks:GrAFFHooks",
+        "fragnnet.baselines.graff.pl_model:GrAFFPL",
+        "fragnnet.baselines.graff.dataset:SpecMolAnnDataset",
+        hooks="fragnnet.baselines.graff.hooks:GrAFFHooks",
     ),
     "precursor": ModelEntry("fragnnet.pl_model.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET),
     "gnn": ModelEntry("fragnnet.pl_model.gnn_pl:GNNPL", _SPEC_MOL_DATASET),

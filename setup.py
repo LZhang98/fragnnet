@@ -8,7 +8,7 @@ setup(
             "src/fragnnet/frag/compute_frags.pyx",
             "src/fragnnet/frag/masster_core.pyx",
             "src/fragnnet/frag/multi_cut_bfs.pyx",
-            "src/fragnnet/massformer/algos.pyx",
+            "src/fragnnet/baselines/massformer/algos.pyx",
         ],
         compiler_directives={"language_level": "3"},
     ),

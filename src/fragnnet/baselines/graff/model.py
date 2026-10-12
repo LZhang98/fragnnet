@@ -3,7 +3,7 @@ import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
 
-from fragnnet.graff.nn_utils import *
+from fragnnet.baselines.graff.nn_utils import *
 from fragnnet.utils.misc_utils import (
     check_pyg_compile,
     check_pyg_full_compile,
