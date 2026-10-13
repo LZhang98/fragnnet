@@ -276,6 +276,7 @@ lr_decay_rate: 0.95
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 optimizer: adamw
+# gaussian | laplace (same std as gaussian, scale = sigma/sqrt(2)) | peak_marginal
 output_distribution: gaussian
 # cross_entropy keeps the historical coverage-weighted sparse CE.
 # conditional_cross_entropy (MASSter only) divides its in-support term by represented
