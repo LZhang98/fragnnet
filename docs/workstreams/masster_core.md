@@ -7,7 +7,7 @@
 
 - **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) remain open; repair W&B merge and override validation next.
 
-- **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. Notebooks unchanged; repair reporting errors next.
+- **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated with unique cells preserved; repair reporting errors next.
 
 - **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed in tests (uncommitted). Complete-suite and GPU validation remain open.
 

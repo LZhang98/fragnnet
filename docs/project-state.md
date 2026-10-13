@@ -37,7 +37,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 - **Configs grouped by model:** [record](plans/config_model_grouping.md); shared template and experiment settings retained. [Seven audit findings](findings/config_audit_2026_10_12.md) remain open. **Next:** W&B merge and CLI validation repairs.
 
-- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. Notebooks unchanged; next repair metric labeling, repeat scaling and parameter counts.
+- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. NIST20 duplicate consolidated with unique cells preserved; next repair reporting errors.
 
 - **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed in tests (uncommitted). **Next:** full-suite and GPU validation.
 

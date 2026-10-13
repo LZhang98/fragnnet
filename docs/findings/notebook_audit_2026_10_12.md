@@ -1,7 +1,7 @@
 # Notebook audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Static audit complete; notebooks unchanged. Repair reporting errors before reusing their results.
+> **Status:** FINDING · **Updated:** 2026-10-13
+> Static audit complete; NIST20 duplicate consolidated. Repair reporting errors before reusing results.
 
 ## Scope and evidence
 
@@ -79,7 +79,7 @@ do not restore retired APIs solely to run these notebooks.
   cell 9: `spec_meta_cols` is never defined.
 - [ablation_exp.ipynb](../../notebooks/exp_notesbooks/ablation_exp.ipynb),
   cell 5: export uses undefined `sims_latex_df`; earlier cells create `latex_df`.
-- [nist20_frags_stats.ipynb](../../notebooks/frag_notebooks/nist20_frags_stats.ipynb),
+- [NIST20 supplemental fragment analysis](../../notebooks/data_notebooks/nist20.ipynb),
   cells 18–19: `spec_frag_stats_df` is referenced after its initialization was commented out.
 - [test_ints_transform.ipynb](../../notebooks/test_notebooks/test_ints_transform.ipynb),
   cells 7–9: `norm` is never assigned (only `norm1` and `norm2` exist).
@@ -129,3 +129,20 @@ No full notebook executions, GPU checks, or model tests were run.
 Next: repair findings 1–3, then imports and fresh-kernel blockers; recover originating
 configurations for condition plots. Run selected repaired notebooks from an explicit working
 directory with known inputs and review metric definitions before accepting new figures.
+
+## Duplicate consolidation (2026-10-13)
+
+Compared all 47 notebooks present at the start of this pass by code and Markdown source,
+ignoring execution metadata and outputs. No exact source duplicates were found.
+`notebooks/frag_notebooks/nist20_frags_stats.ipynb` repeated 17 cells from
+[the retained NIST20 notebook](../../notebooks/data_notebooks/nist20.ipynb).
+Moved its four nonempty unique cells, including their saved outputs, to the end of the
+retained notebook, then removed the redundant file. The retained notebook's original
+18 cells are unchanged. Every nonempty source cell from both notebooks is preserved;
+its supplemental cells still have the pre-existing undefined `spec_frag_stats_df` issue
+(finding 5), now at cells 20–21. No scientific calculation was repaired in this pass.
+
+The Spectraverse/MSGYM pair uses different datasets; the baseline/MBFS and MBFS/prepass
+pair compares different DAG mechanisms. Both pairs were retained. Existing condition-
+notebook deletions and the isotope-notebook rename were left untouched. Source-preservation
+checks and JSON parsing passed; no notebooks or model tests were executed.
