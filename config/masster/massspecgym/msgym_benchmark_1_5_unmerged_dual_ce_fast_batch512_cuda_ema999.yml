@@ -1,0 +1,269 @@
+# ARM ema999 -- MassSpecGym simulation challenge, weight EMA ON, 2026-09-24.
+#
+# The base run msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda (W&B 1imawkx1: val
+# cos_sim_0.01 best 0.5754 @ epoch 62, 118-127 tail 0.5695) plus ema_decay 0.999, the one lever
+# that passed on both NIST20 lineages (2026-09-24): u2_ema999 c8hh9j1b +0.0094 on unmerged
+# [M+H]+/FT, t2_ema998 49ub2p8y +0.0097 on merged, both above control at every epoch.
+# docs/plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24
+# At 194 steps/epoch, 0.999 gives a mean weight age of ~1,000 steps (~5.2 epochs), the same
+# step age as u2. Validation, best-checkpoint selection, the post-fit test and saved state_dicts
+# all use the average (fragnnet.utils.trainer_utils.ExponentialMovingAverage).
+# NOT a replay of the NIST result: both NIST wins trained at CONSTANT LR, and this recipe anneals
+# (cosine to 1% after a 1000-step warmup). Annealing also damps late-training weight noise, so
+# the two may overlap; this arm is also the first EMA x LR-decay measurement.
+# On NIST, EMA shifted the val primary-loss curve down but did not stop its post-minimum rise, so
+# expect a better model, not less overfitting.
+# upload_checkpoints is turned on (not a training key) for the offline reads; 1imawkx1 has none.
+# DATA: benchmark subset only (ms_gym_benchmark_1_5 == simulation_challenge rows, all with CE).
+# READ against 1imawkx1 at matched epoch (118-127 tail mean and best), then offline on the
+# simulation test set (9,954 spectra).
+#
+# Base header follows.
+# MASSter on MassSpecGym v1.5 (benchmark subset), forked from
+# config/masster/ma_mi_unmerged/cmf/nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml
+# (run 6ks7v8ce). Candidate enumeration, loss and batching are unchanged from that arm; the data,
+# metadata vocabularies and CE range differ (1-3 below), and on 2026-09-23 the recipe was moved
+# to the best measured NIST20 settings (4-6 below). Trained as W&B 1imawkx1 (2026-09-24).
+#
+# Measured from data/proc/ms_gym_benchmark_1_5/spec_df.pkl (2026-09-20):
+#   118,991 spectra / 16,960 molecules / 19,409 groups.
+#   Split data/split/ms_gym_benchmark_1_5: 99,306 train, 9,731 val, 9,954 test.
+#   prec_type : [M+H]+ for every row.
+#   inst_type : FT 81,313 / QTOF 37,678 (no NA, unlike ms_gym_all_1_5).
+#   frag_mode : CID for every row.
+#   ce        : ce_type "single" everywhere; ACE present on 100% of rows, NCE absent on 100%.
+#               base_dataset fills NCE from ACE (nce = ace * 500 / prec_mz), so both CE
+#               channels of the dual-CE input are populated.
+#   elements  : C H O N S Cl F P Br I B Si As Se -- all in ELEMENT_TO_VE, no "other" bucket hits.
+#   peaks     : p50 17, p90 58, p99 208, max 299 per spectrum.
+#
+# The three msgym-specific deltas from the nist20 arm:
+#
+# 1. masster_include_cmf false. Every spectrum is [M+H]+ and
+#    cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1, i.e. the CMF ion IS the CRF ion at
+#    delta_h = -1, so cmf_precursor_valid masks the whole channel. Leaving CMF on would only
+#    double num_ion_modes (masster_model.py:1210) for channels that can never be selected.
+#    [M+Na]+ and [M+Cl]- stay distinct, which is why the nist20 arm keeps CMF on.
+#
+# 2. nce_max 300 (template default 200). NCE here is derived from ACE on a small-precursor
+#    dataset, so the derived values run high: p50 50, p99 284, max 874. At 200, 3.11% of rows
+#    clamp onto one embedding row; at 300, 0.79% do. ace_max stays 300 -- only 0.01% of the raw
+#    ACE values (max 358.4) exceed it.
+#
+# 3. min_epochs/max_epochs 128/128 (was 174/290, exposure-matched to the parent's 100 epochs).
+#    drop_last is off, so an epoch is ceil(99,306 / 512) = 194 steps and 128 epochs = 24,832.
+#    The parent (562 steps/epoch, constant LR) had plateaued by ~17k steps: 0.6988 @ep20,
+#    0.6999 @ep30, 0.7033 @ep99. 128 epochs is past that on steps and on passes per molecule
+#    (12,310 train molecules here at 8.07 spectra each; 15,514 at 18.55 in nist20 ma_mi).
+#    The cosine schedule (5) needs a fixed length, so min == max.
+#
+# 4. masster_intensity_norm_placement: pre. `a1_prenorm` (q4t4udee) is the only clean
+#    single-key PASS of the 128-epoch merged screen: +0.0056 tail mean (118-127) against the
+#    0.7270 control, parameter-identical, and it halves the calibration drift.
+#    docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md
+#
+# 5. Cosine LR to 1% of peak with the template's 1000-step linear warmup, i.e. arm
+#    `d3_cosine_warmup1000` (rcfzf67p): best <=127 0.7357 against a 0.7286 control mean; d1/d2
+#    (no warmup) reached 0.7329/0.7326. n=1. lr_total_steps = 128 x 194 = 24,832; change it
+#    with max_epochs. The schedule clamps at the floor, so an overshoot is harmless.
+#    docs/findings/masster/masster_overfit_readout_2026_09_22.md
+#    4 + 5 together are UNTESTED: every NIST20 read above changed one of them alone, and a7
+#    showed attention-side gains are not additive.
+#
+# 6. The three 2026-09-20 defaults (h_transfer_bound valence, boundary_bond_encoder, the
+#    candidate feature list) are PINNED at the values c4a_base_s1 pins, so a later default flip
+#    cannot move this run. They equal today's template defaults; the architecture is unchanged.
+#
+# Measured and deliberately NOT applied: a1+a6 attention stacks (not additive), the subformula
+# target filter (a denominator effect), candidate atom dropout, wd/dropout arms, g1 encoder
+# simplification (all nulls or rejections). Boundary-block dropout was never trained, and
+# fragment-marginal selection closed null. EMA (ema_decay) passed on NIST20 after this was
+# written (2026-09-24) and is the _ema999 arm.
+#
+# frag_modes keeps HCD next to CID although msgym is 100% CID, matching
+# config/fragnnet/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
+# No frag_dp: MASSter enumerates cut masks from the molecular graph and reads no DAG files.
+wandb_name: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_ema999
+wandb_group: msgym_mass_shatter
+wandb_tags:
+- ema
+- ema_0.999
+- cuda_candidates
+- loss_batch_16
+- masster
+- massspecgym
+- ms_gym_benchmark_1_5
+- unmerged
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- dual_ce
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- no_cmf
+- prenorm
+- lr_decay
+- cosine_schedule
+- warmup
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- microbatch_512
+- effective_batch_512
+seed: 397623
+spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
+mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
+split_dp: data/split/ms_gym_benchmark_1_5
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - ORB
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+nce_max: 300
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 16
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: true
+lr_schedule_type: cosine
+lr_total_steps: 24832
+lr_min_ratio: 0.01
+lr_warmup_steps: 1000
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 128
+max_epochs: 128
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: true
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+compute_train_auxiliary_metrics: false
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+masster_intensity_norm_placement: pre
+
+# Weight EMA (see header). Template default null.
+ema_decay: 0.999

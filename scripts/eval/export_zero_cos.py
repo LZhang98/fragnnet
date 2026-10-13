@@ -72,7 +72,7 @@ def get_args() -> argparse.Namespace:
         help="Optional output of zero_cos_recoverability.py; merged if present.",
     )
     parser.add_argument("--out_dp", required=True)
-    parser.add_argument("--inst_types", nargs="+", default=["FT", "QTOF"])
+    parser.add_argument("--inst_types", nargs="+", default=["ORB", "ORB_F", "QTOF"])
     parser.add_argument(
         "--prec_types", nargs="+", default=["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
     )

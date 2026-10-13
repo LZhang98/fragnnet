@@ -1,0 +1,175 @@
+# Fragment-level competition experiment. This matches
+# fraggnn_d3_ma_mi_nist20_amolc_all_ce_perfrag_feats.yml except for the enabled
+# top-K residual transformer, experiment metadata, and CE-stratified evaluation logging.
+
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_frag_competition
+wandb_tags:
+  - frag_competition
+  - topk_fragments
+  - ce_perfrag_feats
+  - ce_mol_mlp
+  - perfrag_features
+  - retrieval
+  - nist20
+  - d4
+  - inchikey
+  - fraggnn_d3
+  - nodemlp
+  - cmf
+  - boundary_pair
+
+# Data and DAG support.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags
+
+num_depth: 4
+num_hs: 4
+frag_gnn_type: NodeMLP
+mol_hidden_size: 384
+
+frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - cmf_h_formulae_idx
+    - boundary_pair
+    - num_heavy_atoms
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+  include_cmf: True
+
+spec_params:
+  merge: False
+  nce: True
+  ace: True
+  merge_keep_ces: False
+  preprocess: True
+  prec_type_str: False
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
+  inst_type: True
+  inst_types:
+    - "ORB"
+    - "ORB_F"
+    - "QTOF"
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
+
+mol_params:
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+  preprocess: True
+# Acquisition conditioning is identical to the control. The competition head also
+# receives these embeddings directly as its spectrum-level context.
+ce_insert_type: embed_clamped
+ce_insert_location: mol,mlp
+ce_insert_merge: True
+ce_insert_size: 32
+prec_insert_location: mol
+prec_insert_size: 32
+inst_insert_location: mol
+inst_insert_size: 32
+frag_mode_insert_location: mol
+frag_mode_insert_size: 32
+frag_mode_scale: True
+ce_scale: True
+ce_scaler_hidden_dim: 64
+
+# Top-K is over fragment nodes, ranked by aggregate valid-channel logit mass. The
+# transformer emits one bounded residual shared across a fragment's valid channels.
+frag_competition: True
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
+
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+debug_overfit: False
+
+mol_dropout: 0.1
+frag_dropout: 0.1
+mlp_dropout: 0.3
+weight_decay: 0.01
+
+lr_schedule: False
+lr: 0.0004
+lr_schedule_type: cosine
+lr_warmup_steps: 5000
+lr_total_steps: 390000
+lr_min_ratio: 0.01
+lr_decay_rate: 0.95
+lr_decay_steps: 5000
+
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: max
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+  - cos_sim
+  - opt_cos_sim
+eval_mz_bin_res:
+  - 0.01
+eval_bin_sqrt: False
+compute_train_auxiliary_metrics: True
+report_metric_std: True
+log_adduct_inst_ce_metrics: True
+
+inst_type_loss_tol:
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+dynamic_batch_sampler: True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 400000
+
+group_sampler: False
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group
+
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
+activation_checkpointing: False
+compile: False
+pin_memory: True
+loss_vectorized: True
+loss_batch_size: 32

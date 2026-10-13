@@ -76,7 +76,7 @@ def test_dag_weighted_recall_uses_observed_intensity() -> None:
     wrecall = _dag_weighted_recall(
         [(20.0, 1.0), (40.0, 3.0)],
         np.array([20.001]),
-        "FT",
+        "ORB",
     )
 
     assert wrecall == pytest.approx(0.25)
@@ -90,7 +90,7 @@ def test_missing_dag_directories_leave_wrecall_unavailable(
             "spec_id": [1],
             "mol_id": [10],
             "prec_type": ["[M+H]+"],
-            "inst_type": ["FT"],
+            "inst_type": ["ORB"],
             "peaks": [[(20.0, 1.0)]],
         }
     )
@@ -111,7 +111,7 @@ def test_pdf_wrecall_is_not_reported_for_unvalidated_instrument_tolerance() -> N
     recalls = {1: {"D3": 0.02, "D4": 0.03}}
 
     assert _pdf_wrecall(1, "IT", recalls) == "wRecall D3=n/a | D4=n/a"
-    assert _pdf_wrecall(1, "FT", recalls) == "wRecall D3=0.020 | D4=0.030"
+    assert _pdf_wrecall(1, "ORB", recalls) == "wRecall D3=0.020 | D4=0.030"
 
 
 def test_pdf_spectrum_marks_and_includes_precursor_mz() -> None:
@@ -304,10 +304,10 @@ def test_uwpr_feasibility_writes_empty_scoped_result(
 
 def test_pdf_pages_group_same_molecule_adduct_and_instrument() -> None:
     rows = [
-        SimpleNamespace(spec_id=spec_id, mol_id=10, prec_type="[M+H]+", inst_type="FT")
+        SimpleNamespace(spec_id=spec_id, mol_id=10, prec_type="[M+H]+", inst_type="ORB")
         for spec_id in range(1, 15)
     ]
-    rows.append(SimpleNamespace(spec_id=20, mol_id=11, prec_type="[M+H]+", inst_type="FT"))
+    rows.append(SimpleNamespace(spec_id=20, mol_id=11, prec_type="[M+H]+", inst_type="ORB"))
 
     pages = _group_pdf_candidate_pages(rows, {3: [{"spec_id": 30}]}, {}, {})
 
@@ -325,7 +325,7 @@ def test_grouped_pdf_candidates_put_higher_ce_after_lower_ce() -> None:
             spec_id=1,
             mol_id=10,
             prec_type="[M+H]+",
-            inst_type="FT",
+            inst_type="ORB",
             nce=40.0,
             ace=np.nan,
         ),
@@ -333,7 +333,7 @@ def test_grouped_pdf_candidates_put_higher_ce_after_lower_ce() -> None:
             spec_id=2,
             mol_id=10,
             prec_type="[M+H]+",
-            inst_type="FT",
+            inst_type="ORB",
             nce=10.0,
             ace=np.nan,
         ),
@@ -341,7 +341,7 @@ def test_grouped_pdf_candidates_put_higher_ce_after_lower_ce() -> None:
             spec_id=3,
             mol_id=10,
             prec_type="[M+H]+",
-            inst_type="FT",
+            inst_type="ORB",
             nce=np.nan,
             ace=np.nan,
         ),
@@ -412,7 +412,9 @@ def test_uwpr_tiers_keep_preclassified_dag_feasible_peak(monkeypatch: pytest.Mon
         "idx_by_h_delta": [{0}],
         "dag_num_nodes": 1,
     }
-    monkeypatch.setattr(dag_oracle_scores.frag_utils, "load_frag_d", lambda *args, **kwargs: dag)
+    monkeypatch.setattr(
+        dag_oracle_scores.dag_format_utils, "load_frag_d", lambda *args, **kwargs: dag
+    )
     monkeypatch.setattr(
         dag_oracle_scores,
         "_score_all_tolerances",
@@ -424,7 +426,7 @@ def test_uwpr_tiers_keep_preclassified_dag_feasible_peak(monkeypatch: pytest.Mon
             "peaks": [(10.0, 1.0), (20.0, 1.0)],
             "prec_mz": 100.0,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "frag_mode": "HCD",
             "contam_mzs": [10.0, 20.0],
             "contaminant_only_mzs": [10.0],
@@ -460,7 +462,7 @@ def _review_row(**updates: object) -> SimpleNamespace:
         "dset_spec_id": "nist-1",
         "prec_type": "[M+H]+",
         "ion_mode": "P",
-        "inst_type": "FT",
+        "inst_type": "ORB",
         "frag_mode": "HCD",
         "ace": 10.0,
         "nce": None,
@@ -689,7 +691,7 @@ def _signal_spec_df(rows: list[dict[str, object]]) -> pd.DataFrame:
     defaults = {
         "mol_id": 10,
         "prec_type": "[M+H]+",
-        "inst_type": "FT",
+        "inst_type": "ORB",
         "frag_mode": "HCD",
         "group_id": 1,
         "ace": 10.0,
@@ -1073,7 +1075,7 @@ def test_cross_ce_pdf_highlights_siblings_that_are_review_candidates(
                     "dset_spec_id": "nist-2",
                     "ce_source": "ace",
                     "ce_value": 20.0,
-                    "inst_type": "FT",
+                    "inst_type": "ORB",
                     "prec_mz": 101.007276,
                     "peaks": rows[1].peaks,
                 }
@@ -1104,7 +1106,7 @@ def test_cross_ce_pdf_paginates_without_dropping_spectra(
             "dset_spec_id": f"nist-{spec_id}",
             "ce_source": "ace",
             "ce_value": float(spec_id),
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "prec_mz": 101.007276,
             "peaks": [(20.0 + spec_id, 1.0)],
             "n_other_ce_spectra_available": 13,

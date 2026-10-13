@@ -3,7 +3,7 @@
 import pytest
 import torch as th
 
-from fragnnet.model.fragment_competition import TopKFragmentTransformer
+from fragnnet.models.fragnnet.fragment_competition import TopKFragmentTransformer
 
 
 def _build(

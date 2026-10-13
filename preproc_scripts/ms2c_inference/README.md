@@ -242,7 +242,7 @@ python scripts/ms2c/run_ms2c_predict_val.py \
 | `--auxiliary_scores` | list | `[cos_sim, cos_hun, true_oos_prob, true_oos_e]` | Auxiliary scores to compute |
 | `--eval_mz_bin_res` | list | `[0.01]` | m/z bin resolutions for binned metrics |
 | `--custom_fp` | str | None | Custom config file path |
-| `--template_fp` | str | `./config/template.yml` | Template config file path |
+| `--template_fp` | str | `./config` | Template config directory |
 
 ---
 

@@ -76,35 +76,7 @@ case "${MODEL_CKPT}" in "" | /*) ;; *) MODEL_CKPT=${FRAGNNET_DP}/${MODEL_CKPT} ;
 case "${CUSTOM_FP}" in "" | /*) ;; *) CUSTOM_FP=${FRAGNNET_DP}/${CUSTOM_FP} ;; esac
 
 # --- inference knobs -------------------------------------------------------
-# Batching. Two mutually exclusive modes; DYNAMIC_BATCH_MAX picks between them.
-#
-# Fixed (DYNAMIC_BATCH_MAX empty or 0): BATCH_SIZE spectra per batch, whatever they cost.
-# Size-capped (DYNAMIC_BATCH_MAX set): pack spectra greedily until their combined fragment
-# DAG node count would exceed it. Backed by IterableSpecMolFragDataset, which forms batches
-# lazily while streaming, so it needs no size cache and loads each DAG exactly once.
-#
-# Why the cap is the better knob HERE specifically: the SYNCED spec_df holds 14 consecutive
-# rows per molecule and every row carries that molecule's whole DAG, so a fixed batch is
-# really "a handful of consecutive molecules, 14 times over". Its cost is set by which
-# molecules happen to land in it, and frag nodes are what inference memory scales with
-# (nodeMLP activations). Capping nodes bounds the peak directly; capping spectra only
-# bounds it on average. The cost is that the batch count -- and so the progress total --
-# is unknown until the run ends.
-#
-# A cap below a single sample's node count is safe: that sample is still predicted, as a
-# batch of one. Only set DYNAMIC_BATCH_LIMITED_BY=frag_edge for a config that materializes
-# fragment edges; on one that does not, every sample measures 0 and run_inference.py raises.
-DYNAMIC_BATCH_MAX=${DYNAMIC_BATCH_MAX:-}
-DYNAMIC_BATCH_LIMITED_BY=${DYNAMIC_BATCH_LIMITED_BY:-frag_node}
 BATCH_SIZE=${BATCH_SIZE:-16}
-if [ -n "${DYNAMIC_BATCH_MAX}" ] && [ "${DYNAMIC_BATCH_MAX}" != "0" ]; then
-    BATCH_ARGS=(--dynamic_batch_max "${DYNAMIC_BATCH_MAX}"
-                --dynamic_batch_limited_by "${DYNAMIC_BATCH_LIMITED_BY}")
-    BATCH_DESC="dynamic, max ${DYNAMIC_BATCH_MAX} ${DYNAMIC_BATCH_LIMITED_BY} per batch"
-else
-    BATCH_ARGS=(--batch_size "${BATCH_SIZE}")
-    BATCH_DESC="fixed, ${BATCH_SIZE} spectra per batch"
-fi
 # 10.0 = keep peaks above 1% of base peak (pred_ints is rescaled per spectrum to a
 # 0-1000 base peak, filtered with a strict >). Higher than run_inference.py's own 1.0
 # default: measured on NIST20 val (2,000 spectra, 9t63zils), 1.0 -> 10.0 costs
@@ -113,7 +85,7 @@ fi
 # difference between a ~3x larger export and the same score.
 # Trade-off: the export is then even further from the DAG support, so peak-coverage
 # analysis off these files is not possible - see
-# docs/findings/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
+# docs/findings/fragnnet/dominant_peak_outcome_decomposition.md ("min_peak_int correction").
 MIN_INTENSITY=${MIN_INTENSITY:-10.0}
 SAVE_FORMAT=${SAVE_FORMAT:-pkl}
 # Peaks + fragment annotation. MIN_INTENSITY prunes peaks, formulas, the joint grid and
@@ -155,13 +127,6 @@ OUTPUT_SUBSET=${OUTPUT_SUBSET:-'pred_mzs pred_ints pred_formula_probs pred_formu
 RETURN_FORMULA_STR=${RETURN_FORMULA_STR:-True}
 RETURN_CC_HASH=${RETURN_CC_HASH:-True}
 SAVE_CHUNK_SIZE=${SAVE_CHUNK_SIZE:-10000}
-# Resource tracking (GPU/CPU/memory + throughput) via W&B. Off by default so a production
-# sweep carries no extra failure mode; set WANDB_TRACK_MODE=online for a sizing run. Named
-# apart from wandb's own WANDB_MODE env var on purpose, so setting this cannot silently
-# reconfigure the checkpoint download. One run per array task, grouped by array job id.
-# Caveat: NVML does not report utilization for MIG instances, so on the h100_3g.40gb slice
-# expect the throughput and torch-side peak-memory metrics to be the usable ones.
-WANDB_TRACK_MODE=${WANDB_TRACK_MODE:-disabled}
 
 # --- io --------------------------------------------------------------------
 SRC_PROC_DP=${SRC_PROC_DP:-${FRAGNNET_DP}/data/inference/synced}
@@ -184,6 +149,7 @@ if [ -z "${MODEL_TAG}" ]; then
     fi
 fi
 OUT_DP=${OUT_DP:-/scratch/feiw/frag-gnn-data/inference_outputs/${SAVE_NAME}_${MODEL_TAG}}
+VENV_DP=${VENV_DP:-}
 
 echo SAVE_NAME: ${SAVE_NAME}
 echo FRAG_BACKEND: ${FRAG_BACKEND}
@@ -199,9 +165,8 @@ echo TASK_ID: ${TASK_ID}
 echo CHUNK_SIZE: ${CHUNK_SIZE}
 echo START_IDX: ${START_IDX}
 echo NUM_MOLS: ${NUM_MOLS}
-echo BATCHING: ${BATCH_DESC}
+echo BATCH_SIZE: ${BATCH_SIZE}
 echo SAVE_FORMAT: ${SAVE_FORMAT}
-echo WANDB_TRACK_MODE: ${WANDB_TRACK_MODE}
 echo OUTPUT_SUBSET: ${OUTPUT_SUBSET}
 echo RETURN_FORMULA_STR: ${RETURN_FORMULA_STR}
 echo RETURN_CC_HASH: ${RETURN_CC_HASH}
@@ -214,9 +179,11 @@ fi
 
 # --- array width vs frag shards --------------------------------------------
 # #SBATCH --array is a static directive, so nothing keeps it in step with the number of
-# shards preprocessing actually wrote. Count the shards on disk and report the comparison
-# here, before the venv build, so the numbers are at the top of the log rather than behind
-# a pip install.
+# shards preprocessing actually wrote. An array narrower than that leaves the tail shards
+# with no task at all: every task still succeeds and the run quietly covers only part of
+# mol_df. Check both the bounds and Slurm's task count so sparse arrays cannot pass.
+# Count the shards on disk and require one task each. Checked here, before the
+# venv build, so a misconfigured array fails in seconds rather than after the pip install.
 if [ "${FRAG_BACKEND}" = "hdf5" ]; then
     NUM_FRAG_SHARDS=${NUM_FRAG_SHARDS:-$(ls -d ${DEST_FRAG_DP}/${SAVE_NAME}/shard_* 2>/dev/null | wc -l | tr -d ' ')}
 else
@@ -228,61 +195,65 @@ if [ "${NUM_FRAG_SHARDS}" -eq 0 ]; then
     echo "       Run preproc_infer_synced_dag_arr_hdf5.sh first, or set DEST_FRAG_DP/SAVE_NAME." >&2
     exit 1
 fi
-# A narrower array is a normal way to run this (one shard at a time, a rerun of a few
-# failed tasks), so the mismatch is reported and the task continues. What it costs you:
-# shards with no task are simply not predicted, and every task still exits 0, so the run
-# can cover only part of mol_df without any failure to notice. Reconcile shard count
-# against task count yourself before treating a sweep as complete.
-if [ -n "${SLURM_ARRAY_TASK_MAX}" ] &&
+# Skipped for a deliberate partial rerun: a subset that starts above task 0 cannot be a
+# full sweep. Set PARTIAL_ARRAY=1 for a partial rerun that does start at 0.
+PARTIAL_ARRAY=${PARTIAL_ARRAY:-0}
+if [ "${PARTIAL_ARRAY}" != "1" ] && [ -n "${SLURM_ARRAY_TASK_MAX}" ] &&
+   [ "${SLURM_ARRAY_TASK_MIN:-0}" -eq 0 ] &&
    { [ $((SLURM_ARRAY_TASK_MAX + 1)) -ne "${NUM_FRAG_SHARDS}" ] ||
      [ "${SLURM_ARRAY_TASK_COUNT:-$((SLURM_ARRAY_TASK_MAX + 1))}" -ne "${NUM_FRAG_SHARDS}" ]; }; then
-    echo "NOTE: array spans ${SLURM_ARRAY_TASK_MIN:-0}-${SLURM_ARRAY_TASK_MAX} with ${SLURM_ARRAY_TASK_COUNT:-unknown} tasks," \
-         "but ${DEST_FRAG_DP}/${SAVE_NAME} holds ${NUM_FRAG_SHARDS} frag shards."
-    echo "      A full sweep is:  sbatch --array=0-$((NUM_FRAG_SHARDS - 1)) <script>"
+    echo "ERROR: array spans 0-${SLURM_ARRAY_TASK_MAX} with ${SLURM_ARRAY_TASK_COUNT:-unknown} tasks, but" >&2
+    echo "       ${DEST_FRAG_DP}/${SAVE_NAME} holds ${NUM_FRAG_SHARDS} frag shards." >&2
+    echo "       Resubmit with:  sbatch --array=0-$((NUM_FRAG_SHARDS - 1)) <script>" >&2
+    echo "       or set PARTIAL_ARRAY=1 if this subset is intentional." >&2
+    exit 1
 fi
 
 # --- env -------------------------------------------------------------------
 mkdir -p ${WORKING_DIR}
 cd ${WORKING_DIR}
 
-# Always build the venv in the job. pyarrow is deliberately absent: on fir it resolves to
-# the Alliance dummy wheel, which fails the build and takes torch down with it, and
-# nothing here needs it (--save_format pkl; parquet cannot hold the torch tensors this
-# export writes). setup.cfg is gone from the repo - pyproject.toml is the build config.
-echo `date`: building venv in ${WORKING_DIR}
-virtualenv FRAG-GNN
-source FRAG-GNN/bin/activate
-pip install --no-index --upgrade pip
-pip install --no-index \
-    torch==2.4.1 \
-    torch_geometric==2.6.1 \
-    torch_scatter==2.1.2 \
-    pandas \
-    wandb==0.21.2 \
-    tqdm \
-    scipy==1.15.2 \
-    joblib==1.3.2 \
-    matplotlib \
-    lightning==2.4.0 \
-    dgl==2.4.0 \
-    omegaconf \
-    cython==3.0.12 \
-    pyopenms==3.3.0 \
-    pandarallel==1.6.5 \
-    h5py
+if [ -n "${VENV_DP}" ] && [ -f "${VENV_DP}/bin/activate" ]; then
+    echo `date`: using prebuilt venv ${VENV_DP}
+    source ${VENV_DP}/bin/activate
+    cd ${FRAGNNET_DP}
+    WORKING_DIR=${FRAGNNET_DP}
+else
+    echo `date`: building venv in ${WORKING_DIR}
+    virtualenv FRAG-GNN
+    source FRAG-GNN/bin/activate
+    pip install --no-index --upgrade pip
+    pip install --no-index \
+        torch==2.4.1 \
+        torch_geometric==2.6.1 \
+        torch_scatter \
+        pandas \
+        pyarrow \
+        wandb \
+        tqdm \
+        scipy \
+        joblib==1.3.2 \
+        matplotlib \
+        pytorch_lightning==2.4.0 \
+        cython==3.0.12 \
+        pyopenms==3.3.0 \
+        pandarallel==1.6.5 \
+        h5py
 
-cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
-pip install pyteomics-4.7.5-py3-none-any.whl
+    cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
+    pip install pyteomics-4.7.5-py3-none-any.whl
 
-rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/preproc_scripts ${WORKING_DIR}
-rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}
-rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}
-cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
-cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/
-mkdir -p ${WORKING_DIR}/config
-cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
-pip install --no-deps -I ${WORKING_DIR}
-cd ${WORKING_DIR}
+    rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/preproc_scripts ${WORKING_DIR}
+    rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}
+    rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}
+    cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/
+    cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
+    cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/
+    mkdir -p ${WORKING_DIR}/config
+    cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
+    pip install --no-deps -I ${WORKING_DIR}
+    cd ${WORKING_DIR}
+fi
 
 # === stage this shard's DAGs ===============================================
 STAGE_DP=${SLURM_TMPDIR:-/tmp}/frag_${TASK_ID}
@@ -352,7 +323,7 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --frag_dp ${FRAG_ARG} \
     --start_mol_idx ${START_IDX} \
     --num_mols ${NUM_MOLS} \
-    "${BATCH_ARGS[@]}" \
+    --batch_size ${BATCH_SIZE} \
     --min_intensity ${MIN_INTENSITY} \
     --save_dp ${TASK_OUT_DP} \
     --save_format ${SAVE_FORMAT} \
@@ -360,8 +331,6 @@ python ${WORKING_DIR}/scripts/run_inference.py \
     --return_formula_str ${RETURN_FORMULA_STR} \
     --return_cc_hash ${RETURN_CC_HASH} \
     --save_chunk_size ${SAVE_CHUNK_SIZE} \
-    --wandb_mode ${WANDB_TRACK_MODE} \
-    --wandb_run_name ${SAVE_NAME}_shard_${TASK_ID} \
     "${CUSTOM_ARGS[@]}"
 
 echo `date`: Job ${SLURM_JOB_ID} task ${TASK_ID} finished running

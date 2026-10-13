@@ -19,7 +19,7 @@ elsewhere in eval:
   - cos_hun_opt / jss_hun_opt: fixed 10 ppm (ratio 1e-5), floor 200 Da (default eval tolerance).
   - cos_hun_inst_tol_opt / jss_hun_inst_tol_opt: per-instrument tolerance -- FT 10 ppm/200 Da,
     QTOF 20 ppm/750 Da, other instrument types fall back to the 10 ppm default (matches
-    inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
+    inst_type_loss_tol in config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
   - cos_hun_0p01da_opt / jss_hun_0p01da_opt: fixed absolute 0.01 Da tolerance.
 
 Every spectrum is scored under four denoise filter tiers, reported stacked so the marginal effect
@@ -63,10 +63,10 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import parallel_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper, jss_hun_helper
+from fragnnet.utils.spec_similarity import calculate_match_mzs, cos_hun_helper, jss_hun_helper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -75,10 +75,11 @@ TOLERANCE = 1.0e-5  # relative ratio (== 10 ppm), matches default loss_tolerance
 TOLERANCE_MIN_MZ = 200.0  # matches config/template.yml loss_tolerance_min_mz
 LOG_MIN = 1.0e-9  # matches config/template.yml log_min
 # Per-instrument tolerance override, matches inst_type_loss_tol in
-# config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
+# config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
 # listed here (IT, QQQ, Other, ...) fall back to the global TOLERANCE/TOLERANCE_MIN_MZ.
 INST_TYPE_LOSS_TOL = {
-    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "ORB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "ORB_F": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da
 }
 ABS_TOLERANCE_DA = 0.01  # fixed absolute Da tolerance, reproduces the cos_sim_0.01 convention
@@ -185,7 +186,7 @@ def _dag_ion_mzs(
 ) -> th.Tensor:
     """Flatten a DAG's neutral fragment masses into candidate ion-form m/z values.
 
-    Mirrors the CMF/std union built in frag_utils.compute_frag_peak_stats: a true peak
+    Mirrors the CMF/std union built in dag.stats.compute_frag_peak_stats: a true peak
     counts as DAG-explainable if it matches either the charge-migration-fragment (CMF)
     or the direct-charge-retention (std) ion-mass convention for this precursor type.
 
@@ -403,7 +404,7 @@ def _process_mol_group(
 ) -> list[dict]:
     """Load one molecule's DAG and score every one of its spectra against it."""
     try:
-        dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+        dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     except FileNotFoundError:
         dag_d = None  # molecule has no DAG on disk (folder backend raises rather than None)
     if dag_d is None:
@@ -498,7 +499,7 @@ def score_dag(
     remove_prec_peak: bool = False,
     max_h_transfer: int | None = None,
     include_cmf: bool = True,
-    n_jobs: int = data_utils.JOBLIB_N_JOBS,
+    n_jobs: int = parallel_utils.JOBLIB_N_JOBS,
 ) -> pd.DataFrame:
     """Compute oracle cos_hun/jss_hun for every spectrum in spec_df against one DAG set.
 
@@ -536,7 +537,7 @@ def score_dag(
         len(spec_df),
         frag_dp,
     )
-    per_mol_results = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=n_jobs)
+    per_mol_results = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=n_jobs)
 
     n_missing_dag = sum(1 for r in per_mol_results if len(r) == 0)
     if n_missing_dag > 0:
@@ -678,7 +679,7 @@ def main() -> None:
         help="Randomly subsample this many molecules for a quick check.",
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument(
         "--out_fp",
         default=None,

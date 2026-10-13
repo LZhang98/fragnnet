@@ -1,6 +1,6 @@
 # Development and experiment workflow
 
-> **Status:** GUIDE · **Updated:** 2026-09-07
+> **Status:** GUIDE · **Updated:** 2026-10-06
 
 Adapted from the [Agentic Research Workflow](https://github.com/7FeiW/Incomplete_guide/blob/main/docs/15_Agentic_Workflow.md).
 Read the [shared rules](../rules/engineering.md) for engineering, environment, compatibility,
@@ -8,7 +8,8 @@ and Git constraints. Existing [guides](../guides/) remain the runbooks for speci
 
 ## 1. Orient and define
 
-Read [project state](../project-state.md), the relevant plan and findings, and current code.
+Read [project state](../project-state.md), the relevant [workstream hub](../workstreams/), its
+plans and findings, and current code.
 Inspect `git status --short` and the relevant `git diff`. Treat local memories and transcripts
 as hints. Report stale assumptions; distinguish evidence, hypotheses, and unresolved questions.
 State the objective, scope, compatibility constraints, and observable acceptance checks.
@@ -17,7 +18,7 @@ Resolve ambiguous scientific choices before implementing dependent behavior.
 ## 2. Plan and implement
 
 Use a brief plan for multi-step work. For work spanning sessions, update the existing relevant
-file under `docs/plans/`, or create a bounded task record and link it from project state.
+file under `docs/plans/`, or create a bounded task record and link it from its workstream hub.
 Use these fields (adapt existing plans without wholesale reformatting):
 
 - Status and update date.
@@ -81,8 +82,9 @@ their documented stores; include accessible identities and links in the record.
 
 At meaningful checkpoints, update the plan with observed results. Put supported durable
 conclusions and negative results in `docs/findings/`; preserve evidence and uncertainty.
-Update the current-state index with the next action and remove completed tasks from its active
-list. Keep useful closed plans and their status banners. Do not copy transcripts into docs.
+Update the workstream hub's "Where it stands" and "Open threads", then **replace** that
+workstream's block in [project state](../project-state.md) (no dated entries there; it stays
+under about 200 lines). Keep useful closed plans and their status banners. Do not copy transcripts into docs.
 
 Report what changed, checks actually run and their outcomes, remaining limitations, and artifact
 locations. Leave Git staging, history, and branch state to the user under the shared rules.

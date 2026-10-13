@@ -1,4 +1,4 @@
-"""Tests for scripts/debug/debug_compare_mbfs_dags.py helpers."""
+"""Tests for scripts/debug/dag/debug_compare_mbfs_dags.py helpers."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from pathlib import Path
 import torch as th
 from torch_geometric.data import Data
 
-from fragnnet.utils import frag_utils
+from fragnnet.utils import formula_utils
 
 
 def load_module():
     repo_root = Path(__file__).resolve().parent.parent
-    script_path = repo_root / "scripts" / "debug" / "debug_compare_mbfs_dags.py"
+    script_path = repo_root / "scripts" / "debug" / "dag" / "debug_compare_mbfs_dags.py"
     spec = importlib.util.spec_from_file_location("debug_compare_mbfs_dags", str(script_path))
     if spec is None or spec.loader is None:
         raise FileNotFoundError(f"Unable to load module spec from {script_path}")
@@ -23,11 +23,11 @@ def load_module():
 
 
 def _make_dag(mask_rows: list[list[int]], edge_pairs: list[list[int]], formulas: dict[int, str]) -> dict:
-    padded = th.zeros((len(mask_rows), frag_utils.MASK_SIZE), dtype=th.bool)
+    padded = th.zeros((len(mask_rows), formula_utils.MASK_SIZE), dtype=th.bool)
     for idx, row in enumerate(mask_rows):
         padded[idx, : len(row)] = th.tensor(row, dtype=th.bool)
 
-    cc_long = frag_utils.th_mask_to_long(padded).to(th.int64)
+    cc_long = formula_utils.th_mask_to_long(padded).to(th.int64)
     node_feats = th.cat(
         [
             th.zeros((len(mask_rows), 1), dtype=th.int64),
@@ -43,7 +43,7 @@ def _make_dag(mask_rows: list[list[int]], edge_pairs: list[list[int]], formulas:
     )
     edge_attr = th.zeros((edge_index.shape[1], 1), dtype=th.int64)
     dag = Data(x=node_feats, edge_index=edge_index, edge_attr=edge_attr)
-    dag.node_feat_idxs = th.tensor([[0, 1, 1 + frag_utils.MASK_SIZE // 64, 2 + frag_utils.MASK_SIZE // 64]])
+    dag.node_feat_idxs = th.tensor([[0, 1, 1 + formula_utils.MASK_SIZE // 64, 2 + formula_utils.MASK_SIZE // 64]])
     dag.edge_feat_idxs = th.tensor([[0, 1]])
 
     return {

@@ -76,13 +76,13 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.feat_utils import get_node_feats
+from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import (  # noqa: E402
@@ -269,9 +269,9 @@ def _process_mol_group(
     Returns a dict of running sums for both brackets plus coverage counts, or None if the
     molecule's DAG explains no competable parent in any spectrum.
     """
-    import fragnnet.utils.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]
@@ -461,7 +461,7 @@ def main() -> None:
     parser.add_argument("--limit_mols", type=int, default=None, help="Subsample this many mols.")
     parser.add_argument("--max_h_transfer", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-mol accumulators.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -485,7 +485,7 @@ def main() -> None:
         max_h_transfer=args.max_h_transfer,
     )
     log.info("Processing %d mols (%d spectra)", len(mol_inputs), len(spec_df))
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     rows = [r for r in per_mol if r is not None]
     if not rows:

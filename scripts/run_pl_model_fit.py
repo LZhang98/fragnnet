@@ -1,6 +1,8 @@
 import argparse
+import logging
+import os
 
-from fragnnet.runner import init_run
+from fragnnet.runner import run_training
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -8,7 +10,7 @@ if __name__ == "__main__":
         "-t",
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config",
         help="path to template config file",
     )
     parser.add_argument("-c", "--custom_fp", type=str, required=False)
@@ -29,4 +31,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    model = init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, args.override)
+    # Must be set before the CUDA allocator initialises (first tensor.cuda() call).
+    # setdefault lets a SLURM-level export override this if needed.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
+    model = run_training(
+        args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, args.override
+    )

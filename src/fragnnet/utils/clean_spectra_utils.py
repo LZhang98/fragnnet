@@ -1,20 +1,19 @@
 """Merge nearby spectrum peaks and filter them by molecular subformulas."""
 
-import argparse
-import json
 import logging
+import math
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils.data_utils import ELEMENT_TO_MASS, VALID_ELEMENTS
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
+    ELEMENT_TO_MASS,
     PREC_TYPE_TO_CMF_COMP_DIFF,
     PREC_TYPE_TO_COMP_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
+    VALID_ELEMENTS,
     parse_formula,
 )
 
@@ -32,15 +31,11 @@ PRECURSOR_TYPE_ALIASES = {
 RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
 
 INSTRUMENT_TOLERANCES = {
-    "FT": {"relative": 1.0e-5, "min_mz": 200.0},
+    "ORB": {"relative": 1.0e-5, "min_mz": 200.0},
+    "ORB_F": {"relative": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
 }
 MERGE_METHODS = ("common_overlap", "naive_centroid")
-
-
-def ppm_error(observed_mz: float, theoretical_mz: float) -> float:
-    """Return the absolute mass error in parts per million."""
-    return abs(observed_mz - theoretical_mz) / theoretical_mz * 1e6
 
 
 def merge_peaks(
@@ -174,14 +169,6 @@ def _budget_ion_masses(neutral_counts: dict[str, int], comp_diff, charge: int) -
     return ion_masses[ion_masses > 0]
 
 
-def _apply_comp_diff(element_counts: dict[str, int], comp_diff) -> dict:
-    """Return the ion element counts for one adduct delta applied to a neutral formula."""
-    return {
-        element: element_counts.get(element, 0) + comp_diff.get(element, 0)
-        for element in set(element_counts) | set(comp_diff)
-    }
-
-
 def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
     """Return the adduct deltas whose ions bound what a fragment of this precursor can be.
 
@@ -225,8 +212,8 @@ def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
     return budgets
 
 
-@lru_cache(maxsize=2)
-def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+def _validate_formula_and_precursor(formula: str, precursor_type: str) -> tuple[dict, str]:
+    """Return the neutral element counts and the normalized precursor type, or raise."""
     normalized_precursor_type = PRECURSOR_TYPE_ALIASES.get(precursor_type, precursor_type)
     if normalized_precursor_type not in PREC_TYPE_TO_MASS_DIFF:
         supported_types = sorted(set(PREC_TYPE_TO_MASS_DIFF) | set(PRECURSOR_TYPE_ALIASES))
@@ -239,7 +226,14 @@ def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
     unsupported_elements = set(element_counts) - set(VALID_ELEMENTS)
     if unsupported_elements:
         raise ValueError(f"Unsupported formula elements: {sorted(unsupported_elements)}")
+    return element_counts, normalized_precursor_type
 
+
+@lru_cache(maxsize=2)
+def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
     charge = _precursor_ion_charge(normalized_precursor_type)
     ion_masses = np.concatenate(
         [
@@ -256,6 +250,7 @@ def filter_subformula_peaks(
     precursor_type: str,
     tolerance_ppm: float,
     tolerance_min_mz: float = 0.0,
+    tolerance_da: float | None = None,
 ) -> list[tuple[float, float]]:
     """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
 
@@ -265,6 +260,9 @@ def filter_subformula_peaks(
     """
     if tolerance_ppm <= 0:
         raise ValueError("tolerance_ppm must be positive")
+
+    if tolerance_da is not None and tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
 
     candidate_masses = _subformula_masses(formula, precursor_type)
     if candidate_masses.size == 0:
@@ -278,11 +276,206 @@ def filter_subformula_peaks(
         if any(
             0 <= idx < len(candidate_masses)
             and abs(mz - float(candidate_masses[idx]))
-            <= tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
+            <= (
+                tolerance_da
+                if tolerance_da is not None
+                else tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
+            )
             for idx in candidate_idxs
         ):
             filtered.append((float(peak[0]), float(peak[1])))
     return filtered
+
+
+def filter_above_precursor_peaks(
+    peaks: list[tuple[float, float]],
+    prec_mz: float,
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Drop peaks above the precursor m/z.
+
+    Fragmentation cannot place an analyte ion above its own precursor, so everything beyond
+    the cutoff is co-isolation, background, a multiply-charged species, or the precursor's own
+    isotopologue ladder. All four are outside the support of a monoisotopic candidate set, and
+    keeping them means grading the model on intensity it structurally cannot produce.
+
+    The cutoff is ``prec_mz`` widened by one matching tolerance, which is the same rule
+    ``scripts/eval/dag_oracle_scores.py`` applies for its ``1_above_prec`` tier, so a cleaned
+    target and the oracle ceilings quoted against it are finally measured on the same peaks.
+
+    A spectrum with no usable precursor m/z is returned unchanged rather than emptied.
+
+    Args:
+        peaks: ``(m/z, intensity)`` pairs.
+        prec_mz: Precursor m/z; NaN or nonpositive leaves the spectrum untouched.
+        tolerance_ppm: Cutoff half-width in ppm, applied at the precursor m/z.
+        tolerance_min_mz: Divisor floor, so low-mass precursors get an absolute floor.
+
+    Returns:
+        The peaks at or below the cutoff, in input order.
+    """
+    if tolerance_ppm <= 0:
+        raise ValueError("tolerance_ppm must be positive")
+    if prec_mz is None or not math.isfinite(prec_mz) or prec_mz <= 0.0:
+        return [(float(peak[0]), float(peak[1])) for peak in peaks]
+
+    cutoff = prec_mz + tolerance_ppm * 1e-6 * max(prec_mz, tolerance_min_mz)
+    return [(float(peak[0]), float(peak[1])) for peak in peaks if float(peak[0]) <= cutoff]
+
+
+def _budget_ion_candidates(
+    neutral_counts: dict[str, int],
+    comp_diff,
+    charge: int,
+    mz: float,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Enumerate one budget's ion compositions whose mass is within ``tolerance_da`` of ``mz``.
+
+    This is the walk :func:`_budget_ion_masses` takes - a molecular part bounded below by what the
+    adduct delta removes and above by the precursor, then the carrier atoms the delta adds, with
+    the nonnegative-RDBE test on the molecular part - with two differences. It is pruned by mass at
+    every element instead of being materialized in full, so cost scales with how many compositions
+    land in the window rather than with the size of the grid; and it keeps the composition, which
+    is what an isotope ratio needs and a mass alone cannot give.
+
+    Args:
+        neutral_counts: Element counts of the neutral precursor molecule.
+        comp_diff: One adduct delta from :func:`_precursor_ion_budgets`.
+        charge: Precursor ion charge, used for the electron correction.
+        mz: Observed ion m/z to decompose.
+        tolerance_da: Absolute half-width of the mass window.
+
+    Returns:
+        Ion element counts, zero counts dropped. Empty when the budget cannot reach the window.
+    """
+    required_counts = {
+        element: -count_change for element, count_change in comp_diff.items() if count_change < 0
+    }
+    if any(neutral_counts.get(element, 0) < count for element, count in required_counts.items()):
+        return []
+
+    # 1. Lay out the walk: molecular atoms first, then the carrier atoms the delta adds.
+    slots: list[tuple[str, int, int, bool]] = []
+    for element, max_count in neutral_counts.items():
+        min_count = required_counts.get(element, 0)
+        if min_count > max_count:
+            return []
+        slots.append((element, min_count, max_count, True))
+    for element, count in comp_diff.items():
+        if count > 0:
+            slots.append((element, 0, count, False))
+    if not slots:
+        return []
+    # Heaviest element first: the widest mass steps prune the most.
+    slots.sort(key=lambda slot: -ELEMENT_TO_MASS[slot[0]])
+
+    # 2. Suffix mass bounds drive the pruning; the delta's removal is a constant mass shift.
+    n_slots = len(slots)
+    suffix_min = [0.0] * (n_slots + 1)
+    suffix_max = [0.0] * (n_slots + 1)
+    for idx in range(n_slots - 1, -1, -1):
+        element, min_count, max_count, _ = slots[idx]
+        suffix_min[idx] = suffix_min[idx + 1] + min_count * ELEMENT_TO_MASS[element]
+        suffix_max[idx] = suffix_max[idx + 1] + max_count * ELEMENT_TO_MASS[element]
+    removed_mass = sum(
+        count * ELEMENT_TO_MASS[element] for element, count in comp_diff.items() if count < 0
+    )
+    target = mz + charge * ELECTRON_MASS - removed_mass
+
+    # 3. Walk the slots, keeping only counts that can still reach the window.
+    results: list[dict[str, int]] = []
+    counts = [0] * n_slots
+
+    def visit_leaf() -> None:
+        rdbe_twice = 2.0 + sum(
+            counts[idx] * RDBE_COEFFICIENTS.get(slots[idx][0], 0)
+            for idx in range(n_slots)
+            if slots[idx][3]
+        )
+        if rdbe_twice < 0:
+            return
+        ion_counts: dict[str, int] = {}
+        for idx, (element, _, _, is_molecular) in enumerate(slots):
+            count = counts[idx]
+            if is_molecular:
+                count -= required_counts.get(element, 0)
+            if count:
+                ion_counts[element] = ion_counts.get(element, 0) + count
+        if not ion_counts:
+            return
+        if sum(count * ELEMENT_TO_MASS[element] for element, count in ion_counts.items()) <= 0:
+            return
+        results.append(ion_counts)
+
+    def walk(idx: int, assigned: float) -> None:
+        if idx == n_slots:
+            if abs(assigned - target) <= tolerance_da:
+                visit_leaf()
+            return
+        element, min_count, max_count, _ = slots[idx]
+        element_mass = ELEMENT_TO_MASS[element]
+        lowest = (target - tolerance_da - assigned - suffix_max[idx + 1]) / element_mass
+        highest = (target + tolerance_da - assigned - suffix_min[idx + 1]) / element_mass
+        low = max(min_count, math.ceil(lowest - 1e-9))
+        high = min(max_count, math.floor(highest + 1e-9))
+        for count in range(low, high + 1):
+            counts[idx] = count
+            walk(idx + 1, assigned + count * element_mass)
+        counts[idx] = min_count
+
+    walk(0, 0.0)
+    return results
+
+
+def subformula_candidates(
+    mz: float,
+    formula: str,
+    precursor_type: str,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Return the precursor-bounded ion compositions that explain ``mz``.
+
+    Same feasibility rule as :func:`filter_subformula_peaks` - every charge-migration budget, the
+    nonnegative-RDBE test on the neutral part, the electron correction - so a peak this returns
+    candidates for is exactly a peak that filter keeps. The difference is what comes back: the
+    compositions themselves, which an isotope-ratio calculation needs and a DAG is one other way
+    to get.
+
+    Args:
+        mz: Observed ion m/z to decompose.
+        formula: Neutral molecular formula of the precursor.
+        precursor_type: Adduct string, e.g. ``"[M+H]+"``.
+        tolerance_da: Absolute half-width of the mass window, in Da.
+
+    Returns:
+        Distinct ion element counts within the window, in no particular order. Empty when the
+        peak has no feasible subformula.
+
+    Raises:
+        ValueError: If ``tolerance_da`` is not positive, the precursor type is unsupported, or
+            the formula contains an unsupported element.
+    """
+    if tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
+    charge = _precursor_ion_charge(normalized_precursor_type)
+
+    seen: set[tuple[tuple[str, int], ...]] = set()
+    candidates: list[dict[str, int]] = []
+    for comp_diff in _precursor_ion_budgets(normalized_precursor_type):
+        for ion_counts in _budget_ion_candidates(
+            element_counts, comp_diff, charge, mz, tolerance_da
+        ):
+            key = tuple(sorted(ion_counts.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(ion_counts)
+    return candidates
 
 
 def summarize_spectra(spec_df: pd.DataFrame) -> dict[str, int | float]:
@@ -388,73 +581,6 @@ def summarize_retention_by_columns(
     return summaries
 
 
-def select_precursor_types(
-    spec_df: pd.DataFrame,
-    precursor_types: list[str] | None,
-) -> pd.DataFrame:
-    """Select requested precursor types without changing spectrum identifiers."""
-    if precursor_types is None:
-        return spec_df
-    if "prec_type" not in spec_df:
-        raise ValueError("spec_df must contain prec_type when --precursor-types is used")
-    selected_df = spec_df[spec_df["prec_type"].isin(precursor_types)].copy()
-    if selected_df.empty:
-        raise ValueError(f"No spectra found for precursor types: {precursor_types}")
-    return selected_df.reset_index(drop=True)
-
-
-def select_instrument_types(
-    spec_df: pd.DataFrame,
-    instrument_types: list[str] | None,
-) -> pd.DataFrame:
-    """Select requested instrument types without changing spectrum identifiers."""
-    if instrument_types is None:
-        return spec_df
-    if "inst_type" not in spec_df:
-        raise ValueError("spec_df must contain inst_type when --instrument-types is used")
-    selected_df = spec_df[spec_df["inst_type"].isin(instrument_types)].copy()
-    if selected_df.empty:
-        raise ValueError(f"No spectra found for instrument types: {instrument_types}")
-    return selected_df.reset_index(drop=True)
-
-
-def select_dsets(
-    spec_df: pd.DataFrame,
-    dsets: list[str] | None,
-) -> pd.DataFrame:
-    """Select requested source datasets without changing spectrum identifiers."""
-    if dsets is None:
-        return spec_df
-    if "dset" not in spec_df:
-        raise ValueError("spec_df must contain dset when --dsets is used")
-    selected_df = spec_df[spec_df["dset"].isin(dsets)].copy()
-    if selected_df.empty:
-        raise ValueError(f"No spectra found for datasets: {dsets}")
-    return selected_df.reset_index(drop=True)
-
-
-def select_supported_formula_spectra(
-    spec_df: pd.DataFrame,
-    mol_df: pd.DataFrame,
-) -> tuple[pd.DataFrame, dict[str, int | list[str]]]:
-    """Remove spectra whose molecular formulas contain unsupported RDBE elements."""
-    formula_by_mol_id = mol_df.set_index("mol_id")["formula"]
-    relevant_formulas = formula_by_mol_id[formula_by_mol_id.index.isin(spec_df["mol_id"])]
-    unsupported_by_mol_id = relevant_formulas.map(
-        lambda formula: sorted(set(parse_formula(formula)) - set(VALID_ELEMENTS))
-    )
-    unsupported_by_mol_id = unsupported_by_mol_id[unsupported_by_mol_id.apply(bool)]
-    unsupported_mask = spec_df["mol_id"].isin(unsupported_by_mol_id.index)
-    summary = {
-        "excluded_spectra": int(unsupported_mask.sum()),
-        "excluded_molecules": int(unsupported_by_mol_id.size),
-        "unsupported_elements": sorted(
-            {element for elements in unsupported_by_mol_id for element in elements}
-        ),
-    }
-    return spec_df[~unsupported_mask].reset_index(drop=True), summary
-
-
 def clean_spectra(
     spec_df: pd.DataFrame,
     mol_df: pd.DataFrame,
@@ -466,6 +592,10 @@ def clean_spectra(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
 ) -> pd.DataFrame:
     """Apply the selected per-spectrum cleanup operations."""
     cleaned_df, _ = clean_spectra_with_stats(
@@ -479,6 +609,10 @@ def clean_spectra(
         use_instrument_tolerance,
         use_merge_instrument_tolerance,
         merge_method,
+        filter_above_precursor,
+        above_precursor_ppm,
+        above_precursor_use_instrument_tolerance,
+        subformula_tolerance_da,
     )
     return cleaned_df
 
@@ -494,8 +628,16 @@ def clean_spectra_with_stats(
     use_instrument_tolerance: bool = False,
     use_merge_instrument_tolerance: bool = False,
     merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Apply cleanup and return stage-level and retention statistics."""
+    if subformula_tolerance_da is not None and subformula_tolerance_da <= 0:
+        raise ValueError("subformula_tolerance_da must be positive")
+    if subformula_tolerance_da is not None and use_instrument_tolerance:
+        raise ValueError("Absolute and instrument subformula tolerances are mutually exclusive")
     if merge_method is None:
         merge_method = (
             "common_overlap" if use_merge_instrument_tolerance else "naive_centroid"
@@ -507,8 +649,12 @@ def clean_spectra_with_stats(
     required_spec_columns = {"peaks"}
     if filter_by_subformula:
         required_spec_columns.update({"mol_id", "prec_type"})
-    if (merge_peak_signals and use_merge_instrument_tolerance) or (
-        filter_by_subformula and use_instrument_tolerance
+    if filter_above_precursor:
+        required_spec_columns.add("prec_mz")
+    if (
+        (merge_peak_signals and use_merge_instrument_tolerance)
+        or (filter_by_subformula and use_instrument_tolerance)
+        or (filter_above_precursor and above_precursor_use_instrument_tolerance)
     ):
         required_spec_columns.add("inst_type")
     missing_spec_columns = required_spec_columns - set(spec_df.columns)
@@ -525,7 +671,11 @@ def clean_spectra_with_stats(
             "merge_method": merge_method if merge_peak_signals else None,
             "filter_subformula_peaks": filter_by_subformula,
             "subformula_ppm": subformula_ppm,
+            "subformula_tolerance_da": subformula_tolerance_da,
             "subformula_instrument_tolerance": use_instrument_tolerance,
+            "filter_above_precursor_peaks": filter_above_precursor,
+            "above_precursor_ppm": above_precursor_ppm,
+            "above_precursor_instrument_tolerance": above_precursor_use_instrument_tolerance,
             "drop_empty_spectra": drop_empty_spectra,
         },
         "input": summarize_spectra(spec_df),
@@ -589,7 +739,49 @@ def clean_spectra_with_stats(
                     summarize_retention_by_columns(before_merge, result, ["prec_type", "inst_type"])
                 )
 
-    # 3. Retain only peaks explained by a feasible molecular subformula.
+    # 3. Drop everything above the precursor m/z.
+    if filter_above_precursor:
+        before_above_precursor_filter = result.copy()
+        if above_precursor_use_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No above-precursor instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            trimmed_peaks = (
+                filter_above_precursor_peaks(
+                    peaks,
+                    precursor_mz,
+                    INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
+                    INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, precursor_mz, instrument_type in zip(
+                    result["peaks"], result["prec_mz"], result["inst_type"], strict=True
+                )
+            )
+        else:
+            trimmed_peaks = (
+                filter_above_precursor_peaks(peaks, precursor_mz, above_precursor_ppm)
+                for peaks, precursor_mz in zip(
+                    result["peaks"], result["prec_mz"], strict=True
+                )
+            )
+        result.loc[:, "peaks"] = pd.Series(trimmed_peaks, index=result.index, dtype=object)
+        stats["after_above_precursor_filter"] = summarize_spectra(result)
+        stats["above_precursor_retention"] = summarize_retention(
+            before_above_precursor_filter, result
+        )
+        if "prec_type" in result:
+            stats["above_precursor_retention_by_prec_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "prec_type"
+            )
+        if "inst_type" in result:
+            stats["above_precursor_retention_by_inst_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "inst_type"
+            )
+
+    # 4. Retain only peaks explained by a feasible molecular subformula.
     if filter_by_subformula:
         before_subformula_filter = result.copy()
         if use_instrument_tolerance:
@@ -617,7 +809,13 @@ def clean_spectra_with_stats(
             )
         else:
             filtered_peaks = (
-                filter_subformula_peaks(peaks, formula, precursor_type, subformula_ppm)
+                filter_subformula_peaks(
+                    peaks,
+                    formula,
+                    precursor_type,
+                    subformula_ppm,
+                    tolerance_da=subformula_tolerance_da,
+                )
                 for peaks, formula, precursor_type in zip(
                     result["peaks"], formulas, result["prec_type"], strict=True
                 )
@@ -643,145 +841,3 @@ def clean_spectra_with_stats(
     result = result.reset_index(drop=True)
     stats["output"] = summarize_spectra(result)
     return result, stats
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spec-fp", type=Path, required=True, help="Input spec_df.pkl")
-    parser.add_argument(
-        "--mol-fp",
-        type=Path,
-        help="Input mol_df.pkl; required with --filter-subformula-peaks",
-    )
-    parser.add_argument("--output-fp", type=Path, help="Output pickle path")
-    parser.add_argument(
-        "--stats-fp",
-        type=Path,
-        help="JSON statistics path; defaults to <output-fp stem>.stats.json",
-    )
-    parser.add_argument(
-        "--precursor-types",
-        nargs="+",
-        help=(
-            'Only process these precursor types, e.g. "[M+H]+" "[M-H]-" '
-            '"[M+Na]+" "[M+Cl]-"'
-        ),
-    )
-    parser.add_argument(
-        "--instrument-types",
-        nargs="+",
-        help="Only process these instrument types, e.g. FT QTOF",
-    )
-    parser.add_argument(
-        "--dsets",
-        nargs="+",
-        help="Only process these source datasets, e.g. nist20_hr",
-    )
-    parser.add_argument(
-        "--stats-only",
-        action="store_true",
-        help="Calculate statistics without writing a cleaned spectrum pickle",
-    )
-    parser.add_argument(
-        "--skip-unsupported-formulas",
-        action="store_true",
-        help="Exclude and report formulas containing elements unsupported by the RDBE table",
-    )
-    parser.add_argument(
-        "--merge-peaks",
-        action="store_true",
-        help="Merge peaks using an intensity-weighted centroid",
-    )
-    parser.add_argument("--merge-ppm", type=float, default=20.0)
-    parser.add_argument(
-        "--merge-inst-tol",
-        action="store_true",
-        help="Merge peaks using FraGNNet FT/QTOF tolerances instead of --merge-ppm",
-    )
-    parser.add_argument(
-        "--merge-method",
-        choices=MERGE_METHODS,
-        default=None,
-        help=(
-            "Peak grouping rule. Defaults to naive_centroid with --merge-ppm and "
-            "common_overlap "
-            "with --merge-inst-tol"
-        ),
-    )
-    parser.add_argument(
-        "--filter-subformula-peaks",
-        action="store_true",
-        help="Keep only peaks matching precursor-compatible molecular subformulas",
-    )
-    parser.add_argument("--subformula-ppm", type=float, default=5.0)
-    parser.add_argument(
-        "--subformula-inst-tol",
-        action="store_true",
-        help="Use FraGNNet FT/QTOF tolerance and m/z floors instead of --subformula-ppm",
-    )
-    parser.add_argument(
-        "--drop-empty-spectra",
-        action="store_true",
-        help="Drop spectra with no peaks after the selected operations",
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    if not args.merge_peaks and not args.filter_subformula_peaks:
-        raise ValueError("Enable --merge-peaks, --filter-subformula-peaks, or both")
-    if args.filter_subformula_peaks and args.mol_fp is None:
-        raise ValueError("--mol-fp is required with --filter-subformula-peaks")
-    if not args.stats_only and args.output_fp is None:
-        raise ValueError("--output-fp is required unless --stats-only is used")
-    if args.stats_only and args.stats_fp is None:
-        raise ValueError("--stats-fp is required with --stats-only")
-    if args.output_fp is not None and args.output_fp.resolve() == args.spec_fp.resolve():
-        raise ValueError("--output-fp must differ from --spec-fp")
-
-    source_spec_df = pd.read_pickle(args.spec_fp)
-    spec_df = select_dsets(source_spec_df, args.dsets)
-    spec_df = select_precursor_types(spec_df, args.precursor_types)
-    spec_df = select_instrument_types(spec_df, args.instrument_types)
-    mol_df = pd.read_pickle(args.mol_fp) if args.mol_fp is not None else pd.DataFrame()
-    selected_spectra = len(spec_df)
-    unsupported_summary = None
-    if args.filter_subformula_peaks and args.skip_unsupported_formulas:
-        spec_df, unsupported_summary = select_supported_formula_spectra(spec_df, mol_df)
-    cleaned_df, stats = clean_spectra_with_stats(
-        spec_df=spec_df,
-        mol_df=mol_df,
-        merge_peak_signals=args.merge_peaks,
-        merge_ppm=args.merge_ppm,
-        filter_by_subformula=args.filter_subformula_peaks,
-        subformula_ppm=args.subformula_ppm,
-        drop_empty_spectra=args.drop_empty_spectra,
-        use_instrument_tolerance=args.subformula_inst_tol,
-        use_merge_instrument_tolerance=args.merge_inst_tol,
-        merge_method=args.merge_method,
-    )
-    stats["selection"] = {
-        "precursor_types": args.precursor_types,
-        "instrument_types": args.instrument_types,
-        "dsets": args.dsets,
-        "source_spectra": len(source_spec_df),
-        "selected_spectra": selected_spectra,
-        "processed_spectra": len(spec_df),
-        "unsupported_formula_exclusions": unsupported_summary,
-    }
-
-    if not args.stats_only:
-        args.output_fp.parent.mkdir(parents=True, exist_ok=True)
-        cleaned_df.to_pickle(args.output_fp)
-        logger.info("Saved %d spectra to %s", len(cleaned_df), args.output_fp)
-    stats_fp = args.stats_fp or args.output_fp.with_suffix(".stats.json")
-    stats_fp.parent.mkdir(parents=True, exist_ok=True)
-    stats_fp.write_text(json.dumps(stats, indent=2) + "\n")
-    logger.info("Saved cleanup statistics to %s", stats_fp)
-
-
-if __name__ == "__main__":
-    main()

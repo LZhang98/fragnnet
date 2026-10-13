@@ -1,8 +1,10 @@
 # Fine-tuning FraGNNet
 
-> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-04-21
+> **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
-> How to fine-tune a pretrained checkpoint.
+> How to fine-tune a pretrained checkpoint. The tracked example is `config/fragnnet/nps_pcdl_nist23_ft/`,
+> which fine-tunes from a FraGNNet checkpoint. Fine-tuning from MCES-pretrained weights did not
+> help, and MCES pretraining was retired on 2026-10-12 with its configs.
 
 This document describes how to fine-tune pre-trained FraGNNet models for downstream tasks such as spectrum-to-molecule ranking, retrieval, and other MS/MS analysis workflows. It covers configuration options, component freezing strategies, training procedures, and best practices.
 
@@ -39,7 +41,7 @@ These components are shared across all tasks and learned during pre-training:
 - `mol_pool` - Molecule-level pooling (aggregates atom embeddings → molecule embedding)
 - `ce_embedder` - Collision energy embedding (encodes CE values)
 - `prec_embedder` - Precursor type embedding (encodes [M+H]+, [M-H]-, [M+Na]+, [M+Cl]-)
-- `inst_embedder` - Instrument type embedding (encodes FT, QTOF, IT)
+- `inst_embedder` - Instrument type embedding (encodes ORB, ORB_F, QTOF, IT)
 - `formula_embedder` - Chemical formula embeddings (encodes element counts)
 - `depth_embedder` - Fragmentation depth embeddings (encodes depth 0-4)
 - `complement_embedder` - Complement fragment embeddings (encodes H-gain/loss)
@@ -85,7 +87,7 @@ These components are initialized fresh and trained on the target task:
 **Config**:
 ```yaml
 finetune: true
-finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune_pretrained_ckpt: saved_ckpts/<pretrained_fragnnet>.ckpt
 finetune_freeze_all_shared: true
 finetune_weights_lr_ratio: 0.1  # Ignored when frozen
 finetune_shared_components:
@@ -96,7 +98,7 @@ finetune_shared_components:
   - inst_embedder
 ```
 
-**Example file**: [config/fragnnet_finetuning/nist20_finetuning_freeze.yml](../../config/fragnnet_finetuning/nist20_finetuning_freeze.yml)
+**Example file**: none tracked; set `finetune_freeze_all_shared: true` in a config like the full fine-tune example below.
 
 ### Strategy 2: Full Fine-tune (Recommended for Large Datasets)
 
@@ -117,7 +119,7 @@ finetune_shared_components:
 **Config**:
 ```yaml
 finetune: true
-finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune_pretrained_ckpt: saved_ckpts/<pretrained_fragnnet>.ckpt
 finetune_freeze_all_shared: false
 finetune_freeze_components: []
 finetune_weights_lr_ratio: 0.1  # Shared LR = 0.0004 * 0.1 = 0.00004
@@ -129,7 +131,7 @@ finetune_shared_components:
   - inst_embedder
 ```
 
-**Example file**: [config/fragnnet_finetuning/nist20_finetuning.yml](../../config/fragnnet_finetuning/nist20_finetuning.yml)
+**Example file**: [config/fragnnet/nps_pcdl_nist23_ft/cv0.yml](../../config/fragnnet/nps_pcdl_nist23_ft/cv0.yml) (shares `mol_embedder` and `mol_pool` from a FraGNNet checkpoint, `finetune_weights_lr_ratio: 1.0`)
 
 ---
 
@@ -142,7 +144,7 @@ finetune_shared_components:
 # Finetune Configuration
 # ============================================================================
 finetune: true                                      # Enable fine-tuning
-finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune_pretrained_ckpt: saved_ckpts/<pretrained_fragnnet>.ckpt
 finetune_strict_load: True                          # Strict checkpoint loading
 finetune_freeze_all_shared: true                    # true = freeze shared; false = fine-tune all
 finetune_freeze_components:                         # Optional, ignored if freeze_all_shared is set
@@ -175,7 +177,6 @@ spec_fp: data/proc/[YOUR_DATASET]/spec_df.pkl        # Spectrum dataframe
 mol_fp: data/proc/[YOUR_DATASET]/mol_df.pkl          # Molecule dataframe
 split_dp: data/split/[YOUR_DATASET]_split            # Train/val/test split
 frag_dp: data/frag/[YOUR_DATASET]_d3_h4_isoFalse/dags # Fragment DAGs
-mces_fp: data/proc/mces/mces_pairs.pkl                # Optional MCES pairs
 ```
 
 ### Model Architecture
@@ -205,7 +206,8 @@ spec_params:
     - "[M+Cl]-"
   inst_type: True
   inst_types:                # Instrument types
-    - "FT"
+    - "ORB"
+    - "ORB_F"
     - "QTOF"
     - "IT"
 
@@ -219,7 +221,7 @@ mol_params:
 # Where to insert context features (CE, precursor, instrument)
 # Options: "none", "mol" (molecule level), "mlp" (after fragment encoding), "frag" (unsupported)
 
-ce_insert_type: embed                # How to embed CE: "id", "lin", "embed", "bin"
+ce_insert_type: embed                # How to embed CE: "id", "lin", "embed", "embed_clamped", "bin", "qet" ("qet" is smooth; see config/template.yml)
 ce_insert_location: mlp              # Insert at MLP level (after frag encoding)
 ce_insert_merge: False               # Don't merge with other embeddings
 ce_insert_size: 32                   # CE embedding dimension
@@ -310,7 +312,7 @@ activation_checkpointing: False     # Gradient checkpointing
 
 ## Example Configs
 
-### Example 1: Freeze Strategy (nist20_finetuning_freeze.yml)
+### Example 1: Freeze Strategy
 
 **Use case**: Small dataset, quick adaptation, NodeMLP architecture
 
@@ -326,11 +328,10 @@ spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
-mces_fp: data/proc/mces/mces_pairs.pkl
 
 # Freeze shared components
 finetune: true
-finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune_pretrained_ckpt: saved_ckpts/<pretrained_fragnnet>.ckpt
 finetune_freeze_all_shared: true
 finetune_weights_lr_ratio: 0.1
 
@@ -351,12 +352,12 @@ predict_oos: True
 oos_loss: True
 ```
 
-### Example 2: Full Fine-tune Strategy (nist20_finetuning.yml)
+### Example 2: Full Fine-tune Strategy
 
 **Use case**: Large dataset, task-specific adaptation, NodeMLP architecture
 
 ```yaml
-wandb_name: nist20_mces_finetuning_m30_mlpc
+wandb_name: nist20_finetuning_full
 wandb_tags:
   - finetuning
   - freeze_false
@@ -367,11 +368,10 @@ spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
-mces_fp: data/proc/mces/mces_pairs.pkl
 
 # Fine-tune all components with differential LR
 finetune: true
-finetune_pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune_pretrained_ckpt: saved_ckpts/<pretrained_fragnnet>.ckpt
 finetune_freeze_all_shared: false                    # All trainable
 finetune_freeze_components: []                       # Override template default
 finetune_weights_lr_ratio: 0.1                      # Shared: 0.00004
@@ -402,11 +402,11 @@ oos_loss: True
 ```bash
 # Freeze strategy - best for quick fine-tuning
 python scripts/run_pl_model_fit.py \
-  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+  --custom_fp <your_freeze_config>.yml
 
 # Full fine-tune strategy - best for larger datasets
 python scripts/run_pl_model_fit.py \
-  --custom_fp config/fragnnet_finetuning/nist20_finetuning.yml
+  --custom_fp <your_full_finetune_config>.yml
 ```
 
 ### SLURM Cluster Training
@@ -426,7 +426,7 @@ module load cuda/11.8
 source venv/bin/activate
 
 python scripts/run_pl_model_fit.py \
-  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+  --custom_fp <your_freeze_config>.yml
 ```
 
 Submit:
@@ -441,7 +441,7 @@ Run with a stable job ID and online W&B logging. Re-running the same command res
 
 ```bash
 python scripts/run_pl_model_fit.py \
-  --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml \
+  --custom_fp <your_freeze_config>.yml \
   --wandb_mode online \
   --job_id nist20_finetuning_freeze
 ```
@@ -535,13 +535,13 @@ max_epochs: 100                           # More epochs
 | **GPU memory** | Low | High |
 | **Training time** | Fast | Slower |
 | **Adaptation** | Limited | Strong |
-| **Config file** | [nist20_finetuning_freeze.yml](../../config/fragnnet_finetuning/nist20_finetuning_freeze.yml) | [nist20_finetuning.yml](../../config/fragnnet_finetuning/nist20_finetuning.yml) |
+| **Example** | [Example 1](#example-1-freeze-strategy) | [Example 2](#example-2-full-fine-tune-strategy), [nps_pcdl_nist23_ft/cv0.yml](../../config/fragnnet/nps_pcdl_nist23_ft/cv0.yml) |
 
 ---
 
 ## NodeMLP Architecture Note
 
-Both example configs use `frag_gnn_type: NodeMLP`, which is a simplified architecture that:
+Both examples use `frag_gnn_type: NodeMLP`, which is a simplified architecture that:
 - Skips GNN-based fragment encoding
 - Directly predicts fragment properties with MLPBlocks
 - Results in **fewer parameters** and **faster training**
@@ -561,7 +561,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 1. **Start with Freeze Strategy**
    ```bash
    python scripts/run_pl_model_fit.py \
-     --custom_fp config/fragnnet_finetuning/nist20_finetuning_freeze.yml
+     --custom_fp <your_freeze_config>.yml
    ```
    - Quick baseline
    - Observe convergence
@@ -574,7 +574,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 3. **Full Fine-tune (if needed)**
    ```bash
    python scripts/run_pl_model_fit.py \
-     --custom_fp config/fragnnet_finetuning/nist20_finetuning.yml
+     --custom_fp <your_full_finetune_config>.yml
    ```
    - Use differential learning rates
    - Monitor per-component gradients
@@ -587,7 +587,7 @@ This makes NodeMLP ideal for fine-tuning scenarios with resource constraints.
 
 ## Additional Resources
 
-- **Main Model**: [src/fragnnet/model/fragnnet_model.py](../../src/fragnnet/model/fragnnet_model.py)
+- **Main Model**: [src/fragnnet/models/fragnnet/fragnnet_model.py](../../src/fragnnet/models/fragnnet/fragnnet_model.py)
 - **Data Preparation**: [preproc_scripts/](../../preproc_scripts/)
 - **Inference**: [docs/guides/run_inference.md](run_inference.md)
 - **Training Script**: [scripts/run_pl_model_fit.py](../../scripts/run_pl_model_fit.py)

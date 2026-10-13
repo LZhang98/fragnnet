@@ -7,8 +7,8 @@ the previous flush, so the defect only appears once a run exceeds chunk_size.
 
 The sibling module test_run_inference_hdf5_node_grouping.py covers the peak and node
 families; this one covers formula, joint, the 2-D `pred_node_ccs`, and the ragged-string
-`pred_formula_strs` / `pred_formula_adducts`, and it checks every family round-trips per
-spectrum.
+`pred_formula_strs` / `pred_formula_adducts` / `pred_node_rules`, and it checks every family
+round-trips per spectrum.
 """
 
 import types
@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import export_columns, runners
 
 COLUMNS = [
     "spec_id",
@@ -27,6 +27,7 @@ COLUMNS = [
     "pred_node_probs",
     "pred_node_node_idxs",
     "pred_node_ccs",
+    "pred_node_rules",
     "pred_formula_probs",
     "pred_formula_formula_idxs",
     "pred_formula_strs",
@@ -67,6 +68,8 @@ def _blocks(s):
             ],
             dim=1,
         ),
+        # MASSter's SMARTS rules per node: mostly empty, and empty first in every block.
+        "pred_node_rules": [f"rule_{s['spec']}" if i % 2 else "" for i in range(s["n_nodes"])],
         "pred_formula_probs": th.full((s["n_formulas"],), 1.0 / s["n_formulas"], dtype=th.float64),
         "pred_formula_formula_idxs": th.arange(s["n_formulas"], dtype=th.int64) + tag,
         "pred_formula_strs": [f"C{s['spec']}H{i}" for i in range(s["n_formulas"])],
@@ -90,10 +93,11 @@ def _make_batches(batch_sizes):
 
 def _write(monkeypatch, tmp_path, batch_sizes, chunk_size):
     batches = _make_batches(batch_sizes)
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "pred.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),
@@ -112,7 +116,11 @@ def _read(path):
 
 FAMILIES = [
     ("", "n_peaks", ["pred_mzs", "pred_ints"]),
-    ("node_", "n_nodes", ["pred_node_probs", "pred_node_node_idxs", "pred_node_ccs"]),
+    (
+        "node_",
+        "n_nodes",
+        ["pred_node_probs", "pred_node_node_idxs", "pred_node_ccs", "pred_node_rules"],
+    ),
     (
         "formula_",
         "n_formulas",
@@ -152,7 +160,7 @@ def test_every_family_round_trips_per_spectrum(monkeypatch, tmp_path, batch_size
             for col in columns:
                 got = out[col][starts[i] : ends[i]]
                 want = expected[col]
-                if col in ("pred_formula_strs", "pred_formula_adducts"):
+                if col in ("pred_formula_strs", "pred_formula_adducts", "pred_node_rules"):
                     assert [b.decode() for b in got] == want, f"{col} spectrum {i}"
                 else:
                     np.testing.assert_array_equal(got, want.numpy(), err_msg=f"{col} spec {i}")
@@ -170,10 +178,11 @@ def test_missing_adducts_in_first_chunk_keep_formula_alignment(monkeypatch, tmp_
     adduct_col = COLUMNS.index("pred_formula_adducts")
     for i in range(2):
         batches[0][adduct_col][i] = [np.nan] * SPECTRA[i]["n_formulas"]
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "missing_adducts.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),
@@ -206,10 +215,11 @@ def test_absent_family_writes_no_points(monkeypatch, tmp_path):
     for start in range(0, len(SPECTRA), 2):
         rows = [_blocks(s) for s in SPECTRA[start : start + 2]]
         batches.append([[r[c] for r in rows] for c in cols])
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: cols)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: cols)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: cols)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "sparse.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),

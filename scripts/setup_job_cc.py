@@ -3,6 +3,10 @@ import os
 import re
 import subprocess
 
+# Kept local so this script runs on a login node without the fragnnet package installed.
+# Mirrors ``fragnnet.config.TEMPLATE_FILENAME``.
+TEMPLATE_FILENAME = "template.yml"
+
 
 def _normalize_profile_name(name: str) -> str:
     return name.strip().lower().replace(" ", "")
@@ -375,9 +379,16 @@ def main(args):
             "mkdir -p ${WORKING_DIR}",
             "# create local env",
             # go to slurm and create virtual env
-            "cd  ${WORKING_DIR}",
-            "virtualenv FRAG-GNN",
-            "source FRAG-GNN/bin/activate",
+            "cd ${WORKING_DIR} || exit 1",
+            # a broken package in ~/.local shadows the module's own (user site wins)
+            "export PYTHONNOUSERSITE=1",
+            # per-job app data: array tasks otherwise share ~/.local/share/virtualenv
+            "virtualenv --app-data ${WORKING_DIR}/virtualenv-app-data FRAG-GNN || {",
+            "    echo 'ERROR: virtualenv failed (its log is in the .out file)' >&2",
+            "    exit 1",
+            "}",
+            # without the venv, pip falls back to --user and rewrites ~/.local
+            "source FRAG-GNN/bin/activate || exit 1",
             "pip install --no-index --upgrade pip",
             "pip install --no-index torch==2.4.1 \\",
             "    torch_geometric==2.6.1 \\",
@@ -389,8 +400,6 @@ def main(args):
             "    joblib==1.3.2 \\",
             "    matplotlib \\",
             "    lightning==2.4.0 \\",
-            "    dgl==2.4.0 \\",
-            "    omegaconf \\",
             "    cython==3.0.12 \\",
             "    pandarallel==1.6.5 \\",
             "    h5py\\",
@@ -430,12 +439,15 @@ def main(args):
 
     custom_config_fp = None
     # default config template
-    config_template_fp = os.path.join(args.frag_gnn_dp, "config", "template.yml")
+    config_template_fp = os.path.join(args.frag_gnn_dp, "config")
     config_d = {}
 
     # Check if running sweep script
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
     is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
+    is_channel_selection_audit = (
+        "masster_ion_h_top_k_sweep.py" in args.python_script_fp
+    )
 
     # parse script kwargs
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
@@ -488,7 +500,6 @@ def main(args):
         "spec_fp",
         "mol_fp",
         "ann_fp",
-        "mces_fp",
         "config",
         "config_template",
         "split_dp",
@@ -501,6 +512,13 @@ def main(args):
     config_d["config_template"] = config_template_fp
     if custom_config_fp is not None:
         config_d["config"] = custom_config_fp
+
+    # A directory has to be narrowed to the template file before it can be read for data paths.
+    if os.path.isdir(config_template_fp):
+        config_template_fp = os.path.join(config_template_fp, TEMPLATE_FILENAME)
+        if not os.path.isfile(config_template_fp):
+            raise FileNotFoundError(f"missing config template: {config_template_fp}")
+        config_d["config_template"] = config_template_fp
 
     # parse configs
     # read from template first, then custom config,
@@ -521,12 +539,10 @@ def main(args):
 
     if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
         data_keyword.append("frag_dp")
-    elif config_d["model_type"] in ["iceberg_gen", "iceberg_inten"]:
-        data_keyword.append("magma_dp")
     elif config_d["model_type"] == "graff":
         data_keyword.append("ann_fp")
-    elif config_d["model_type"] == "mces_pretraining":
-        data_keyword.append("mces_fp")
+    if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):
+        data_keyword.append("model_ckpt")
     # copy fp if pretraining
 
     if config_d["finetune"].lower() == "true":
@@ -670,6 +686,18 @@ def main(args):
                 " ${WORKING_DIR}"
             )
             script_lines.extend(array_lines)
+        elif name == "model_ckpt":
+            print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
+            script_lines.extend(
+                [
+                    f"# copy {name} file from {path_value} to slurm tmp dir",
+                    f"rsync -avL --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
+                    f"if [[ ! -f ${{WORKING_DIR}}/{path_value} ]]; then",
+                    f'    echo "ERROR: checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
+                    "    exit 1",
+                    "fi",
+                ]
+            )
         else:
             print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
             script_lines.extend(
@@ -756,6 +784,34 @@ def main(args):
 
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
+
+    # Preserve the channel-selection audit CSV outside node-local scratch.
+    if is_channel_selection_audit:
+        script_lines.append("CHANNEL_AUDIT_STATUS=$?")
+        output_fp = config_d.get(
+            "output_fp",
+            "output/eval/mass_shatter_ion_h_top_k_sweep.csv",
+        )
+        if not os.path.isabs(output_fp):
+            output_src = os.path.join("${WORKING_DIR}", output_fp)
+            output_dest = os.path.abspath(os.path.join(args.frag_gnn_dp, output_fp))
+            script_lines.extend(
+                [
+                    "",
+                    "# copy channel-selection audit output back to the project directory",
+                    f"mkdir -p {os.path.dirname(output_dest)}",
+                    f"if [[ -f {output_src} ]]; then",
+                    f"    rsync -av {output_src} {output_dest}",
+                    "fi",
+                ]
+            )
+        script_lines.extend(
+            [
+                'if [[ "${CHANNEL_AUDIT_STATUS}" -ne 0 ]]; then',
+                '    exit "${CHANNEL_AUDIT_STATUS}"',
+                "fi",
+            ]
+        )
 
     # copy predictions output back to project directory
     if is_inference_eval_script:
@@ -886,7 +942,7 @@ if __name__ == "__main__":
         help=(
             "Directory containing cv{n}.yml config files for cross-validation array jobs. "
             "Creates a SLURM array job with one task per CV fold (--cv_start to --cv_end). "
-            "Example: --cv_config_dp config/spectraverse/neims --cv_start 0 --cv_end 9"
+            "Example: --cv_config_dp config/neims/spectraverse --cv_start 0 --cv_end 9"
         ),
     )
     parser.add_argument(

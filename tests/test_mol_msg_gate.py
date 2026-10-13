@@ -23,7 +23,7 @@ import torch as th
 from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build as _build_fragnnet
 
-from fragnnet.model.nn_blocks import GNN, GatedGINE
+from fragnnet.layers.gnn import GNN, GatedGINE
 
 HIDDEN = 16
 EDGE_FEATS = 4

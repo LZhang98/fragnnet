@@ -1,6 +1,8 @@
 import collections
 import copy
+import logging
 import os
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -8,39 +10,63 @@ import torch as th
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
 from fragnnet.utils.clean_spectra_utils import clean_spectra
-from fragnnet.utils.data_utils import (
+from fragnnet.utils.dag_format_utils import load_frag_d
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.isotope_cleanup_utils import (
+    _INST_MZ_TOL,
+    ISOTOPE_CANDIDATE_RULES,
+    dag_formula_source,
+    detect_isotope_peaks_for_training_cleanup,
+    estimate_coisolation_fraction_from_precursor,
+    subformula_formula_source,
+)
+from fragnnet.utils.migrations import RETIRED_INST_TYPE_HELP, RETIRED_INST_TYPES
+from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
+from fragnnet.utils.proc_utils import merge_spec_df
+from fragnnet.utils.spec_utils import (
     CHARGE_FACTOR_MAP,
+    batch_func,
     fill_missing_ace,
     fill_missing_nce,
     get_charge,
 )
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.frag_utils import load_frag_d
-from fragnnet.utils.isotope_utils import (
-    detect_isotope_peaks_for_training_cleanup,
-    estimate_coisolation_fraction_from_precursor,
-)
-from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
-from fragnnet.utils.proc_utils import merge_spec_df
-from fragnnet.utils.spec_utils import batch_func
+
+logger = logging.getLogger(__name__)
+
+# Where a fragment's composition comes from during isotope cleanup: nowhere (the m/z-scaled
+# precursor proxy), a precursor-bounded subformula decomposition, or the molecule's DAG.
+ISOTOPE_FORMULA_SOURCES = ("none", "subformula", "dag")
 
 
-def _ce_list_to_stats(t: th.Tensor) -> th.Tensor:
+def _ce_list_to_stats(t: th.Tensor, weights: th.Tensor | None = None) -> th.Tensor:
     """Reduce one sample's CE list to (mean_raw, std_raw, valid) as shape (1, 3).
 
     Args:
         t: 1-D tensor of CE values for one sample; -1 means missing.
+        weights: Optional reading weights, normalized over valid readings for moments.
 
     Returns:
         Tensor of shape (1, 3): columns are (mean, std, valid_flag).
         All zeros when no valid CE is present.
     """
-    valid = t[t >= 0].float()
+    valid_mask = t >= 0
+    if weights is not None:
+        if weights.shape != t.shape or not bool((th.isfinite(weights) & (weights >= 0)).all()):
+            raise ValueError("CE statistics require matching finite nonnegative weights")
+        valid_mask = valid_mask & (weights > 0)
+    valid = t[valid_mask].float()
     if len(valid) == 0:
         return th.zeros(1, 3, dtype=th.float32)
-    mean = valid.mean()
-    std = (valid - mean).pow(2).mean().sqrt()
+    if weights is None:
+        mean = valid.mean()
+        std = (valid - mean).pow(2).mean().sqrt()
+    else:
+        valid_weights = weights[valid_mask].float()
+        valid_weights = valid_weights / valid_weights.sum()
+        mean = (valid * valid_weights).sum()
+        std = ((valid - mean).pow(2) * valid_weights).sum().sqrt()
     return th.stack([mean, std, th.ones(1, device=t.device)[0]], dim=0).unsqueeze(0)
 
 
@@ -67,6 +93,16 @@ class BaseDataset(Dataset):
             spec_params: Dictionary of spectral processing parameters.
             enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
         """
+        if spec_params["merge_train_only"]:
+            if spec_params["merge"]:
+                raise ValueError("merge_train_only requires merge: False")
+            if split == "train":
+                # Merged rows need their CE ladder; unmerged rows always carry a CE list.
+                spec_params = {
+                    **spec_params,
+                    "merge": True,
+                    "merge_keep_ces": spec_params["nce"] or spec_params["ace"],
+                }
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params
@@ -90,6 +126,35 @@ class BaseDataset(Dataset):
         self._setup_prec_type_to_idx()
         self._setup_inst_type_to_idx()
         self._setup_frag_mode_to_idx()
+
+    def keep_spectra(self, keep: Callable[[pd.DataFrame], pd.Series]) -> int:
+        """Keep the spectra ``keep`` accepts and drop everything that depended on the rest.
+
+        Call it after ``_base_init`` and before preprocessing. ``keep`` is applied to
+        ``spec_df`` and to ``um_spec_df``, so it may only read columns both frames carry
+        (``mol_id``, ``prec_type``, ...): a merged row and the unmerged rows it came from then
+        get the same verdict. Molecules and split rows left without a spectrum go too, and the
+        derived state (isotope cleanup tables, counts) is rebuilt.
+
+        Args:
+            keep: Maps a spectrum frame to a boolean mask aligned with its index.
+
+        Returns:
+            The number of ``spec_df`` rows removed.
+        """
+        spec_mask = keep(self.spec_df)
+        removed = int((~spec_mask).sum())
+        if not removed:
+            return 0
+        self.spec_df = self.spec_df.loc[spec_mask].reset_index(drop=True)
+        self.mol_df = self.mol_df.loc[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
+        self.um_spec_df = self.um_spec_df.loc[keep(self.um_spec_df)].copy()
+        self.split_df = self.split_df.loc[
+            self.split_df["spec_id"].isin(self.um_spec_df["spec_id"])
+        ].copy()
+        self._setup_isotope_peak_cleanup()
+        self._compute_counts()
+        return removed
 
     @staticmethod
     def _setup_dfs(
@@ -128,6 +193,33 @@ class BaseDataset(Dataset):
         mol_df = (
             mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
         )
+        # Older direct dataset callers omit the opt-in fields; checkpoint migration
+        # and the current template declare them explicitly.
+        if spec_params.get("rt_ccs", False):
+            if spec_params["merge"] or spec_params["merge_train_only"]:
+                raise ValueError("RT/CCS labels require unmerged spectra")
+            labels_fp = spec_params["rt_ccs_labels_fp"]
+            if labels_fp is not None:
+                spec_df = join_rt_ccs_labels(spec_df, labels_fp)
+            missing = {"rtinseconds", "ccs"}.difference(spec_df.columns)
+            if missing:
+                raise ValueError(f"Missing RT/CCS columns {sorted(missing)}; supply rt_ccs_labels_fp")
+        for name, column in (("rt", "rtinseconds"), ("ccs", "ccs")):
+            if not spec_params.get(name, False):
+                continue
+            if spec_params["merge"] or spec_params["merge_train_only"]:
+                raise ValueError("RT/CCS labels require unmerged spectra")
+            labels_fp = spec_params[f"{name}_labels_fp"]
+            if labels_fp is not None:
+                spec_df = join_property_labels(spec_df, labels_fp, name)
+            if column not in spec_df:
+                raise ValueError(f"Missing {column}; supply {name}_labels_fp")
+        if "inst_type" in spec_df.columns:
+            retired = sorted(set(spec_df["inst_type"]).intersection(RETIRED_INST_TYPES))
+            if retired:
+                raise ValueError(
+                    f"spec_df uses retired instrument types {retired}. {RETIRED_INST_TYPE_HELP}"
+                )
 
         split_dfs = []
         for split in splits:
@@ -183,9 +275,12 @@ class BaseDataset(Dataset):
             orig_n = len(spec_df)
             spec_df = spec_df[spec_df["prec_type"].isin(allowed_adducts)]
             mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-            print(
-                f">> split_filter [{splits[0]}] filter_prec_types "
-                f"{sorted(allowed_adducts)}: {orig_n} → {len(spec_df)} spectra"
+            logger.info(
+                "split_filter [%s] filter_prec_types %s: %d -> %d spectra",
+                splits[0],
+                sorted(allowed_adducts),
+                orig_n,
+                len(spec_df),
             )
 
         # Determine which CE columns to compute and which is primary.
@@ -244,6 +339,7 @@ class BaseDataset(Dataset):
                 lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
             )
             prec_mz = spec_df["prec_mz"]
+            fill_ace_from_nce = spec_params["fill_missing_ace"]
 
             def _fill_ce_scalar_vectorized(ace_col: str, nce_col: str, target_key: str) -> None:
                 ace = spec_df[ace_col].where(spec_df[ace_col].notna() & (spec_df[ace_col] != -1))
@@ -255,11 +351,11 @@ class BaseDataset(Dataset):
                         pd.to_numeric(computed, errors="coerce")
                     )
                 else:
-                    # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
-                    computed = (nce * prec_mz * charge_factors) / 500.0
-                    result = pd.to_numeric(ace, errors="coerce").fillna(
-                        pd.to_numeric(computed, errors="coerce")
-                    )
+                    result = pd.to_numeric(ace, errors="coerce")
+                    if fill_ace_from_nce:
+                        # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
+                        computed = (nce * prec_mz * charge_factors) / 500.0
+                        result = result.fillna(pd.to_numeric(computed, errors="coerce"))
                 spec_df.loc[:, target_key] = result
 
             for key, _ in ce_keys_to_compute:
@@ -334,9 +430,12 @@ class BaseDataset(Dataset):
             orig_n = len(spec_df)
             spec_df = spec_df[keep]
             mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-            print(
-                f">> split_filter [{splits[0]}] filter_ce_by_inst "
-                f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
+            logger.info(
+                "split_filter [%s] filter_ce_by_inst %s: %d -> %d spectra",
+                splits[0],
+                list(_filter_ce_by_inst),
+                orig_n,
+                len(spec_df),
             )
             # Print CE distribution per filtered instrument type.
             for _inst, _ce_cfg in _filter_ce_by_inst.items():
@@ -345,14 +444,22 @@ class BaseDataset(Dataset):
                 _ce_vals = _inst_rows[_ce_col]
                 _ce_vals = _ce_vals[_ce_vals.notna() & (_ce_vals != -1)]
                 if len(_ce_vals) == 0:
-                    print(f"   [{_inst}] {_ce_col}: no valid values after filter")
+                    logger.info("  [%s] %s: no valid values after filter", _inst, _ce_col)
                     continue
                 _q = _ce_vals.quantile([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
-                print(
-                    f"   [{_inst}] {_ce_col} distribution (n={len(_ce_vals)}): "
-                    f"min={_q[0.0]:.1f}  p10={_q[0.1]:.1f}  p25={_q[0.25]:.1f}  "
-                    f"p50={_q[0.5]:.1f}  p75={_q[0.75]:.1f}  p90={_q[0.9]:.1f}  "
-                    f"max={_q[1.0]:.1f}"
+                logger.info(
+                    "  [%s] %s distribution (n=%d): min=%.1f  p10=%.1f  p25=%.1f  "
+                    "p50=%.1f  p75=%.1f  p90=%.1f  max=%.1f",
+                    _inst,
+                    _ce_col,
+                    len(_ce_vals),
+                    _q[0.0],
+                    _q[0.1],
+                    _q[0.25],
+                    _q[0.5],
+                    _q[0.75],
+                    _q[0.9],
+                    _q[1.0],
                 )
 
         if ce_keys_to_compute:
@@ -382,9 +489,13 @@ class BaseDataset(Dataset):
             orig_test_group_count = orig_test_spec_df["group_id"].nunique()
             new_test_spec_count = new_test_spec_df["spec_id"].nunique()
             new_test_group_count = new_test_spec_df["group_id"].nunique()
-            print(f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}")
-            print(f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups")
-            print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
+            logger.info("Dropping spectra unless %s is one of %s", ce_key, spec_params["test_ces"])
+            logger.info(
+                "Before drop: %d spectra, %d groups", orig_test_spec_count, orig_test_group_count
+            )
+            logger.info(
+                "After drop: %d spectra, %d groups", new_test_spec_count, new_test_group_count
+            )
 
         # Clean each source spectrum before merging replicate spectra. Legacy
         # checkpoint configs predate these settings and omit the whole group.
@@ -396,6 +507,9 @@ class BaseDataset(Dataset):
             "filter_subformula_peaks",
             "subformula_ppm",
             "subformula_use_instrument_tolerance",
+            "filter_above_precursor_peaks",
+            "above_precursor_ppm",
+            "above_precursor_use_instrument_tolerance",
             "drop_empty_spectra",
         }
         configured_cleanup_params = cleanup_param_names.intersection(spec_params)
@@ -410,6 +524,7 @@ class BaseDataset(Dataset):
             cleanup_enabled = (
                 spec_params["centroid_peaks"]
                 or spec_params["filter_subformula_peaks"]
+                or spec_params["filter_above_precursor_peaks"]
                 or spec_params["drop_empty_spectra"]
             )
             if cleanup_enabled:
@@ -421,13 +536,14 @@ class BaseDataset(Dataset):
                     filter_by_subformula=spec_params["filter_subformula_peaks"],
                     subformula_ppm=spec_params["subformula_ppm"],
                     drop_empty_spectra=spec_params["drop_empty_spectra"],
-                    use_instrument_tolerance=spec_params[
-                        "subformula_use_instrument_tolerance"
-                    ],
-                    use_merge_instrument_tolerance=spec_params[
-                        "centroid_use_instrument_tolerance"
-                    ],
+                    use_instrument_tolerance=spec_params["subformula_use_instrument_tolerance"],
+                    use_merge_instrument_tolerance=spec_params["centroid_use_instrument_tolerance"],
                     merge_method=spec_params["centroid_method"],
+                    filter_above_precursor=spec_params["filter_above_precursor_peaks"],
+                    above_precursor_ppm=spec_params["above_precursor_ppm"],
+                    above_precursor_use_instrument_tolerance=spec_params[
+                        "above_precursor_use_instrument_tolerance"
+                    ],
                 )
                 mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 
@@ -445,7 +561,32 @@ class BaseDataset(Dataset):
         ]
         um_spec_df = spec_df[[col for col in um_spec_cols if col in spec_df.columns]].copy()
         if spec_params["merge"]:
-            spec_df = merge_spec_df(spec_df, keep_ces=spec_params["merge_keep_ces"])
+            required_merge_params = {
+                "merge_method",
+                "merge_tolerance_by_inst",
+                "merge_tolerance_common_overlap",
+                "merge_normalize_each_spectrum",
+                "merge_equal_ce_weight",
+                "merge_ce_aggregation",
+            }
+            missing_merge_params = required_merge_params.difference(spec_params)
+            if missing_merge_params:
+                raise ValueError(
+                    "spec_params is missing required merge settings "
+                    f"{sorted(missing_merge_params)}. Merge old checkpoint settings with "
+                    "the current config/template.yml before constructing a dataset."
+                )
+            spec_df = merge_spec_df(
+                spec_df,
+                keep_ces=spec_params["merge_keep_ces"],
+                method=spec_params["merge_method"],
+                ce_key=ce_key,
+                tolerance_by_inst=spec_params["merge_tolerance_by_inst"],
+                require_common_tolerance_overlap=(spec_params["merge_tolerance_common_overlap"]),
+                normalize_each_spectrum=spec_params["merge_normalize_each_spectrum"],
+                equal_ce_weight=spec_params["merge_equal_ce_weight"],
+                ce_aggregation=spec_params["merge_ce_aggregation"],
+            )
             id_key = "group_id"
         else:
             id_key = "spec_id"
@@ -462,11 +603,17 @@ class BaseDataset(Dataset):
         return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
 
     def _setup_isotope_peak_cleanup(self) -> None:
-        """Precompute group-level co-isolation fractions for isotope cleanup."""
+        """Precompute group-level co-isolation fractions for isotope cleanup.
+
+        NOT HOOKED UP: ``remove_isotope_peaks`` is off in every template and the feature is
+        unsupported; this returns immediately. The code is kept until isotope cleanup is
+        either rewired or removed.
+        """
         self.group_coiso_fraction_by_k: dict[int, dict[int, float]] = {}
         self._isotope_dag_formula_cache: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
         if not self.spec_params["remove_isotope_peaks"]:
             return
+        self._validate_isotope_formula_source()
         if not self.spec_params["remove_isotope_use_group_f"]:
             return
         if self.um_spec_df.empty:
@@ -521,14 +668,98 @@ class BaseDataset(Dataset):
                 continue
             self.group_coiso_fraction_by_k.setdefault(group_id, {})[k] = med
 
+    def _validate_isotope_formula_source(self) -> None:
+        """Check the cleanup's source settings before any spectrum is cleaned.
+
+        Everything here would otherwise surface late and quietly: an unknown source or rule only
+        on the first spectrum that reaches the gate, and a DAG source with no DAG path not at all,
+        because the source would simply come back empty and the m/z proxy would answer instead.
+
+        Raises:
+            ValueError: If the source or the candidate rule is unknown, a deprecated key is still
+                switched on, or the DAG source has no ``remove_isotope_dag_dp`` to read.
+        """
+        source = self.spec_params["remove_isotope_formula_source"]
+        if source not in ISOTOPE_FORMULA_SOURCES:
+            raise ValueError(
+                f"remove_isotope_formula_source must be one of {sorted(ISOTOPE_FORMULA_SOURCES)}, "
+                f"got {source!r}"
+            )
+        rule = self.spec_params["remove_isotope_candidate_rule"]
+        if rule not in ISOTOPE_CANDIDATE_RULES:
+            raise ValueError(
+                f"remove_isotope_candidate_rule must be one of {list(ISOTOPE_CANDIDATE_RULES)}, "
+                f"got {rule!r}"
+            )
+        mz_tol = self.spec_params["remove_isotope_subformula_mz_tol"]
+        if mz_tol is not None and not float(mz_tol) > 0:
+            raise ValueError(
+                f"remove_isotope_subformula_mz_tol must be positive or blank, got {mz_tol!r}"
+            )
+        if source == "dag" and not self.spec_params["remove_isotope_dag_dp"]:
+            raise ValueError(
+                "remove_isotope_formula_source: dag needs remove_isotope_dag_dp. Only the "
+                "FraGNNet dataset fills it in from `frag_dp`; every other model has no DAG, so "
+                "use remove_isotope_formula_source: subformula there."
+            )
+        for deprecated, replacement in (
+            ("remove_isotope_use_dag_formula", "remove_isotope_formula_source: dag"),
+            ("remove_isotope_protect_dag_mono", "remove_isotope_protect_known_mono"),
+        ):
+            if self.spec_params[deprecated]:
+                raise ValueError(
+                    f"{deprecated} is superseded; set {replacement} instead. It is kept in the "
+                    "template only so older configs and checkpoints still resolve."
+                )
+
+    def _get_isotope_formula_source(
+        self, mol_id: int, formula: str | None, prec_type: str, inst_type: str
+    ):
+        """Return the fragment-composition source for one spectrum, or None.
+
+        The DAG source needs a per-molecule artifact and is FraGNNet-only in practice, since
+        only that template carries ``frag_dp``. The subformula source needs the precursor
+        formula and adduct, which every model has.
+
+        Args:
+            mol_id: Molecule the spectrum belongs to.
+            formula: Neutral molecular formula, or None when unavailable.
+            prec_type: Adduct string of this spectrum.
+            inst_type: Instrument type, which sets the decomposition window when the config
+                leaves ``remove_isotope_subformula_mz_tol`` blank.
+
+        Returns:
+            A callable from m/z to candidate ion compositions, or None for the m/z proxy.
+        """
+        source = self.spec_params["remove_isotope_formula_source"]
+        if source == "none":
+            return None
+        if source == "dag":
+            dag_arrays = self._get_isotope_dag_formula_arrays(int(mol_id))
+            if dag_arrays is None:
+                return None
+            return dag_formula_source(
+                dag_arrays[0], dag_arrays[1], self.spec_params["remove_isotope_dag_mz_tol"]
+            )
+        if not formula:
+            return None
+        mz_tol = self.spec_params["remove_isotope_subformula_mz_tol"]
+        if mz_tol is None:
+            mz_tol = _INST_MZ_TOL.get(inst_type) or 0.004
+        try:
+            return subformula_formula_source(formula, prec_type, float(mz_tol))
+        except ValueError:
+            # An adduct or element the subformula budgets do not cover: fall back to the m/z
+            # proxy for this spectrum rather than dropping it. A bad tolerance cannot reach
+            # here - `_validate_isotope_formula_source` rejects it at setup - so this stays a
+            # statement about the data, not about the configuration.
+            return None
+
     def _get_isotope_dag_formula_arrays(
         self,
         mol_id: int,
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """Return DAG M+0 m/z and formula arrays for isotope cleanup if configured."""
-        if not self.spec_params["remove_isotope_use_dag_formula"]:
-            return None
-
         dag_dp = self.spec_params["remove_isotope_dag_dp"]
         if not dag_dp:
             return None
@@ -705,7 +936,7 @@ class BaseDataset(Dataset):
                 spec_data = self._process_spec(spec_entry)
                 total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
                 self.spec_datas[idx] = spec_data
-            print(f"> total_spec_data_size: {total_spec_data_size / 1e6:.2f} MB")
+            logger.info("total_spec_data_size: %.2f MB", total_spec_data_size / 1e6)
 
     @staticmethod
     def _get_mzs_ints(peaks: list) -> tuple[th.Tensor, th.Tensor]:
@@ -731,7 +962,6 @@ class BaseDataset(Dataset):
 
         mzs = th.tensor(mzs, dtype=th.float)
         ints = th.tensor(ints, dtype=th.float)
-        # mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
         return mzs, ints
 
     def _setup_prec_type_to_idx(self) -> None:
@@ -758,6 +988,11 @@ class BaseDataset(Dataset):
             - idx_to_inst_type: Dictionary mapping indices to instrument type strings.
             - num_inst_types: Total number of instrument types.
         """
+        retired = sorted(set(self.spec_params["inst_types"]).intersection(RETIRED_INST_TYPES))
+        if retired:
+            raise ValueError(
+                f"spec_params.inst_types names retired types {retired}. {RETIRED_INST_TYPE_HELP}"
+            )
         inst_types = sorted(self.spec_params["inst_types"])
         self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
         self.idx_to_inst_type = dict(enumerate(inst_types))
@@ -807,6 +1042,11 @@ class BaseDataset(Dataset):
                 - spec_per_group: Spectra count per group (if counts enabled)
         """
         spec_data = {}
+        for name, column in (("rt", "rtinseconds"), ("ccs", "ccs")):
+            if self.spec_params.get(name, False) or self.spec_params.get("rt_ccs", False):
+                value = pd.to_numeric(spec_entry[column], errors="coerce")
+                value = float(value) if pd.notna(value) and np.isfinite(value) and value > 0 else float("nan")
+                spec_data[f"spec_{name}"] = th.tensor([value], dtype=th.float32)
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
         if self.spec_params["remove_isotope_peaks"]:
@@ -860,6 +1100,12 @@ class BaseDataset(Dataset):
             assert isinstance(ace_val, list), type(ace_val)
             spec_data["spec_nce"] = th.tensor(nce_val, dtype=th.float)
             spec_data["spec_ace"] = th.tensor(ace_val, dtype=th.float)
+            if "nce_weights" in spec_entry:
+                for signal in ("nce", "ace"):
+                    spec_data[f"spec_{signal}_weights"] = th.tensor(
+                        spec_entry[f"{signal}_weights"], dtype=th.float
+                    )
+                spec_data["spec_ce_weights"] = spec_data[f"spec_{self.ce_key}_weights"]
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -887,7 +1133,11 @@ class BaseDataset(Dataset):
     def _remove_isotope_peaks_from_spec(
         self, spec_entry: pd.Series, mzs: th.Tensor, ints: th.Tensor
     ) -> tuple[th.Tensor, th.Tensor]:
-        """Remove isotope peaks from a spectrum for monoisotopic training targets."""
+        """Remove isotope peaks from a spectrum for monoisotopic training targets.
+
+        NOT HOOKED UP: reachable only with ``remove_isotope_peaks: True``, which no template
+        sets any more (see :meth:`_setup_isotope_peak_cleanup`).
+        """
         if mzs.numel() == 0:
             return mzs, ints
         required_cols = {"group_id", "mol_id", "prec_type", "inst_type", "prec_mz"}
@@ -897,9 +1147,12 @@ class BaseDataset(Dataset):
         mol_id = spec_entry["mol_id"]
         formula = str(self.mol_df.loc[mol_id]["formula"]) if mol_id in self.mol_df.index else None
         group_f = self.group_coiso_fraction_by_k.get(int(spec_entry["group_id"]))
-        dag_formula_arrays = self._get_isotope_dag_formula_arrays(int(mol_id))
-        dag_formula_mzs = dag_formula_arrays[0] if dag_formula_arrays is not None else None
-        dag_formula_strs = dag_formula_arrays[1] if dag_formula_arrays is not None else None
+        formula_source = self._get_isotope_formula_source(
+            int(mol_id),
+            formula,
+            str(spec_entry["prec_type"]),
+            str(spec_entry["inst_type"]),
+        )
         remove_mask_np = detect_isotope_peaks_for_training_cleanup(
             mzs.numpy(),
             ints.numpy(),
@@ -916,10 +1169,9 @@ class BaseDataset(Dataset):
             max_leak_factor=self.spec_params["remove_isotope_max_leak_factor"],
             precursor_envelope_lo=self.spec_params["remove_isotope_precursor_envelope_lo"],
             precursor_envelope_hi=self.spec_params["remove_isotope_precursor_envelope_hi"],
-            dag_formula_mzs=dag_formula_mzs,
-            dag_formula_strs=dag_formula_strs,
-            dag_mz_tol=self.spec_params["remove_isotope_dag_mz_tol"],
-            protect_dag_mono=self.spec_params["remove_isotope_protect_dag_mono"],
+            formula_source=formula_source,
+            candidate_rule=self.spec_params["remove_isotope_candidate_rule"],
+            protect_known_mono=self.spec_params["remove_isotope_protect_known_mono"],
         )
         if not remove_mask_np.any():
             return mzs, ints
@@ -956,7 +1208,7 @@ class BaseDataset(Dataset):
         return len(self.spec_df)
 
     @staticmethod
-    def get_collate_fn():
+    def get_collate_fn() -> Callable:
         """
         Get the collate function for batching dataset samples.
 
@@ -1025,7 +1277,11 @@ class BaseDataset(Dataset):
                 # Pre-reduce to (mean, std, valid) stats for CEScaler — no scatter in model.
                 # Each sample contributes a (1, 3) tensor; _standard_collate cats to (B, 3).
                 stats_key = f"{_ce_key}_stats"
-                collate_data[stats_key] = [_ce_list_to_stats(t) for t in collate_data[_ce_key]]
+                reading_weights = collate_data.get(f"{_ce_key}_weights")
+                collate_data[stats_key] = [
+                    _ce_list_to_stats(t, None if reading_weights is None else reading_weights[i])
+                    for i, t in enumerate(collate_data[_ce_key])
+                ]
                 keys.append(stats_key)
                 # Keep raw concat + batch_idxs for _embed_single_ce (averages embeddings).
                 _ces, _, _batch_idxs = batch_func(

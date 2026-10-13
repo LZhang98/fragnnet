@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 import torch as th
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import export_columns, runners
 
 COLUMNS = [
     "spec_id",
@@ -40,10 +40,11 @@ def _batch(specs, n_formula=3):
 
 def _write(monkeypatch, tmp_path, name="pred.hdf5", **kw):
     batches = [_batch([1, 2, 3]), _batch([4, 5, 6])]
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / name)
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=[0, 1],
         device=th.device("cpu"),
@@ -71,7 +72,7 @@ class TestCompressionIsOnByDefault:
 
     def test_chunk_length_is_the_configured_one(self, monkeypatch, tmp_path):
         with h5py.File(_write(monkeypatch, tmp_path), "r") as f:
-            assert f["pred_mzs"].chunks == (script_utils._HDF5_CHUNK_LEN,)
+            assert f["pred_mzs"].chunks == (runners._HDF5_CHUNK_LEN,)
 
 
 class TestValuesSurvive:
@@ -117,4 +118,4 @@ class TestOptingOut:
         """A 65536-row chunk is only affordable because the empty tail compresses away."""
         path = _write(monkeypatch, tmp_path, name="raw2.hdf5", compression=None)
         with h5py.File(path, "r") as f:
-            assert f["pred_mzs"].chunks != (script_utils._HDF5_CHUNK_LEN,)
+            assert f["pred_mzs"].chunks != (runners._HDF5_CHUNK_LEN,)

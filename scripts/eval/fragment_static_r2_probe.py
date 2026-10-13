@@ -1,7 +1,7 @@
 """Compare a tied static radius-2 cut representation with a k=1 bond GNN.
 
 This is the follow-up experiment proposed in
-``docs/plans/fragment_bond_set_representation.md`` §7.4. Both arms use the same
+``docs/plans/fragnnet/fragment_bond_set_representation.md`` §7.4. Both arms use the same
 alias-free sibling-ranking cache and receive only their structural readout plus
 collision energy; fragment composition is deliberately omitted.
 

@@ -9,28 +9,15 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-import networkx as nx
 import numpy as np
 import scipy
 import torch as th
-import torch_geometric as pyg
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from torch_geometric.data import Data
 
-from fragnnet.utils.data_utils import (
-    make_maccs_fingerprint,
-    make_morgan_fingerprint,
-    make_rdkit_fingerprint,
-)
-from fragnnet.utils.frag_utils import (
-    CANONICAL_ELEMENT_ORDER,
-    EDGE_FEAT_TO_IDX,
-    NODE_FEAT_TO_IDX,
-    get_edge_feats,
-    get_node_feats,
-    th_long_to_mask,
-)
+from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER
+from fragnnet.utils.mol_utils import rdkit_import
 
 # TODO: remove this registry
 
@@ -59,6 +46,32 @@ def get_mol_feats_sizes(
 
     mg = MolGraph(atom_feats, bond_feats, pe_embed_k)
     return mg.num_atom_feats, mg.num_bond_feats
+
+
+def _atom_free_valence_slots(atom: Chem.rdchem.Atom) -> int:
+    """Return how many more hydrogens an atom could carry in the intact molecule.
+
+    Equal to ``ve - sbond - h``, the quantities FraGNNet builds in
+    ``dag.builder.extract_mol_info``: ``ve`` is the atom's total valence (less a positive
+    formal charge that funds a heavy-atom bond rather than an H slot), ``sbond`` its
+    heavy-atom degree, and ``h`` its current hydrogen count. It is exactly the atom's
+    share of unsaturation -- the sum of ``bond order - 1`` over its bonds -- so a
+    saturated atom scores 0 and each double bond contributes 1 to both endpoints.
+
+    Args:
+        atom: RDKit atom from a molecule with implicit hydrogens.
+
+    Returns:
+        Spare hydrogen slots, before any bond to a neighbouring fragment is cut.
+    """
+    hydrogens = atom.GetTotalNumHs()
+    valence = atom.GetTotalValence()
+    # A cationic atom carrying no hydrogens spends its extra valence on a heavy-atom bond,
+    # not on an H slot; protonated amines ([NH3+]) genuinely use it for H, hence the guard.
+    if atom.GetFormalCharge() > 0 and hydrogens == 0:
+        valence -= atom.GetFormalCharge()
+    heavy_degree = atom.GetTotalDegree() - hydrogens
+    return valence - heavy_degree - hydrogens
 
 
 class MolGraph:
@@ -146,16 +159,11 @@ class MolGraph:
                 atom_feat.extend(fn(atom))
             atom_feats.append(atom_feat)
 
-        atom_feats = np.array(atom_feats)
-        if len(bond_tuples) == 0:
-            # Bond-free molecule (a lone heavy atom such as CH4 or HCl). np.array([]) is
-            # 1-D, so give the empty arrays their real 2-D shape or every consumer below
-            # (and every downstream reshape/transpose) indexes a phantom axis.
-            bond_feats = np.zeros((0, self.num_bond_feats), dtype=np.int64)
-            bond_tuples = np.zeros((0, 2), dtype=np.int64)
-        else:
-            bond_feats = np.array(bond_feats)
-            bond_tuples = np.array(bond_tuples)
+        atom_feats = np.asarray(atom_feats).reshape(
+            len(atom_feats), self.num_atom_feats - self.pe_embed_k
+        )
+        bond_feats = np.asarray(bond_feats).reshape(len(bond_feats), self.num_bond_feats)
+        bond_tuples = np.asarray(bond_tuples, dtype=np.int64).reshape(-1, 2)
 
         # Add doubles
         if bigraph:
@@ -167,36 +175,6 @@ class MolGraph:
             "bond_feats": bond_feats,
             "bond_tuples": bond_tuples,
         }
-
-    def get_networkx_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> nx.Graph:
-        """Convert a molecule into a NetworkX graph with feature attributes.
-
-        Args:
-            mol: RDKit molecule object.
-            bigraph: Whether to create bidirectional edges.
-
-        Returns:
-            NetworkX graph with node features 'h' and edge features 'e'.
-        """
-        mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
-
-        bond_inds = mol_graph["bond_tuples"]
-        bond_feats = mol_graph["bond_feats"]
-        atom_feats = mol_graph["atom_feats"]
-
-        g = nx.Graph()
-        g.add_nodes_from(range(atom_feats.shape[0]))
-        g.add_edges_from(bond_inds)
-
-        node_attr_dict = {i: atom_feats[i] for i in range(atom_feats.shape[0])}
-        nx.set_node_attributes(g, values=node_attr_dict, name="h")
-        edge_attr_dict = {
-            (int(bond_inds[i, 0]), int(bond_inds[i, 1])): bond_feats[i]
-            for i in range(bond_inds.shape[0])
-        }
-        nx.set_edge_attributes(g, values=edge_attr_dict, name="e")
-
-        return g
 
     def get_pyg_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> Data:
         """Convert molecule to PyTorch Geometric Data object with features.
@@ -217,6 +195,54 @@ class MolGraph:
             x=th.from_numpy(atom_feats).float(),
             edge_index=th.from_numpy(bond_inds).long().transpose(1, 0),
             edge_attr=th.from_numpy(bond_feats).float(),
+        )
+
+        # Keep one entry per chemical bond alongside the possibly bidirectional
+        # message-passing edges. PyG increments ``*_index`` attributes by the
+        # atom offset when batching, so these endpoints remain valid globally.
+        num_chemical_bonds = mol.GetNumBonds()
+        g.chemical_bond_index = g.edge_index[:, :num_chemical_bonds].clone()
+        g.chemical_bond_attr = g.edge_attr[:num_chemical_bonds].clone()
+        g.atom_atomic_numbers = th.tensor(
+            [atom.GetAtomicNum() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        g.atom_hydrogen_counts = th.tensor(
+            [atom.GetTotalNumHs() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        g.atom_formal_charges = th.tensor(
+            [atom.GetFormalCharge() for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        # Spare hydrogen capacity per atom, in the intact molecule: how many further
+        # hydrogens the atom could carry if every one of its bonds were reduced to a single
+        # bond. Mirrors FraGNNet's `ve_arr`/`sbond_arr` arithmetic in
+        # `dag.builder.extract_mol_info` (`use_default_valence=False`), including its formal
+        # charge correction, so both models bound hydrogen transfer the same way. Cutting a
+        # bond frees one more slot per severed end, which the consumer adds per fragment.
+        g.atom_free_valence_slots = th.tensor(
+            [_atom_free_valence_slots(atom) for atom in mol.GetAtoms()],
+            dtype=th.long,
+        )
+        # Always exposed as its own field, so a consumer can pool charge per fragment without
+        # knowing the atom feature layout or requiring `a_charge` in the feature list. Measured
+        # at 0.03 ms/molecule, 1.1 s for the whole NIST20 molecule set.
+        if not self.needs_gasteiger:
+            AllChem.ComputeGasteigerCharges(mol)
+        g.atom_gasteiger_charges = th.tensor(
+            [
+                0.0 if math.isnan(v) or math.isinf(v) else v
+                for v in (atom.GetDoubleProp("_GasteigerCharge") for atom in mol.GetAtoms())
+            ],
+            dtype=th.float32,
+        )
+        g.atom_monoisotopic_masses = th.tensor(
+            [
+                Chem.GetPeriodicTable().GetMostCommonIsotopeMass(atom.GetAtomicNum())
+                for atom in mol.GetAtoms()
+            ],
+            dtype=th.float64,
         )
 
         if self.pe_embed_k > 0:
@@ -261,7 +287,9 @@ class AtomOneHot(FeatBase):
     """Atom element type features are one-hot encoded."""
 
     name = "a_onehot"
-    allowable_set = CANONICAL_ELEMENT_ORDER
+    # A copy: ``one_hot_encoding`` appends the unknown bucket to whatever list it is given, and
+    # ``CANONICAL_ELEMENT_ORDER`` is shared with the formula code in ``dag.formula``.
+    allowable_set = list(CANONICAL_ELEMENT_ORDER)
     feat_size = len(allowable_set) + 1
 
     @classmethod
@@ -279,7 +307,20 @@ class AtomOneHot(FeatBase):
 
 @register_atom_feat
 class AtomDegree(FeatBase):
-    """Atom Degree features are one-hot encoded."""
+    """Atom degree as two raw values plus a heavy-atom-degree one-hot.
+
+    The one-hot encodes ``GetDegree()``, the heavy-atom degree, because that is what bounds how
+    many bonds an atom can lose. Total degree stays available as raw column 1, and as
+    ``degree + a_num_hs`` wherever that feature is enabled.
+
+    Note:
+        Until 2026-09-20 ``featurize`` passed the pair ``[degree, total_degree]`` into
+        ``one_hot_encoding``. A list never equals an ``int``, so all 12 one-hot columns were
+        pinned to the unknown bucket and carried no information -- see §7.1 of
+        ``docs/reference/masster_feature_set_audit.md``. The fix keeps the 14-column width,
+        so a checkpoint trained before that date still loads but reads different inputs; such
+        checkpoints must be retrained.
+    """
 
     name = "a_degree"
     allowable_set = list(range(11))
@@ -287,17 +328,16 @@ class AtomDegree(FeatBase):
 
     @classmethod
     def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
-        """One-hot encode atom degree and total degree.
+        """Encode atom degree as two raw values plus a heavy-atom-degree one-hot.
 
         Args:
             x: RDKit atom object.
 
         Returns:
-            List containing degree values and one-hot encoded degree vector.
+            ``[degree, total_degree]`` followed by the one-hot of ``degree``.
         """
-        deg = [x.GetDegree(), x.GetTotalDegree()]
-        onehot = one_hot_encoding(deg, cls.allowable_set, True)
-        return deg + onehot
+        degree = x.GetDegree()
+        return [degree, x.GetTotalDegree()] + one_hot_encoding(degree, cls.allowable_set, True)
 
 
 @register_atom_feat
@@ -479,6 +519,35 @@ class AtomRingSize(FeatBase):
 
 
 @register_atom_feat
+class AtomFusedRing(FeatBase):
+    """Whether the atom belongs to two or more SSSR rings.
+
+    A fused (ring-junction) atom cannot be separated from its neighbours by a single bond
+    cleavage, so it behaves differently from an ordinary ring atom under fragmentation:
+    breaking one ring bond at a junction opens a macrocycle instead of releasing a fragment.
+    Neither ``a_ring`` nor ``a_ring_size`` encodes this -- both are satisfied by a single
+    ring. Measured on 5,000 NIST20 molecules: 6.5% of atoms are fused and 40.3% of molecules
+    contain at least one.
+    """
+
+    name = "a_fused_ring"
+    feat_size = 2
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode whether the atom sits at a ring fusion.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot vector of length 2: ``[not fused, fused]``.
+        """
+        num_rings = x.GetOwningMol().GetRingInfo().NumAtomRings(x.GetIdx())
+        return one_hot_encoding(num_rings >= 2, [False, True], False)
+
+
+@register_atom_feat
 class AtomCharge(FeatBase):
     """Gasteiger partial charge (continuous scalar).
 
@@ -624,6 +693,65 @@ class BondConj(FeatBase):
         return one_hot_encoding(x.GetIsConjugated(), [False, True], False)
 
 
+@register_bond_feat
+class BondRingSize(FeatBase):
+    """Ring size membership features for bonds.
+
+    The bond analogue of ``a_ring_size``: five binary bits for membership in a ring of size
+    3, 4, 5, 6, or >=7, all zero for acyclic bonds. Ring size governs cleavage propensity --
+    a bond in a strained three- or four-membered ring breaks on a different footing than one
+    in a benzene ring -- and ``a_ring_size`` only reaches it indirectly, through the two
+    endpoints, which cannot distinguish a bond shared by two rings of different size.
+    Measured on 5,000 NIST20 molecules: 50.3% of bonds are in a ring, distributed
+    0.6 / 0.2 / 17.7 / 80.0 / 3.9% over [3, 4, 5, 6, >=7].
+    """
+
+    name = "b_ring_size"
+    feat_size = 5
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """Encode bond ring size membership.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            Binary list of length 5: ``[in3, in4, in5, in6, inGe7]``.
+        """
+        ring_info = x.GetOwningMol().GetRingInfo()
+        idx = x.GetIdx()
+        in_small = [ring_info.IsBondInRingOfSize(idx, s) for s in (3, 4, 5, 6)]
+        in_ge7 = x.IsInRing() and not any(in_small)
+        return [int(v) for v in in_small] + [int(in_ge7)]
+
+
+@register_bond_feat
+class BondFusedRing(FeatBase):
+    """Whether the bond belongs to two or more SSSR rings.
+
+    The bond analogue of ``a_fused_ring``, and the sharper of the two for fragmentation:
+    cleaving a bond shared by two rings cannot disconnect the molecule at all, so such bonds
+    never yield a fragment on their own. Measured on 5,000 NIST20 molecules: 3.6% of bonds.
+    """
+
+    name = "b_fused_ring"
+    feat_size = 2
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """One-hot encode whether the bond is shared by two or more rings.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            One-hot vector of length 2: ``[not fused, fused]``.
+        """
+        num_rings = x.GetOwningMol().GetRingInfo().NumBondRings(x.GetIdx())
+        return one_hot_encoding(num_rings >= 2, [False, True], False)
+
+
 def one_hot_encoding(x: Any, allowable_set: list[Any], encode_unknown: bool = False) -> list[int]:
     """One-hot encode ``x`` against an allowable set.
 
@@ -645,105 +773,6 @@ def one_hot_encoding(x: Any, allowable_set: list[Any], encode_unknown: bool = Fa
         x = None
 
     return [int(x == s) for s in allowable_set]
-
-
-def batch_mols_frags(
-    mol_pyg_list: Sequence[pyg.data.Data],
-    frag_pyg_list: Sequence[pyg.data.Data],
-    formula_peak_mzs_list: Sequence[th.Tensor],
-    formula_peak_probs_list: Sequence[th.Tensor],
-    debug_validate_outputs: bool = False,
-) -> dict[str, Any]:
-    """Batch molecule/fragment graphs and sparse formula peak tensors."""
-    # batch size
-    batch_size = len(mol_pyg_list)
-    # Convert the input lists of molecules and fragments into PyTorch Geometric data batches
-    mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list)
-    frag_pyg = pyg.data.Batch.from_data_list(frag_pyg_list)
-
-    # Assert that the number of graphs in both molecule and fragment batches matches the batch size
-    assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
-    # Assert that the node/edge feature indices are consistent. This is useful for
-    # debugging data corruption, but expensive enough to keep off in normal training.
-    if debug_validate_outputs:
-        assert all(
-            th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i])
-            for i in range(batch_size)
-        )
-        assert all(
-            th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i])
-            for i in range(batch_size)
-        )
-
-    # Compute the cumulative sum of nodes for molecules and fragments, to track the total number of nodes per graph
-    mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
-    frag_num_nodes = [g.num_nodes for g in frag_pyg_list]
-    mol_num_nodes = th.cumsum(th.tensor([0] + mol_num_nodes), dim=0)
-    frag_num_nodes = th.cumsum(th.tensor([0] + frag_num_nodes), dim=0)
-
-    boundary_pair_frag_idxs = []
-    boundary_pair_in_idxs = []
-    boundary_pair_out_idxs = []
-    for mol_idx, (mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
-        if not hasattr(frag_pyg_item, "boundary_pair_frag_idxs"):
-            raise ValueError(
-                "frag_pyg is missing precomputed boundary_pair_* attributes; "
-                "regenerate DAGs before using the boundary_pair feature"
-            )
-        frag_offsets = frag_num_nodes[mol_idx]
-        mol_offsets = mol_num_nodes[mol_idx]
-        boundary_pair_frag_idxs.append(frag_pyg_item.boundary_pair_frag_idxs + frag_offsets)
-        boundary_pair_in_idxs.append(frag_pyg_item.boundary_pair_in_local + mol_offsets)
-        boundary_pair_out_idxs.append(frag_pyg_item.boundary_pair_out_local + mol_offsets)
-
-    # Initialize lists
-    frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
-    frag_formula_peak_mzs = []
-    frag_formula_peak_probs = []
-    frag_formula_sizes = []  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
-    frag_formula_peak_sizes = []  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
-
-    # Loop through the mz and probs for each sample
-    for mzs, probs in zip(formula_peak_mzs_list, formula_peak_probs_list):
-        # sparsify: retain only non-zero probability peaks
-        idx = th.nonzero(probs)
-        # Extract mass-to-charge ratios where probability is non-zero
-        mzs = mzs[idx[:, 0], idx[:, 1]]
-        # Extract probabilities where probability is non-zero
-        probs = probs[idx[:, 0], idx[:, 1]]
-        # Append the filtered results for each fragment
-        frag_formula_peak_idxs.append(idx[:, 0])
-        frag_formula_peak_mzs.append(mzs)
-        frag_formula_peak_probs.append(probs)
-
-        # Calculate the number of unique formula peaks and the total peak sizes
-        # In case of isotopes, each formula can have more then one peak
-        frag_formula_sizes.append(th.unique(idx, sorted=True).shape[0])
-        frag_formula_peak_sizes.append(idx.shape[0])
-
-    # Flatten the lists to single dimension tensor
-    frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs, dim=0)
-    frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs, dim=0)
-    frag_formula_peak_probs = th.cat(frag_formula_peak_probs, dim=0)
-    frag_formula_cumsizes = th.cumsum(th.tensor([0] + frag_formula_sizes), dim=0)
-    frag_formula_sizes = th.tensor(frag_formula_sizes)
-    frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)
-    batched_mol_frag = {
-        "mol_pyg": mol_pyg,  # PyG batch for molecules
-        "frag_pyg": frag_pyg,  # PyG batch for fragments
-        "mol_num_nodes": mol_num_nodes,  # Cumulative node count for molecules
-        "frag_num_nodes": frag_num_nodes,  # Cumulative node count for fragments
-        "frag_formula_peak_idxs": frag_formula_peak_idxs,  # Flattened tensor mapping each peak to its local formula index (0-based per molecule)
-        "frag_formula_peak_mzs": frag_formula_peak_mzs,  # Flattened tensor of m/z values for each peak
-        "frag_formula_peak_probs": frag_formula_peak_probs,  # Flattened tensor of theoretical isotopic probabilities for each peak
-        "frag_formula_sizes": frag_formula_sizes,  # Tensor containing the number of unique formulas (fragments) with peaks for each molecule
-        "frag_formula_cumsizes": frag_formula_cumsizes,  # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
-        "frag_formula_peak_sizes": frag_formula_peak_sizes,  # Tensor containing the total number of peaks (isotopes) for each molecule
-    }
-    batched_mol_frag["boundary_pair_frag_idxs"] = th.cat(boundary_pair_frag_idxs, dim=0)
-    batched_mol_frag["boundary_pair_in_idxs"] = th.cat(boundary_pair_in_idxs, dim=0)
-    batched_mol_frag["boundary_pair_out_idxs"] = th.cat(boundary_pair_out_idxs, dim=0)
-    return batched_mol_frag
 
 
 def get_mol_fp(
@@ -787,32 +816,6 @@ def get_mol_fp(
     return fp
 
 
-def get_mol_fp_size(
-    morgan: bool,
-    rdkit: bool,
-    maccs: bool,
-    morgan_radius: int = 3,
-    morgan_nbits: int = 2048,
-    rdkit_nbits: int = 2048,
-) -> int:
-    """Return the length of the concatenated fingerprint vector for a test molecule.
-
-    Args:
-        morgan: Whether to include Morgan fingerprints.
-        rdkit: Whether to include RDKit fingerprints.
-        maccs: Whether to include MACCS fingerprints.
-        morgan_radius: Radius for Morgan fingerprint (default: 3).
-        morgan_nbits: Number of bits for Morgan fingerprint (default: 2048).
-        rdkit_nbits: Number of bits for RDKit fingerprint (default: 2048).
-
-    Returns:
-        Total length of concatenated fingerprint vector.
-    """
-    mol = Chem.MolFromSmiles("CCO")  # type: ignore[attr-defined]
-    fp = get_mol_fp(mol, morgan, rdkit, maccs, morgan_radius, morgan_nbits, rdkit_nbits)
-    return fp.shape[0]
-
-
 def get_mol_graph(
     mol: Chem.rdchem.Mol,
     atom_feats: Sequence[str],
@@ -838,124 +841,6 @@ def get_mol_graph(
     return mol_pyg
 
 
-def get_frag_graph(
-    dag_pyg: Data,
-    frag_node_feats: Sequence[str],
-    frag_edge_feats: Sequence[str],
-    edges: bool,
-    bigraph: bool,
-    gasteiger_arr: np.ndarray | None = None,
-) -> Data:
-    """Subselect DAG features and optionally symmetrize edges for fragments.
-
-    Args:
-        dag_pyg: Input PyTorch Geometric Data object with node and edge features.
-        frag_node_feats: Sequence of node feature names to include.
-        frag_edge_feats: Sequence of edge feature names to include.
-        edges: Whether to include edges in the output graph.
-        bigraph: Whether to symmetrize edges by adding reverse directions.
-        gasteiger_arr: Per-atom Gasteiger partial charges of shape (num_atoms,).
-            Required when "frag_q" is in frag_node_feats; zeros used if None.
-
-    Returns:
-        PyTorch Geometric Data object with selected features and optionally symmetrized edges.
-
-    Raises:
-        ValueError: If dag_pyg.x (node features) is None.
-    """
-
-    source_dag_pyg = dag_pyg
-    device = dag_pyg.x.device
-    # cast
-    x = dag_pyg.x.long()
-    edge_attr = dag_pyg.edge_attr.long()
-    edge_index = dag_pyg.edge_index.long()
-    node_feat_idxs = dag_pyg.node_feat_idxs.long()
-    edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
-    # select node features
-    # TODO: out_degree / in_degree / num_heavy_atoms are computed on-the-fly here for now
-    # (avoids DAG regeneration during testing). Once validated, move the computation into
-    # compute_dags in frag_utils.py and store them in dag.x like other features.
-    _x = []
-    _node_feat_idxs = [0]
-    _node_feat_size = 0
-    num_nodes = x.shape[0]
-    for feat, _ in NODE_FEAT_TO_IDX.items():
-        if feat in frag_node_feats:
-            if feat == "out_degree":  # on-the-fly: count outgoing edges per node
-                _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
-                if edge_index.shape[1] > 0:
-                    _x_cur.scatter_add_(0, edge_index[0].unsqueeze(1), th.ones_like(edge_index[0].unsqueeze(1)))
-            elif feat == "in_degree":  # on-the-fly: count incoming edges per node
-                _x_cur = th.zeros(num_nodes, 1, device=device, dtype=th.int64)
-                if edge_index.shape[1] > 0:
-                    _x_cur.scatter_add_(0, edge_index[1].unsqueeze(1), th.ones_like(edge_index[1].unsqueeze(1)))
-            elif feat == "num_heavy_atoms":  # on-the-fly: sum base_formula (H col is already 0)
-                _x_cur = get_node_feats(x, node_feat_idxs[0], "base_formula").sum(dim=1, keepdim=True)
-            else:
-                _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
-            _x.append(_x_cur)
-            _node_feat_size += _x_cur.shape[1]
-            # print(feat,feat_idx,_node_feat_size)
-        _node_feat_idxs.append(_node_feat_size)
-    if len(_x) == 0:
-        _x = th.zeros(num_nodes, 0, device=device, dtype=th.int64)
-    else:
-        _x = th.cat(_x, dim=1)
-    _node_feat_idxs = th.tensor(_node_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
-    # select edge features
-    _edge_index = edge_index.clone()
-    _edge_attr = []
-    _edge_feat_idxs = [0]
-    _edge_feat_size = 0
-    for feat, _ in EDGE_FEAT_TO_IDX.items():
-        if feat in frag_edge_feats:
-            assert edges
-            _edge_attr_cur = get_edge_feats(edge_attr, edge_feat_idxs[0], feat)
-            _edge_attr.append(_edge_attr_cur)
-            _edge_feat_size += _edge_attr_cur.shape[1]
-            # print(feat,feat_idx,_edge_feat_size)
-        _edge_feat_idxs.append(_edge_feat_size)
-    if len(_edge_attr) == 0:
-        _edge_attr = [th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)]
-    _edge_attr = th.cat(_edge_attr, dim=1)
-    _edge_feat_idxs = th.tensor(_edge_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
-    if bigraph:
-        assert edges
-        _edge_index_c = th.stack([_edge_index[1], _edge_index[0]], dim=0)
-        assert not th.any(th.all(_edge_index == _edge_index_c, dim=0), dim=0)
-        _edge_attr_c = _edge_attr.clone()
-        if "complement" in frag_edge_feats:
-            _edge_attr_c[:, -1] = 1 - _edge_attr_c[:, -1]
-        _edge_index = th.cat([_edge_index, _edge_index_c], dim=1)
-        _edge_attr = th.cat([_edge_attr, _edge_attr_c], dim=0)
-    if not edges:
-        assert not bigraph
-        _edge_index = _edge_index[:, :0]
-        _edge_attr = _edge_attr[:0, :]
-    # create pyg object
-    dag_pyg = pyg.data.Data(
-        x=_x,
-        edge_index=_edge_index,
-        edge_attr=_edge_attr,
-        node_feat_idxs=_node_feat_idxs,
-        edge_feat_idxs=_edge_feat_idxs,
-    )
-    for attr_name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
-        if hasattr(source_dag_pyg, attr_name):
-            setattr(dag_pyg, attr_name, getattr(source_dag_pyg, attr_name))
-    if "frag_q" in frag_node_feats:
-        if gasteiger_arr is None:
-            frag_q = th.zeros(num_nodes, 1, dtype=th.float32, device=device)
-        else:
-            cc_long = get_node_feats(x, node_feat_idxs[0], "cc").long()
-            cc_binary = th_long_to_mask(cc_long)[:, : len(gasteiger_arr)].float()
-            g_arr = th.as_tensor(gasteiger_arr, dtype=th.float32, device=device)
-            frag_q = (cc_binary @ g_arr).unsqueeze(1)
-        dag_pyg.frag_q = frag_q
-    return dag_pyg
-
-
 def random_walk_pe(g: Data, k: int) -> th.Tensor:
     """Random Walk Positional Encoding, as introduced in
     `Graph Neural Networks with Learnable Structural and Positional Representations
@@ -972,23 +857,17 @@ def random_walk_pe(g: Data, k: int) -> th.Tensor:
         Random walk positional encodings of shape (N, k) where N is the number of nodes.
 
     Example:
-        >>> import dgl
-        >>> g = dgl.graph(([0,1,1], [1,1,0]))
-        >>> dgl.random_walk_pe(g, 2)
+        >>> g = Data(edge_index=th.tensor([[0, 1, 1], [1, 1, 0]]), num_nodes=2)
+        >>> random_walk_pe(g, 2)
         tensor([[0.0000, 0.5000],
                 [0.5000, 0.7500]])
     """
-    # Sparse adjacency matrix. The shape is passed explicitly rather than inferred from the
-    # largest index: inference gives (max_row + 1, max_col + 1), which is wrong whenever an
-    # atom is missing from either endpoint list. A bond-free molecule (a lone heavy atom)
-    # has no indices at all and cannot be inferred from, and a directed (bigraph=False)
-    # graph is generally not even square.
+    # sparse adjacency matrix
     A = scipy.sparse.csr_matrix(
         (
             th.ones_like(g.edge_index[0]).numpy(),
             (g.edge_index[0].numpy(), g.edge_index[1].numpy()),
-        ),
-        shape=(g.num_nodes, g.num_nodes),
+        )
     )
     RW = A / (A.sum(1).reshape(-1, 1) + 1e-30)  # 1-step transition probability
 
@@ -1001,3 +880,80 @@ def random_walk_pe(g: Data, k: int) -> th.Tensor:
     PE = np.stack(PE, axis=-1)
     PE = th.as_tensor(PE, dtype=th.float32)
     return PE
+
+
+def make_morgan_fingerprint(
+    mol: "Chem.rdchem.Mol",
+    radius: int = 3,
+    nbits: int = 2048,
+    covert_to_np: bool = True,
+) -> np.ndarray:
+    """Make Morgan fingerprint from mol object.
+
+    Args:
+        mol: RDKit mol object
+        radius: Fingerprint radius (default: 3). Must be > 0.
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+        covert_to_np: Whether to convert to numpy array (default: True)
+
+    Returns:
+        Fingerprint as numpy array or RDKit fingerprint object
+
+    Raises:
+        ValueError: If radius <= 0 or nbits <= 0
+    """
+    if radius <= 0:
+        raise ValueError(f"morgan_radius must be positive integer, got {radius}")
+    if nbits <= 0:
+        raise ValueError(f"morgan_nbits must be positive integer, got {nbits}")
+
+    modules = rdkit_import("rdkit.Chem.AllChem", "rdkit.DataStructs")
+    AllChem = modules[0]
+    ds = modules[1]
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
+    if covert_to_np:
+        fp_arr = np.zeros(1)
+        ds.ConvertToNumpyArray(fp, fp_arr)
+    else:
+        fp_arr = fp
+    return fp_arr
+
+
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol", nbits: int = 2048) -> np.array:
+    """Make RDKit fingerprint from mol object.
+
+    Args:
+        mol: RDKit mol object
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+
+    Returns:
+        Fingerprint as numpy array
+
+    Raises:
+        ValueError: If nbits <= 0
+    """
+    if nbits <= 0:
+        raise ValueError(f"rdkit_nbits must be positive integer, got {nbits}")
+
+    chem, ds = rdkit_import("rdkit.Chem", "rdkit.DataStructs")
+    fp = chem.RDKFingerprint(mol, fpSize=nbits)
+    fp_arr = np.zeros(1)
+    ds.ConvertToNumpyArray(fp, fp_arr)
+    return fp_arr
+
+
+def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
+    """make maccs fingerpirnt from mol object
+
+    Args:
+            mol (rdkit mol): mol object
+
+    Returns:
+            fp_arr:  np.array
+    """
+
+    maccs, ds = rdkit_import("rdkit.Chem.MACCSkeys", "rdkit.DataStructs")
+    fp = maccs.GenMACCSKeys(mol)
+    fp_arr = np.zeros(1)
+    ds.ConvertToNumpyArray(fp, fp_arr)
+    return fp_arr

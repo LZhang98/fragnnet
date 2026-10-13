@@ -1,7 +1,7 @@
 """Tests for the complementary-cut pair target builder.
 
 Covers the builder-verification list in
-``docs/plans/complementary_cut_supervision_experiment_plan.md``: the target
+``docs/plans/fragnnet/complementary_cut_supervision_experiment_plan.md``: the target
 uses raw intensity while responsibility only moves the group weight, sub-LOD and mass-aliased
 pairs produce no gradient, a one-sided supra-LOD peak yields a soft target rather than ``(1, 0)``,
 and stronger evidence moves the target monotonically away from ``0.5``.
@@ -15,11 +15,8 @@ import sys
 import numpy as np
 import pytest
 
-from fragnnet.utils.formula_utils import (
-    PREC_TYPE_TO_CMF_MASS_DIFF,
-    PREC_TYPE_TO_MASS_DIFF,
-    tracked_element_counts,
-)
+from fragnnet.models.fragnnet.fragnnet_adducts import tracked_element_counts
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "eval")

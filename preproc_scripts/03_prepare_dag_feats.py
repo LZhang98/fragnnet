@@ -7,19 +7,21 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.frag_utils import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.dag import storage
+from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5, timed_get_dags
+from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
+from fragnnet.utils import dag_format_utils, formula_utils, parallel_utils
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 # Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
-# (e.g. config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
+# (e.g. config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
 # cos_hun_inst_tol_opt convention in scripts/eval/dag_oracle_scores.py. Instrument types
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).
 DEFAULT_INST_TYPE_LOSS_TOL = {
-    "FT": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "ORB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da
+    "ORB_F": {"rel": 1.0e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2.0e-5, "min_mz": 750.0},  # 20 ppm, floor 750 Da (covers truncation artifact)
 }
 
@@ -77,10 +79,10 @@ def log_frag_output_summary(args, h5_fp: str, dag_dp: str) -> None:
 
 
 def main(args):
-    if args.max_time >= data_utils.JOBLIB_TIMEOUT:
+    if args.max_time >= parallel_utils.JOBLIB_TIMEOUT:
         raise ValueError(
             f"max_time ({args.max_time}s) must be less than JOBLIB_TIMEOUT "
-            f"({data_utils.JOBLIB_TIMEOUT}s)"
+            f"({parallel_utils.JOBLIB_TIMEOUT}s)"
         )
 
     # Setup logging. datefmt is explicit so asctime renders as "2026-09-14 22:06:53"
@@ -123,13 +125,12 @@ def main(args):
 
     # read in the molecule data
     mol_df_fp = os.path.join(args.project_dp, args.proc_dp, "mol_df.pkl")
-    print(f"read in mol from {mol_df_fp}")
+    logging.info(f"read in mol from {mol_df_fp}")
     mol_df = pd.read_pickle(mol_df_fp)
 
     sped_df_fp = os.path.join(args.project_dp, args.proc_dp, "spec_df.pkl")
-    print(f"read in spec from {sped_df_fp}")
+    logging.info(f"read in spec from {sped_df_fp}")
     spec_df = pd.read_pickle(sped_df_fp)
-    print()
 
     # perform filter selection
     prec_types = args.prec_types
@@ -153,16 +154,12 @@ def main(args):
 
     n_dup = mol_df["mol_id"].duplicated().sum()
     if n_dup > 0:
-        print(f">> WARNING: mol_df has {n_dup} duplicate mol_ids — deduplicating")
+        logging.warning(f"mol_df has {n_dup} duplicate mol_ids — deduplicating")
         mol_df = mol_df.drop_duplicates(subset=["mol_id"]).reset_index(drop=True)
 
-    print(
-        f">> {len(spec_df)} spectra, {len(mol_df)} molecules"
-    )  # , {len(m_spec_df)} merged spectra")
-    print(spec_df["prec_type"].value_counts())
-    print(spec_df["inst_type"].value_counts())
-
-    print()
+    logging.info(f"{len(spec_df)} spectra, {len(mol_df)} molecules")
+    logging.info(f"prec_type counts:\n{spec_df['prec_type'].value_counts()}")
+    logging.info(f"inst_type counts:\n{spec_df['inst_type'].value_counts()}")
 
     num_atoms = mol_df["num_atoms"]
     print_and_log("num_atoms", num_atoms, wandb_flag, {})
@@ -190,7 +187,7 @@ def main(args):
 
         In addition to each fixed tolerance in ``tolerances``, an ``inst_tol`` variant is
         emitted that uses the per-instrument m/z tolerance in ``args.inst_type_loss_tol``
-        (default: FT 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
+        (default: ORB/ORB_F 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
         to 10 ppm).
         This mirrors the ``cos_hun_inst_tol_opt`` convention in
         ``scripts/eval/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
@@ -217,7 +214,7 @@ def main(args):
                     f"prec_spec_recall_{tolerance}_h{h_transfer}",
                 ]
                 if "ppm" in tolerance:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -229,7 +226,7 @@ def main(args):
                         is_ppm=True,
                     )
                 else:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -244,7 +241,7 @@ def main(args):
 
         # Per-instrument tolerance variant (inst_tol). The base tolerance=10/is_ppm=True is
         # the 10 ppm fallback for instrument types absent from args.inst_type_loss_tol; for
-        # FT/QTOF it is overridden per-peak by inst_type_tol.
+        # ORB/ORB_F/QTOF it is overridden per-peak by inst_type_tol.
         for h_transfer in range(1, max_h_transfer + 1):
             cols += [
                 f"recall_inst_tol_h{h_transfer}",
@@ -256,7 +253,7 @@ def main(args):
                 f"prec_spec_recall_inst_tol_h{h_transfer}",
             ]
             results.append(
-                frag_utils.compute_frag_peak_stats(
+                compute_frag_peak_stats(
                     peaks,
                     formula_peak_mzs,
                     formula_peak_probs,
@@ -276,7 +273,7 @@ def main(args):
         result_df.columns = cols
         return result_df
 
-    print("> Compute Fragments")
+    logging.info("> Compute Fragments")
     mol_input_rows = (
         [
             row["mol"],
@@ -326,7 +323,9 @@ def main(args):
                 min_frag_atoms=args.min_frag_atoms,
                 max_ring_cut_steps=args.max_ring_cut_steps,
                 restrict_ring_open=args.restrict_ring_open,
-                disable_tqdm=args.disable_tqdm,
+                # tqdm is never used here: ProgressLogger inside run_frag_gen_hdf5 is the
+                # only progress reporter, so SLURM logs stay line-oriented.
+                disable_tqdm=True,
             )
         with open(meta_info_fp, "w") as f:
             f.write(json.dumps(meta_info))
@@ -338,11 +337,11 @@ def main(args):
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
-        frag_utils.initialize_packed_dag_hdf5(h5_file)
+        storage.initialize_packed_dag_hdf5(h5_file)
     else:
         h5_file = None
-    frag_results_gen = data_utils.par_apply(
-        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+    frag_results_gen = parallel_utils.par_apply(
+        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
     )
     if frag_results_gen is None:
         raise RuntimeError("Parallel fragment generation did not return any results")
@@ -387,16 +386,16 @@ def main(args):
                 if args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
-                    frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+                    storage.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
                     # Write one artifact per molecule when HDF5 storage is disabled.
-                    fp = frag_utils.get_dag_output_path(
+                    fp = dag_format_utils.get_dag_output_path(
                         dag_dp=dag_dp,
                         mol_id=mol_id,
                         compress_dags=args.compress_dags,
                         compress_format=args.compress_format,
                     )
-                    frag_utils.dump_dag_pickle(fp, dag_d)
+                    dag_format_utils.dump_dag_pickle(fp, dag_d)
             except MemoryError:
                 logging.error(f"OOM (MemoryError) writing DAG for mol_id={mol_id} — skipping")
                 oom_mol_ids.append(mol_id)
@@ -467,8 +466,7 @@ def main(args):
     # count failures, then remove them
     num_failures = frag_stats_df.isna().any(axis=1).sum()
     frag_stats_d["total_num_failures"] = num_failures
-    print(f"> total num failures: {num_failures}")
-    print()
+    logging.info(f"> total num failures: {num_failures}")
     if wandb_flag:
         wandb.log({"total_num_failures": num_failures, "step": 0})
     frag_stats_df = frag_stats_df.dropna(axis=0)
@@ -480,13 +478,10 @@ def main(args):
     for idx_to_formula in frag_stats_df["idx_to_formula"].values:
         unique_formulae.update(list(idx_to_formula.values()))
     frag_stats_d["total_num_formulae"] = len(unique_formulae)
-    print(f"> total num formulae: {len(unique_formulae)}")
-    print()
+    logging.info(f"> total num formulae: {len(unique_formulae)}")
 
     # compute total number of depths
-    print("> depth:")
-    print(frag_stats_df["depth"].value_counts())
-    print()
+    logging.info(f"> depth:\n{frag_stats_df['depth'].value_counts()}")
     depth_d = {f"depth/{k}": v for k, v in frag_stats_df["depth"].value_counts().to_dict().items()}
     frag_stats_d.update(depth_d)
     if wandb_flag:
@@ -515,7 +510,7 @@ def main(args):
     # drop idx_to_formula
     frag_stats_df = frag_stats_df.drop(columns=["idx_to_formula"])
 
-    print("> Compute Spectra Stats")
+    logging.info("> Compute Spectra Stats")
 
     stats_cols = [
         "num_formulae",
@@ -560,7 +555,7 @@ def main(args):
             peak_spec_df.iterrows(),
             total=peak_spec_df.shape[0],
             desc="prepare spectra stats inputs",
-            disable_tqdm=args.disable_tqdm,
+            disable_tqdm=True,  # log progress instead of drawing a tqdm bar
         ):
             spectra_input_rows.append(
                 [
@@ -577,7 +572,7 @@ def main(args):
             )
 
         logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
-        stats_results = data_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
+        stats_results = parallel_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
         del spectra_input_rows
         stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
         del stats_results
@@ -597,7 +592,7 @@ def main(args):
         for key in metric_keys + stats_cols:
             print_and_log(spec_prefix + key, peak_spec_df[key], wandb_flag, frag_stats_d)
 
-        print("> Compute Molecule Stats")
+        logging.info("> Compute Molecule Stats")
 
         # collect across molecules and report summary statistics
         peak_mol_df = (
@@ -682,9 +677,9 @@ if __name__ == "__main__":
         default=DEFAULT_INST_TYPE_LOSS_TOL,
         help=(
             "JSON mapping of instrument type to per-instrument m/z tolerance for the "
-            'inst_tol stats variant, e.g. \'{"FT": {"rel": 1e-5, "min_mz": 200.0}}\'. '
+            'inst_tol stats variant, e.g. \'{"ORB": {"rel": 1e-5, "min_mz": 200.0}}\'. '
             "Instrument types absent from the mapping fall back to a 10 ppm relative "
-            "tolerance. Default matches the training configs (FT 10 ppm/200 Da, "
+            "tolerance. Default matches the training configs (ORB/ORB_F 10 ppm/200 Da, "
             "QTOF 20 ppm/750 Da)."
         ),
     )
@@ -734,7 +729,7 @@ if __name__ == "__main__":
         "--elements",
         type=str,
         nargs="+",
-        default=frag_utils.ELEMENTS,
+        default=formula_utils.ELEMENTS,
         help="Allowed chemical elements for molecules",
     )
     parser.add_argument(
@@ -763,12 +758,6 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help="Save DAGs to <frag_dp>/dags.h5 (HDF5) instead of one pickle per molecule.",
-    )
-    parser.add_argument(
-        "--disable_tqdm",
-        type=booltype,
-        default=False,
-        help="Disable tqdm progress bars and use logging instead",
     )
     parser.add_argument(
         "--skip_stats",

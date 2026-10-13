@@ -21,8 +21,7 @@ Tests:
 import pytest
 import torch as th
 
-from fragnnet.utils.misc_utils import scatter_reduce
-
+from fragnnet.utils.scatter_utils import scatter_reduce
 
 # ---------------------------------------------------------------------------
 # Helper: run the trimming logic extracted from fragnnet_model.py forward()
@@ -57,9 +56,9 @@ def _run_trim(
     device = frag_joint_formula_idxs.device
     h_width = frag_joint_formula_idxs.shape[1]
     num_hs_diff = (h_width - 1) // 2 - num_hs_model
-    assert num_hs_diff >= 0, (
-        f"DAG max_h_transfer ({(h_width - 1) // 2}) < model num_hs ({num_hs_model})"
-    )
+    assert (
+        num_hs_diff >= 0
+    ), f"DAG max_h_transfer ({(h_width - 1) // 2}) < model num_hs ({num_hs_model})"
     if num_hs_diff == 0:
         return {
             "num_hs_diff": 0,
@@ -74,13 +73,13 @@ def _run_trim(
         }
 
     # Trim last 2*num_hs_diff columns
-    frag_joint_formula_idxs = frag_joint_formula_idxs[:, :-2 * num_hs_diff].flatten()
+    frag_joint_formula_idxs = frag_joint_formula_idxs[:, : -2 * num_hs_diff].flatten()
 
     frag_joint_formula_idxs_un, frag_joint_formula_idxs_inv = th.unique(
         th.cat([frag_joint_formula_idxs, frag_formula_cumsizes[:-1]], dim=0),
         return_inverse=True,
     )
-    frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[:frag_joint_formula_idxs.shape[0]]
+    frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[: frag_joint_formula_idxs.shape[0]]
 
     frag_formula_peak_mask = th.isin(
         frag_formula_idxs_pretrim[~th.isin(frag_formula_idxs_pretrim, frag_formula_cumsizes[:-1])],
@@ -93,7 +92,6 @@ def _run_trim(
         frag_joint_formula_idxs_inv
     ]
 
-    frag_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
     frag_formula_sizes = scatter_reduce(
         th.ones_like(frag_formula_batch_idxs),
         frag_formula_batch_idxs,
@@ -101,7 +99,10 @@ def _run_trim(
         dim_size=batch_size,
     )
     frag_formula_cumsizes = th.cumsum(
-        th.cat([th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes], dim=0),
+        th.cat(
+            [th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes],
+            dim=0,
+        ),
         dim=0,
     )
 
@@ -134,15 +135,14 @@ def h4_single_mol():
     """
     # [N=2, h_width=9]  — global formula indices after adding per-batch offset (0 here)
     frag_joint_formula_idxs = th.tensor(
-        [[0, 1, 2, 3, 4, 5, 6, 7, 8],
-         [0, 1, 2, 3, 4, 5, 6, 7, 8]],
+        [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 1, 2, 3, 4, 5, 6, 7, 8]],
         dtype=th.long,
     )
     frag_formula_cumsizes = th.tensor([0, 9], dtype=th.long)  # [0, total_formulae]
-    frag_formula_batch_idxs = th.zeros(9, dtype=th.long)       # all formulas → batch 0
-    frag_formula_peak_probs = th.full((8,), 0.125)             # 8 non-null peaks, uniform
+    frag_formula_batch_idxs = th.zeros(9, dtype=th.long)  # all formulas → batch 0
+    frag_formula_peak_probs = th.full((8,), 0.125)  # 8 non-null peaks, uniform
     frag_formula_peak_mzs = th.arange(1, 9, dtype=th.float32) * 50.0  # 50, 100, ..., 400
-    frag_formula_idxs_pretrim = th.arange(9, dtype=th.long)   # unique formula indices [0..8]
+    frag_formula_idxs_pretrim = th.arange(9, dtype=th.long)  # unique formula indices [0..8]
     return {
         "frag_joint_formula_idxs": frag_joint_formula_idxs,
         "frag_formula_cumsizes": frag_formula_cumsizes,
@@ -181,7 +181,7 @@ class TestH4ToH3Trim:
         """Peak mask must be True for first 6 peaks (Δ-1..Δ+3) and False for last 2 (Δ-4, Δ+4)."""
         result = _run_trim(num_hs_model=3, **h4_single_mol)
         mask = result["frag_formula_peak_mask"]
-        assert mask.shape[0] == 8   # 8 pre-trim non-null peaks
+        assert mask.shape[0] == 8  # 8 pre-trim non-null peaks
         assert mask[:6].all(), "First 6 peaks (within h3 range) should survive"
         assert not mask[6:].any(), "Last 2 peaks (Δ±4) should be dropped"
 
@@ -242,9 +242,7 @@ class TestAssertionOnInsufficientDAG:
     def test_h2_dag_with_num_hs3_raises(self):
         """h2 DAG (5 columns) cannot satisfy num_hs=3 (expected ≥ 7 columns)."""
         # Build an h2 DAG (5 columns)
-        frag_joint_formula_idxs = th.tensor(
-            [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype=th.long
-        )
+        frag_joint_formula_idxs = th.tensor([[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]], dtype=th.long)
         with pytest.raises(AssertionError, match="num_hs"):
             _run_trim(
                 frag_joint_formula_idxs=frag_joint_formula_idxs,

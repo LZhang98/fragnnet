@@ -1,8 +1,7 @@
 # NIST20 Data-Quality Diagnostics and Proposed Validation
 
-> **Status:** ACTIVE &nbsp;·&nbsp; **Updated:** 2026-08-01
->
-> Contaminant-mass and DAG-unexplainable diagnostics, and the evidence needed before filtering.
+> **Status:** DEFERRED · **Updated:** 2026-10-06
+> Diagnostics done 2026-08 (zero-coverage, UWPR/MaConDa contaminants); no filter enabled and no one pursuing the validation steps per project-state, so parked until an independent contaminant check is scheduled.
 
 Tracks candidate data-quality issues in the NIST20 training set and the evidence needed before
 filtering. Scope so far: contaminant-mass matches (UWPR/MaConDa) and DAG-unexplainable spectra.
@@ -98,3 +97,11 @@ false-removal rate is acceptable.**
 
 Genuine coverage-gap spectra (37% of the zero-coverage set) are **out of scope for data cleanup**
 — they are a DAG-depth/rule limitation, addressed by the fragmentation-coverage work, not filtering.
+
+### `load_frag_d` raises on a missing DAG (from local memory, verified 2026-10-06)
+
+`frag_utils.load_frag_d` returns `None` for a molecule missing from a `.tar` archive, but the
+folder and `.zip` backends raise (the folder path calls `_load_pickle_file` on the missing file;
+the zip path opens an absent member). An `if dag_d is None` guard is therefore dead for those
+backends; wrap calls in `try/except`. About 7,439 of 33,408 NIST20 molecules have no DAG on disk
+(count from the original note, not re-measured).

@@ -67,10 +67,10 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import parallel_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # Reuse the DAG/ion-mass machinery rather than reimplementing the CMF/std union.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -203,7 +203,7 @@ def _process_mol_group(
     identical DAG-ion attribution as the true spectrum, so the two retained fractions are
     directly comparable.
     """
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return []
 
@@ -387,7 +387,7 @@ def main() -> None:
     parser.add_argument("--include_cmf", action="store_true", default=True)
     parser.add_argument("--min_bin_count", type=int, default=50, help="Skip NCE bins smaller than this.")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-spectrum table.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -426,7 +426,7 @@ def main() -> None:
         include_cmf=args.include_cmf,
     )
     log.info("Processing %d mols (%d spectra)", len(mol_inputs), len(spec_df))
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     rows = [r for mol_results in per_mol for r in mol_results]
     if not rows:

@@ -13,15 +13,20 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from fragnnet.frag.smarts_prepass import NL_RULES, _apply_nl_prepass
-from fragnnet.utils.frag_utils import (
+from fragnnet.fragmentation.smarts_prepass import (
+    NL_RULES,
+    NeutralLossRule,
+    _apply_nl_prepass,
+)
+from fragnnet.models.fragnnet.dag.builder import (
     _inject_nl_masks_into_dag,
     compute_dags,
     extract_mol_info,
     get_fraggen_input_arrays,
-    get_node_feats,
-    th_long_to_mask,
 )
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.utils import mol_utils
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 
 @pytest.mark.parametrize("multi_cut_bfs", [False, True])
@@ -114,6 +119,40 @@ class TestNLRulesCompile:
         names = [NL_RULES[ridx].name for _, ridx in results]
         assert "n_nitramine_n2o" not in names
 
+    def test_rule_requires_exactly_one_mask_mapping_direction(self):
+        with pytest.raises(ValueError, match="exactly one"):
+            NeutralLossRule(
+                name="missing_maps",
+                reactant_smarts="[C:1]-[O:2]",
+                nl_map_nums=[],
+                nl_mass=None,
+            )
+        with pytest.raises(ValueError, match="exactly one"):
+            NeutralLossRule(
+                name="ambiguous_maps",
+                reactant_smarts="[C:1]-[O:2]",
+                nl_map_nums=[1],
+                nl_mass=12.0,
+                product_map_nums=[2],
+            )
+
+    def test_explicit_product_maps_select_a_small_diagnostic_ion(self):
+        rule = NeutralLossRule(
+            name="oxygen_product",
+            reactant_smarts="[C:1]-[O:2]-[N:3]",
+            nl_map_nums=[],
+            nl_mass=None,
+            product_map_nums=[2],
+        )
+        mol = Chem.MolFromSmiles("CON")
+
+        results = _apply_nl_prepass([rule], mol, mol.GetNumAtoms())
+
+        assert len(results) == 1
+        product_mask, rule_index = results[0]
+        assert rule_index == 0
+        assert np.flatnonzero(product_mask).tolist() == [1]
+
 
 # ---------------------------------------------------------------------------
 # 2. Product mask atom counts
@@ -193,7 +232,7 @@ class TestInjectNLMasks:
 
     def test_nl_node_has_depth2(self):
         """Injected NL product nodes must have min_depth=2."""
-        from fragnnet.frag.compute_frags import MASK_DTYPE
+        from fragnnet.models.fragnnet.dag.compute_frags import MASK_DTYPE
 
         smi = "O=[N+]([O-])c1ccc(S(=O)(=O)Nc2ncccn2)cc1"
         mol_d = extract_mol_info(smi)
@@ -367,6 +406,17 @@ class TestSulfoxideSoLoss:
         mol = Chem.MolFromSmiles(self.DIPHENYL_SULFOXIDE)
         assert mol.HasSubstructMatch(patt)
 
+    @pytest.mark.parametrize("smiles", ["CS(C)=O", "C[S+](C)[O-]", "c1ccccc1S(=O)c1ccccc1"])
+    def test_matches_standardized_sulfoxides(self, smiles):
+        # Training molecules come from mol_from_smiles, which writes the [S+]-[O-] form; the
+        # former S=O-only pattern matched none of them.
+        mol = mol_utils.mol_from_smiles(smiles)
+        results = _apply_nl_prepass(NL_RULES, mol, mol.GetNumAtoms())
+        masks = [m for m, ri in results if NL_RULES[ri].name == "sulfoxide_so_loss"]
+        assert len(masks) == 1
+        lost = sorted(mol.GetAtomWithIdx(i).GetSymbol() for i, v in enumerate(masks[0]) if not v)
+        assert lost == ["O", "S"]
+
     def test_no_match_sulfone(self):
         rule = next(r for r in NL_RULES if r.name == "sulfoxide_so_loss")
         patt = Chem.MolFromSmarts(rule.reactant_smarts)
@@ -522,7 +572,7 @@ class TestDiarylKetoneCOLoss:
 
     def test_product_mask_not_in_bfs(self):
         """The CO loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
-        from fragnnet.frag import compute_frags
+        from fragnnet.models.fragnnet.dag import compute_frags
 
         mol_d = extract_mol_info(self.BENZOPHENONE)
         mol = Chem.MolFromSmiles(self.BENZOPHENONE)
@@ -652,7 +702,7 @@ class TestAminobenzothiazoleHcnLoss:
 
     def test_product_mask_not_in_bfs(self):
         """The HCN loss product atom mask must be absent from raw BFS (3-CC path blocked)."""
-        from fragnnet.frag import compute_frags
+        from fragnnet.models.fragnnet.dag import compute_frags
 
         mol_d = extract_mol_info(self.TARGET_1)
         mol = Chem.MolFromSmiles(self.TARGET_1)

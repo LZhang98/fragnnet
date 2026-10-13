@@ -1,0 +1,1454 @@
+{
+  "constructor_backfill": {
+    "frag_gnn": {
+      "candidate_ion_checkpoint": true,
+      "candidate_ion_chunk_size": 32768,
+      "candidate_ion_formula_features": true,
+      "candidate_ion_head": false,
+      "candidate_ion_neutral_loss_features": true,
+      "cc_channel_dropout": 0.0,
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "ion_channel_adduct_gated": false,
+      "ion_channel_factorized": false,
+      "ion_channel_rank": 32,
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": true
+    },
+    "masster": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_head_dropout": 0.37,
+      "masster_proposal_method": "connected_fragment_beam",
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": true
+    }
+  },
+  "get_config_from_ckpt:c0": {
+    "head_dropout_checkpoint_vs_resolved": [
+      0.1,
+      0.0
+    ],
+    "masster_context_dim": 128,
+    "model_type": "masster"
+  },
+  "get_pl_hparams:alias_pairs": {
+    "frag_gnn/fragnnet": {
+      "model_type": [
+        "frag_gnn",
+        "fragnnet"
+      ]
+    },
+    "masster/mass_shatter": {}
+  },
+  "get_pl_hparams:c0_refusal": {
+    "error": "ValueError",
+    "paths": [
+      "ce_context_ce_key_by_inst.FT",
+      "inst_type_loss_tol.FT",
+      "spec_params.inst_types[0]",
+      "spec_params.merge_tolerance_by_inst.FT"
+    ]
+  },
+  "get_pl_hparams:c0_relabelled": {
+    "added": {
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0
+    },
+    "migration_keys_after": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": {
+        "ORB": {
+          "min_mz": 200,
+          "rel": 1e-05
+        },
+        "QTOF": {
+          "min_mz": 750,
+          "rel": 2e-05
+        }
+      },
+      "masster_candidate_backend": "cuda",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 5,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "mol_max_degree": 64,
+      "mol_max_spatial_distance": 128,
+      "mol_multi_hop_max_distance": 5,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": true
+    },
+    "model_type": [
+      "mass_shatter",
+      "masster"
+    ],
+    "n_in": 437,
+    "n_out": 432,
+    "renamed": [
+      "mass_shatter_apply_channel_selection_in_training",
+      "mass_shatter_base_ce_weight",
+      "mass_shatter_batch_sampler",
+      "mass_shatter_batch_sampler_max",
+      "mass_shatter_bond_endpoint_aggregation",
+      "mass_shatter_bond_num_layers",
+      "mass_shatter_boundary_bond_encoder",
+      "mass_shatter_boundary_encoder_dropout",
+      "mass_shatter_boundary_local_layers",
+      "mass_shatter_candidate_atom_dropout",
+      "mass_shatter_candidate_backend",
+      "mass_shatter_candidate_boundary_block",
+      "mass_shatter_candidate_boundary_dropout",
+      "mass_shatter_candidate_coverage_metrics",
+      "mass_shatter_candidate_cut_diagnostics",
+      "mass_shatter_candidate_features",
+      "mass_shatter_candidate_timing_metrics",
+      "mass_shatter_channel_diagnostics",
+      "mass_shatter_channel_support_attribution",
+      "mass_shatter_channel_support_metrics",
+      "mass_shatter_channel_support_use_intensity_prior",
+      "mass_shatter_charge_pooling",
+      "mass_shatter_context_dim",
+      "mass_shatter_context_dropout",
+      "mass_shatter_context_in_gnn",
+      "mass_shatter_context_normalization",
+      "mass_shatter_detach_base_ion_h",
+      "mass_shatter_fast_gnn_beam_width",
+      "mass_shatter_fast_gnn_max_boundary_cuts",
+      "mass_shatter_fragment_selection",
+      "mass_shatter_gate_independent_intensity_with_support",
+      "mass_shatter_h_transfer_bound",
+      "mass_shatter_head_dropout",
+      "mass_shatter_head_hidden_dim",
+      "mass_shatter_include_cmf",
+      "mass_shatter_include_single_bond_cuts",
+      "mass_shatter_intensity_atom_decoder_num_layers",
+      "mass_shatter_intensity_ce_film",
+      "mass_shatter_intensity_ce_pair_bias",
+      "mass_shatter_intensity_entropy_match_weight",
+      "mass_shatter_intensity_escape",
+      "mass_shatter_intensity_input_dropout",
+      "mass_shatter_intensity_mass_pair_bias",
+      "mass_shatter_intensity_norm_placement",
+      "mass_shatter_intensity_output",
+      "mass_shatter_intensity_qk_norm",
+      "mass_shatter_intensity_transformer_attention",
+      "mass_shatter_intensity_transformer_dim",
+      "mass_shatter_intensity_transformer_dropout",
+      "mass_shatter_intensity_transformer_feedforward_dim",
+      "mass_shatter_intensity_transformer_num_heads",
+      "mass_shatter_intensity_transformer_num_inducing_points",
+      "mass_shatter_intensity_transformer_num_layers",
+      "mass_shatter_ion_h_support_binary_logits",
+      "mass_shatter_ion_h_support_loss_weight",
+      "mass_shatter_ion_mode_proposal_binary_logits",
+      "mass_shatter_ion_mode_proposal_loss_weight",
+      "mass_shatter_kl_epsilon",
+      "mass_shatter_log_base_ce",
+      "mass_shatter_mask_selection_threads",
+      "mass_shatter_max_h_transfer",
+      "mass_shatter_memorization_sink_dim",
+      "mass_shatter_memorization_sink_num_molecules",
+      "mass_shatter_memorization_sink_start_epoch",
+      "mass_shatter_metadata_embedding_dim",
+      "mass_shatter_min_fragment_relative_probability",
+      "mass_shatter_min_ion_h_absolute_probability",
+      "mass_shatter_min_ion_h_relative_probability",
+      "mass_shatter_min_ion_mode_relative_probability",
+      "mass_shatter_min_mask_relative_probability",
+      "mass_shatter_peak_matching",
+      "mass_shatter_proposal_anchored",
+      "mass_shatter_proposal_barcode_target",
+      "mass_shatter_proposal_frozen_from_epoch",
+      "mass_shatter_proposal_ints_transform",
+      "mass_shatter_proposal_loss_weight",
+      "mass_shatter_proposal_method",
+      "mass_shatter_proposal_num_mixtures",
+      "mass_shatter_proposal_only_until_epoch",
+      "mass_shatter_proposal_selection_only",
+      "mass_shatter_proposal_weight_decay",
+      "mass_shatter_ranked_mask_budget",
+      "mass_shatter_selected_fragment_target",
+      "mass_shatter_selected_mask_limit",
+      "mass_shatter_separate_ion_h_support_head",
+      "mass_shatter_separate_ion_mode_proposal_head",
+      "mass_shatter_separate_proposal_encoder",
+      "mass_shatter_share_proposal_across_ev",
+      "mass_shatter_smarts_templates",
+      "mass_shatter_unique_fragment_mode",
+      "mass_shatter_unique_fragment_target",
+      "mass_shatter_use_mask_residuals"
+    ],
+    "spec_params_added": {
+      "ccs": false,
+      "ccs_labels_fp": null,
+      "rt": false,
+      "rt_ccs": false,
+      "rt_ccs_labels_fp": null,
+      "rt_labels_fp": null
+    }
+  },
+  "get_pl_hparams:edge_case_stubs": {
+    "both_spellings_current_wins": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cpu",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_head_dropout": 0.5,
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "explicit_values_win": {
+      "eval_target_apply_train_rank_filters": true,
+      "inst_type_loss_tol": {
+        "ORB": {
+          "min_mz": 200.0,
+          "rel": 1e-05
+        }
+      },
+      "masster_candidate_backend": "cuda",
+      "masster_ccs_loss_weight": 7,
+      "masster_ccs_scale": 7,
+      "masster_context_in_gnn": true,
+      "masster_fast_gnn_beam_width": 7,
+      "masster_fast_gnn_max_boundary_cuts": 7,
+      "masster_fragment_selection": "marginal",
+      "masster_intensity_transformer_attention": "full",
+      "masster_predict_ccs": 7,
+      "masster_predict_rt": true,
+      "masster_predict_rt_ccs": 7,
+      "masster_proposal_method": "connected_fragment_beam",
+      "masster_rt_loss_weight": 7,
+      "masster_rt_scale": 7,
+      "masster_selected_fragment_target": 128,
+      "model_type": "masster",
+      "mol_max_degree": 64,
+      "mol_max_spatial_distance": 128,
+      "mol_multi_hop_max_distance": 5,
+      "report_metric_std": true,
+      "spec_params": {
+        "ace": true,
+        "ccs": true,
+        "ccs_labels_fp": "ccs.pkl",
+        "merge_ce_aggregation": "mean",
+        "nce": true,
+        "rt": true,
+        "rt_ccs": true,
+        "rt_ccs_labels_fp": "rt_ccs.pkl",
+        "rt_labels_fp": "rt.pkl"
+      },
+      "use_ace": false,
+      "use_nce": false
+    },
+    "legacy_rank_filter_key": {
+      "eval_target_apply_train_rank_filters": true,
+      "inst_type_loss_tol": null,
+      "model_type": "neims",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "merge_ce_aggregation_explicit": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "gnn",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": true,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "mean",
+        "nce": false,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": true,
+      "use_nce": false
+    },
+    "no_spec_params": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cpu",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": false
+    },
+    "old_spelling_keys_and_proposal_type": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cuda",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_head_dropout": 0.2,
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "connected_fragment_beam",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    }
+  },
+  "get_pl_hparams:minimal_stub": {
+    "frag_gnn": {
+      "candidate_ion_checkpoint": true,
+      "candidate_ion_chunk_size": 32768,
+      "candidate_ion_formula_features": true,
+      "candidate_ion_head": false,
+      "candidate_ion_neutral_loss_features": true,
+      "cc_channel_dropout": 0.0,
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "ion_channel_adduct_gated": false,
+      "ion_channel_factorized": false,
+      "ion_channel_rank": 32,
+      "model_type": "frag_gnn",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "fragnnet": {
+      "candidate_ion_checkpoint": true,
+      "candidate_ion_chunk_size": 32768,
+      "candidate_ion_formula_features": true,
+      "candidate_ion_head": false,
+      "candidate_ion_neutral_loss_features": true,
+      "cc_channel_dropout": 0.0,
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "ion_channel_adduct_gated": false,
+      "ion_channel_factorized": false,
+      "ion_channel_rank": 32,
+      "model_type": "fragnnet",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "gnn": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "gnn",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "graff": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "graff",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "mass_shatter": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cpu",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "massformer": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "massformer",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "masster": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cpu",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "model_type": "masster",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "neims": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "neims",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    },
+    "precursor": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "model_type": "precursor",
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "spec_params": {
+        "ace": false,
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "nce": true,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      },
+      "use_ace": false,
+      "use_nce": true
+    }
+  },
+  "get_pl_hparams:oldest_masster_stub": {
+    "backfilled": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": null,
+      "masster_candidate_backend": "cpu",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "mol_max_degree": null,
+      "mol_max_spatial_distance": null,
+      "mol_multi_hop_max_distance": null,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": true
+    },
+    "n_in": 409,
+    "n_out": 432,
+    "spec_params_backfilled": {
+      "ccs": false,
+      "ccs_labels_fp": null,
+      "merge_ce_aggregation": "legacy",
+      "rt": false,
+      "rt_ccs": false,
+      "rt_ccs_labels_fp": null,
+      "rt_labels_fp": null
+    }
+  },
+  "load_config:alias_pairs": {
+    "frag_gnn/fragnnet": {
+      "differing_keys": [
+        "model_type"
+      ],
+      "model_types": [
+        "frag_gnn",
+        "fragnnet"
+      ],
+      "validate_sampler_config": {
+        "bad_simple_group_sampler": "ValueError: simple_group_sampler_type must be one of ['adduct_inst_type', 'adduct_inst_type_frag_mode', 'adduct_inst_type_frag_mode_group', 'adduct_inst_type_group', 'group', 'group_mol', 'mol'] (got 'x')",
+        "default": "ok",
+        "dynamic_batch_sampler": "ValueError: Dynamic batch sampler cannot be used with automatic optimization (got automatic_optimization=True)",
+        "masster_batch_sampler": "ValueError: ['masster_batch_sampler'] require model_type='masster' (got '<model_type>')"
+      }
+    },
+    "masster/mass_shatter": {
+      "differing_keys": [],
+      "model_types": [
+        "masster",
+        "masster"
+      ],
+      "validate_sampler_config": {
+        "bad_simple_group_sampler": "ValueError: simple_group_sampler_type must be one of ['adduct_inst_type', 'adduct_inst_type_frag_mode', 'adduct_inst_type_frag_mode_group', 'adduct_inst_type_group', 'group', 'group_mol', 'mol'] (got 'x')",
+        "default": "ok",
+        "dynamic_batch_sampler": "ValueError: Dynamic batch sampler can only be used with frag_gnn model",
+        "masster_batch_sampler": "ok"
+      }
+    }
+  },
+  "load_config:c0_custom": {
+    "migration_keys": {
+      "eval_target_apply_train_rank_filters": false,
+      "inst_type_loss_tol": {
+        "ORB": {
+          "min_mz": 200,
+          "rel": 1e-05
+        },
+        "QTOF": {
+          "min_mz": 750,
+          "rel": 2e-05
+        }
+      },
+      "masster_candidate_backend": "cuda",
+      "masster_ccs_loss_weight": 0.1,
+      "masster_ccs_scale": 100.0,
+      "masster_context_in_gnn": false,
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 5,
+      "masster_fragment_selection": "mask_order",
+      "masster_intensity_transformer_attention": "induced",
+      "masster_predict_ccs": false,
+      "masster_predict_rt": false,
+      "masster_predict_rt_ccs": false,
+      "masster_proposal_method": "cut_masks",
+      "masster_rt_loss_weight": 0.1,
+      "masster_rt_scale": 60.0,
+      "masster_selected_fragment_target": null,
+      "mol_max_degree": 64,
+      "mol_max_spatial_distance": 128,
+      "mol_multi_hop_max_distance": 5,
+      "report_metric_std": false,
+      "use_ace": false,
+      "use_nce": true
+    },
+    "migration_keys_c0_lacks": [
+      "masster_ccs_loss_weight",
+      "masster_ccs_scale",
+      "masster_predict_ccs",
+      "masster_predict_rt",
+      "masster_predict_rt_ccs",
+      "masster_rt_loss_weight",
+      "masster_rt_scale"
+    ],
+    "n_c0_keys": 425
+  },
+  "load_config:cli_overrides": {
+    "current_key": {
+      "changed_top_level": {
+        "masster_max_h_transfer": [
+          4,
+          3
+        ]
+      },
+      "override": [
+        "masster_max_h_transfer=3"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "deeper_dotted_key": {
+      "changed_top_level": {},
+      "override": [
+        "spec_params.merge_tolerance_by_inst.ORB.rel=0.5"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 0.5
+    },
+    "errors": {
+      "legacy_key_not_in_template": "ValueError: override 'mass_shatter_not_a_key' sets a key the template does not declare",
+      "missing_section": "ValueError: override 'no_section.key': no_section is not a config section",
+      "retired_instrument_type": "ValueError: config names a retired instrument type at ['spec_params.inst_types[0]']"
+    },
+    "frag_gnn_model_type": {
+      "legacy_key": {
+        "changed": {
+          "masster_head_dropout": [
+            0.0,
+            0.3
+          ]
+        },
+        "override": [
+          "mass_shatter_head_dropout=0.3"
+        ]
+      },
+      "plain_key": {
+        "changed": {
+          "seed": [
+            42,
+            5
+          ]
+        },
+        "override": [
+          "seed=5"
+        ]
+      },
+      "proposal_type_fast_gnn": {
+        "changed": {
+          "masster_proposal_method": [
+            "cut_masks",
+            "connected_fragment_beam"
+          ]
+        },
+        "override": [
+          "masster_proposal_type=fast_gnn"
+        ]
+      }
+    },
+    "legacy_float_key": {
+      "changed_top_level": {
+        "masster_head_dropout": [
+          0.0,
+          0.3
+        ]
+      },
+      "override": [
+        "mass_shatter_head_dropout=0.3"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "legacy_key": {
+      "changed_top_level": {
+        "masster_max_h_transfer": [
+          4,
+          2
+        ]
+      },
+      "override": [
+        "mass_shatter_max_h_transfer=2"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "legacy_proposal_method": {
+      "changed_top_level": {},
+      "override": [
+        "mass_shatter_proposal_method=cut_masks"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "legacy_proposal_type_fast_gnn": {
+      "changed_top_level": {
+        "masster_proposal_method": [
+          "cut_masks",
+          "connected_fragment_beam"
+        ]
+      },
+      "override": [
+        "mass_shatter_proposal_type=fast_gnn"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "legacy_then_current_applied_in_order": {
+      "changed_top_level": {
+        "masster_head_dropout": [
+          0.0,
+          0.5
+        ]
+      },
+      "override": [
+        "mass_shatter_head_dropout=0.3",
+        "masster_head_dropout=0.5"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "nested_dotted_key": {
+      "changed_top_level": {},
+      "override": [
+        "spec_params.nce=true"
+      ],
+      "spec_params_nce": true,
+      "spec_params_orb_rel": 1e-05
+    },
+    "plain_key": {
+      "changed_top_level": {
+        "seed": [
+          42,
+          5
+        ]
+      },
+      "override": [
+        "seed=5"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "proposal_method_fast_gnn": {
+      "changed_top_level": {
+        "masster_proposal_method": [
+          "cut_masks",
+          "connected_fragment_beam"
+        ]
+      },
+      "override": [
+        "masster_proposal_method=fast_gnn"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    },
+    "proposal_type_fast_gnn": {
+      "changed_top_level": {
+        "masster_proposal_method": [
+          "cut_masks",
+          "connected_fragment_beam"
+        ]
+      },
+      "override": [
+        "masster_proposal_type=fast_gnn"
+      ],
+      "spec_params_nce": false,
+      "spec_params_orb_rel": 1e-05
+    }
+  },
+  "load_config:legacy_inputs": {
+    "bare_template_custom_masster": {
+      "masster_candidate_backend": "cpu",
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_proposal_method": "cut_masks",
+      "model_type": "masster"
+    },
+    "bare_template_other_model": {
+      "model_type": "frag_gnn"
+    },
+    "both_spellings_current_wins": {
+      "masster_head_dropout": 0.5,
+      "masster_proposal_method": "connected_fragment_beam"
+    },
+    "legacy_custom_plus_override": {
+      "masster_head_dropout": 0.37,
+      "masster_max_h_transfer": 2,
+      "masster_proposal_method": "connected_fragment_beam",
+      "model_type": "masster"
+    },
+    "legacy_name_as_model_type_argument": "ValueError: unknown model_type 'mass_shatter'",
+    "pre_rename_template": {
+      "masster_candidate_backend": "cuda",
+      "masster_fast_gnn_beam_width": 256,
+      "masster_fast_gnn_max_boundary_cuts": 3,
+      "masster_head_dropout": 0.2,
+      "masster_proposal_method": "connected_fragment_beam",
+      "model_type": "masster"
+    },
+    "retired_instrument_refusals": {
+      "FT": "ValueError: config names a retired instrument type at ['spec_params.inst_types[0]']",
+      "OB": "ValueError: config names a retired instrument type at ['spec_params.inst_types[0]']",
+      "OB_F": "ValueError: config names a retired instrument type at ['spec_params.inst_types[0]']"
+    },
+    "unknown_legacy_key": "['masster_not_a_key']"
+  },
+  "load_config:template_per_family": {
+    "frag_gnn": {
+      "keys": {
+        "candidate_ion_checkpoint": true,
+        "candidate_ion_chunk_size": 32768,
+        "candidate_ion_formula_features": true,
+        "candidate_ion_head": false,
+        "candidate_ion_neutral_loss_features": true,
+        "cc_channel_dropout": 0.0,
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "ion_channel_adduct_gated": false,
+        "ion_channel_factorized": false,
+        "ion_channel_rank": 32,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "fragnnet": {
+      "keys": {
+        "candidate_ion_checkpoint": true,
+        "candidate_ion_chunk_size": 32768,
+        "candidate_ion_formula_features": true,
+        "candidate_ion_head": false,
+        "candidate_ion_neutral_loss_features": true,
+        "cc_channel_dropout": 0.0,
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "ion_channel_adduct_gated": false,
+        "ion_channel_factorized": false,
+        "ion_channel_rank": 32,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "gnn": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "graff": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "massformer": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "masster": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "masster_candidate_backend": "cpu",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_context_in_gnn": false,
+        "masster_fast_gnn_beam_width": 256,
+        "masster_fast_gnn_max_boundary_cuts": 5,
+        "masster_fragment_selection": "mask_order",
+        "masster_intensity_transformer_attention": "induced",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "cut_masks",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "neims": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "precursor": {
+      "keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": 128,
+        "mol_multi_hop_max_distance": 5,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": true
+      },
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "merge_ce_aggregation": "legacy",
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    }
+  },
+  "masster_load_from_checkpoint": {
+    "all_keys_missing": {
+      "keys": {
+        "masster_candidate_backend": "cpu",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_fast_gnn_beam_width": 256,
+        "masster_fast_gnn_max_boundary_cuts": 3,
+        "masster_fragment_selection": "mask_order",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "cut_masks",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": null
+      },
+      "model_type": "masster",
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "explicit_beam_proposal_kept": {
+      "keys": {
+        "masster_candidate_backend": "cpu",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_fast_gnn_beam_width": 64,
+        "masster_fast_gnn_max_boundary_cuts": 2,
+        "masster_fragment_selection": "mask_order",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "connected_fragment_beam",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": null
+      },
+      "model_type": "masster",
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "explicit_cuda_marginal_kept": {
+      "keys": {
+        "masster_candidate_backend": "cuda",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_fast_gnn_beam_width": 64,
+        "masster_fast_gnn_max_boundary_cuts": 2,
+        "masster_fragment_selection": "marginal",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "cut_masks",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": 16
+      },
+      "model_type": "masster",
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "keyword_override": {
+      "keys": {
+        "masster_candidate_backend": "cpu",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_fast_gnn_beam_width": 128,
+        "masster_fast_gnn_max_boundary_cuts": 3,
+        "masster_fragment_selection": "mask_order",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "cut_masks",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": null
+      },
+      "model_type": "masster",
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    },
+    "legacy_spellings": {
+      "keys": {
+        "masster_candidate_backend": "cpu",
+        "masster_ccs_loss_weight": 0.1,
+        "masster_ccs_scale": 100.0,
+        "masster_fast_gnn_beam_width": 256,
+        "masster_fast_gnn_max_boundary_cuts": 3,
+        "masster_fragment_selection": "mask_order",
+        "masster_predict_ccs": false,
+        "masster_predict_rt": false,
+        "masster_predict_rt_ccs": false,
+        "masster_proposal_method": "cut_masks",
+        "masster_rt_loss_weight": 0.1,
+        "masster_rt_scale": 60.0,
+        "masster_selected_fragment_target": null
+      },
+      "model_type": "masster",
+      "spec_params": {
+        "ccs": false,
+        "ccs_labels_fp": null,
+        "rt": false,
+        "rt_ccs": false,
+        "rt_ccs_labels_fp": null,
+        "rt_labels_fp": null
+      }
+    }
+  },
+  "migration_helper_tables": {
+    "migrate_legacy_hparams": {
+      "bare_masster": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "model_type": "masster",
+        "mol_max_degree": null,
+        "mol_max_spatial_distance": null,
+        "mol_multi_hop_max_distance": null,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": false
+      },
+      "both_rank_filter_keys": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": null,
+        "mol_max_spatial_distance": null,
+        "mol_multi_hop_max_distance": null,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": false
+      },
+      "explicit_values_win": {
+        "candidate_ion_checkpoint": true,
+        "candidate_ion_chunk_size": 32768,
+        "candidate_ion_formula_features": true,
+        "candidate_ion_head": false,
+        "candidate_ion_neutral_loss_features": true,
+        "cc_channel_dropout": 0.0,
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "ion_channel_adduct_gated": false,
+        "ion_channel_factorized": false,
+        "ion_channel_rank": 8,
+        "model_type": "frag_gnn",
+        "mol_max_degree": 64,
+        "mol_max_spatial_distance": null,
+        "mol_multi_hop_max_distance": null,
+        "report_metric_std": false,
+        "spec_params": {
+          "nce": true
+        },
+        "use_ace": false,
+        "use_nce": false
+      },
+      "no_model_type": {
+        "eval_target_apply_train_rank_filters": false,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": null,
+        "mol_max_spatial_distance": null,
+        "mol_multi_hop_max_distance": null,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": false
+      },
+      "old_rank_filter_key": {
+        "eval_target_apply_train_rank_filters": true,
+        "inst_type_loss_tol": null,
+        "mol_max_degree": null,
+        "mol_max_spatial_distance": null,
+        "mol_multi_hop_max_distance": null,
+        "report_metric_std": false,
+        "use_ace": false,
+        "use_nce": false
+      }
+    },
+    "migrate_legacy_masster_key": {
+      "Mass_shatter_x": "Mass_shatter_x",
+      "mass_shatter": "mass_shatter",
+      "mass_shatter_": "masster_",
+      "mass_shatter_max_h_transfer": "masster_max_h_transfer",
+      "mass_shatter_proposal_type": "masster_proposal_type",
+      "masster_max_h_transfer": "masster_max_h_transfer",
+      "model_type": "model_type",
+      "spec_params.mass_shatter_x": "spec_params.mass_shatter_x"
+    },
+    "migrate_legacy_masster_name": {
+      "current_key_wins": {
+        "masster_a": 2,
+        "model_type": "masster"
+      },
+      "keys_under_current_model_type": {
+        "masster_a": 1,
+        "model_type": "masster"
+      },
+      "keys_under_other_model_type": {
+        "masster_a": 1,
+        "model_type": "frag_gnn"
+      },
+      "model_type_only": {
+        "model_type": "masster"
+      },
+      "nested_keys_untouched": {
+        "model_type": "masster",
+        "spec_params": {
+          "mass_shatter_x": 1
+        }
+      }
+    },
+    "migrate_masster_proposal_method": {
+      "canonical_key_wins_and_normalizes": {
+        "masster_proposal_method": "connected_fragment_beam"
+      },
+      "canonical_unchanged": {
+        "masster_proposal_method": "connected_fragment_beam"
+      },
+      "missing_stays_missing": {
+        "other": 1
+      },
+      "old_key_cut_masks": {
+        "masster_proposal_method": "cut_masks"
+      },
+      "old_key_fast_gnn": {
+        "masster_proposal_method": "connected_fragment_beam"
+      }
+    }
+  },
+  "wandb_merge:legacy_run_config": {
+    "changed_spec_params": {
+      "ace": [
+        false,
+        true
+      ]
+    },
+    "changed_top_level": {
+      "masster_head_dropout": [
+        0.0,
+        0.37
+      ],
+      "masster_max_h_transfer": [
+        4,
+        2
+      ],
+      "masster_proposal_method": [
+        "cut_masks",
+        "connected_fragment_beam"
+      ],
+      "seed": [
+        42,
+        5
+      ]
+    }
+  }
+}

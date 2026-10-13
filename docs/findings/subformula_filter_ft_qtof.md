@@ -1,10 +1,7 @@
 # 5 ppm Subformula Filtering on NIST20-HR
 
-> **Status:** FINDING &nbsp;·&nbsp; **Updated:** 2026-08-29
->
-> Historical NIST20-HR census for `[M+H]+` and `[M-H]-`, stratified by FT and QTOF.
-> The current evaluation scope also includes `[M+Na]+` and `[M+Cl]-`; the existing numerical
-> tables remain the two-adduct baseline until the four-adduct run is complete.
+> **Status:** FINDING · **Updated:** 2026-10-06
+> Historical NIST20-HR census for `[M+H]+`/`[M-H]-` by FT and QTOF; the 5 ppm tables are the two-adduct baseline. The 2026-09-16 section measures the Cl/Na budget fix on all four adducts and records the MASSter scope.
 
 ## Question
 
@@ -227,6 +224,71 @@ Before adopting formula-based filtering, run separate ablations for:
 Until those ablations are complete, unmatched peaks should be marked rather than deleted, and
 spectra should not be discarded solely because they contain unmatched peaks.
 
+## Saved subformula-filtered D3/D4 comparison verified 2026-09-13
+
+This is a separate saved comparison from the historical `1_above_prec` table above.
+The per-spectrum artifact was reaggregated; no DAG enumeration, preprocessing, or model inference
+was rerun. Do not use the earlier fixed-10-ppm D4 cosine as intensity-weighted recall.
+
+Artifacts:
+
+- [Per-spectrum D3/H4 and D4/H4 metrics](../../data/eval/nist20hr_subformula_2x_inst_tol_d3_d4_metrics.csv)
+- [Saved summary](../../data/eval/nist20hr_subformula_2x_inst_tol_d3_d4_summary.json)
+- Cleaned input: `/tmp/nist20hr_mh_ft_qtof_2x_inst_tol_centroid_subformula_inst_tol.pkl`
+- Cleaning metadata: `/tmp/nist20hr_mh_ft_qtof_2x_inst_tol_centroid_subformula_inst_tol.stats.json`
+
+The CSV contains 434,917 unique spectrum IDs from 25,264 molecules. Its IDs exactly match the
+cleaned input. The cleaning metadata enables peak merging, subformula filtering, and instrument
+tolerance for both operations; this is not the historical 5 ppm-only filter. File names identify
+this as the `2x_inst_tol`/centroid export, but the saved metadata does not fully establish the
+historical merge implementation or multiplier. It also does not capture the complete oracle
+command, source revision, or DAG fingerprints. Do not infer complete reproducibility from names.
+
+The population is NIST20-HR `[M+H]+`/`[M-H]-` across FT and QTOF, including all available splits.
+The displayed values are arithmetic means of per-spectrum metrics, not a pooled intensity ratio.
+Nineteen empty spectra have NaN metrics and are excluded from these means. Missing-DAG spectra
+have zero coverage: 25 spectra/3 molecules for D3, 398 spectra/30 molecules for D4. On the common
+DAG-available population, mean weighted recall is 92.54% for D3 and 96.00% for D4.
+
+| Population | Spectra | D3 weighted recall | D4 weighted recall | D4 oracle cosine |
+| --- | ---: | ---: | ---: | ---: |
+| All | 434,917 | 92.54% | **95.92%** | **0.9774** |
+| `[M+H]+`, FT | 286,490 | 91.24% | **96.08%** | 0.9813 |
+| `[M+H]+`, QTOF | 24,573 | 97.38% | 98.55% | 0.9932 |
+| `[M-H]-`, FT | 121,450 | 94.49% | 94.96% | 0.9650 |
+| `[M-H]-`, QTOF | 2,404 | 98.40% | 98.09% | 0.9850 |
+| `[M+H]+`, FT, validation IDs only | 57,816 | 91.18% | **96.10%** | — |
+
+Validation membership uses `data/split/nist20_ma_mi_inchikey/val_ids.csv`; it does not imply that
+these individually cleaned spectra reproduce merged MASSter validation targets. Overall
+unweighted peak recall is 86.59% for D3 and 92.75% for D4. Weighted recall measures covered target
+intensity; oracle cosine measures ideal intensity assignment on reachable support. They are
+separate quantities and must not be substituted for each other.
+
+### Implication for MASSter and EBM priorities
+
+The [proposal review](masster/masster_proposal_review_2026_09_13.md) records roughly 94% candidate
+weighted recall for filtered merged MASSter runs. Against this saved D4 reference, that is
+numerically about two percentage points lower, so the observed MASSter coverage is strong.
+The two values are **not a matched gap estimate**: target merging/cleaning, evaluation IDs,
+acquisition mix, channel chemistry, matching, and metric aggregation must be aligned first.
+D4 is not a universal ceiling on MASSter chemistry or search.
+
+Do not treat the entire remaining 6% of MASSter intensity as recoverable through better
+bond-cut scores, or claim that an EBM would recover the numerical two-point difference. Before
+an architecture change, measure the current MASSter support oracle and learned cosine on
+identical targets. A large support-oracle versus predicted-cosine gap prioritizes intensity
+assignment. Bond-cut modeling needs demonstrated additional support, lower cost at preserved
+coverage, or better downstream spectra at matched coverage; nominal U256 underfilling is not
+sufficient motivation. The existing user-requested bond-cut-first sequence remains a diagnostic
+order, not evidence that it offers the largest improvement.
+
+Validation: reaggregated all six D3/D4 metric means and matched the summary to absolute tolerance
+`1e-12`; verified spectrum-ID uniqueness, cleaned-input ID equality, missing-DAG zero coverage,
+and metadata joins. Slice means were recomputed from the saved CSV and cleaned-input metadata.
+No scientific comparison with a MASSter checkpoint was run. Next: a matched support/intensity
+comparison, preserving this historical artifact rather than silently replacing its protocol.
+
 ## Reproduction
 
 Current four-adduct instrument-tolerance cleaning command:
@@ -332,3 +394,78 @@ NIST20-HR-only reports:
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_filtered_stats.json`
 - `/tmp/nist20hr_mh_ft_qtof_inst_tol_human_review.csv`
+
+## Cl/Na budget fix, measured on the multi-adduct split (2026-09-16)
+
+Commits `2922ef7e` and `04133d45` (merged here at `ba9192b7`) rewrote the candidate enumeration.
+The filter now bounds each candidate by a **precursor ion** rather than by the neutral `M`, so a
+fragment may retain part of the charge carrier, give it up entirely, or be the bare carrier; RDBE
+is scored on the molecular part with the carrier stripped, which is what `[M+Cl]-` needs.
+
+Measured pre-fix (`04133d45^`) against post-fix on 2,620 stratified `nist20_ma_mi_inchikey`
+validation spectra, at instrument tolerance (FT 10 ppm/200 Da floor, QTOF 20 ppm/750 Da floor):
+
+| Adduct | Instrument | Raw peaks | Pre-fix kept | Post-fix kept | Delta |
+|---|---|---:|---:|---:|---:|
+| `[M+H]+` | FT | 13,710 | 12,439 | 12,497 | +58 |
+| `[M+H]+` | QTOF | 7,839 | 7,577 | 7,582 | +5 |
+| `[M-H]-` | FT | 13,438 | 12,357 | 12,357 | 0 |
+| `[M-H]-` | QTOF | 7,120 | 6,855 | 6,855 | 0 |
+| `[M+Na]+` | FT | 9,799 | 8,477 | 8,481 | +4 |
+| `[M+Na]+` | QTOF | 2,214 | 1,742 | 1,742 | 0 |
+| `[M+Cl]-` | FT | 8,582 | 7,779 | 7,802 | +23 |
+
+The fix is **directionally safe but small on this population**: +90 peaks of 62,702 (+0.14%), and
+every cell is nonnegative — the new enumeration only ever admits peaks, never deletes more than
+the old one did. The old code raised no errors on any of these spectra, so this is a retention
+change, not a crash fix. Do not read the per-adduct deltas as a scientific gain; they are a
+correctness check on the enumeration.
+
+Retention at instrument tolerance on the same sample, for planning target density (this is the
+instrument-tolerance contract, not the 5 ppm tables above):
+
+| Adduct | Instrument | Peaks kept | Intensity kept | Spectra emptied |
+|---|---|---:|---:|---:|
+| `[M+H]+` | FT | 91.2% | 97.1% | 0 |
+| `[M+H]+` | QTOF | 96.7% | 98.5% | 0 |
+| `[M-H]-` | FT | 92.0% | 98.4% | 0 |
+| `[M-H]-` | QTOF | 96.3% | 98.2% | 0 |
+| `[M+Na]+` | FT | 86.6% | 97.0% | 0 |
+| `[M+Na]+` | QTOF | 78.7% | 93.6% | 0 |
+| `[M+Cl]-` | FT | 90.9% | 98.7% | 0 |
+
+### MASSter scope
+
+The fix reaches MASSter through the shared `BaseDataset` cleanup with no code change, but it
+was inert for every MASSter config: all of them point at `data/split/nist20_inchikey`, which
+holds 209,698 `[M+H]+`/FT spectra and no Na, Cl, QTOF, or IT. `data/split/nist20_ma_mi_inchikey`
+carries 480,002 spectra over all four adducts and FT+QTOF (45,976 Na/Cl; **no IT rows**, so the
+FT/QTOF-only `INSTRUMENT_TOLERANCES` table covers it and does not raise).
+
+MASSter's own channel enumeration agrees with the filter on which adducts have a real
+charge-migration channel: at `max_h_transfer=4`, `cmf_precursor_valid` is True for `[M+Na]+` and
+`[M+Cl]-` and False for `[M+H]+`/`[M-H]-`, whose CMF state duplicates CRF h_shift -1/+1 — the same
+reason `_precursor_ion_budgets` gives those two adducts a single budget. Over all sub-multisets of
+a C6H8N2O3 stand-in, the filter rejects 21.6% of the channels MASSter can emit for `[M+H]+`
+against 24.5%/21.4% for `[M+Na]+`/`[M+Cl]-`; the rejects are over-hydrogenated negative-RDBE
+channels, so the filter is stricter in the same way for every adduct and creates no MASSter-
+specific asymmetry.
+
+## FraGNNet A/B verdict and live hazard (from local memory, W&B numbers not re-queried, 2026-10-06)
+
+- **Before the fix** the filter deleted Na and Cl peaks. Retention on `nist20_ma_mi_inchikey` val:
+  `[M+Na]+` kept 65.76% of intensity and 82.50% of base peaks; `[M+Cl]-` 42.61% and 45.06%;
+  `[M+H]+`/`[M-H]-` 97-98%. Cause: `_subformula_masses` used one fixed carrier per precursor type
+  (`PREC_TYPE_TO_COMP_DIFF`). Fixed in `d0393776`, `2922ef7e`, `04133d45`.
+- **Verdict: the fixed filter helps.** Baseline over 10 full-length replicates: mean 0.70988,
+  sd 0.00140. `lawkhwqi` 0.71235 and `njsqzar2` 0.71276 beat all 10 (max 0.71192), mean +0.0027,
+  exact permutation p = 1/66. Pre-fix run `9kk1p0xi`: 0.70784. The single-variable control for the
+  `target_rel_ints_thresh: 0.01` confound is `dm3xa4gd` (0.70940, n=1). Metric:
+  `val_cos_sim_0.01_best/mean`.
+- **Live hazard:** `filter_subformula_peaks: True` with `include_cmf: False` on Na/Cl hands the
+  model unreachable targets. DAG coverage of retained intensity, CMF vs CRF-only: Na 0.904 vs
+  0.704, Cl 0.961 vs 0.196. Nothing guards the combination (`runner.py` only checks
+  `include_cmf` against `cmf_h_formulae_idx`).
+- `INSTRUMENT_TOLERANCES` in `clean_spectra_utils.py` is hard-coded and independent of
+  `inst_type_loss_tol`; `subformula_ppm` is dead while `subformula_use_instrument_tolerance` is on.
+  The filter raises on `IT` while the loss falls back silently.

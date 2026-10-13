@@ -21,10 +21,12 @@ from __future__ import annotations
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS, FraGNNetModel
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.feat_utils import get_frag_graph, get_mol_graph
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
+from fragnnet.pl_model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.utils.feat_utils import get_mol_graph
+from fragnnet.utils.mol_utils import mol_from_smiles
 
 MOL_NODE_FEATS = ["a_onehot", "a_degree", "a_ring", "a_mass"]
 MOL_EDGE_FEATS = ["b_degree"]
@@ -49,7 +51,11 @@ EXPL_KEYS = [
 ]
 
 
-def _build_model(skip_explainability_when_training: bool) -> FraGNNetModel:
+def _build_model(
+    skip_explainability_when_training: bool,
+    *,
+    formula_support: bool = False,
+) -> FraGNNetModel:
     return FraGNNetModel(
         num_depth=4,
         num_hs=2,
@@ -103,7 +109,7 @@ def _build_model(skip_explainability_when_training: bool) -> FraGNNetModel:
         prec_types=["[M+H]+"],
         inst_insert_location="mol",
         inst_insert_size=8,
-        inst_types=["FT"],
+        inst_types=["ORB"],
         frag_mode_insert_location="mol",
         frag_mode_insert_size=8,
         frag_modes=["HCD"],
@@ -121,6 +127,7 @@ def _build_model(skip_explainability_when_training: bool) -> FraGNNetModel:
         ace_std=10.0,
         cc_feature_dropout=0.0,
         skip_explainability_when_training=skip_explainability_when_training,
+        formula_support=formula_support,
     )
 
 
@@ -234,6 +241,58 @@ class TestSkipTrainExplainability:
             out = model(**_forward_kwargs())
         for k in EXPL_KEYS:
             assert out[k] is not None
+
+
+class TestFormulaSupportIntegration:
+    def test_initial_gate_preserves_legacy_spectrum(self) -> None:
+        base = _build_model(skip_explainability_when_training=False)
+        support = _build_model(
+            skip_explainability_when_training=False,
+            formula_support=True,
+        )
+        missing, unexpected = support.load_state_dict(base.state_dict(), strict=False)
+        assert missing
+        assert all(name.startswith("formula_support_module.") for name in missing)
+        assert not unexpected
+        base.eval()
+        support.eval()
+
+        kwargs = _forward_kwargs()
+        with th.no_grad():
+            base_out = base(**kwargs)
+            support_out = support(**kwargs)
+
+        assert th.equal(base_out["pred_mzs"], support_out["pred_mzs"])
+        assert th.allclose(
+            base_out["pred_logprobs"],
+            support_out["pred_logprobs"],
+            rtol=0.0,
+            atol=1e-6,
+        )
+        assert support_out["pred_formula_support_logits"] is not None
+        assert support_out["pred_formula_support_valid_mask"].dtype == th.bool
+        assert (
+            support_out["pred_formula_support_peak_formula_idxs"].shape
+            == support_out["pred_formula_support_peak_mzs"].shape
+        )
+
+    def test_spectrum_loss_backpropagates_into_support_head(self) -> None:
+        model = _build_model(
+            skip_explainability_when_training=True,
+            formula_support=True,
+        )
+        model.train()
+        out = model(**_forward_kwargs())
+        (-out["pred_logprobs"][0]).backward()
+
+        assert model.formula_support_module is not None
+        gradients = [
+            parameter.grad
+            for parameter in model.formula_support_module.parameters()
+            if parameter.grad is not None
+        ]
+        assert gradients
+        assert any(bool(th.any(gradient != 0).item()) for gradient in gradients)
 
 
 class TestReturnExplainabilityTensors:

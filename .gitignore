@@ -9,8 +9,8 @@ logs
 logs*
 # Extensions
 *.c
-src/fragnnet/frag/compute_frags.c
-src/fragnnet/massformer/algos.c
+src/fragnnet/models/fragnnet/dag/compute_frags.c
+src/fragnnet/baselines/massformer/algos.c
 cysignals_crash_logs
 
 # Distribution / packaging
@@ -58,9 +58,12 @@ containers/apptainer/
 /scripts/debug/*.pkl
 /wandb_api_key
 
-# Others
+# Others Caches
 .github
-# Claude configuration and cache
 .claude
 .codex
-AGENTS.md
+.rvtmp
+.ruff_cache
+.benchmarks
+.aws
+.agents

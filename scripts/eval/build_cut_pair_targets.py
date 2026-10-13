@@ -1,6 +1,6 @@
 """Build complementary-cut pair targets (``q_cut_evidence``) for fragment intensity ranking.
 
-Phase 1 of ``docs/plans/complementary_cut_supervision_experiment_plan.md``. For every spectrum and
+Phase 1 of ``docs/plans/fragnnet/complementary_cut_supervision_experiment_plan.md``. For every spectrum and
 every DAG parent, this script finds child pairs ``(A, B)`` that exactly partition the parent's
 atoms, scores the relative *observable evidence* for each side, and emits a ragged cache in the
 same schema the sibling-ranking loss already consumes, plus a sidecar audit report.
@@ -60,18 +60,20 @@ import pandas as pd
 import torch as th
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import CHARGE_FACTOR_MAP, get_charge
-from fragnnet.utils.feat_utils import get_node_feats
+from fragnnet.models.fragnnet.dag.layout import MAX_H_TRANSFER, get_node_feats
+from fragnnet.models.fragnnet.fragnnet_adducts import (
+    prec_type_removed_counts,
+    tracked_element_counts,
+)
+from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
-    prec_type_removed_counts,
-    tracked_element_counts,
+    th_long_to_mask,
 )
-from fragnnet.utils.frag_utils import MAX_H_TRANSFER, th_long_to_mask
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import CHARGE_FACTOR_MAP, get_charge
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dag_oracle_scores import (  # noqa: E402
@@ -468,7 +470,7 @@ def node_candidate_ions(
         zero-mass isotope padding are dropped.
     """
     std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-    # Mirrors src/fragnnet/dataset/spec_mol_frag_dataset.py: a precursor whose CMF ion is already
+    # Mirrors src/fragnnet/models/fragnnet/fragnnet_dataset.py: a precursor whose CMF ion is already
     # enumerated as a CRF hydrogen shift emits no CMF rows, and every other CMF-bearing precursor
     # emits the full H-shift range.
     effective_h_transfer = (
@@ -710,13 +712,13 @@ def _process_mol_group(
     lod_tables: tuple[dict, dict, float],
 ) -> dict:
     """Build cut-pair target arrays for every spectrum of one molecule."""
-    import fragnnet.utils.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
     by_inst_bin, by_inst, global_floor = lod_tables
     result = _empty_mol_result(group_rows)
     audit = result["audit"]
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return result
 
@@ -1317,7 +1319,7 @@ def main() -> None:
     parser.add_argument("--limit_mols", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--shuffle_seed", type=int, default=1729)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", required=True)
     parser.add_argument("--report_fp", default=None)
     parser.add_argument("--lod_quantile", type=float, default=LOD_QUANTILE)
@@ -1413,7 +1415,7 @@ def main() -> None:
         len(spec_df),
         len(mol_inputs),
     )
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     # 4. Gate on min_frag_atoms before anything is written: a filtered corpus makes the whole
     #    target biased, so this must fail the build rather than annotate it.

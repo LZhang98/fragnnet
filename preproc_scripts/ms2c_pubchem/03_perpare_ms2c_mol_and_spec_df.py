@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import mol_utils, parallel_utils
 from fragnnet.utils.misc_utils import booltype
 
 
@@ -108,8 +108,8 @@ if __name__ == "__main__":
     print("> Process mol and spec df")
     print("> Read candidate df")
     candidates_df = pd.read_pickle(args.candidate_pkl_fp)
-    candidates_df.loc[:, "mol"] = data_utils.par_apply_series(
-        candidates_df["smiles"], data_utils.mol_from_smiles
+    candidates_df.loc[:, "mol"] = parallel_utils.par_apply_series(
+        candidates_df["smiles"], mol_utils.mol_from_smiles
     )
 
     candidates_df = candidates_df.dropna()

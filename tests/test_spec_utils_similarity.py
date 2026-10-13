@@ -12,14 +12,14 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils.spec_utils import (
-    batched_l1_normalize,
-    batched_mf1000_normalize,
+from fragnnet.utils.spec_similarity import (
+    calculate_match_mz_reductions,
     calculate_match_mzs,
     cos_sim_helper,
     opt_cos_sim_helper,
     scipy_linear_sum_assignment,
 )
+from fragnnet.utils.spec_utils import batched_l1_normalize, batched_mf1000_normalize
 
 
 class TestCalculateMatchMzs:
@@ -112,6 +112,37 @@ class TestCalculateMatchMzs:
         """Mixing tensor and ndarray raises ValueError."""
         with pytest.raises((ValueError, TypeError)):
             calculate_match_mzs(th.tensor([100.0]), np.array([100.0]))
+
+
+class TestCalculateMatchMzReductions:
+    def test_chunked_reductions_match_full_batched_matrix(self):
+        true_mzs = th.tensor([[100.0, 200.0, float("inf")], [300.0, 400.0, 500.0]])
+        pred_mzs = th.tensor([[100.0, 250.0, float("inf")], [299.9, 400.0, 600.0]])
+
+        full_match_mask = calculate_match_mzs(
+            true_mzs,
+            pred_mzs,
+            tolerance=0.2,
+            relative=False,
+        )
+        true_match_mask, pred_match_mask = calculate_match_mz_reductions(
+            true_mzs,
+            pred_mzs,
+            tolerance=0.2,
+            relative=False,
+            chunk_size=1,
+        )
+
+        assert th.equal(true_match_mask, full_match_mask.any(dim=-1))
+        assert th.equal(pred_match_mask, full_match_mask.any(dim=-2))
+
+    def test_rejects_nonpositive_chunk_size(self):
+        with pytest.raises(ValueError, match="chunk_size must be positive"):
+            calculate_match_mz_reductions(
+                th.tensor([100.0]),
+                th.tensor([100.0]),
+                chunk_size=0,
+            )
 
 
 
@@ -322,7 +353,6 @@ class TestOptCosSimHelper:
         batch = th.zeros(4, dtype=th.long)
         result = opt_cos_sim_helper(bin_idxs, ints, batch, bin_idxs[:2], ints[:2], batch[:2])
         assert 0.0 <= result.item() <= 1.0 + 1e-6
-
 
 
 

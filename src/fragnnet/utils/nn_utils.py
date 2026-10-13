@@ -1,9 +1,12 @@
 import copy
+import logging
 import math
 from typing import Any
 
 import torch as th
 import torch.nn as nn
+
+logger = logging.getLogger(__name__)
 
 
 def get_clones(module: nn.Module, N: int) -> nn.ModuleList:
@@ -73,7 +76,9 @@ def build_lr_scheduler(
             return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
 
     else:
-        raise ValueError(f"Unknown schedule_type: {schedule_type!r}. Choose 'exponential' or 'cosine'.")
+        raise ValueError(
+            f"Unknown schedule_type: {schedule_type!r}. Choose 'exponential' or 'cosine'."
+        )
 
     return th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
@@ -98,7 +103,7 @@ def nan_forward_hook(self: nn.Module, input: Any, output: Any) -> None:
     for i, val in enumerate(outputs):
         nan_mask = th.isnan(val)
         if nan_mask.any():
-            print(">> In", self.__class__.__name__)
+            logger.error("NaN check failed in %s", self.__class__.__name__)
             raise RuntimeError(
                 f"Found NAN in output {i} at indices: ",
                 nan_mask.nonzero(),
@@ -123,7 +128,7 @@ def nan_backward_hook(self: nn.Module, grad_input: Any, grad_output: Any) -> Non
             continue
         nan_mask = th.isnan(val)
         if nan_mask.any():
-            print(">> In", self.__class__.__name__)
+            logger.error("NaN check failed in %s", self.__class__.__name__)
             raise RuntimeError(
                 f"Found NAN in grad_input {i} at indices: ",
                 nan_mask.nonzero(),
@@ -135,7 +140,7 @@ def nan_backward_hook(self: nn.Module, grad_input: Any, grad_output: Any) -> Non
             continue
         nan_mask = th.isnan(val)
         if nan_mask.any():
-            print(">> In", self.__class__.__name__)
+            logger.error("NaN check failed in %s", self.__class__.__name__)
             raise RuntimeError(
                 f"Found NAN in grad_output {i} at indices: ",
                 nan_mask.nonzero(),
@@ -167,31 +172,18 @@ def decompile_jit_ckpt(ckpt: dict[str, Any]) -> dict[str, Any]:
         return ckpt
 
     in_state_dict = ckpt["state_dict"]
-    pairings = [(src_key, src_key.replace("._orig_mod", "")) for src_key in in_state_dict.keys()]
+    pairings = [(src_key, src_key.replace("._orig_mod", "")) for src_key in in_state_dict]
     # if all(src_key == dest_key for src_key, dest_key in pairings):
     #   return  # Do not write checkpoint if no need to repair!
     out_state_dict = {}
     for src_key, dest_key in pairings:
         if src_key != dest_key:
-            print(f"{src_key}  ==>  {dest_key}")
+            logger.debug("%s  ==>  %s", src_key, dest_key)
         out_state_dict[dest_key] = in_state_dict[src_key]
 
     ckpt["state_dict"] = out_state_dict
     ckpt["hyper_parameters"]["compile"] = False
     return ckpt
-
-
-def is_ckpt_compiled(ckpt: dict[str, Any]) -> bool:
-    """Check if a checkpoint is from a compiled PyTorch model.
-
-    Args:
-        ckpt: Checkpoint dictionary to check
-
-    Returns:
-        True if checkpoint contains compiled model keys (with '_orig_mod'), False otherwise
-    """
-    state_dict = ckpt["state_dict"]
-    return any("_orig_mod" in key for key in state_dict)
 
 
 def get_optimizer_class(optimizer_name: str) -> type:

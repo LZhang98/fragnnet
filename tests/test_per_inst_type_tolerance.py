@@ -16,15 +16,15 @@ from types import SimpleNamespace
 import pytest
 import torch as th
 
-from fragnnet.model.loss import (
+from fragnnet.loss.cross_entropy import sparse_cross_entropy_vec
+from fragnnet.loss.spectrum_distance import (
     sparse_cosine_distance_hungarian,
-    sparse_cross_entropy_vec,
     sparse_jensen_shannon_divergence_hungarian,
 )
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.runner import load_config
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # ---------------------------------------------------------------------------
 # calculate_match_mzs — tol_per_true / min_mz_per_true
@@ -96,9 +96,9 @@ class TestCalculateMatchMzsPerTrue:
             min_mz_per_true=th.tensor([200.0, 1000.0]),
         )
         assert result.shape == (2, 1)
-        assert not result[0, 0].item(), (
-            "min_mz=200 gives 0.002 Da floor; 0.008 Da > floor → no match"
-        )
+        assert not result[
+            0, 0
+        ].item(), "min_mz=200 gives 0.002 Da floor; 0.008 Da > floor → no match"
         assert result[1, 0].item(), "min_mz=1000 gives 0.010 Da floor; 0.008 Da < floor → match"
 
     def test_qtof_truncation_scenario(self):
@@ -121,9 +121,9 @@ class TestCalculateMatchMzsPerTrue:
             min_mz_per_true=th.tensor([200.0, 750.0]),
         )
         assert result.shape == (2, 1)
-        assert not result[0, 0].item(), (
-            "FT (10 ppm, min_mz=200): 0.007 Da > 0.002 Da floor → no match"
-        )
+        assert not result[
+            0, 0
+        ].item(), "FT (10 ppm, min_mz=200): 0.007 Da > 0.002 Da floor → no match"
         assert result[1, 0].item(), "QTOF (20 ppm, min_mz=750): 0.007 Da < 0.015 Da floor → match"
 
     def test_tol_per_true_without_min_mz_uses_global_floor(self):
@@ -229,9 +229,9 @@ class TestSparseCrossEntropyVecPerSample:
             min_mz_per_sample=th.tensor([750.0]),
         )
         # Tight: peak is OOS → IOS CE = 0 (no in-support pairs contribute)
-        assert ios_tight.item() == pytest.approx(0.0, abs=1e-6), (
-            "Tight tolerance: peak is OOS, IOS CE should be ~0"
-        )
+        assert ios_tight.item() == pytest.approx(
+            0.0, abs=1e-6
+        ), "Tight tolerance: peak is OOS, IOS CE should be ~0"
         # Wide: peak is IOS → IOS CE is a finite negative log-probability
         assert ios_wide.item() < 0.0, "Wide tolerance: peak is IOS, IOS log-prob should be < 0"
 
@@ -239,11 +239,10 @@ class TestSparseCrossEntropyVecPerSample:
 class TestSpectrumPLEvalTensorGating:
     """Tests for the validation eval-tensor gate in SpectrumPL."""
 
-    def _fake_pl(self, active_metric_names, auxiliary_metric_names, raw_epoch=False):
+    def _fake_pl(self, active_metric_names, auxiliary_metric_names):
         return SimpleNamespace(
             auxiliary_metric_names=set(auxiliary_metric_names),
             _get_active_metric_names=lambda split: set(active_metric_names),
-            _should_store_raw_epoch_results=lambda split: raw_epoch,
         )
 
     def test_ce_metadata_alone_does_not_require_eval_tensors(self):
@@ -253,12 +252,9 @@ class TestSpectrumPLEvalTensorGating:
 
     def test_auxiliary_metrics_require_eval_tensors(self):
         """Auxiliary validation metrics still require eval spectra."""
-        fake = self._fake_pl(active_metric_names={"loss", "cos_sim_0.01"}, auxiliary_metric_names={"cos_sim_0.01"})
-        assert SpectrumPL._needs_eval_tensors(fake, "val")
-
-    def test_raw_epoch_results_require_eval_tensors(self):
-        """Image/raw-spectrum logging still requires eval spectra."""
-        fake = self._fake_pl(active_metric_names={"loss"}, auxiliary_metric_names=set(), raw_epoch=True)
+        fake = self._fake_pl(
+            active_metric_names={"loss", "cos_sim_0.01"}, auxiliary_metric_names={"cos_sim_0.01"}
+        )
         assert SpectrumPL._needs_eval_tensors(fake, "val")
 
 
@@ -339,13 +335,13 @@ class TestSparseCosineHungarianPerSample:
             min_mz_per_sample=th.tensor([750.0]),
         )
         # Tight: no match → cosine distance = 1 (fully orthogonal)
-        assert dist_tight.item() == pytest.approx(1.0, abs=1e-5), (
-            "Tight tolerance: unmatched peak → cosine distance should be 1.0"
-        )
+        assert dist_tight.item() == pytest.approx(
+            1.0, abs=1e-5
+        ), "Tight tolerance: unmatched peak → cosine distance should be 1.0"
         # Wide: peaks match → cosine distance ≈ 0
-        assert dist_wide.item() == pytest.approx(0.0, abs=1e-5), (
-            "Wide tolerance: matched peak → cosine distance should be ~0.0"
-        )
+        assert dist_wide.item() == pytest.approx(
+            0.0, abs=1e-5
+        ), "Wide tolerance: matched peak → cosine distance should be ~0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -363,14 +359,26 @@ class TestSparseJSDHungarianPerSample:
         batch_idxs = th.tensor([0, 0, 1, 1], dtype=th.long)
 
         scalar = sparse_jensen_shannon_divergence_hungarian(
-            mzs, logprobs, batch_idxs,
-            mzs, logprobs, batch_idxs,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mzs,
+            logprobs,
+            batch_idxs,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
         )
         per_sample = sparse_jensen_shannon_divergence_hungarian(
-            mzs, logprobs, batch_idxs,
-            mzs, logprobs, batch_idxs,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mzs,
+            logprobs,
+            batch_idxs,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
             tol_per_sample=th.tensor([1e-5, 1e-5]),
             min_mz_per_sample=th.tensor([200.0, 200.0]),
         )
@@ -389,23 +397,35 @@ class TestSparseJSDHungarianPerSample:
         batch_idxs = th.tensor([0], dtype=th.long)
 
         jsd_tight = sparse_jensen_shannon_divergence_hungarian(
-            true_mzs, logprobs, batch_idxs,
-            pred_mzs, logprobs, batch_idxs,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            true_mzs,
+            logprobs,
+            batch_idxs,
+            pred_mzs,
+            logprobs,
+            batch_idxs,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
         )
         jsd_wide = sparse_jensen_shannon_divergence_hungarian(
-            true_mzs, logprobs, batch_idxs,
-            pred_mzs, logprobs, batch_idxs,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            true_mzs,
+            logprobs,
+            batch_idxs,
+            pred_mzs,
+            logprobs,
+            batch_idxs,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
             tol_per_sample=th.tensor([2e-5]),
             min_mz_per_sample=th.tensor([750.0]),
         )
-        assert jsd_tight.item() > jsd_wide.item(), (
-            "Tight tolerance misses peak → higher JSD than wide tolerance"
-        )
-        assert jsd_wide.item() == pytest.approx(0.0, abs=1e-5), (
-            "Wide tolerance: identical matched spectra → JSD = 0.0"
-        )
+        assert (
+            jsd_tight.item() > jsd_wide.item()
+        ), "Tight tolerance misses peak → higher JSD than wide tolerance"
+        assert jsd_wide.item() == pytest.approx(
+            0.0, abs=1e-5
+        ), "Wide tolerance: identical matched spectra → JSD = 0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -432,23 +452,27 @@ class TestMixedBatchPerSampleCosine:
         args = self._make_batch()
         dists = sparse_cosine_distance_hungarian(
             *args,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
             tol_per_sample=th.tensor([1e-5, 2e-5]),
             min_mz_per_sample=th.tensor([200.0, 750.0]),
         )
-        assert dists[0].item() == pytest.approx(1.0, abs=1e-5), (
-            "FT sample (tight): no match → cosine distance = 1.0"
-        )
-        assert dists[1].item() == pytest.approx(0.0, abs=1e-5), (
-            "QTOF sample (wide): match → cosine distance = 0.0"
-        )
+        assert dists[0].item() == pytest.approx(
+            1.0, abs=1e-5
+        ), "FT sample (tight): no match → cosine distance = 1.0"
+        assert dists[1].item() == pytest.approx(
+            0.0, abs=1e-5
+        ), "QTOF sample (wide): match → cosine distance = 0.0"
 
     def test_global_tight_both_miss(self):
         """Without per-sample tol, both samples use tight global tolerance and both miss."""
         args = self._make_batch()
         dists = sparse_cosine_distance_hungarian(
             *args,
-            tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            tolerance=1e-5,
+            relative=True,
+            tolerance_min_mz=200.0,
         )
         assert dists[0].item() == pytest.approx(1.0, abs=1e-5)
         assert dists[1].item() == pytest.approx(1.0, abs=1e-5)
@@ -462,14 +486,14 @@ class TestMixedBatchPerSampleCE:
       - QTOF (20 ppm, min_mz=750): std=0.015 Da, 3σ=0.045 Da → IOS → IOS CE < 0
     """
 
-    _CE_KWARGS = dict(
-        tolerance=1e-5,
-        relative=True,
-        tolerance_min_mz=200.0,
-        oos_tolerance_multiple=3.0,
-        gaussian_renormalize=True,
-        loss_batch_size=32,
-    )
+    _CE_KWARGS = {
+        "tolerance": 1e-5,
+        "relative": True,
+        "tolerance_min_mz": 200.0,
+        "oos_tolerance_multiple": 3.0,
+        "gaussian_renormalize": True,
+        "loss_batch_size": 32,
+    }
 
     def _make_batch(self, true_mz: float, pred_mz: float, n_samples: int):
         true_mzs = th.tensor([true_mz] * n_samples)
@@ -480,15 +504,21 @@ class TestMixedBatchPerSampleCE:
         pred_batch_idxs = th.arange(n_samples, dtype=th.long)
         pred_oos_logprobs = th.tensor([math.log(1e-10)] * n_samples)
         return (
-            true_mzs, true_logprobs, true_batch_idxs,
-            pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs,
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
         )
 
     def test_both_ft_both_oos(self):
         """Both samples as FT (tight): both OOS → per-sample IOS CE = 0."""
         args = self._make_batch(200.0, 200.007, n_samples=2)
         ios, _, _, _ = sparse_cross_entropy_vec(
-            *args, **self._CE_KWARGS,
+            *args,
+            **self._CE_KWARGS,
             tol_per_sample=th.tensor([1e-5, 1e-5]),
             min_mz_per_sample=th.tensor([200.0, 200.0]),
         )
@@ -500,7 +530,8 @@ class TestMixedBatchPerSampleCE:
         """Both samples as QTOF (wide): both IOS → per-sample IOS CE < 0."""
         args = self._make_batch(200.0, 200.007, n_samples=2)
         ios, _, _, _ = sparse_cross_entropy_vec(
-            *args, **self._CE_KWARGS,
+            *args,
+            **self._CE_KWARGS,
             tol_per_sample=th.tensor([2e-5, 2e-5]),
             min_mz_per_sample=th.tensor([750.0, 750.0]),
         )
@@ -511,32 +542,33 @@ class TestMixedBatchPerSampleCE:
         """FT sample is OOS (CE=0); QTOF sample is IOS (CE<0) — verified per sample."""
         args = self._make_batch(200.0, 200.007, n_samples=2)
         ios, _, _, _ = sparse_cross_entropy_vec(
-            *args, **self._CE_KWARGS,
+            *args,
+            **self._CE_KWARGS,
             tol_per_sample=th.tensor([1e-5, 2e-5]),
             min_mz_per_sample=th.tensor([200.0, 750.0]),
         )
-        assert ios[0].item() == pytest.approx(0.0, abs=1e-6), (
-            "FT sample (idx=0): OOS → IOS CE = 0"
-        )
+        assert ios[0].item() == pytest.approx(0.0, abs=1e-6), "FT sample (idx=0): OOS → IOS CE = 0"
         assert ios[1].item() < 0.0, "QTOF sample (idx=1): IOS → log-prob < 0"
 
     def test_mixed_ft_qtof_qtof_matches_single(self):
         """QTOF sample in a mixed batch gives the same IOS CE as a solo QTOF sample."""
         args_single = self._make_batch(200.0, 200.007, n_samples=1)
         ios_single, _, _, _ = sparse_cross_entropy_vec(
-            *args_single, **self._CE_KWARGS,
+            *args_single,
+            **self._CE_KWARGS,
             tol_per_sample=th.tensor([2e-5]),
             min_mz_per_sample=th.tensor([750.0]),
         )
         args_mixed = self._make_batch(200.0, 200.007, n_samples=2)
         ios_mixed, _, _, _ = sparse_cross_entropy_vec(
-            *args_mixed, **self._CE_KWARGS,
+            *args_mixed,
+            **self._CE_KWARGS,
             tol_per_sample=th.tensor([1e-5, 2e-5]),
             min_mz_per_sample=th.tensor([200.0, 750.0]),
         )
-        assert ios_mixed[1].item() == pytest.approx(ios_single[0].item(), abs=1e-5), (
-            "QTOF result is identical whether batched with FT or run alone"
-        )
+        assert ios_mixed[1].item() == pytest.approx(
+            ios_single[0].item(), abs=1e-5
+        ), "QTOF result is identical whether batched with FT or run alone"
 
 
 # ---------------------------------------------------------------------------
@@ -572,10 +604,10 @@ class TestInstTolMapConstruction:
         return tols, min_mzs
 
     def test_ft_qtof_it_standard_mapping(self):
-        """sorted(["FT","QTOF","IT"]) = ["FT","IT","QTOF"] → FT=0, IT=1, QTOF=2."""
+        """sorted(["ORB","QTOF","IT"]) = ["ORB","IT","QTOF"] → FT=0, IT=1, QTOF=2."""
         tols, min_mzs = self._build_lookup(
-            ["FT", "QTOF", "IT"],
-            {"FT": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}},
+            ["ORB", "QTOF", "IT"],
+            {"ORB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}},
         )
         assert len(tols) == 3
         assert (tols[0], min_mzs[0]) == (1e-5, 200.0), "FT idx=0"
@@ -585,7 +617,7 @@ class TestInstTolMapConstruction:
     def test_unmapped_instrument_uses_global(self):
         """An instrument not in inst_type_loss_tol inherits the global tolerance."""
         tols, min_mzs = self._build_lookup(
-            ["FT", "QTOF", "IT"],
+            ["ORB", "QTOF", "IT"],
             {"QTOF": {"rel": 2e-5, "min_mz": 750.0}},
             global_tol=1e-5,
             global_min_mz=300.0,
@@ -596,23 +628,23 @@ class TestInstTolMapConstruction:
 
     def test_sort_order_is_alphabetical(self):
         """Input order of inst_types is irrelevant; indices follow alphabetical sort."""
-        # unsorted input: QTOF, IT, FT — sorted: FT=0, IT=1, QTOF=2
+        # unsorted input: QTOF, ORB, IT — sorted: IT=0, ORB=1, QTOF=2
         tols, min_mzs = self._build_lookup(
-            ["QTOF", "IT", "FT"],
+            ["QTOF", "ORB", "IT"],
             {
-                "FT": {"rel": 1e-5, "min_mz": 200.0},
+                "ORB": {"rel": 1e-5, "min_mz": 200.0},
                 "IT": {"rel": 3e-5, "min_mz": 100.0},
                 "QTOF": {"rel": 2e-5, "min_mz": 750.0},
             },
         )
-        assert (tols[0], min_mzs[0]) == (1e-5, 200.0), "FT = idx 0 (first alphabetically)"
-        assert (tols[1], min_mzs[1]) == (3e-5, 100.0), "IT = idx 1"
+        assert (tols[0], min_mzs[0]) == (3e-5, 100.0), "IT = idx 0 (first alphabetically)"
+        assert (tols[1], min_mzs[1]) == (1e-5, 200.0), "ORB = idx 1"
         assert (tols[2], min_mzs[2]) == (2e-5, 750.0), "QTOF = idx 2"
 
     def test_all_unmapped_uses_global_everywhere(self):
         """When inst_type_loss_tol is empty, all entries get the global tolerance."""
         tols, min_mzs = self._build_lookup(
-            ["FT", "QTOF", "IT"],
+            ["ORB", "QTOF", "IT"],
             {},  # empty — simulates null config
             global_tol=5e-6,
             global_min_mz=150.0,
@@ -670,7 +702,9 @@ class TestFTFloorAdequacy:
         At m/z 100: 10 ppm = 0.001 Da, but floor = max(100, 200) × 1e-5 = 0.002 Da.
         """
         assert self._match(100.0, 100.0019), "1.9 mDa at m/z 100: inside 0.002 floor → match"
-        assert not self._match(100.0, 100.0021), "2.1 mDa at m/z 100: outside 0.002 floor → no match"
+        assert not self._match(
+            100.0, 100.0021
+        ), "2.1 mDa at m/z 100: outside 0.002 floor → no match"
         # Very low m/z (m/z 28, common small fragments): floor still 0.002 Da
         assert self._match(28.0, 28.0019), "1.9 mDa at m/z 28: inside 0.002 floor → match"
         assert not self._match(28.0, 28.0021), "2.1 mDa at m/z 28: outside 0.002 floor → no match"
@@ -724,9 +758,9 @@ class TestFTFloorAdequacy:
         # max QTOF truncation error = 0.009 Da at any m/z
         for diff in [0.007, 0.009]:
             # above min_mz=200: FT tolerance = 500 × 1e-5 = 0.005 Da < diff
-            assert not self._match(500.0, 500.0 + diff), (
-                f"FT at m/z 500: {diff*1000:.0f} mDa > 5 mDa (10 ppm) → correctly rejected"
-            )
+            assert not self._match(
+                500.0, 500.0 + diff
+            ), f"FT at m/z 500: {diff*1000:.0f} mDa > 5 mDa (10 ppm) → correctly rejected"
         # QTOF with wide floor accepts the same peaks (contrast)
         for diff in [0.007, 0.009]:
             qtof_match = calculate_match_mzs(
@@ -736,9 +770,9 @@ class TestFTFloorAdequacy:
                 relative=True,
                 tolerance_min_mz=750.0,  # floor = 750 × 2e-5 = 0.015 Da
             )[0, 0].item()
-            assert qtof_match, (
-                f"QTOF at m/z 500: {diff*1000:.0f} mDa < 15 mDa (QTOF floor) → correctly accepted"
-            )
+            assert (
+                qtof_match
+            ), f"QTOF at m/z 500: {diff*1000:.0f} mDa < 15 mDa (QTOF floor) → correctly accepted"
 
     # --- raising the floor globally would harm FT ---
 
@@ -790,11 +824,11 @@ class TestInstTolScoresRequireConfig:
     default, so the broken combination is the one you get by not thinking about it.
     """
 
-    TOL = {"FT": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}}
+    TOL = {"ORB": {"rel": 1e-5, "min_mz": 200.0}, "QTOF": {"rel": 2e-5, "min_mz": 750.0}}
 
     @staticmethod
     def _model(auxiliary_scores, inst_type_loss_tol):
-        config = load_config("config/template.yml", None, None)
+        config = load_config("config", None, None)
         config.update(
             model_type="frag_gnn",
             compile=False,
@@ -822,3 +856,33 @@ class TestInstTolScoresRequireConfig:
         """Not requesting them must still allow inst_type_loss_tol to be unset."""
         model = self._model(["cos_sim"], None)
         assert model.inst_tol_lookup is None
+
+
+def test_recall_and_weighted_recall_use_instrument_tolerance():
+    config = load_config("config", None, None)
+    config.update(
+        model_type="frag_gnn",
+        compile=False,
+        sparse_cosine_similarity=True,
+        auxiliary_scores=["recall", "wrecall", "precision"],
+        inst_type_loss_tol={
+            "ORB": {"rel": 1e-5, "min_mz": 200.0},
+            "QTOF": {"rel": 2e-5, "min_mz": 750.0},
+        },
+    )
+    config["spec_params"] = {**config["spec_params"], "inst_types": ["ORB", "QTOF"]}
+    model = FraGNNetPL(**config)
+    assert "spec_inst_type" in model.batch_metric_args
+    metrics = model.metric_fn(
+        true_mzs=th.tensor([500.0, 500.0]),
+        true_ints=th.tensor([1.0, 1.0]),
+        true_batch_idxs=th.tensor([0, 1]),
+        pred_mzs=th.tensor([500.008, 500.008]),
+        pred_ints=th.tensor([1.0, 1.0]),
+        pred_batch_idxs=th.tensor([0, 1]),
+        true_prec_mzs=th.tensor([700.0, 700.0]),
+        spec_inst_type=th.tensor([0, 1]),
+    )
+    assert metrics["recall"].tolist() == pytest.approx([0.0, 1.0])
+    assert metrics["wrecall"].tolist() == pytest.approx([0.0, 1.0])
+    assert metrics["precision"].tolist() == pytest.approx([0.0, 0.0])

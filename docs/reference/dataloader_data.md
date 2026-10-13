@@ -1,8 +1,8 @@
 # Data Mapping Definitions
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2025-12-10
+> **Status:** REFERENCE · **Updated:** 2026-10-06
 >
-> Batch dictionary schema. Oldest doc here — verify against `base_dataset.py` before relying on it.
+> Weighted CE input contract updated; remaining historical schema should be verified against code.
 
 ## Input Batch Dictionary Reference
 
@@ -20,6 +20,20 @@ batched_mol_frag = {
     "frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
 }
 ```
+
+## Optional weighted CE inputs
+
+With `spec_params.merge_ce_aggregation: weighted`, merged batches include one-dimensional
+`spec_nce_weights` and `spec_ace_weights`, aligned with the flattened `spec_nce` and `spec_ace`
+readings and their respective batch indices. `spec_ce_weights` aliases the configured primary
+CE signal's weights. Each spectrum has unit total weight separately for NCE and ACE.
+
+The merger weights primary-CE schedules equally, then their replicates equally, then readings
+within each row equally. Both models use these weights when pooling CE embeddings. Collated
+CE statistics use weighted mean and standard deviation over valid readings; missing values keep
+the existing missing-token semantics. Legacy batches omit weight fields and retain mean pooling.
+See the [CE correction record](../findings/masster/masster_context_design_audit.md) for constraints
+and compatibility behavior.
 
 ## Output Dictionary Reference
 
@@ -184,3 +198,14 @@ for peak_idx in peak_indices:
     print(f"Formula {f_idx} -> Peak at {peak_mz:.4f} m/z with intensity {peak_intensity:.4f}")
 ```
 ```
+
+## Split ratios (from local memory, re-measured 2026-10-06)
+
+- `preproc_scripts/04_prepare_split.py` defaults: `--test_frac 0.2 --val_frac 0.2 --split_key
+  inchikey_s --split_type random --meta_rseed 42`. Both fractions come off the total key count
+  (test first, then val), so train is the 0.6 residual.
+- Spectra (train / val / test): `nist20_ma_mi_inchikey` 287,721 / 96,153 / 96,128;
+  `nist20_inchikey` 157,678 / 52,020 / 52,621.
+- Scaffold splits do not hold the ratio: `nist20_ma_mi_scaffold` is 0.547 / 0.302 / 0.151
+  (262,693 / 144,775 / 72,534). Do not quote 60/20/20 for a scaffold run. No MASSter config uses a
+  scaffold split.

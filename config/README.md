@@ -1,28 +1,116 @@
 # Experiment Configs
 
+## Layout
+
+Experiment configs are grouped by model, with dataset and experiment folders underneath:
+
+```text
+config/
+  template.yml
+  fragnnet/      # FraGNNet (model_type: frag_gnn or fragnnet)
+  masster/       # MASSter, including its standalone analysis configs
+  neims/
+  massformer/
+  graff/
+  precursor/
+```
+
+Debug configs and sweep training configs live under their model too. W&B search definitions
+remain in `sweep/`. The shared template and its schema are unchanged. The
+[model grouping record](../docs/plans/config_model_grouping.md) explains the path migration;
+use the new paths in commands and regenerate previously generated cluster jobs.
+
+A run's configuration resolves in three steps, each overriding the previous:
+
+```
+config/template.yml   the defaults for every model
+your custom config    the experiment
+--override key=value  temporary changes for one invocation
+```
+
+**One template, one schema.** `config/template.yml` declares every model's keys, so a FraGNNet
+run carries the 73 `masster_*` keys and a MASSter run carries `frag_params` - inert, and
+deliberately so. Shared code can then read any key without first asking what model this is, and
+a key can never go missing for one model while another model's code still reads it. That failure
+mode is what the per-model split (2026-09-20, reverted) kept producing: a key moved into one
+model's template while its reader stayed in shared code, breaking every other model at runtime
+rather than at validation time.
+
+`model_type` names the model - from the custom config, else from the checkpoint, else the
+template's `frag_gnn`. It selects code, not config; `VALID_MODEL_TYPES` in
+[runner.py](../src/fragnnet/runner.py) only guards against a typo in the value. Passing a single
+file instead of the directory uses that file directly, which is how a template saved inside a
+checkpoint resolves.
+
+### Where a key goes
+
+The template is the shared core first, then one clearly-marked block per model. A model's own
+keys stay **flat and prefixed** (`masster_*`, `iceberg_*`, `mf_*`, `graff_*`, `clip_*`,
+`mces_*`, `neims_*`) and live in that model's block. Nesting them under a per-model mapping would
+invalidate the hparams of every trained checkpoint, which is why the same idea was reverted for
+`conditioning_params`. `gnn` and `precursor` have no keys of their own and run entirely on the
+shared core.
+
+`tests/test_config_templates.py` enforces this rather than trusting it: a prefixed key must sit
+in its own model's block and nowhere else, and the handful of unprefixed keys that belong to a
+model (`magma_params`, `magma_dp`, `ann_params`, `ann_fp`, `spectrum_encoder_params`,
+`retrieval_eval_size`) are declared there by name. Adding an unprefixed key to a model's block
+means editing that list, which is the moment to ask whether it should be prefixed instead.
+
+Precursor BCE and CE-switch BCE are retired. Legacy disabled `precursor_pair_*` and
+`ce_pair_*` settings are discarded on load; nonzero loss weights raise an error.
+
+Custom configs are validated against the template, **recursively**: a typo inside `spec_params`
+fails as loudly as one at the top level. Mappings whose sub-keys are data rather than schema
+(`merge_tolerance_by_inst`, `split_filters`, `inst_type_loss_tol`, `ce_context_ce_key_by_inst`)
+are not descended into. Because the template declares every model's keys, a key it does not
+declare is a typo - there is no longer an inert-versus-unknown distinction to make, and none
+that depends on which files a cluster job happened to stage.
+
+## Sections
+
+Config is grouped by who consumes it, not by topic:
+
+| Section | Holds |
+| --- | --- |
+| `spec_params` | what the dataset loads from the spectrum table: merging, cleanup, which metadata columns, the adduct/instrument/mode vocabularies |
+| `mol_params` | how a molecule becomes a graph: atom and bond feature lists, fingerprints, preprocessing |
+| `frag_params` | FraGNNet's fragment DAG (read only by FraGNNet; inert for every other model) |
+
+Metadata conditioning stays at the top level: `ce_insert_*`, `prec_insert_*`, `inst_insert_*`,
+`frag_mode_insert_*`, `context_*`, `int_embedder` and the NCE/ACE normalization statistics.
+Grouping them into a `conditioning_params` section was tried and reverted, because it invalidates
+every trained checkpoint for no behavioural gain. `spec_params.nce` / `spec_params.ace` are
+separate by design: they decide what the *dataset* loads, not how it is embedded.
+
+Note that `mol_params.pyg_node_feats` (atom features: `a_onehot`, `a_degree`, ...) and
+`frag_params.pyg_node_feats` (fragment-DAG node features: `cc`, `base_formula`, ...) are
+different vocabularies that share a key name. A model only ever reads the block it consumes.
+
+
 ## Setting up a Training Run
 
 To train a model, you can use the following command:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/${DATASET}_${SPLIT}/${MODEL}/s${SEED}.yml
+python scripts/run_pl_model_fit.py -c config/${MODEL}/${DATASET}_${SPLIT}/s${SEED}.yml
 ```
 
 For example, to train a model on the NIST 2020 dataset using the InChIKey split and the NEIMS model with seed 0, you can use the following command:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml
+python scripts/run_pl_model_fit.py -c config/neims/nist20_merged_inchikey/s0.yml
 ```
 
 If you installed the package with Weights and Biases (i.e. using the `dev` option), you can enable logging with a flag:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml -w online
+python scripts/run_pl_model_fit.py -c config/neims/nist20_merged_inchikey/s0.yml -w online
 ```
 
 ## Available Configs
 
-All provided configs use the NIST 2020 dataset.
+Configs cover NIST20, MassSpecGym, Spectraverse, NIST23 and other datasets.
 
 ### Main Experiment Configs
 
@@ -33,21 +121,20 @@ The following seeds are used:
 - SEED=3: 103976
 - SEED=4: 132548
 
-FraGNNet-D3: [inchikey configs](./nist20_inchikey/fragnnet_d3/), [scaffold configs](./nist20_scaffold/fragnnet_d3/)
+FraGNNet-D3: [inchikey configs](./fragnnet/nist20_merged_inchikey/fragnnet_d3/), [scaffold configs](./fragnnet/nist20_merged_scaffold/fragnnet_d3/)
 
-FraGNNet-D4: [inchikey configs](./nist20_inchikey/fragnnet_d4/), [scaffold configs](./nist20_scaffold/fragnnet_d4/)
+FraGNNet-D4: [inchikey configs](./fragnnet/nist20_merged_inchikey/fragnnet_d4/), [scaffold configs](./fragnnet/nist20_merged_scaffold/fragnnet_d4/)
 
-NEIMS: [inchikey configs](./nist20_inchikey/neims/), [scaffold configs](./nist20_scaffold/neims/)
+NEIMS: [inchikey configs](./neims/nist20_merged_inchikey/), [scaffold configs](./neims/nist20_merged_scaffold/)
 
-MassFormer: [inchikey configs](./nist20_inchikey/massformer/), [scaffold configs](./nist20_scaffold/massformer/)
+MassFormer: [inchikey configs](./massformer/nist20_merged_inchikey/), [scaffold configs](./massformer/nist20_merged_scaffold/)
 
-ICEBERG (Generator model): [inchikey configs](./nist20_inchikey/iceberg_gen/), [scaffold configs](./nist20_scaffold/iceberg_gen/)
-
-ICEBERG (Intensity model): [inchikey configs](./nist20_inchikey/iceberg/), [scaffold configs](./nist20_scaffold/iceberg/)
-
-ICEBERG (Optimal Intensity model): [inchikey configs](./nist20_inchikey/iceberg_opt/), [scaffold configs](./nist20_scaffold/iceberg_opt/)
-
-Note: the ICEBERG Optimal Intensity model is presented in the ablations section in the paper as ICEBERG (+Opt).
+ICEBERG (generator, intensity and optimal-intensity models): retired on 2026-10-11. The local
+fork and its configs were removed; run ICEBERG through external
+[ms-pred](https://github.com/coleygroup/ms-pred). The configs remain at revision `13b1599d`
+(`config/*_merged/iceberg_*`), see the
+[reorganization plan](../docs/plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
+The `iceberg_*`, `magma_params` and `magma_dp` template keys stay inert.
 
 ### Ablation Experiment Configs
 
@@ -60,9 +147,9 @@ The following seeds are used:
 - SEED=3: 103976
 - SEED=4: 132548
 
-FraGNNet-D3 (+Edges) [configs](./ablations/fraggnn_d3_edges/)
-FraGNNet-D3 (-CE) [configs](./ablations/fraggnn_d3_noce/)
-FraGNNet-D4 (-CE) [configs](./ablations/fraggnn_d4_noce/)
+FraGNNet-D3 (+Edges) [configs](./fragnnet/ablations_merged/fraggnn_d3_edges/)
+FraGNNet-D3 (-CE) [configs](./fragnnet/ablations_merged/fraggnn_d3_noce/)
+FraGNNet-D4 (-CE) [configs](./fragnnet/ablations_merged/fraggnn_d4_noce/)
 
 ### Entropy Experiment Configs
 
@@ -86,11 +173,11 @@ The following seeds are used:
 - SEED=14: 623677
 
 
-Baseline Ensemble: [configs](./entropy/d4_baseline_ens/)
+Baseline Ensemble: [configs](./fragnnet/entropy/d4_baseline_ens/)
 
-Low Entropy Ensemble: [configs](./entropy/d4_low_ens/)
+Low Entropy Ensemble: [configs](./fragnnet/entropy/d4_low_ens/)
 
-High Entropy Ensemble: [configs](./entropy/d4_high_ens/)
+High Entropy Ensemble: [configs](./fragnnet/entropy/d4_high_ens/)
 
 ## Configuration Parameters
 
@@ -214,23 +301,22 @@ the dataset pickle and they do not filter predicted spectra.
 
 | Name | Default | Scope | Description |
 |------|---------|-------|-------------|
-| `target_ints_thresh` | `0.0` | train true + eval true | Removes target peaks with intensity `<= target_ints_thresh`. This is the clearer replacement for legacy `ints_thresh`. |
-| `ints_thresh` | `0.0` | fallback only | Legacy name used when `target_ints_thresh` is absent. Prefer `target_ints_thresh` in new configs. |
+| `target_rel_ints_thresh` | `0.0` | train true + eval true | Per-spectrum relative threshold in `[0, 1)`. Drops target peaks below `target_rel_ints_thresh * max_int` of that spectrum, e.g. `0.01` keeps only peaks at or above 1% of the base peak. `0.0` drops only zero-intensity peaks. |
 | `train_target_top_k_peaks` | `-1` | train true | If positive, keeps only the top-k highest-intensity target peaks per spectrum. `-1` disables it. |
 | `train_target_drop_min_int_peak` | `False` | train true | Drops exactly one weakest target peak per spectrum when more than one peak remains. |
-| `eval_target_apply_train_rank_filters` | `False` | eval true | When `True`, eval true spectra also apply `train_target_top_k_peaks` and `train_target_drop_min_int_peak`. `target_ints_thresh` already applies to eval true spectra. |
+| `eval_target_apply_train_rank_filters` | `False` | eval true | When `True`, eval true spectra also apply `train_target_top_k_peaks` and `train_target_drop_min_int_peak`. `target_rel_ints_thresh` already applies to eval true spectra. Falls back to the legacy name `eval_target_apply_train_peak_filters` when absent. |
 | `mz_max` | model-specific | train true + eval true | Removes target peaks with `m/z >= mz_max` and also controls bin/loss geometry. |
 
 Filtering order for true spectra is:
 
 ```text
-target_ints_thresh / mz_max -> train rank filters -> bin/transform/normalize
+target_rel_ints_thresh / mz_max -> train rank filters -> bin/transform/normalize
 ```
 
 Example:
 
 ```yaml
-target_ints_thresh: 0.0
+target_rel_ints_thresh: 0.0
 train_target_top_k_peaks: 20
 train_target_drop_min_int_peak: False
 eval_target_apply_train_rank_filters: False

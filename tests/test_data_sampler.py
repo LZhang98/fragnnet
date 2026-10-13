@@ -11,13 +11,13 @@ import torch as th
 from torch.utils.data import DataLoader, RandomSampler
 
 # Load data_sampler directly to avoid package-level import side-effects
-from fragnnet.dataset import (
+from fragnnet.dataset import BondCountCurriculumSampler, FormulaPrecTypeGroupSampler, GroupSampler
+from fragnnet.models.fragnnet.fragnnet_data_sampler import (
     CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
-    FormulaPrecTypeGroupSampler,
-    GroupSampler,
     SpecMolFragDynamicBatchSampler,
 )
+from fragnnet.models.masster.masster_data_sampler import MassterCEContextDynamicBatchSampler
 
 # ============================================================================
 # Mock and Helper Classes
@@ -67,6 +67,17 @@ class FakeDataset:
         return {"frag_pyg": SimpleNamespace(num_nodes=nodes, num_edges=edges)}
 
 
+class BondCountDataset:
+    """Minimal dataset exposing the tabular fields used by the bond curriculum."""
+
+    def __init__(self, bond_counts):
+        self.spec_df = pd.DataFrame({"mol_id": range(len(bond_counts))})
+        self.mol_df = pd.DataFrame({"num_bonds": bond_counts}, index=range(len(bond_counts)))
+
+    def __len__(self):
+        return len(self.spec_df)
+
+
 class DummyDataset:
     """Dummy dataset for dual group sampler tests."""
 
@@ -112,7 +123,7 @@ class CEContextDataset:
 class TestCEContextDynamicBatchSampler:
     """Tests for the minimal single-GPU CE context sampler."""
 
-    CE_KEY_BY_INST = {"FT": "nce", "QTOF": "ace"}
+    CE_KEY_BY_INST = {"ORB": "nce", "QTOF": "ace"}
 
     @staticmethod
     def _row(mol_id, nce, frag_mode="HCD"):
@@ -120,7 +131,7 @@ class TestCEContextDynamicBatchSampler:
             "group_id": mol_id,
             "mol_id": mol_id,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "frag_mode": frag_mode,
             "nce": [float(nce)],
         }
@@ -157,11 +168,7 @@ class TestCEContextDynamicBatchSampler:
             sampler.set_epoch(epoch)
             epoch_chunks.append(
                 [
-                    [
-                        ds.spec_df.iloc[idx]["nce"][0]
-                        for idx in batch
-                        if idx < 6
-                    ]
+                    [ds.spec_df.iloc[idx]["nce"][0] for idx in batch if idx < 6]
                     for batch in sampler
                     if any(idx < 6 for idx in batch)
                 ]
@@ -208,6 +215,43 @@ class TestCEContextDynamicBatchSampler:
         ]
         assert len(mixed_context_batches) >= 3
 
+    def test_spreads_a_many_chunk_context_over_the_epoch(self):
+        # Context 0 has 10 chunks: its CE ladder plus 9 same-CE replicates. A round-robin merge
+        # left the replicates for the end of the epoch, one spectrum per batch, where they set
+        # the BatchNorm running statistics that evaluation uses.
+        rows = [self._row(0, ce) for ce in (10, 20, 30)]
+        rows += [self._row(0, 10) for _ in range(9)]
+        for mol_id in range(1, 121):
+            rows += [self._row(mol_id, 10), self._row(mol_id, 20)]
+        ds = CEContextDataset(rows, [(1, 1)] * len(rows))
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=10_000,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            spectra_per_context=5,
+            return_batch_at=8,
+            seed=0,
+        )
+        group_ids = ds.spec_df["group_id"].tolist()
+
+        for epoch in range(5):
+            sampler.set_epoch(epoch)
+            batches = list(sampler)
+            assert sorted(idx for batch in batches for idx in batch) == list(range(len(rows)))
+            # At most one chunk of a context per batch: the ladder, or one replicate.
+            context_zero_counts = sorted(
+                sum(group_ids[idx] == 0 for idx in batch)
+                for batch in batches
+                if any(group_ids[idx] == 0 for idx in batch)
+            )
+            assert context_zero_counts == [1] * 9 + [3]
+            assert all(
+                len({group_ids[idx] for idx in batch}) * 2 >= len(batch)
+                for batch in batches
+                if not any(group_ids[idx] == 0 for idx in batch)
+            )
+            assert sum(len(batch) < 4 for batch in batches) <= 1
+
     def test_orders_qtof_context_by_configured_ace(self):
         rows = [
             {**self._row(1, 30), "inst_type": "QTOF", "ace": [10.0]},
@@ -235,6 +279,45 @@ class TestCEContextDynamicBatchSampler:
                 ce_key_by_inst=self.CE_KEY_BY_INST,
                 limited_by="frag_node",
             )
+
+    def test_supports_molecular_edge_budget_for_masster(self):
+        class MolContextDataset(CEContextDataset):
+            calls = 0
+
+            def __getitem__(self, index):
+                self.calls += 1
+                return {
+                    "mol_pyg": SimpleNamespace(
+                        num_nodes=4,
+                        num_edges=self.precom_meta_info[index][1],
+                    )
+                }
+
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = MolContextDataset(rows, [(4, 3), (4, 3)])
+        sampler = MassterCEContextDynamicBatchSampler(
+            ds,
+            max_num=6,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+        )
+
+        assert list(sampler) == [[0, 1]]
+        assert ds.calls == 1
+        assert not isinstance(sampler, CEContextDynamicBatchSampler)
+
+    def test_keeps_oversized_spectra_as_singletons_for_evaluation(self):
+        rows = [self._row(1, 10), self._row(1, 20)]
+        ds = CEContextDataset(rows, [(4, 7), (4, 1)])
+        sampler = CEContextDynamicBatchSampler(
+            ds,
+            max_num=5,
+            ce_key_by_inst=self.CE_KEY_BY_INST,
+            skip_too_big=False,
+        )
+
+        assert list(sampler) == [[0], [1]]
+        assert sampler.stats["oversized_spectra"] == 1
+        assert sampler.stats["selected_spectra"] == 2
 
     def test_takes_one_spectrum_per_level_up_to_five(self):
         rows = [self._row(1, ce) for ce in (10, 20, 30, 40, 50, 60)]
@@ -379,6 +462,46 @@ class TestCEContextDynamicBatchSampler:
                 ce_key_by_inst=self.CE_KEY_BY_INST,
             )
 
+
+# Tests for BondCountCurriculumSampler
+# =========================================================================
+
+
+class TestBondCountCurriculumSampler:
+    def test_progressively_adds_larger_molecules(self):
+        sampler = BondCountCurriculumSampler(
+            BondCountDataset([2, 3, 5, 8]),
+            start_fraction=0.25,
+            curriculum_epochs=2,
+            generator=th.Generator().manual_seed(1),
+        )
+
+        assert set(sampler) == {0}
+        sampler.set_epoch(1)
+        assert set(sampler) == {0, 1, 2}
+        sampler.set_epoch(2)
+        assert set(sampler) == {0, 1, 2, 3}
+
+    def test_includes_tied_bond_counts(self):
+        sampler = BondCountCurriculumSampler(
+            BondCountDataset([2, 2, 3, 8]),
+            start_fraction=0.25,
+            curriculum_epochs=2,
+        )
+
+        assert set(sampler) == {0, 1}
+        assert len(sampler) == 2
+
+    @pytest.mark.parametrize("start_fraction", [0, -0.1, 1.1, True, None])
+    def test_rejects_invalid_start_fraction(self, start_fraction):
+        with pytest.raises(ValueError, match="bond_size_curriculum_start_fraction"):
+            BondCountCurriculumSampler(
+                BondCountDataset([2]),
+                start_fraction=start_fraction,
+                curriculum_epochs=2,
+            )
+
+
 # Tests for SpecMolFragDynamicBatchSampler
 # ============================================================================
 
@@ -390,9 +513,7 @@ class TestSpecMolFragDynamicBatchSampler:
         """Test an empty split produces no batches."""
         ds = FakeDataset([])
 
-        sampler = SpecMolFragDynamicBatchSampler(
-            data_source=ds, max_num=10, limited_by="frag_node"
-        )
+        sampler = SpecMolFragDynamicBatchSampler(data_source=ds, max_num=10, limited_by="frag_node")
 
         assert list(sampler) == []
         assert len(sampler) == 0
@@ -648,7 +769,7 @@ class TestDualGroupDynamicBatchSampler:
 
         # Expect at least one batch and all indices included
         assert len(batches) > 0
-        included = set(i for b in batches for i in b)
+        included = {i for b in batches for i in b}
         assert included == set(range(len(ds)))
 
         # Each batch must respect node budget
@@ -716,7 +837,7 @@ class TestDualGroupDynamicBatchSampler:
         # A::X group in group2 must contain both isomer indices
         assert set(sampler._group2["A::X"].tolist()) == {0, 1}
         # group2 coverage: every index must appear in at least one group2 entry
-        group2_all = set(i for t in sampler._group2.values() for i in t.tolist())
+        group2_all = {i for t in sampler._group2.values() for i in t.tolist()}
         assert group2_all == set(range(len(samples)))
 
     def test_no_duplicate_indices_within_batch(self):
@@ -753,7 +874,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(7)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=20, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=20, limited_by="frag_node", generator=gen
+        )
         all_indices = [i for b in sampler for i in b]
 
         assert sorted(all_indices) == list(range(len(samples)))
@@ -810,7 +933,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(0)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=10, limited_by="frag_node", generator=gen
+        )
 
         assert "A::X" in sampler._group2
         assert "B::X" in sampler._group2
@@ -831,7 +956,9 @@ class TestDualGroupDynamicBatchSampler:
         gen = th.Generator()
         gen.manual_seed(0)
 
-        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=10, limited_by="frag_node", generator=gen
+        )
 
         assert "A::UNIQUE" in sampler._group2
         assert set(sampler._group2["A::UNIQUE"].tolist()) == {0}
@@ -975,9 +1102,9 @@ class TestDualGroupDynamicBatchSampler:
 
         # At least one batch must contain ≥ 2 mol-1 spectra (i.e., a same-mol pair)
         max_mol1_in_batch = max(len(set(b) & mol1_indices) for b in batches)
-        assert max_mol1_in_batch >= 2, (
-            f"Expected ≥ 2 same-molecule spectra in a batch, got max {max_mol1_in_batch}"
-        )
+        assert (
+            max_mol1_in_batch >= 2
+        ), f"Expected ≥ 2 same-molecule spectra in a batch, got max {max_mol1_in_batch}"
 
     def test_k1_per_key_default_one_unchanged(self):
         """Default k1_per_key=1 behaviour must be identical to the old code:
@@ -1007,7 +1134,12 @@ class TestDualGroupDynamicBatchSampler:
     def test_every_index_covered_with_per_key(self):
         """All samples must be covered exactly once even with per_key > 1."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": i // 3, "formula": f"F{i // 3}"}
+            {
+                "frag_pyg": FakeFrag(1, 1),
+                "prec_type": "A",
+                "mol_id": i // 3,
+                "formula": f"F{i // 3}",
+            }
             for i in range(9)
         ]
         ds = DummyDataset(samples)
@@ -1118,7 +1250,7 @@ class TestFormulaPrecTypeGroupSampler:
         )
         batch_sampler.set_epoch(0)
 
-        underlying = set(list(sampler))
+        underlying = set(sampler)
 
         for batch in batch_sampler:
             total_nodes = sum(ds[idx]["frag_pyg"].num_nodes for idx in batch)
@@ -1313,7 +1445,7 @@ class TestDataloaderSmoke:
         )
         batches = list(iter(sampler))
         assert len(batches) > 0
-        included = set(i for b in batches for i in b)
+        included = {i for b in batches for i in b}
         assert included == set(range(len(ds)))
         for b in batches:
             total_nodes = sum(samples[i]["frag_pyg"].num_nodes for i in b)

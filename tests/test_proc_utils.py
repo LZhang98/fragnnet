@@ -353,3 +353,77 @@ def test_merge_spec_df_merges_peaks_and_handles_ces():
     assert merged_no_ces.loc[0, "peaks"] == [(10.0, 1.0), (20.0, 2.0), (30.0, 1.0)]
     assert np.isnan(merged_no_ces.loc[0, "nce"])
     assert np.isnan(merged_no_ces.loc[0, "ace"])
+
+
+def test_merge_spec_df_tolerance_consensus_normalizes_and_equalizes_ces():
+    spec_df = pd.DataFrame(
+        [
+            {
+                "group_id": 1,
+                "spec_id": 1,
+                "inst_type": "ORB",
+                "nce": [10.0],
+                "ace": [5.0],
+                "peaks": [(100.0, 9.0), (200.0, 1.0)],
+            },
+            {
+                "group_id": 1,
+                "spec_id": 2,
+                "inst_type": "ORB",
+                "nce": [10.0],
+                "ace": [5.0],
+                "peaks": [(100.0005, 8.0), (300.0, 2.0)],
+            },
+            {
+                "group_id": 1,
+                "spec_id": 3,
+                "inst_type": "ORB",
+                "nce": [20.0],
+                "ace": [10.0],
+                "peaks": [(100.0008, 1.0), (400.0, 9.0)],
+            },
+        ]
+    )
+
+    merged = merge_spec_df(
+        spec_df,
+        keep_ces=True,
+        method="tolerance_consensus",
+        ce_key="nce",
+        tolerance_by_inst={"ORB": {"rel": 1.0e-5, "min_mz": 200.0}},
+        require_common_tolerance_overlap=True,
+        normalize_each_spectrum=True,
+        equal_ce_weight=True,
+    )
+
+    peaks = merged.loc[0, "peaks"]
+    assert len(peaks) == 4
+    assert sum(intensity for _, intensity in peaks) == pytest.approx(1.0)
+    assert [intensity for _, intensity in peaks] == pytest.approx([0.475, 0.025, 0.05, 0.45])
+    assert merged.loc[0, "nce"] == [10.0, 20.0]
+    assert merged.loc[0, "ace"] == [5.0, 10.0]
+
+
+def test_merge_spec_df_tolerance_consensus_requires_known_instrument():
+    spec_df = pd.DataFrame(
+        [
+            {
+                "group_id": 1,
+                "spec_id": 1,
+                "inst_type": "UNKNOWN",
+                "nce": [10.0],
+                "ace": [5.0],
+                "peaks": [(100.0, 1.0)],
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError, match="No merge tolerance configured"):
+        merge_spec_df(
+            spec_df,
+            method="tolerance_consensus",
+            ce_key="nce",
+            tolerance_by_inst={"ORB": {"rel": 1.0e-5, "min_mz": 200.0}},
+            normalize_each_spectrum=True,
+            equal_ce_weight=True,
+        )

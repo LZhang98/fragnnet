@@ -7,7 +7,7 @@ Tests cover:
 4. compute_ccs — max_depth=0: root only, no fragmentation attempted.
 5. compute_ccs — linear chain (3 nodes, 2 undirected edges): known fragment
    count, DAG structure, and min-depth assignments.
-6. compute_ccs — ethanol (real molecule via frag_utils): matches linear chain.
+6. compute_ccs — ethanol (real molecule via dag.builder): matches linear chain.
 7. compute_ccs — cyclohexane ring: depth-1 fragments are all 6-node (ring opens,
    does not split into two components).
 8. update_bonds — both atoms in CC: bond preserved.
@@ -21,14 +21,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.compute_frags import (
+from fragnnet.models.fragnnet.dag.builder import extract_mol_info, get_fraggen_input_arrays
+from fragnnet.models.fragnnet.dag.compute_frags import (
     compute_cc_h_floor,
     compute_ccs,
     mask_to_binary_hash,
     py_compute_node_to_edge_idx,
     update_bonds,
 )
-from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
 
 # ---------------------------------------------------------------------------
 # Constants matching compute_frags.pyx
@@ -246,7 +246,7 @@ def test_linear_chain_no_self_loops(chain_ccs):
 
 
 # ---------------------------------------------------------------------------
-# 6. compute_ccs — ethanol via frag_utils (matches linear chain result)
+# 6. compute_ccs — ethanol via dag.builder (matches linear chain result)
 # ---------------------------------------------------------------------------
 
 

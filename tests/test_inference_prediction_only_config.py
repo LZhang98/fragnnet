@@ -14,9 +14,9 @@ and must keep their cleanup behavior.
 import pandas as pd
 import pytest
 
+from fragnnet.inference.checkpoint import apply_inference_config
 from fragnnet.runner import load_config
 from fragnnet.utils.clean_spectra_utils import clean_spectra
-from fragnnet.utils.script_utils import apply_inference_config
 
 CLEANUP_PARAMS = {
     "centroid_peaks",
@@ -32,7 +32,7 @@ CLEANUP_PARAMS = {
 
 @pytest.fixture
 def config():
-    return load_config("config/template.yml", None, None)
+    return load_config("config", None, None)
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def peakless_dfs():
             "spec_id": [0, 1],
             "mol_id": [0, 0],
             "prec_type": ["[M+H]+", "[M-H]-"],
-            "inst_type": ["FT", "FT"],
+            "inst_type": ["ORB", "ORB"],
             "prec_mz": [181.0495, 179.0350],
             "peaks": [[], []],
         }

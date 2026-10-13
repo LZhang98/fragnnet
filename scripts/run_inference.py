@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import sys
 import tempfile
@@ -8,80 +7,29 @@ from typing import cast
 
 import pandas as pd
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from fragnnet.dataset import IterableSpecMolFragDataset, SpecMolFragDataset
-from fragnnet.runner import init_dataloader
-from fragnnet.utils import data_utils, frag_utils
-from fragnnet.utils.misc_utils import ProgressLogger, booltype
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
-    available_frag_mol_ids,
     get_ckpt_path,
     get_config_from_ckpt,
-    get_required_config_indices,
-    get_tabular_columns,
     init_model_from_ckpt,
-    list_output_subset_options,
-    prepare_output_subset,
-    run_inference_tabular_iter,
     setup_device,
 )
-
-
-def _resource_metrics(total_preds: int, t0: float) -> dict:
-    """Throughput plus the GPU and host memory high-water marks.
-
-    These are cumulative maxima since process start, not samples, so unlike W&B's 15s
-    system sampler they cannot miss a spike between ticks. They also survive MIG: NVML
-    reports no SM utilization for a `h100_3g.40gb` instance, while `torch.cuda` is
-    CUDA-side and unaffected.
-
-    `ru_maxrss` covers this process only. Nothing here forks - the DataLoader runs with
-    `num_workers=0` - so it is the whole job, but it would undercount if workers were
-    ever enabled.
-    """
-    import resource
-
-    import torch as th
-
-    elapsed = max(time.time() - t0, 1e-9)
-    m = {
-        "total_preds": total_preds,
-        "elapsed_s": elapsed,
-        "spectra_per_s": total_preds / elapsed,
-        # ru_maxrss is in kilobytes on Linux.
-        "host_mem_peak_rss_gb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2,
-    }
-    if th.cuda.is_available():
-        m["gpu_mem_peak_alloc_gb"] = th.cuda.max_memory_allocated() / 1024**3
-        m["gpu_mem_peak_reserved_gb"] = th.cuda.max_memory_reserved() / 1024**3
-    return m
-
-
-def _log_resources(total_preds: int, t0: float, wandb_run) -> None:
-    """Print resource usage to the job log, and send it to W&B when W&B is running.
-
-    The print is the point: the SYNCED array scripts pass `--wandb_mode
-    ${WANDB_TRACK_MODE}`, which defaults to `disabled`, so W&B is off unless a sizing run
-    turns it on and this line is otherwise the only record of how a shard used its slice.
-    It lands in the task's `#SBATCH --output` file, which is what sizing the next
-    `--gpu_profile` and `--time` is argued from.
-    """
-    m = _resource_metrics(total_preds, t0)
-    parts = [
-        f"{m['total_preds']} preds",
-        f"{m['elapsed_s']:.0f}s",
-        f"{m['spectra_per_s']:.1f} spectra/s",
-        f"host RSS peak {m['host_mem_peak_rss_gb']:.1f} GB",
-    ]
-    if "gpu_mem_peak_alloc_gb" in m:
-        parts.append(
-            f"GPU peak {m['gpu_mem_peak_alloc_gb']:.2f} GB alloc / "
-            f"{m['gpu_mem_peak_reserved_gb']:.2f} GB reserved"
-        )
-    print(f">> resources: {' | '.join(parts)}", flush=True)
-    if wandb_run is not None:
-        wandb_run.log(m)
+from fragnnet.inference.export_columns import (
+    get_required_config_indices,
+    get_tabular_columns,
+    list_output_subset_options,
+    prepare_output_subset,
+)
+from fragnnet.inference.runners import run_inference_tabular_iter
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.models.fragnnet.dag.storage import available_frag_mol_ids
+from fragnnet.models.fragnnet.fragnnet_dataset import IterableSpecMolFragDataset, SpecMolFragDataset
+from fragnnet.runner import init_dataloader
+from fragnnet.utils import dag_format_utils, parallel_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.setup_utils import get_dataset_cls
 
 
 def passthrough_collate(batch):
@@ -107,10 +55,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config",
         help="Path to the template config file",
     )
     parser.add_argument("--custom_fp", type=str, default=None, help="Path to custom config file")
+    parser.add_argument(
+        "--masster_candidate_backend",
+        choices=("cpu", "cuda"),
+        default=None,
+        help="Override only MASSter candidate construction after loading checkpoint settings",
+    )
     # Model checkpoint loading
     parser.add_argument(
         "--wandb_run_id",
@@ -184,6 +138,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--return_cc_hash", type=booltype, default=True, help="Whether to return node CC hashes"
+    )
+    parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
     )
     parser.add_argument(
         "--drop_none_cols",
@@ -274,38 +235,7 @@ if __name__ == "__main__":
         default=-1,
         help="Number of mol_df rows in this shard (-1 = all remaining rows).",
     )
-    # Resource tracking. Default off: this script runs as a 6-task array on fir, and an
-    # enabled run adds an import, a network dependency and a per-task W&B run to a path
-    # whose whole job is to write predictions. GPU/CPU/memory system metrics are sampled
-    # by wandb itself once init() runs - the explicit logs below are throughput and the
-    # torch-side allocator high-water mark, which is the number that answers "is this MIG
-    # slice / batch size right-sized" and, unlike NVML utilization, is reported on MIG.
-    parser.add_argument(
-        "--wandb_mode",
-        type=str,
-        default="disabled",
-        choices=["online", "offline", "disabled"],
-        help="W&B mode for resource tracking. 'disabled' (default) skips init entirely.",
-    )
-    parser.add_argument(
-        "--wandb_project", type=str, default="fragnnet-inference", help="W&B project"
-    )
-    parser.add_argument(
-        "--wandb_run_name",
-        type=str,
-        default=None,
-        help="W&B run name. Defaults to the shard's save_dp basename, so array tasks "
-        "do not collide.",
-    )
     args = parser.parse_args()
-
-    # Progress is reported through logging rather than tqdm, so a handler has to exist
-    # before the first ProgressLogger. basicConfig is a no-op if one is already set up.
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler()],
-    )
 
     # Get checkpoint path (download from W&B or use local)
     ckpt_fp = get_ckpt_path(
@@ -326,6 +256,12 @@ if __name__ == "__main__":
         custom_fp=custom_fp,
         template_fp=template_fp,
     )
+    if args.masster_candidate_backend is not None:
+        if config_d["model_type"] != "masster":
+            parser.error("--masster_candidate_backend requires a MASSter checkpoint")
+        config_d["masster_candidate_backend"] = args.masster_candidate_backend
+    if config_d["model_type"] == "masster":
+        print(f"> MASSter candidate backend: {config_d['masster_candidate_backend']}")
 
     # Load Input Data (molecules and spectra)
     print("> Loading mol_df")
@@ -377,9 +313,7 @@ if __name__ == "__main__":
     finished_spec_ids = set()
     max_chunk_idx = -1
 
-    read_progress = ProgressLogger(total=len(existing_files), desc="Reading existing predictions")
-    for f in existing_files:
-        read_progress.update()
+    for f in tqdm(existing_files, desc="Reading existing predictions"):
         # Parse chunk index
         try:
             c_idx = int(f.split("_")[-1].split(".")[0])
@@ -395,7 +329,6 @@ if __name__ == "__main__":
                 finished_spec_ids.update(df["spec_id"].unique())
         except Exception as e:
             print(f"Warning: Could not read {fp}: {e}")
-    read_progress.finish()
 
     # Filter once, after every chunk has been read. Doing it inside the loop re-filtered
     # spec_df/mol_df once per chunk file and made the "skipped" count report only the
@@ -437,6 +370,11 @@ if __name__ == "__main__":
 
     # Fragment graphs (DAGs) are computationally expensive to generate
     # Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
+    # Preserve the CLI's legacy FraGNNet spelling while using canonical dispatch.
+    ds_cls = get_dataset_cls(
+        "frag_gnn" if config_d["model_type"] == "fragnnet" else config_d["model_type"]
+    )
+    requires_dags = issubclass(ds_cls, SpecMolFragDataset)
     temp_frag_dir = None
     if args.frag_dp is not None:
         # Use pre-computed fragments
@@ -444,12 +382,8 @@ if __name__ == "__main__":
         print(f"> Using provided fragment directory: {config_d['frag_dp']}")
     else:
         # Auto-generate fragments in temporary directory (only for FraGNNet models)
-        temp_frag_dir = (
-            tempfile.TemporaryDirectory()
-            if config_d["model_type"] in ["frag_gnn", "fragnnet"]
-            else None
-        )
-        if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
+        temp_frag_dir = tempfile.TemporaryDirectory() if requires_dags else None
+        if requires_dags:
             if temp_frag_dir is None:
                 raise RuntimeError("Temporary fragment directory could not be created")
             print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
@@ -457,9 +391,9 @@ if __name__ == "__main__":
 
             # Prepare inputs for parallel fragment graph generation
             dag_feat_inputs_l = []
-            prep_progress = ProgressLogger(total=len(mol_df), desc="Preparing fragment inputs")
-            for _, row in mol_df.iterrows():
-                prep_progress.update()
+            for _, row in tqdm(
+                mol_df.iterrows(), total=len(mol_df), desc="Preparing fragment inputs"
+            ):
                 dag_feat_inputs_l.append(
                     [
                         row["mol"],  # RDKit molecule object
@@ -476,7 +410,6 @@ if __name__ == "__main__":
                         False,  # Disable SMARTS prepass
                     ]
                 )
-            prep_progress.finish()
 
             # Time the fragment generation process
             start = time.time()
@@ -484,28 +417,26 @@ if __name__ == "__main__":
                 f"> Running parallel fragment generation for {len(dag_feat_inputs_l)} molecules..."
             )
             # Generate fragment graphs in parallel across CPU cores
-            frag_results = data_utils.par_apply(
-                iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True
+            frag_results = parallel_utils.par_apply(
+                iter(dag_feat_inputs_l), timed_get_dags, True, return_as_generator=True
             )
             if frag_results is None:
                 raise RuntimeError("Parallel fragment generation did not return any results")
             frag_results_iter = cast("list[tuple[str, dict]]", frag_results)
             # Consume the generator to complete all fragment computations
             failed_frag_count = 0
-            frag_progress = ProgressLogger(total=len(dag_feat_inputs_l), desc="Computing fragments")
-            for mol_id, dag_d in frag_results_iter:
+            for mol_id, dag_d in tqdm(
+                frag_results_iter, total=len(dag_feat_inputs_l), desc="Computing Fragments"
+            ):
                 if not dag_d:
                     failed_frag_count += 1
-                    frag_progress.update(is_error=True)
                     continue
-                frag_progress.update()
-                frag_utils.save_frag_d(
+                dag_format_utils.save_frag_d(
                     frag_d=dag_d,
                     mol_id=mol_id,
                     frag_dp=config_d["frag_dp"],
                     is_compressed=config_d["frag_params"]["compressed"],
                 )
-            frag_progress.finish()
             end = time.time()
             time_cost = end - start
             print(
@@ -514,22 +445,23 @@ if __name__ == "__main__":
             print(f"> Fragment generation failures: {failed_frag_count}")
 
     # Filter input data to only include molecules with successfully generated fragments
-    print(">> Filtering molecules without fragments...")
-    all_frags = available_frag_mol_ids(config_d["frag_dp"])
-    print(f">> Found {len(all_frags)} fragment entries")
-    mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
-    print(f"> Molecules after filtering: {len(mol_df)}")
-    spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
-    print(f"> Spectra after filtering: {len(spec_df)}")
-    # Report this cause here rather than letting the empty-dataset guard below blame the
-    # dataset: nothing reaches it, so its message about spec_params would send the reader
-    # looking in the wrong place.
-    if len(spec_df) == 0:
-        raise RuntimeError(
-            f"No molecule has a fragment graph in {config_d['frag_dp']} "
-            f"({len(all_frags)} entries found), so every spectrum was filtered out. "
-            "Check --frag_dp, or drop it to generate fragments on the fly."
-        )
+    if requires_dags:
+        print(">> Filtering molecules without fragments...")
+        all_frags = available_frag_mol_ids(config_d["frag_dp"])
+        print(f">> Found {len(all_frags)} fragment entries")
+        mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
+        print(f"> Molecules after filtering: {len(mol_df)}")
+        spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
+        print(f"> Spectra after filtering: {len(spec_df)}")
+        # Report this cause here rather than letting the empty-dataset guard below blame
+        # the dataset: nothing reaches it, so its message about spec_params would send the
+        # reader looking in the wrong place.
+        if len(spec_df) == 0:
+            raise RuntimeError(
+                f"No molecule has a fragment graph in {config_d['frag_dp']} "
+                f"({len(all_frags)} entries found), so every spectrum was filtered out. "
+                "Check --frag_dp, or drop it to generate fragments on the fly."
+            )
 
     # Set dataframes in config for dataset initialization
     config_d["mol_fp"] = mol_df
@@ -537,7 +469,6 @@ if __name__ == "__main__":
 
     # Initialize Dataset and DataLoader
     print(">>> Initializing dataset...")
-    ds_cls = SpecMolFragDataset
     ds = ds_cls(split="predict_only", **config_d)
     print(f">>> Dataset size: {len(ds)} spectra")
     # The legitimate "nothing to do" cases (empty shard, fully resumed) already exited
@@ -578,9 +509,6 @@ if __name__ == "__main__":
     print(f">>> Model loaded and ready on device: {device}")
     print(f">>> Model in eval mode: {not model.training}")
 
-    # Create output directory for predictions
-    os.makedirs(args.save_dp, exist_ok=True)
-
     # Run inference with periodic saving
     print(">>> Running inference and saving predictions...")
     output_set = prepare_output_subset(
@@ -608,34 +536,12 @@ if __name__ == "__main__":
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         output_subset=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     )
 
     # =========================================
     # Inferencing
     # =========================================
-
-    # Array tasks group under the array job id so the 6 shards roll up as one view.
-    infer_t0 = time.time()
-    wandb_run = None
-    if args.wandb_mode != "disabled":
-        import wandb
-
-        wandb_run = wandb.init(
-            project=args.wandb_project,
-            name=args.wandb_run_name or os.path.basename(os.path.normpath(args.save_dp)),
-            group=os.environ.get("SLURM_ARRAY_JOB_ID") or os.environ.get("SLURM_JOB_ID"),
-            mode=args.wandb_mode,
-            config={
-                "batch_size": args.batch_size,
-                "dynamic_batch_max": args.dynamic_batch_max,
-                "min_intensity": args.min_intensity,
-                "start_mol_idx": args.start_mol_idx,
-                "num_mols": args.num_mols,
-                "num_spectra": len(spec_df),
-                "device": str(device),
-                "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
-            },
-        )
 
     # Iterate through batches and save periodically
     preds_l = []
@@ -656,6 +562,7 @@ if __name__ == "__main__":
         return_cc_hash=args.return_cc_hash or args.output_everything,
         rebase_indices=True,
         output_set=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     ):
         # batch_rows is COLUMN-major: one list per column, each holding a value per
         # spectrum in the batch. Transpose to per-spectrum rows for the DataFrame.
@@ -676,7 +583,6 @@ if __name__ == "__main__":
             chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
             pred_df.to_pickle(chunk_fp)
             print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
-            _log_resources(total_preds, infer_t0, wandb_run)
             preds_l = []
             chunk_idx += 1
 
@@ -692,10 +598,6 @@ if __name__ == "__main__":
         chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
         pred_df.to_pickle(chunk_fp)
         print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
-
-    _log_resources(total_preds, infer_t0, wandb_run)
-    if wandb_run is not None:
-        wandb_run.finish()
 
     print(f"\n>>> Inference complete! Total predictions: {total_preds}")
     print(f">>> Predictions saved to: {args.save_dp}")

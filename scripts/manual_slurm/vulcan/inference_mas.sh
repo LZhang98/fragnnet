@@ -38,8 +38,6 @@ pip install --no-index torch==2.4.1 \
     joblib==1.3.2 \
     matplotlib \
     pytorch_lightning==2.4.0 \
-    dgl==2.4.0 \
-    omegaconf \
     cython==3.0.12 \
     pyopenms==3.3.0 \
     h5py
@@ -64,8 +62,8 @@ mkdir -p ${WORKING_DIR}/saved_ckpts/deepmet
 cp ${FRAGNNET_DP}/saved_ckpts/deepmet/nist20_inchikey_fraggnn_d3_ma_mi_amolc_cv_all_hifszbst.ckpt ${WORKING_DIR}/saved_ckpts/deepmet/
 # copy config
 mkdir -p ${WORKING_DIR}/config
-cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config
-cp ${FRAGNNET_DP}/config/exp_fraggnn_ma_mi/d3_ma_mi_nist20_5cvs/fraggnn_d3_ma_mi_nist20_cv_all.yml ${WORKING_DIR}/config
+cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
+cp ${FRAGNNET_DP}/config/fragnnet/exp_fraggnn_ma_mi/d3_ma_mi_nist20_5cvs/fraggnn_d3_ma_mi_nist20_cv_all.yml ${WORKING_DIR}/config
 
 # copy frag data
 cp /scratch/feiw/frag-gnn-data/frags/mas_250905_filtered_d3_h4False_1.tar ${WORKING_DIR}/

@@ -1,7 +1,7 @@
 import pytest
 import torch as th
 
-from fragnnet.dataset.spec_mol_frag_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.utils.formula_utils import (
     ELECTRON_MASS,
     H_MASS,
@@ -14,7 +14,7 @@ from fragnnet.utils.formula_utils import (
 # Adducts whose CMF ion is already enumerated as a CRF hydrogen shift, so CMF is skipped.
 DEGENERATE_PRECS = ("[M+H]+", "[M-H]-")
 # Adducts whose CMF ion is a distinct m/z, so the full H-shift range is written.
-DISTINCT_PRECS = ("[M+Na]+", "[M+NH4]+", "[M+K]+", "[M+Cl]-")
+DISTINCT_PRECS = ("[M+Na]+", "[M+NH4]+", "[M+K]+", "[M+Cl]-", "[M+Br]-")
 
 
 class _FakePyG:
@@ -297,6 +297,7 @@ def test_in_source_loss_precursors_have_no_cmf_channel(prec):
         ("[M+K]+", "H1"),
         ("[M+NH4]+", "H1"),
         ("[M+Cl]-", "H-1"),
+        ("[M+Br]-", "H-1"),
         ("[M+HCOOH-H]-", "H-1"),
         ("[M+CH3COO]-", "H-1"),
     ],

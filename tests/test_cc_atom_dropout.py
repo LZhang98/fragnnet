@@ -18,10 +18,11 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.model.fragnnet_model import FraGNNetModel
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.feat_utils import get_frag_graph, get_mol_graph
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
+from fragnnet.utils.feat_utils import get_mol_graph
+from fragnnet.utils.mol_utils import mol_from_smiles
 
 MOL_NODE_FEATS = ["a_onehot", "a_degree", "a_ring", "a_mass"]
 MOL_EDGE_FEATS = ["b_degree"]
@@ -92,7 +93,7 @@ def _build_model(
         prec_types=["[M+H]+"],
         inst_insert_location="mol",
         inst_insert_size=8,
-        inst_types=["FT"],
+        inst_types=["ORB"],
         frag_mode_insert_location="mol",
         frag_mode_insert_size=8,
         frag_modes=["HCD"],

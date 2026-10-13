@@ -3,16 +3,16 @@
 import pytest
 import torch as th
 
-from fragnnet.dataset.spec_mol_frag_dataset import SpecMolFragDataset
-from fragnnet.utils.formula_utils import (
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
+from fragnnet.models.fragnnet.fragnnet_adducts import (
     PREC_DELTA_REMOVED_ELEMENTS,
-    PREC_TYPE_TO_CMF_COMP_DIFF,
-    PREC_TYPE_TO_COMP_DIFF,
     TOTAL_ATOM_COLUMN,
     prec_type_removed_counts,
     tracked_element_counts,
 )
-from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_COMP_DIFF, PREC_TYPE_TO_COMP_DIFF
 
 NODE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx", "cmf_h_formulae_idx"]
 # Salicylic acid carries exactly one COOH, so only some fragments can lose CO2. It has no
@@ -24,7 +24,7 @@ PHENYLALANINE = "NC(Cc1ccccc1)C(=O)O"
 # Precursors that subtract a neutral loss from every enumerated fragment.
 LOSS_PRECS = ("[M-H-CO2]-", "[M-H2O+H]+", "[M-2H2O+H]+", "[M+H-NH3]+", "[M-H-H2O]-", "[M-H]-")
 # Precursors that only add a carrier, so no fragment can be invalidated.
-ADDITIVE_PRECS = ("[M+H]+", "[M+Na]+", "[M+Cl]-", "[M+K]+", "[M+NH4]+")
+ADDITIVE_PRECS = ("[M+H]+", "[M+Na]+", "[M+Cl]-", "[M+Br]-", "[M+K]+", "[M+NH4]+")
 
 
 def _dag(smiles: str) -> dict:

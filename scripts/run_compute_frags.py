@@ -4,7 +4,7 @@ from pprint import pprint
 import numpy as np
 from torch_geometric.utils import degree
 
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.models.fragnnet.dag.builder import extract_mol_info, timed_get_dags
 from fragnnet.utils.misc_utils import booltype, get_pyg_memory_usage
 
 
@@ -12,11 +12,11 @@ def run_frag(smiles, **kwargs):
     print(f"> smiles = {smiles}")
     pprint(kwargs)
 
-    mol_d = frag_utils.extract_mol_info(smiles)
+    mol_d = extract_mol_info(smiles)
     num_nodes = mol_d["atom_mask_arr"].shape[0]
     print(f"> num heavy atoms {num_nodes}")
 
-    _, dag_d = frag_utils.timed_get_dags(
+    _, dag_d = timed_get_dags(
         mol=mol_d["mol"],
         mol_id=0,
         max_depth=kwargs.get("max_depth", 3),

@@ -14,17 +14,17 @@ import pandas as pd
 import torch as th
 from tqdm import tqdm
 
-from fragnnet.pl_model.spectrum_pl import primary_ce_to_batch
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype, to_device
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import booltype, to_device
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import primary_ce_to_batch
 
 
 def get_args() -> argparse.Namespace:
@@ -35,7 +35,7 @@ def get_args() -> argparse.Namespace:
             "H-transfer/formula ion P(f|n), or whether node mass itself was missing."
         )
     )
-    parser.add_argument("--template_fp", type=str, default="config/template.yml")
+    parser.add_argument("--template_fp", type=str, default="config")
     parser.add_argument("--custom_fp", type=str, required=True)
     parser.add_argument("--wandb_run_id", type=str, default=None)
     parser.add_argument("--model_save_dp", type=str, default="saved_ckpts")

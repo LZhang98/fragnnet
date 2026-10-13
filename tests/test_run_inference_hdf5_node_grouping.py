@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import batch_rows, export_columns, runners
 
 COLUMNS = [
     "spec_id",
@@ -62,13 +62,14 @@ def _make_batches(batch_sizes):
 def patched_writer(monkeypatch):
     def _run(batch_sizes, chunk_size, tmp_path):
         batches = _make_batches(batch_sizes)
-        monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
+        monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+        monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
         monkeypatch.setattr(
-            script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches)
+            runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches)
         )
         model = types.SimpleNamespace(hparams=None)
         save_path = str(tmp_path / "pred.hdf5")
-        script_utils.run_inference_hdf5(
+        runners.run_inference_hdf5(
             model,
             dataloader=list(range(len(batches))),  # only len() is used
             device=th.device("cpu"),
@@ -135,10 +136,11 @@ def test_cutoff_flushes_all_processed_spectra(monkeypatch, tmp_path, cutoff, chu
     batches = _make_batches([2, 1, 2])
     count = len(batches) if cutoff < 0 else min(cutoff, len(batches))
     selected = batches[:count]
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(selected))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(selected))
     path = str(tmp_path / "cutoff.h5")
-    written = script_utils.run_inference_hdf5(
+    written = runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         list(range(len(batches))),
         th.device("cpu"),
@@ -158,18 +160,21 @@ def test_cutoff_flushes_all_processed_spectra(monkeypatch, tmp_path, cutoff, chu
 
 @pytest.mark.parametrize("cutoff, expected", [(0, 0), (1, 1), (10, 3), (-1, 3)])
 def test_tabular_iterator_respects_cutoff(monkeypatch, cutoff, expected):
-    monkeypatch.setattr(script_utils, "get_idx_vars", lambda *a, **kw: ([], [], [], []))
-    monkeypatch.setattr(script_utils, "get_score_types", lambda *a: [])
+    monkeypatch.setattr(export_columns, "get_idx_vars", lambda *a, **kw: ([], [], [], []))
+    monkeypatch.setattr(runners, "get_idx_vars", lambda *a, **kw: ([], [], [], []))
+    monkeypatch.setattr(export_columns, "get_score_types", lambda *a: [])
+    monkeypatch.setattr(runners, "get_score_types", lambda *a: [])
     processed = []
 
     def process(**kwargs):
         processed.append(kwargs["batch_input"])
         return kwargs["batch_input"]
 
-    monkeypatch.setattr(script_utils, "process_batch_to_tabular_row", process)
+    monkeypatch.setattr(batch_rows, "process_batch_to_tabular_row", process)
+    monkeypatch.setattr(runners, "process_batch_to_tabular_row", process)
     model = types.SimpleNamespace(training=False, hparams={}, eval=lambda: None)
     result = list(
-        script_utils.run_inference_tabular_iter(
+        runners.run_inference_tabular_iter(
             model,
             [0, 1, 2],
             th.device("cpu"),
@@ -184,10 +189,11 @@ def test_writer_flushes_on_exhaustion_with_estimated_length(
     monkeypatch, tmp_path, reported_batches
 ):
     batches = _make_batches([2, 1, 2])
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "estimated_length.h5")
-    written = script_utils.run_inference_hdf5(
+    written = runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         list(range(reported_batches)),
         th.device("cpu"),

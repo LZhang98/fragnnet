@@ -1,7 +1,7 @@
 """Measure how many candidate formulas the spectral loss sums over per observed peak.
 
-The spectral loss (both ``gaussian`` / mog_ce_fn and ``peak_marginal`` / pm_ce_fn in
-``fragnnet/model/loss.py``) scores an observed peak by aggregating EVERY predicted candidate
+The spectral loss (both ``gaussian`` / gaussian_ce and ``peak_marginal`` / peak_marginal_ce in
+``fragnnet/loss/cross_entropy.py``) scores an observed peak by aggregating EVERY predicted candidate
 within the m/z tolerance window:
 
     log P(peak_i) = logsumexp_{j : |mz_j - mz_i| <= tol} [ log w_j (+ log Gaussian(err_ij)) ]
@@ -24,7 +24,7 @@ Two counts are reported per observed peak, and the difference between them is th
 ``n_cand > n_distinct_mz`` is *structural aliasing*: candidates the loss can provably never
 separate because they are the same m/z. For [M+H]+, CMF(F) and CRF(F-H) are the same ion and
 land at a bit-identical m/z, so the CMF/CRF doubling in
-``spec_mol_frag_dataset._apply_fragment_mz_change`` plus the H-transfer budget makes this
+``fragnnet_dataset._apply_fragment_mz_change`` plus the H-transfer budget makes this
 pervasive rather than incidental.
 
 ``n_distinct_mz > 1`` is *real chemical ambiguity*: chemically different formulas that happen
@@ -50,7 +50,7 @@ import pandas as pd
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 import torch as th
 
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -67,11 +67,11 @@ MZ_CLUSTER_ATOL = 1.0e-6  # Da; below any real isobar spacing, above float noise
 def build_candidates(dag_d: dict, prec_type: str) -> tuple[np.ndarray, np.ndarray]:
     """Build the model's candidate ion m/z set for one molecule.
 
-    Mirrors ``spec_mol_frag_dataset._apply_fragment_mz_change``: CRF rows for every formula,
+    Mirrors ``fragnnet_dataset._apply_fragment_mz_change``: CRF rows for every formula,
     plus CMF rows for every non-NULL formula, each a separate softmax entry.
 
     Args:
-        dag_d: DAG dict from ``frag_utils.load_frag_d``.
+        dag_d: DAG dict from ``dag_format_utils.load_frag_d``.
         prec_type: Precursor adduct, e.g. "[M+H]+".
 
     Returns:
@@ -137,7 +137,7 @@ def count_multiplicity(
 
 def process_mol(mol_id: int, rows: list[dict], frag_dp: str, is_compressed: bool) -> list[dict]:
     """Count multiplicity for every observed peak of every spectrum of one molecule."""
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return []
 
@@ -253,7 +253,7 @@ def main() -> None:
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", default="test")
     parser.add_argument("--frag_dp", default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags")
-    parser.add_argument("--inst_type", default="FT")
+    parser.add_argument("--inst_type", default="ORB")
     parser.add_argument("--frag_mode", default="HCD")
     parser.add_argument("--prec_type", default="[M+H]+")
     parser.add_argument("--max_mols", type=int, default=1500)

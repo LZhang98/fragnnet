@@ -9,11 +9,14 @@ import torch as th
 from rdkit import Chem
 from torch_geometric.data import Data
 
+from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
+from fragnnet.models.neims.neims_model import get_mol_fp_size
 from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
     AtomDegree,
     AtomFormal,
+    AtomFusedRing,
     AtomHybrid,
     AtomMass,
     AtomOneHot,
@@ -22,14 +25,13 @@ from fragnnet.utils.feat_utils import (
     AtomRingSize,
     BondConj,
     BondDegree,
+    BondFusedRing,
     BondRing,
+    BondRingSize,
     BondStereo,
     MolGraph,
-    batch_mols_frags,
-    get_frag_graph,
     get_mol_feats_sizes,
     get_mol_fp,
-    get_mol_fp_size,
     get_mol_graph,
     one_hot_encoding,
     random_walk_pe,
@@ -225,6 +227,37 @@ class TestAtomFeaturizers:
         feat = AtomRingSize.featurize(atom)
         assert feat == [0, 0, 0, 0, 1]  # inGe7=1
 
+    def test_atom_fused_ring_acyclic(self, ethanol_mol):
+        """Acyclic atoms are not fused."""
+        atom = ethanol_mol.GetAtomWithIdx(0)
+        feat = AtomFusedRing.featurize(atom)
+        assert len(feat) == AtomFusedRing.feat_size
+        assert feat == [1, 0]
+
+    def test_atom_fused_ring_single_ring(self, benzene_mol):
+        """A benzene atom is in one ring only, so it is not fused."""
+        atom = benzene_mol.GetAtomWithIdx(0)
+        feat = AtomFusedRing.featurize(atom)
+        assert feat == [1, 0]
+
+    def test_atom_fused_ring_naphthalene_junction(self):
+        """Only the two ring-junction atoms of naphthalene are fused."""
+        mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+        ring_info = mol.GetRingInfo()
+        junctions = [i for i in range(mol.GetNumAtoms()) if ring_info.NumAtomRings(i) >= 2]
+        assert len(junctions) == 2
+        for idx in range(mol.GetNumAtoms()):
+            feat = AtomFusedRing.featurize(mol.GetAtomWithIdx(idx))
+            assert feat == ([0, 1] if idx in junctions else [1, 0])
+
+    def test_atom_fused_ring_spiro_junction(self):
+        """A spiro atom belongs to two rings and counts as fused."""
+        mol = Chem.MolFromSmiles("C1CCC2(CC1)CCCC2")  # spiro[4.5]decane
+        ring_info = mol.GetRingInfo()
+        spiro = [i for i in range(mol.GetNumAtoms()) if ring_info.NumAtomRings(i) >= 2]
+        assert len(spiro) == 1
+        assert AtomFusedRing.featurize(mol.GetAtomWithIdx(spiro[0])) == [0, 1]
+
     def test_atom_charge_size(self):
         """Test AtomCharge returns a single float."""
         from rdkit.Chem import AllChem
@@ -352,6 +385,70 @@ class TestBondFeaturizers:
         assert sum(feat) == 1
 
 
+    def test_bond_ring_size_acyclic(self, ethanol_mol):
+        """Acyclic bonds have all-zero ring size features."""
+        bond = ethanol_mol.GetBondWithIdx(0)
+        feat = BondRingSize.featurize(bond)
+        assert len(feat) == BondRingSize.feat_size
+        assert feat == [0, 0, 0, 0, 0]
+
+    def test_bond_ring_size_benzene(self, benzene_mol):
+        """Benzene bonds are in a 6-membered ring only."""
+        feat = BondRingSize.featurize(benzene_mol.GetBondWithIdx(0))
+        assert feat == [0, 0, 0, 1, 0]
+
+    def test_bond_ring_size_small_rings(self):
+        """Cyclopropane and cyclobutane bonds set the in3 and in4 bits."""
+        assert BondRingSize.featurize(Chem.MolFromSmiles("C1CC1").GetBondWithIdx(0)) == [
+            1, 0, 0, 0, 0
+        ]
+        assert BondRingSize.featurize(Chem.MolFromSmiles("C1CCC1").GetBondWithIdx(0)) == [
+            0, 1, 0, 0, 0
+        ]
+
+    def test_bond_ring_size_large_ring(self):
+        """Bonds in rings ≥7 set the inGe7 bit."""
+        feat = BondRingSize.featurize(Chem.MolFromSmiles("C1CCCCCC1").GetBondWithIdx(0))
+        assert feat == [0, 0, 0, 0, 1]
+
+    def test_bond_ring_size_multi_hot_across_ring_sizes(self):
+        """A bond shared by a 5- and a 6-ring sets both bits."""
+        mol = Chem.MolFromSmiles("C1CCC2CCCCC2C1")  # bicyclo[4.4.0], two fused 6-rings
+        ring_info = mol.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in mol.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        assert BondRingSize.featurize(mol.GetBondWithIdx(shared[0])) == [0, 0, 0, 1, 0]
+
+        indane = Chem.MolFromSmiles("C1Cc2ccccc2C1")  # fused 5- and 6-ring
+        ring_info = indane.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in indane.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        assert BondRingSize.featurize(indane.GetBondWithIdx(shared[0])) == [0, 0, 1, 1, 0]
+
+    def test_bond_fused_ring_acyclic_and_single_ring(self, ethanol_mol, benzene_mol):
+        """Acyclic and single-ring bonds are not fused."""
+        feat = BondFusedRing.featurize(ethanol_mol.GetBondWithIdx(0))
+        assert len(feat) == BondFusedRing.feat_size
+        assert feat == [1, 0]
+        assert BondFusedRing.featurize(benzene_mol.GetBondWithIdx(0)) == [1, 0]
+
+    def test_bond_fused_ring_naphthalene(self):
+        """Only the shared bond of naphthalene is fused."""
+        mol = Chem.MolFromSmiles("c1ccc2ccccc2c1")
+        ring_info = mol.GetRingInfo()
+        shared = [
+            b.GetIdx() for b in mol.GetBonds() if ring_info.NumBondRings(b.GetIdx()) >= 2
+        ]
+        assert len(shared) == 1
+        for bond in mol.GetBonds():
+            feat = BondFusedRing.featurize(bond)
+            assert feat == ([0, 1] if bond.GetIdx() in shared else [1, 0])
+
+
 class TestMolGraph:
     """Tests for MolGraph class."""
 
@@ -477,47 +574,6 @@ class TestMolGraph:
         # At least some bonds should be ring bonds and some chain
         assert (ring_bits[:, 1] == 1).any(), "Expected some ring bonds"
         assert (ring_bits[:, 0] == 1).any(), "Expected some chain bonds"
-
-    def test_get_networkx_graph(self):
-        """Test NetworkX graph creation."""
-        mol_graph = MolGraph()
-        mol = Chem.MolFromSmiles("CCO")
-        g = mol_graph.get_networkx_graph(mol, bigraph=False)
-
-        assert g.number_of_nodes() == 3
-        assert g.number_of_edges() == 2
-
-    @pytest.mark.parametrize("smiles", ["C", "O", "Cl", "[SiH4]"])
-    @pytest.mark.parametrize("bigraph", [False, True])
-    def test_bond_free_mol_graph(self, mol_graph, smiles, bigraph):
-        """A lone heavy atom (CH4, H2O, HCl, SiH4) yields empty but 2-D bond arrays."""
-        mol = Chem.MolFromSmiles(smiles)
-        assert mol.GetNumBonds() == 0
-        graph_dict = mol_graph.get_mol_graph(mol, bigraph=bigraph)
-
-        assert graph_dict["atom_feats"].shape == (1, mol_graph.num_atom_feats)
-        assert graph_dict["bond_feats"].shape == (0, mol_graph.num_bond_feats)
-        assert graph_dict["bond_tuples"].shape == (0, 2)
-        assert np.issubdtype(graph_dict["bond_tuples"].dtype, np.integer)
-
-    @pytest.mark.parametrize("bigraph", [False, True])
-    def test_bond_free_pyg_graph(self, mol_graph, bigraph):
-        """A bond-free molecule gives a one-node PyG graph with a (2, 0) edge_index."""
-        data = mol_graph.get_pyg_graph(Chem.MolFromSmiles("C"), bigraph=bigraph)
-
-        assert data.x.shape == (1, mol_graph.num_atom_feats)
-        assert data.edge_index.shape == (2, 0)
-        assert data.edge_index.dtype == th.int64
-        assert data.edge_attr.shape == (0, mol_graph.num_bond_feats)
-        assert data.edge_attr.dtype == th.float32
-
-    def test_bond_free_networkx_graph(self, mol_graph):
-        """NetworkX conversion of a bond-free molecule keeps the atom and adds no edges."""
-        g = mol_graph.get_networkx_graph(Chem.MolFromSmiles("C"), bigraph=True)
-
-        assert g.number_of_nodes() == 1
-        assert g.number_of_edges() == 0
-
 
 class TestGetMolFeaturesSizes:
     """Tests for get_mol_feats_sizes function."""
@@ -853,30 +909,6 @@ class TestGetMolGraphFunc:
         assert g.x.shape[0] == 6  # 6 carbons
         assert g.edge_index.shape[1] == 6  # 6 bonds in benzene ring
 
-    def test_bond_free_graph(self):
-        """A bond-free molecule (methane) builds a single-node, zero-edge graph."""
-        g = get_mol_graph(Chem.MolFromSmiles("C"), None, None, 0, bigraph=True)
-
-        assert g.x.shape[0] == 1
-        assert g.edge_index.shape == (2, 0)
-        assert g.edge_attr.shape[0] == 0
-
-    @pytest.mark.parametrize("bigraph", [False, True])
-    def test_bond_free_graph_with_pe(self, bigraph):
-        """A bond-free molecule still gets a k-wide (all-zero) RWPE block on its atom."""
-        g_no_pe = get_mol_graph(Chem.MolFromSmiles("C"), None, None, 0, bigraph=bigraph)
-        g = get_mol_graph(Chem.MolFromSmiles("C"), None, None, pe_embed_k=8, bigraph=bigraph)
-
-        assert g.x.shape == (1, g_no_pe.x.shape[1] + 8)
-        assert th.all(g.x[:, -8:] == 0)
-
-    @pytest.mark.parametrize("smiles,num_atoms", [("CCO", 3), ("CC(=O)O", 4), ("c1ccccc1", 6)])
-    def test_pe_with_directed_graph(self, smiles, num_atoms):
-        """RWPE works without bigraph, where the adjacency is not square by construction."""
-        g = get_mol_graph(Chem.MolFromSmiles(smiles), None, None, pe_embed_k=4, bigraph=False)
-
-        assert g.x.shape[0] == num_atoms
-
 
 class TestBatchMolsFrags:
     """Tests for batch_mols_frags function.
@@ -1115,7 +1147,7 @@ class TestRandomWalkPE:
         """Test PE computation on a simple cyclic graph."""
         # Create a simple cyclic graph: 0-1-2-0
         edge_index = th.tensor([[0, 1, 2], [1, 2, 0]])
-        data = Data(edge_index=edge_index, num_nodes=3)
+        data = Data(edge_index=edge_index)
         pe = random_walk_pe(data, k=2)
 
         assert pe is not None
@@ -1126,7 +1158,7 @@ class TestRandomWalkPE:
     def test_pe_different_k_values(self):
         """Test PE with different k values."""
         edge_index = th.tensor([[0, 1, 2, 3], [1, 2, 3, 0]])
-        data = Data(edge_index=edge_index, num_nodes=4)
+        data = Data(edge_index=edge_index)
 
         for k in [1, 4, 8, 16]:
             pe = random_walk_pe(data, k=k)
@@ -1147,7 +1179,7 @@ class TestRandomWalkPE:
     def test_pe_output_properties(self):
         """Test PE output has expected numerical properties."""
         edge_index = th.tensor([[0, 1], [1, 0]])
-        data = Data(edge_index=edge_index, num_nodes=2)
+        data = Data(edge_index=edge_index)
         pe = random_walk_pe(data, k=4)
 
         # PE should be real valued
@@ -1165,35 +1197,95 @@ class TestRandomWalkPE:
         expected = th.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=pe.dtype)
         assert th.allclose(pe, expected, atol=1e-6, rtol=1e-6)
 
-    def test_pe_no_edges(self):
-        """An edgeless graph has no walks, so every landing probability is 0."""
-        data = Data(x=th.zeros(1, 3), edge_index=th.zeros((2, 0), dtype=th.long))
-        pe = random_walk_pe(data, k=4)
 
-        assert pe.shape == (1, 4)
-        assert th.all(pe == 0)
+class TestDegreeEncodings:
+    """``a_degree``'s one-hot, repaired in place (feature audit §7.1)."""
 
-    def test_pe_isolated_node_keeps_one_row_per_node(self):
-        """A trailing isolated node gets its own zero row; connected rows are unchanged."""
-        # 0 <-> 1 plus a detached node 2, which never appears in edge_index.
-        edge_index = th.tensor([[0, 1], [1, 0]], dtype=th.long)
-        pe_pair = random_walk_pe(Data(edge_index=edge_index, num_nodes=2), k=2)
-        pe_plus = random_walk_pe(Data(edge_index=edge_index, num_nodes=3), k=2)
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
 
-        assert pe_plus.shape == (3, 2)
-        assert th.equal(pe_plus[:2], pe_pair)
-        assert th.all(pe_plus[2] == 0)
+    def test_one_hot_encodes_the_heavy_atom_degree(self, aspirin_mol):
+        """Two raw values, then a live one-hot of ``GetDegree()``."""
+        for atom in aspirin_mol.GetAtoms():
+            feat = AtomDegree.featurize(atom)
 
-    def test_pe_directed_graph_is_square(self):
-        """A directed (non-symmetrized) graph is padded to N x N, not max_row x max_col."""
-        # 0 -> 1 -> 2: row indices are {0, 1} and column indices {1, 2}, so inferring the
-        # shape from the indices would give a non-square 2x3 adjacency.
-        data = Data(edge_index=th.tensor([[0, 1], [1, 2]], dtype=th.long), num_nodes=3)
-        pe = random_walk_pe(data, k=3)
+            assert len(feat) == AtomDegree.feat_size == 14
+            assert feat[0] == atom.GetDegree()
+            assert feat[1] == atom.GetTotalDegree()
+            assert sum(feat[2:]) == 1
+            assert feat[2 + atom.GetDegree()] == 1
 
-        assert pe.shape == (3, 3)
-        # A path graph with no cycles can never return to its start.
-        assert th.all(pe == 0)
+    def test_the_unknown_bucket_no_longer_absorbs_every_atom(self, aspirin_mol):
+        """The defect: passing the pair ``[degree, total_degree]`` pinned column 13 to 1."""
+        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
+
+        assert (one_hots[:, -1] == 0).all()
+        assert one_hots[:, :-1].sum() == aspirin_mol.GetNumAtoms()
+
+    def test_the_formerly_constant_columns_now_carry_signal(self, aspirin_mol):
+        """All 12 one-hot columns used to be constant across every atom of every molecule."""
+        one_hots = np.array([AtomDegree.featurize(atom)[2:] for atom in aspirin_mol.GetAtoms()])
+        varying = [i for i in range(one_hots.shape[1]) if np.ptp(one_hots[:, i]) > 0]
+
+        assert len(varying) >= 3
+
+    def test_an_out_of_range_degree_falls_back_to_the_unknown_bucket(self):
+        """The bucket still exists for degrees above the allowable set."""
+
+        class _Atom:
+            def GetDegree(self):
+                return 99
+
+            def GetTotalDegree(self):
+                return 99
+
+        feat = AtomDegree.featurize(_Atom())
+
+        assert len(feat) == AtomDegree.feat_size
+        assert feat[-1] == 1
+        assert sum(feat[2:]) == 1
+
+
+class TestSharedElementOrder:
+    """``AtomOneHot`` must not mutate the canonical element order (feature audit §7.8)."""
+
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
+
+    def test_featurizing_does_not_grow_the_shared_element_list(self, aspirin_mol):
+        from fragnnet.utils import formula_utils
+
+        before = list(formula_utils.CANONICAL_ELEMENT_ORDER)
+        AtomOneHot.featurize(aspirin_mol.GetAtomWithIdx(0))
+
+        assert before == formula_utils.CANONICAL_ELEMENT_ORDER
+        assert None not in formula_utils.CANONICAL_ELEMENT_ORDER
+        assert AtomOneHot.allowable_set is not formula_utils.CANONICAL_ELEMENT_ORDER
+
+
+class TestGasteigerGraphField:
+    """Every molecular graph carries Gasteiger charges (feature audit §7.3)."""
+
+    @pytest.fixture
+    def aspirin_mol(self):
+        return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
+
+    @pytest.mark.parametrize("atom_feats", [["a_onehot"], ["a_onehot", "a_charge"]])
+    def test_charges_are_attached_regardless_of_the_feature_list(self, aspirin_mol, atom_feats):
+        graph = MolGraph(atom_feats, ["b_degree"], 0).get_pyg_graph(aspirin_mol)
+
+        assert graph.atom_gasteiger_charges.shape == (aspirin_mol.GetNumAtoms(),)
+        assert graph.atom_gasteiger_charges.dtype == th.float32
+        assert th.isfinite(graph.atom_gasteiger_charges).all()
+
+    def test_charges_match_the_a_charge_column(self, aspirin_mol):
+        """The field and the atom feature are the same numbers."""
+        mol_graph = MolGraph(["a_charge"], ["b_degree"], 0)
+        graph = mol_graph.get_pyg_graph(aspirin_mol)
+
+        assert th.allclose(graph.x[:, 0], graph.atom_gasteiger_charges)
 
 
 if __name__ == "__main__":

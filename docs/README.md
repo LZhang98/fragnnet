@@ -1,138 +1,122 @@
 # FraGNNet Documentation Index
 
-> **Status:** REFERENCE
+> **Status:** REFERENCE · **Updated:** 2026-10-12
+> Map of the docs tree. Plans and findings are indexed in the workstream hubs, not here.
 
 Start with [current project state](project-state.md), the [architecture map](architecture.md),
-and the [session workflow](workflow/session.md). Shared constraints live in
-[rules/engineering.md](rules/engineering.md).
+and the [session workflow](workflow/session.md). Status meanings and placement rules are in
+[rules/documentation.md](rules/documentation.md#status-banners). Closed nulls and superseded
+plans are kept deliberately; read a hub's "Settled" list before re-proposing a mechanism.
 
 ## Shared workflow and rules
 
 | Doc | Purpose |
 | --- | --- |
-| [project-state.md](project-state.md) | Current handoff, research navigation, and next task |
+| [project-state.md](project-state.md) | Dashboard: one block per workstream, next actions, uncommitted work |
 | [architecture.md](architecture.md) | Verified entry points and architectural boundaries |
 | [workflow/session.md](workflow/session.md) | Development, experiment provenance, validation, and handoff |
 | [rules/engineering.md](rules/engineering.md) | Core behavior, environment, compatibility, validation, and Git rules |
 | [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
-| [rules/documentation.md](rules/documentation.md) | Documentation placement, banners, indexing, and preservation |
+| [rules/documentation.md](rules/documentation.md) | Placement, status vocabulary, hubs, project-state cap, history |
+| [rules/artifacts.md](rules/artifacts.md) | Where checkpoints and run outputs go (`ckpts/`, `saved_ckpts/`, `output/`), naming, citing, and deletion |
 
-Research documents generally carry a status banner directly under their title. Check it before
-acting on a doc — several plans here are **closed nulls or superseded**, and they are kept
-deliberately so the same line does not get re-run.
+## workstreams/ — one hub per line of work
 
-| Status | Meaning |
-|--------|---------|
-| `GUIDE` / `REFERENCE` | Describes how something works or how to run it; verify against current code. |
-| `ACTIVE` | Live plan. Something is meant to happen next. |
-| `PROPOSED` | Written up, not started. |
-| `LANDED` | The plan shipped; the doc now describes production behavior. |
-| `FINDING` | A measurement. `CLOSED` = the question is answered and settled. |
-| `CLOSED NULL` | Measured, no headroom. **Read before re-proposing the same mechanism.** |
-| `SUPERSEDED` / `STOPPED` / `PARTLY DEAD` | Do not resume without reading why it stopped. |
-| `CURATED ANALYSIS` | Long-running analysis doc. Append via its slash command rather than hand-editing. |
+Each hub has "Where it stands", "Open threads", "Settled — read before re-proposing", an
+"All documents" table covering every plan and finding in the workstream, and key artifacts.
 
-**Start at [plans/model_improvement_plan.md](plans/model_improvement_plan.md)** — the canonical
-roadmap. It links the analyses that justify each item.
-
----
+| Hub | Covers |
+| --- | --- |
+| [masster_generalization.md](workstreams/masster_generalization.md) | MASSter train/val gap on NIST20 (`i1`→`i4`): memorization routes, error analyses, intensity displacement, SMARTS pathway, QET/NCE input, ORB instruments, closed nulls (isotope envelope, JEPA) |
+| [masster_core.md](workstreams/masster_core.md) | MASSter design, architecture and regularization screens, losses, candidate/proposal machinery, ion-H channels, speed/GPU, feature and information audits |
+| [msgym.md](workstreams/msgym.md) | MassSpecGym training, formula-track retrieval, GLACIER comparisons, ChemBERTa-3 (retired), annotation-aware retrieval |
+| [spectraverse.md](workstreams/spectraverse.md) | Spectraverse v1.0.2 pipeline, folds, data audits, oracle ceiling, prepared arms |
+| [nist23_ei.md](workstreams/nist23_ei.md) | MASSter on nominal NIST23 EI |
+| [casmi_enveda.md](workstreams/casmi_enveda.md) | CASMI 2026 data, Enveda-180, combined PCDL/NIST23/Enveda split, shared NIST data quality and isotope/subformula detection |
+| [fragnnet.md](workstreams/fragnnet.md) | FraGNNet and the DAG: recall, oracle ceilings, intensity ranking, FluxMPNN, conditioning refactor, curated missing-peak logs |
 
 ## guides/ — how to run things
 
 | Doc | What it covers |
 |-----|----------------|
 | [submit_cluster_runs.md](guides/submit_cluster_runs.md) | Generate, inspect, and submit Fir/Vulcan jobs; CV arrays, staging, and output persistence. |
-| [run_inference.md](guides/run_inference.md) | Data prep (`01_inf_prepare_mol_df.py`, `02_inf_prepare_spec_df.py`) and running prediction. |
+| [benchmark_masster_cpu.md](guides/benchmark_masster_cpu.md) | Three-hour L40S CPU/hybrid/full-GPU MASSter benchmarks for batches 128/256/512. |
+| [benchmark_masster_merged_control.md](guides/benchmark_masster_merged_control.md) | Merged MASSter arms on the CPU/CUDA candidate backends and the confounds left. |
+| [run_inference.md](guides/run_inference.md) | Data prep, prediction, fragment annotation, MASSter peak rows and the peak filter. |
+| [run_msgym_retrieval.md](guides/run_msgym_retrieval.md) | End-to-end MSGYM 1.5 retrieval for a MASSter checkpoint, locally or on Fir/Vulcan. |
 | [finetune_fragnnet.md](guides/finetune_fragnnet.md) | Fine-tuning for spectrum-to-molecule ranking and retrieval; component freezing. |
-| [nist_human_review.md](guides/nist_human_review.md) | Generating the ranked suspicious-spectrum queue and visual report. |
+| [nist_human_review.md](guides/nist_human_review.md) | The ranked suspicious-spectrum queue and visual report. |
+
+Data preprocessing commands (including Spectraverse folds) are in
+[preproc_scripts/README.md](../preproc_scripts/README.md); config resolution is in
+[config/README.md](../config/README.md).
 
 ## reference/ — how the system works
 
 | Doc | What it covers |
 |-----|----------------|
-| [dataloader_data.md](reference/dataloader_data.md) | Batch dictionary schema. **Oldest doc here (2025-12-10)** — verify against the code. |
+| [dataloader_data.md](reference/dataloader_data.md) | Batch dictionary schema. Oldest doc here; verify against the code. |
+| [baselines.md](reference/baselines.md) | Retained GRAFF and MassFormer baselines, and running ICEBERG externally through ms-pred (archive revision, evaluation-file contract). |
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
-| [feature_set_audit.md](reference/feature_set_audit.md) | Which features are actually wired. Open gaps: `a_ring_size`, `b_ring`. |
+| [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
+| [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
-| [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Canonical note on isotope-peak cleanup for training. |
+| [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Isotope-peak cleanup for training. |
 | [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
 | [rearrangement_smarts.md](reference/rearrangement_smarts.md) | Literature survey + SMARTS validation for gas-phase rearrangements. |
-| [fragnnet_pl_memory_review.md](reference/fragnnet_pl_memory_review.md) | GPU/CPU memory pressure points in the training loop. |
+| [masster_smarts_rules.md](reference/masster_smarts_rules.md) | MASSter SMARTS allowlist, literature additions, exclusions, and validation gate. |
+| [fragnnet_pl_memory_review.md](reference/fragnnet_pl_memory_review.md) | GPU/CPU memory pressure points in the training loop, and FraGNNet training memory levers. |
+| [inference_pitfalls.md](reference/inference_pitfalls.md) | Fixed inference/DAG bugs, `dags.h5` and HDF5 export sizing, batching, config precedence (checkpoint hparams are the custom config), known-broken scripts. |
 
-## findings/ — measured results
-
-| Doc | Result |
-|-----|--------|
-| [dag_oracle_ceiling_nist20.md](findings/dag_oracle_ceiling_nist20.md) | Baseline d3 DAG ceiling = **0.937 cos_hun** on NIST20 test. Model-free upper bound. |
-| [oracle_recall_wrecall_by_ce.md](findings/oracle_recall_wrecall_by_ce.md) | Coverage ceiling vs. collision energy and adduct. Figures in [figures/](figures/). |
-| [unexplainable_spectra_analysis.md](findings/unexplainable_spectra_analysis.md) | Workflow for spectra the DAG cannot explain, grouped by adduct / molecule / ClassyFire class. |
-| [cc_corruption_probe_finding.md](findings/cc_corruption_probe_finding.md) | **CLOSED.** Fragment identity *is* used (cos 0.82 → 0.61 under mask randomization) — the gap is comparative scoring, not features. |
-| [ce_extent_headroom_finding.md](findings/ce_extent_headroom_finding.md) | **CLOSED NULL.** No headroom in the CE → "mass moves deeper" prior. Read before building any CE-conditioned module. |
-| [fragment_intensity_ranking_findings.md](findings/fragment_intensity_ranking_findings.md) | Complementary-cut supervision is a soft negative under current weighting; global base-peak and CE-dependent ranking are the larger measured bottlenecks. |
-| [dominant_peak_outcome_decomposition.md](findings/dominant_peak_outcome_decomposition.md) | Base-peak failure is **7:1 ranking, not DAG coverage**. Two-thirds of ranked misses are local neutral-loss neighbours; the apparent high-m/z bias resolves to a low-CE precursor over-call, and a global scalar correction is rejected. |
-
-## plans/
-
-### Live
-
-| Doc | Where it stands |
-|-----|-----------------|
-| [inference_step_consolidation_plan.md](plans/inference_step_consolidation_plan.md) | **Landed (working tree, uncommitted).** The three `SpectrumPL` inference entry points are one `inference_step(batch, *, metrics=None)`; `resolve_pred_ints`/`step_untransformed` deleted. No model evaluation run. |
-| [fragnnet_audit_fixes.md](plans/fragnnet_audit_fixes.md) | Six FraGNNet/shared audit fixes on feiw_v2; reproduced regressions and compatibility notes. |
-| [model_improvement_plan.md](plans/model_improvement_plan.md) | **Canonical roadmap.** Start here. |
-| [sibling_ranking_target_plan.md](plans/sibling_ranking_target_plan.md) | **Current lead.** Coverage gate passed (583,539 targets at margin 0.1); ranking loss on `P(n)` not yet implemented. |
-| [fragment_bond_set_representation.md](plans/fragment_bond_set_representation.md) | All four gates measured, objective corrected to regularization (read §7 first). Next: run the written-but-never-run `cc_atom_dropout` sweep. |
-| [nist_data_quality_plan.md](plans/nist_data_quality_plan.md) | Contaminant-mass and unexplainable-spectra diagnostics; evidence needed before filtering. |
-| [conditioning_refactor_plan.md](plans/conditioning_refactor_plan.md) | Collapse 3 overlapping conditioning mechanisms into one. Plan + ablation config built, not run. |
-| [dag_full_recall_tractability_plan.md](plans/dag_full_recall_tractability_plan.md) | Active hub for DAG pruning, but **mostly negative results** — read the step results before proposing another mechanism. |
-
-### Proposed, not started
-
-| Doc | Idea |
-|-----|------|
-| [complementary_cut_supervision_experiment_plan.md](plans/complementary_cut_supervision_experiment_plan.md) | Target definition, matched GINE-1 measurement gates, training arms, and stop rules. Read the separate findings before running it. |
-| [global_fragment_intensity_ranking_experiment_plan.md](plans/global_fragment_intensity_ranking_experiment_plan.md) | Global base-mass and online adjacent-CE contender supervision with bounded, group-balanced context batching and matched sampler controls. |
-| [ft_contender_pair_minimal_training_plan.md](plans/ft_contender_pair_minimal_training_plan.md) | Minimal cache-free FT experiment: bounded CE-context batching plus online confidence-weighted soft A/B ranking. |
-| [ion_collision_energy_matrix_experiment_plan.md](plans/ion_collision_energy_matrix_experiment_plan.md) | Ion × CE diagnostics plus a proposed sparse full-trajectory loss compared with the shipped precursor and adjacent-switch losses; V2 joint decoding is gated on V1. |
-| [fragment_context_gate_experiment_plan.md](plans/fragment_context_gate_experiment_plan.md) | Zero-code `mol` versus `mol,mlp` context-routing ablation; final-logit gate is conditional on a positive result. |
-| [classyfire_atom_pretraining_plan.md](plans/classyfire_atom_pretraining_plan.md) | Pretrain a transferable encoder on ClassyFire labels; no annotations needed at inference. |
-| [directional_bond_break_probability_plan.md](plans/directional_bond_break_probability_plan.md) | Score bonds rather than fragments to cut nodeMLP cost. Stacks with the node-count plans. |
-
-### Closed — read before reviving
-
-| Doc | Why it stopped |
-|-----|----------------|
-| [fluxmpnn_plan.md](plans/fluxmpnn_plan.md) | Stage 0 gate GREEN, but conserved DAG flow trained null-to-harmful and the learned β collapsed to a bond-type lookup (72% self-explained, 18% of real branching). Unsupervised competition line **dead**. |
-| [bond_breakability_mask_plan.md](plans/bond_breakability_mask_plan.md) | **Stopped 2026-07-03** — 30.28% edge reduction but only 1.50% node reduction, and nodeMLP (nodes) is the cost driver. Its bucket table survives as the source of truth for `BUCKET_LOSS_RANK`. |
-| [dag_fanout_cap_plan.md](plans/dag_fanout_cap_plan.md) | Right mechanism, wrong ranking — the hand-mined table lost to the learned radius-1/2 scorer. |
-| [dag_bond_radius_env_plan.md](plans/dag_bond_radius_env_plan.md) | Confirmed the learned scorer (held-out AUC 0.884); prototype and integration folded into the tractability plan. |
-| [false_peak_loss_plan.md](plans/false_peak_loss_plan.md) | **Closed null** — `log1p_huber` is harmful above lambda=0.1. Cited by the two loss sweeps in `slurm_scripts/`. |
-| [metal_support_tier1.md](plans/metal_support_tier1.md) | **Landed** — shipped in `utils/frag_utils.py` and `utils/data_utils.py`. |
-
-## notes/ — scratch
+## notes/ — literature and scratch
 
 | Doc | What it is |
 |-----|-----------|
-| [lz_molecular_generation.md](notes/lz_molecular_generation.md) | Literature notes on spectrum-conditioned molecular generation (§1–3). |
-| [lz_part2.md](notes/lz_part2.md) | Continuation of the above, starting at §4 (spectrum-to-DAG generation). |
+| [massspecgym_in_the_wild_audit.md](notes/massspecgym_in_the_wild_audit.md) | **Read before any MassSpecGym comparison.** Evaluation pitfalls; spectrum-blind PubChem ranking scores 49.98% HR@1. |
+| [spurious_evaluations_spectraverse.md](notes/spurious_evaluations_spectraverse.md) | Spectrum-blind structure-only model gets 26.9% top-1 under a structure-disjoint split. |
+| [spectraverse_curation_paper.md](notes/spectraverse_curation_paper.md) | Spectraverse dataset paper; its cosine > 0.99 dedup does not hold in v1.0.2. |
+| [glacier_object_detection.md](notes/glacier_object_detection.md) | GLACIER: single-stage fragment detection; all its NIST'20 numbers are 0.1 Da binned. |
+| [aime_deepms2reasoner.md](notes/aime_deepms2reasoner.md) | AIMe / DeepMS2Reasoner; its cosines use formula-filtered targets, not comparable. |
+| [molspecflow.md](notes/molspecflow.md) | MolSpecFlow: joint molecule↔spectrum flow model; no code. |
+| [memorization_literature_2026_09_24.md](notes/memorization_literature_2026_09_24.md) | Memorization literature mapped onto the MASSter route map. |
+| [masster_generalization_methods_2026_09_27.md](notes/masster_generalization_methods_2026_09_27.md) | R-Drop, centered logits, SAM, FLAG, distillation and cross-molecule geometry. |
+| [intensity_displacement_literature_2026_09_24.md](notes/intensity_displacement_literature_2026_09_24.md) | RRKM/QET and CFM-ID read against intensity displacement. |
+| [masster_excision_literature_2026_09_28.md](notes/masster_excision_literature_2026_09_28.md) | Internal losses and O/F transfer evidence. |
+| [lz_molecular_generation.md](notes/lz_molecular_generation.md), [lz_part2.md](notes/lz_part2.md) | Spectrum-conditioned molecular generation notes. |
 
-## Top level — curated analysis logs
+## history/ — frozen logs
 
-These two are **append-only analysis logs**, kept at top level because they grow by subclass rather
-than belonging to one category. Add sections with the `/analyze-subclass` and `/analyze-subclass-mh`
-commands, which insert before the Summary section. The measurement they interpret comes from
-`scripts/eval/find_missing_peaks.py`; the prose is written, not generated.
-`src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
+Verbatim dated logs moved out of live documents on 2026-10-06. Read the hub or plan first;
+these are records, not current guidance.
 
-| Doc | Scope |
-|-----|-------|
-| [missing_peak_findings.md](findings/missing_peak_findings.md) | FT, `[M+H]+`, 2,655 lines, grouped by root cause. |
-| [missing_peak_findings_m-h.md](findings/missing_peak_findings_m-h.md) | FT, `[M-H]-`, 1,199 lines. |
+| Doc | Moved from |
+|-----|-----------|
+| [handoff_log.md](history/handoff_log.md) | `project-state.md` handoff, research navigation and next-task sections |
+| [masster_memorization_route_plan_log.md](history/masster_memorization_route_plan_log.md) | [memorization-route plan](plans/masster/masster_memorization_route_plan.md) |
+| [masster_plan_log.md](history/masster_plan_log.md) | [MASSter plan](plans/masster/masster_plan.md) |
+| [masster_ion_h_channel_selection_plan_log.md](history/masster_ion_h_channel_selection_plan_log.md) | [ion-H channel selection plan](plans/masster/masster_ion_h_channel_selection_plan.md) |
+| [global_fragment_intensity_ranking_experiment_plan_log.md](history/global_fragment_intensity_ranking_experiment_plan_log.md) | [global intensity ranking plan](plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) |
+| [repo_reorg_plan_log.md](history/repo_reorg_plan_log.md) | [repository reorganization plan](plans/repo_reorg_plan.md) |
 
-`spectra_cleanup.md` is a **0-byte placeholder** committed to the repo — it needs either content or
-deletion.
+### Removed historical plans
+
+Plans removed from the tree in commit `bf134762` (`model_improvement_plan.md`,
+`inference_step_consolidation_plan.md`, `metal_support_tier1.md`) are recoverable from git
+history only; do not treat references to them as current guidance.
+
+## Curated analysis logs
+
+[missing_peak_findings.md](findings/fragnnet/missing_peak_findings.md) (FT `[M+H]+`) and
+[missing_peak_findings_m-h.md](findings/fragnnet/missing_peak_findings_m-h.md) (FT `[M-H]-`)
+are append-only. Add sections with `/analyze-subclass` and `/analyze-subclass-mh`; the
+measurement comes from `scripts/eval/find_missing_peaks.py`.
+`src/fragnnet/fragmentation/smarts_prepass.py` cites the first one by path.
+
+Spectrum cleanup is implemented in
+[`clean_spectra_utils.py`](../src/fragnnet/utils/clean_spectra_utils.py); measured effects are in
+[subformula-filter findings](findings/subformula_filter_ft_qtof.md).
 
 ## figures/
 
-PNGs for [findings/oracle_recall_wrecall_by_ce.md](findings/oracle_recall_wrecall_by_ce.md),
-generated by `scripts/plotting/plot_oracle_ce_coverage.py`.
+PNGs referenced by findings, e.g. [oracle_recall_wrecall_by_ce.md](findings/fragnnet/oracle_recall_wrecall_by_ce.md)
+(generated by `scripts/plotting/plot_oracle_ce_coverage.py`).

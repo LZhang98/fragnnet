@@ -1,6 +1,6 @@
 # Engineering and research rules
 
-> **Status:** REFERENCE · **Updated:** 2026-09-16
+> **Status:** REFERENCE · **Updated:** 2026-09-19
 
 ## 1. Think Before Coding
 
@@ -91,19 +91,12 @@ When code implements a complicated multi-stage process:
 - For cluster work, inspect the actual environment and submission scripts before using them;
   do not assume a named setup script exists or that a job activates the correct environment.
 
-### Fir GPU requests
-
-- **Default to the `fir:h100-3g.40gb` MIG slice.** It is enough for FraGNNet training and
-  inference and costs half a whole H100 (price 6.1 vs 12.2 in `GPU_PROFILES`). Request a
-  larger slice or `fir:h100-80gb` only with a stated reason, such as a measured OOM at 40GB.
-- Generated jobs: pass `--gpu_profile fir:h100-3g.40gb` to
-  [setup_job_cc.py](../../scripts/setup_job_cc.py); it sets the directives for you.
-- Hand-written `scripts/manual_slurm/fir/*.sh`: write the same preset literally as
-  `#SBATCH --gres=gpu:h100_3g.40gb:1`, `--cpus-per-task=6`, `--mem=140G`. Use `--gres` with
-  the gres type, not `--gpus-per-node` with a device name.
-- Those three lines move as one unit. The cpu and memory values are that slice's
-  proportional share of the node, so a mismatched pair bills at the higher ratio.
-  `GPU_PROFILES` in `setup_job_cc.py` is the source of truth for every preset's triple.
+- Narval compute nodes have no outbound internet. Generate Narval jobs with `w=offline`
+  (`--script_kwargs w=offline`), then sync from a login node with
+  `wandb sync wandb/offline-run-*`; the job symlinks `wandb/` back to the cluster checkout, so
+  offline runs survive the job. `wandb agent` sweeps cannot run on Narval for the same reason.
+  The venv build is unaffected: it installs with `pip install --no-index` from the local
+  wheelhouse. Fir and Vulcan compute nodes do have internet, so `w=online` is correct there.
 
 
 ## 6. Compatibility and validation

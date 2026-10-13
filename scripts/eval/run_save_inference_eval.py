@@ -14,19 +14,20 @@ import os
 import pickle
 import sys
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype, get_core_count
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
-    get_required_config_indices,
     init_model_from_ckpt,
-    list_output_subset_options,
-    prepare_output_subset,
-    run_inference_hdf5,
-    run_inference_pkl,
     setup_device,
 )
+from fragnnet.inference.export_columns import (
+    get_required_config_indices,
+    list_output_subset_options,
+    prepare_output_subset,
+)
+from fragnnet.inference.runners import run_inference_hdf5, run_inference_pkl
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -38,7 +39,7 @@ def get_args():
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config",
         help="Path to the template config file",
     )
     parser.add_argument(
@@ -159,13 +160,20 @@ def get_args():
         "--return_formula_str",
         type=booltype,
         default=False,
-        help="Whether to return formula strings (FraGNNet only)",
+        help="Whether to return formula strings (FraGNNet and MASSter)",
     )
     parser.add_argument(
         "--return_cc_hash",
         type=booltype,
         default=False,
-        help="Whether to return node CC hashes (FraGNNet only)",
+        help="Whether to return node CC hashes (FraGNNet and MASSter)",
+    )
+    parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
     )
     parser.add_argument(
         "--eval_mz_bin_res",
@@ -342,6 +350,7 @@ if __name__ == "__main__":
             return_formula_str=args.return_formula_str or args.output_everything,
             return_cc_hash=args.return_cc_hash or args.output_everything,
             rebase_indices=True,
+            return_rule_provenance=args.return_rule_provenance,
             save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
             drop_none_cols=args.drop_none_cols,
         )
