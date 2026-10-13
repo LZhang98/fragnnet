@@ -1,7 +1,8 @@
 # Preprocessing script audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Seven correctness findings; preprocessing code and datasets unchanged.
+> **Status:** FINDING · **Updated:** 2026-10-13
+> Seven correctness findings, all fixed in the working tree on 2026-10-13 with regression tests
+> (uncommitted); existing processed datasets and splits not regenerated.
 
 ## Scope and evidence
 
@@ -81,6 +82,25 @@ isotope utility move. Recorded experiment results were not used to infer current
   findings are not counted as correctness bugs above.
 - Small direct-function checks and a merger subprocess reproduced findings 1, 2, 4, 5 and 6;
   the pandas membership check supports finding 3. Finding 7 is a static call-path finding.
-- No fixes applied. Next: repair identity corruption first, add regression coverage for these
-  failures, then address split and parser behavior. Existing processed outputs and splits
-  must not be regenerated in place as part of a code fix.
+- No fixes applied in the audit itself; see the resolution below.
+
+## Resolution (2026-10-13, uncommitted working tree)
+
+1. Merger: `mol_df` is renumbered once, and the same InChIKey→`mol_id` map is applied to spectra;
+   `group_id` is rebuilt from global `(mol_id, prec_type, inst_type)`, the key used by
+   `02_prepare_proc.py`. Cross-source spectra of one molecule/adduct/instrument now share a group.
+2. Inference merged groups key on `(mol_id, prec_type, inst_type)`. The existing test that
+   asserted one group per `(prec_type, inst_type)` encoded the bug and was corrected.
+3. Inline predefined split IDs use the same dtype conversion as CSV inputs.
+4. `ms+meta` enumerates `sorted(glob(ms_dp/*.ms))` before applying `num_entries`.
+5. CE strings must fully match; units are upper-cased before NCE/eV classification.
+6. IT, Q, TOF and QQQ are rejected (CLI choices, `validate_inputs`, `get_config`) because no CE
+   unit policy exists for them; adding one is a scientific decision.
+7. The initial standardization pass receives `canonicalize_tautomers`. The default (`True`) is
+   unchanged, so default builds are unaffected.
+
+Tests: `tests/test_merge_datasets.py`, `tests/test_04_prepare_split.py`, and additions to
+`test_01_prepare_df.py`, `test_02_prepare_proc.py`, `test_02_inf_prepare_spec_df.py`; with the
+four audit suites, 272 passed. Datasets built with the merger, inference merged specs, or
+`--canonicalize_tautomers False` before this fix carry the old identities and must be rebuilt
+into new directories if used.

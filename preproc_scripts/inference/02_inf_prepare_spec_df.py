@@ -129,29 +129,16 @@ def create_spec_df(mol_df: pd.DataFrame, config_d: dict[str, Any]) -> pd.DataFra
     spec_df = pd.DataFrame(spec_entries)
 
     if merged_spectra:
-        # Reset group_id based on prec_type, inst_type, and mol groups
+        # Reset group_id based on mol_id, prec_type, and inst_type
         logger.info(
-            "Adjusting group_ids for merged spectra based on prec_type, inst_type, and molecule groups..."
+            "Adjusting group_ids for merged spectra based on mol_id, prec_type, and inst_type..."
         )
-
-        # Create a mapping for group assignment
-        group_mapping = {}
-        current_group_id = 0
-
-        # Group by prec_type and inst_type combinations
-        for (prec_type, inst_type), _ in spec_df.groupby(["prec_type", "inst_type"]):
-            group_key = (prec_type, inst_type)
-            if group_key not in group_mapping:
-                group_mapping[group_key] = current_group_id
-                current_group_id += 1
-
-        # Assign new group_ids
-        spec_df.loc[:, "group_id"] = spec_df.apply(
-            lambda row: group_mapping[(row["prec_type"], row["inst_type"])], axis=1
-        )
+        spec_df.loc[:, "group_id"] = spec_df.groupby(
+            ["mol_id", "prec_type", "inst_type"], sort=True
+        ).ngroup()
 
         logger.info(
-            f"Created {len(group_mapping)} unique groups based on prec_type and inst_type combinations"
+            f"Created {spec_df['group_id'].nunique()} unique groups based on mol_id, prec_type and inst_type combinations"
         )
 
     # Compute precursor m/z from molecular mass and precursor type
@@ -198,9 +185,8 @@ def validate_inputs(prec_types: list, qtof_ces: list, ft_ces: list, inst_types: 
                     f"Instrument type '{inst_type}' requires ACE values, but none were provided."
                 )
         else:
-            # TODO: update this later
-            logger.info(
-                f"Instrument type '{inst_type}', please ensure appropriate CE values are provided."
+            raise ValueError(
+                f"Unsupported instrument type '{inst_type}': no collision energy unit policy"
             )
 
 
@@ -235,21 +221,20 @@ def get_config(
     qt_ces_values = []
 
     for ce_str in qtof_ces:
-        match = re.match(r"(\d+(\.\d+)?)(\s*)?(eV)", ce_str, re.IGNORECASE)
+        match = re.fullmatch(r"(\d+(\.\d+)?)(\s*)?(eV)", ce_str, re.IGNORECASE)
         if match:
             number = match.group(1)
-            unit = match.group(4)
-            qt_ces_values.append((float(number), unit))
+            qt_ces_values.append((float(number), "eV"))
         else:
             raise ValueError(
                 f"Invalid QToF collision energy format: {ce_str}. Expected format like '10.0eV'"
             )
 
     for ce_str in ft_ces:
-        match = re.match(r"(\d+(\.\d+)?)(\s*)?(eV|%|%NCE|NCE)", ce_str, re.IGNORECASE)
+        match = re.fullmatch(r"(\d+(\.\d+)?)(\s*)?(eV|%|%NCE|NCE)", ce_str, re.IGNORECASE)
         if match:
             number = match.group(1)
-            unit = match.group(4)
+            unit = match.group(4).upper()
             if unit in ["%", "%NCE", "NCE"]:
                 unit = "NCE"
             else:
@@ -267,6 +252,10 @@ def get_config(
                 energy_values = ft_ces_values
             elif inst_type == "QTOF":
                 energy_values = qt_ces_values
+            else:
+                raise ValueError(
+                    f"Unsupported instrument type '{inst_type}': no collision energy unit policy"
+                )
 
             for energy_config in energy_values:
                 combinations_list.append(
@@ -354,8 +343,8 @@ if __name__ == "__main__":
         "--inst_types",
         nargs="+",
         required=True,
-        choices=["ORB", "ORB_F", "QTOF", "IT", "Q", "TOF", "QQQ"],  # to do update this list if needed
-        help="List of instrument types (e.g., ORB ORB_F QTOF IT); ORB/ORB_F use --ft_ces",
+        choices=["ORB", "ORB_F", "QTOF"],  # to do update this list if needed
+        help="List of instrument types (e.g., ORB ORB_F QTOF); ORB/ORB_F use --ft_ces, QTOF uses --qtof_ces",
     )
     parser.add_argument(
         "--output_dir",

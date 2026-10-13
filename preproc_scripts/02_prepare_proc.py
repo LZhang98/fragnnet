@@ -112,7 +112,10 @@ def preprocess_spec(
             spec_df["smiles"], partial(mol_utils.mol_from_smiles, ml_standardize=False)
         )
     else:
-        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], mol_utils.mol_from_smiles)
+        spec_df.loc[:, "mol"] = par_apply_series(
+            spec_df["smiles"],
+            partial(mol_utils.mol_from_smiles, canonicalize_tautomers=canonicalize_tautomers),
+        )
     spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], mol_utils.mol_to_smiles)
     no_mol_df = spec_df[spec_df["mol"].isna() | spec_df["smiles"].isna()][["dset_spec_id"]]
     spec_df = spec_df.dropna(subset=["mol", "smiles"])

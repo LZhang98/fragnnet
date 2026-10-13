@@ -84,7 +84,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## CASMI 2026, Enveda-180, shared data
 
-- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md); code unchanged, 214 focused tests passed. Next: repair merger and inference group identity with regression coverage.
+- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md) fixed in the working tree 2026-10-13 (uncommitted), 272 focused tests passed. Next: review and commit; rebuild any merger/inference-merged outputs into new directories before use.
 
 - **CASMI 2026:** extracted, not preprocessed. The visible test is a copy of train, so validate
   molecule-disjoint. Dedup drops 17.6% of train; NIST HR would add 34,295 molecules.

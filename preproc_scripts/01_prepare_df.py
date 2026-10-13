@@ -266,6 +266,7 @@ def preproc_ms_files(ms_dp: str, ms_meta_fp: str, keys: set, num_entries: int) -
         columns={"ionization": "prec_type", "spec": "dset_spec_id_base"}
     ).drop(columns=["name"])
     assert not ms_meta_df.isna().any().any(), ms_meta_df.isna().any()
+    ms_fp_list = sorted(glob.glob(os.path.join(ms_dp, "*.ms")))
     if num_entries > -1:
         ms_fp_list = ms_fp_list[:num_entries]
 

@@ -246,3 +246,43 @@ def test_annotation_merge_uses_dataset_with_dset_spec_id(monkeypatch):
     assert len(spec_df) == 2
     assert len(ann_df) == 2
     assert set(ann_df["spec_id"]) == set(spec_df["spec_id"])
+
+
+def test_canonicalize_tautomers_flag_reaches_every_conversion(monkeypatch):
+    """canonicalize_tautomers=False must reach the initial standardization pass too."""
+    module = load_prepare_module()
+    _setup_stubs(monkeypatch, module)
+    calls = []
+
+    def recording_mol_from_smiles(s, **kwargs):
+        calls.append(kwargs)
+        return f"mol({s})"
+
+    monkeypatch.setattr(module.mol_utils, "mol_from_smiles", recording_mol_from_smiles)
+    # Run in-process so the recorded calls are visible here
+    monkeypatch.setattr(module, "par_apply_series", lambda series, func, **kwargs: series.apply(func))
+    row = {
+        "spec_id": 0,
+        "smiles": "CC",
+        "dset": "A",
+        "dset_spec_id": "1",
+        "col_energy": "10 eV",
+        "col_energy_extra_1": None,
+        "col_energy_extra_2": None,
+        "peaks": "[(100,1.0)]",
+        "prec_type": "M+H",
+        "spec_type": "MS2",
+        "ion_mode": "P",
+        "col_gas": "N2",
+        "ri": "",
+        "formula": "",
+        "inchikey": None,
+        "exact_mass": None,
+        "prec_mz": None,
+        "notes": "",
+    }
+
+    module.preprocess_spec(pd.DataFrame([row]), canonicalize_tautomers=False)
+
+    assert len(calls) >= 2
+    assert all(kwargs.get("canonicalize_tautomers") is False for kwargs in calls)

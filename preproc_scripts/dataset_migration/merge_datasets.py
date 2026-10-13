@@ -77,11 +77,17 @@ if __name__ == "__main__":
         merged_spec_mol_df = merged_spec_mol_df.reset_index(drop=True)
         merged_spec_mol_df['spec_id'] = np.arange(len(merged_spec_mol_df))
     
-        # Reassign mol_id based on unique inchikey_s
-        unique_inchikeys = merged_spec_mol_df['inchikey_s'].dropna().unique()
-        inchikey_to_mol_id = {inchikey: idx for idx, inchikey in enumerate(unique_inchikeys)}
+        # Reassign mol_id in both tables from one global inchikey_s mapping
+        merged_mol_df = merged_mol_df.reset_index(drop=True)
+        merged_mol_df['mol_id'] = np.arange(len(merged_mol_df))
+        inchikey_to_mol_id = dict(zip(merged_mol_df['inchikey_s'], merged_mol_df['mol_id']))
         merged_spec_mol_df['mol_id'] = merged_spec_mol_df['inchikey_s'].map(inchikey_to_mol_id)
-        
+
+        # Rebuild group_id from global identity (same key as 02_prepare_proc.py)
+        merged_spec_mol_df['group_id'] = merged_spec_mol_df.groupby(
+            ['mol_id', 'prec_type', 'inst_type'], sort=True, dropna=False
+        ).ngroup()
+
         # Save merged dataframes
         merged_spec_df = merged_spec_mol_df[spec_df_columns]
         merged_spec_df.to_pickle(os.path.join(args.output_dp, 'spec_df.pkl'))

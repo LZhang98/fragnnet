@@ -356,3 +356,33 @@ def test_process_enveda_maps_columns(enveda_jsonl_fp: Path):
     two_step = spec_df.iloc[2]
     assert [two_step["col_energy"], two_step["col_energy_extra_1"]] == ["20 eV", "60 eV"]
     assert pd.isna(two_step["col_energy_extra_2"])
+
+
+def test_preproc_ms_files_reads_ms_dir(tmp_path):
+    """The ms+meta format enumerates .ms files from ms_dp, with and without a limit."""
+    module = load_prepare_module()
+
+    ms_dp = tmp_path / "ms"
+    ms_dp.mkdir()
+    for name in ["specA", "specB"]:
+        (ms_dp / f"{name}.ms").write_text(
+            f">compound {name}\n>parentmass 47.05\n#instrumentation QTOF\n\n"
+            ">collision 20eV\n30.0 10.0\n45.0 100.0\n"
+        )
+    meta_fp = tmp_path / "meta.tsv"
+    pd.DataFrame(
+        {
+            "name": ["specA", "specB"],
+            "spec": ["specA", "specB"],
+            "ionization": ["[M+H]+", "[M+H]+"],
+            "formula": ["C2H6O", "C2H6O"],
+            "smiles": ["CCO", "CCO"],
+        }
+    ).to_csv(meta_fp, sep="\t", index=False)
+
+    spec_df = module.preproc_ms_files(str(ms_dp), str(meta_fp), set(), -1)
+    assert sorted(spec_df["dset_spec_id"]) == ["specA_0", "specB_0"]
+    assert set(spec_df["col_energy"]) == {"20eV"}
+
+    limited_df = module.preproc_ms_files(str(ms_dp), str(meta_fp), set(), 1)
+    assert limited_df["dset_spec_id"].tolist() == ["specA_0"]
