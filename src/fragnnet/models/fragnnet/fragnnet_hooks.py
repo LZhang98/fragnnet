@@ -125,6 +125,11 @@ class FraGNNetHooks(ModelHooks):
             config_d["frag_params"]["preload"] = False
             config_d["frag_params"]["preprocess"] = False
 
+    def builds_own_batch_sampler(self, config_d: dict[str, Any]) -> bool:
+        return bool(
+            config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]
+        )
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:

@@ -14,6 +14,7 @@ from lightning.fabric.loggers.logger import rank_zero_experiment
 from lightning.fabric.utilities.exceptions import MisconfigurationException
 from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import Logger
+from lightning.pytorch.profilers import AdvancedProfiler, Profiler, SimpleProfiler
 from lightning.pytorch.profilers.pytorch import (
     _KINETO_AVAILABLE,
     PyTorchProfiler,
@@ -371,3 +372,51 @@ class MyPyTorchProfiler(PyTorchProfiler):
                 self.profiler.step_num = self._schedule.num_step
             self.profiler.step()
             self.profiler.add_metadata("Framework", "pytorch-lightning")
+
+
+def build_profiler(config_d: dict, profile_dp: str) -> Profiler | None:
+    """Build the Lightning profiler the config names.
+
+    Args:
+        config_d: Resolved config; ``profiler`` is "none", "simple", "advanced" or "pytorch".
+        profile_dp: Directory the profiler writes to.
+
+    Returns:
+        The profiler, or None for ``profiler: none``.
+
+    Raises:
+        ValueError: If ``profiler`` names no known profiler.
+    """
+    if config_d["profiler"] == "simple":
+        return SimpleProfiler(dirpath=profile_dp, filename="profile")
+    if config_d["profiler"] == "advanced":
+        return AdvancedProfiler(dirpath=profile_dp, filename="profile")
+    if config_d["profiler"] == "pytorch":
+        th.profiler._utils._init_for_cuda_graphs()
+        return MyPyTorchProfiler(
+            dirpath=profile_dp,
+            filename="profile",
+            activities=[
+                th.profiler.ProfilerActivity.CPU,
+                th.profiler.ProfilerActivity.CUDA,
+            ],
+            # on_trace_ready=th.profiler.tensorboard_trace_handler(profile_dp),
+            profile_memory=True,
+            record_shapes=False,  # True,
+            with_flops=False,  # True,
+            with_stack=True,
+            with_modules=False,
+            export_to_chrome=False,
+            export_to_flame_graph=True,
+            experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
+            schedule=th.profiler.schedule(
+                wait=int(config_d["profiler_wait_steps"]),
+                warmup=int(config_d["profiler_warmup_steps"]),
+                active=int(config_d["profiler_active_steps"]),
+                repeat=int(config_d["profiler_repeat"]),
+                skip_first=int(config_d["profiler_skip_first_steps"]),
+            ),
+        )
+    if config_d["profiler"] != "none":
+        raise ValueError(f"unknown profiler {config_d['profiler']!r}")
+    return None

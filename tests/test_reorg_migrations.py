@@ -991,9 +991,9 @@ def test_get_config_from_ckpt_of_legacy_c0(tmp_path: Path, c0_orb: dict) -> None
 def test_legacy_wandb_run_config_merges_into_resolved_config() -> None:
     """A saved legacy W&B config is migrated, then merged into the resolved config.
 
-    Mirrors ``runner.run_training`` (``migrate_legacy_masster_name``,
+    Mirrors ``runner.setup_wandb`` on a resumed run (``migrate_legacy_masster_name``,
     ``migrate_masster_proposal_method``, ``merge_wandb_config`` on ``dict(wandb.config)``)
-    without starting W&B.
+    without starting W&B. Only a resumed run may hold keys the template no longer declares.
     """
     config = _quiet(load_config, F.CONFIG_DIR, None, None, model_type="masster")
     before = copy.deepcopy(config)
@@ -1008,7 +1008,7 @@ def test_legacy_wandb_run_config_merges_into_resolved_config() -> None:
     }
     migrate_legacy_masster_name(saved_run_config)
     migrate_masster_proposal_method(saved_run_config)
-    _quiet(merge_wandb_config, config, saved_run_config)
+    _quiet(merge_wandb_config, config, saved_run_config, resumed=True)
 
     changed = {
         key: [before[key], config[key]]

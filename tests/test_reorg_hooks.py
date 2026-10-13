@@ -188,6 +188,33 @@ def test_only_fragnnet_and_masster_build_their_own_batch_samplers(model_type: st
     )
 
 
+@pytest.mark.parametrize(
+    "model_type,key",
+    [
+        ("frag_gnn", "dynamic_batch_sampler"),
+        ("frag_gnn", "dual_group_dynamic_batch_sampler"),
+        ("masster", "masster_batch_sampler"),
+    ],
+)
+def test_builds_own_batch_sampler_follows_the_sampler_switch(model_type: str, key: str) -> None:
+    hooks = registry.get_model_hooks(model_type)
+    config = {
+        "dynamic_batch_sampler": False,
+        "dual_group_dynamic_batch_sampler": False,
+        "masster_batch_sampler": False,
+    }
+    assert hooks.builds_own_batch_sampler(config) is False
+    assert hooks.builds_own_batch_sampler({**config, key: True}) is True
+
+
+@pytest.mark.parametrize(
+    "model_type", [t for t in MODEL_TYPES if t not in (*FRAGNNET_TYPES, "masster")]
+)
+def test_other_models_never_build_their_own_batch_sampler(model_type: str) -> None:
+    config = {"masster_batch_sampler": True, "dynamic_batch_sampler": True}
+    assert registry.get_model_hooks(model_type).builds_own_batch_sampler(config) is False
+
+
 def _old_inference_overlay(config_d: dict, disable_preproc: bool, output_formula_str: bool) -> None:
     """The model-block part of script_utils.apply_inference_config before Phase 4 step 5."""
     if disable_preproc:

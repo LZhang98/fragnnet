@@ -4,7 +4,9 @@ import math
 import os
 import tempfile
 from collections.abc import Sequence
+from dataclasses import dataclass
 from multiprocessing import Manager
+from typing import Any
 
 import lightning as L
 import torch as th
@@ -12,7 +14,7 @@ import yaml
 from lightning import seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.profilers import AdvancedProfiler, SimpleProfiler
+from lightning.pytorch.profilers import Profiler
 from pandarallel import pandarallel
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
@@ -39,7 +41,7 @@ from fragnnet.utils.migrations import (
 from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-from fragnnet.utils.trainer_utils import ConsoleLogger, ExponentialMovingAverage, MyPyTorchProfiler
+from fragnnet.utils.trainer_utils import ConsoleLogger, ExponentialMovingAverage, build_profiler
 
 # Every model reads the same `config/template.yml`, so shared code can read any key without
 # checking `model_type` first. The registry's set only guards against a typo in `model_type`.
@@ -73,6 +75,8 @@ VALID_SIMPLE_GROUP_SAMPLER_TYPES = frozenset(
     }
 )
 VALID_BATCH_SAMPLER_TYPES = frozenset({"spec_mol_frag", "ce_context"})
+# Train samplers that `init_dataloader` chooses between; at most one may be set.
+GROUP_SAMPLER_KEYS = ("group_sampler", "simple_group_sampler", "formula_prec_type_group_sampler")
 
 
 def resolve_template_path(template_path: str) -> str:
@@ -298,9 +302,6 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     split = ds.split
     # Model-specific batching lives in the model's hooks (fragnnet.hooks.ModelHooks).
     model_hooks = registry.get_model_hooks(config_d["model_type"], strict=False)
-    assert not (
-        config_d["group_sampler"] and config_d["simple_group_sampler"]
-    ), "Cannot use both group_sampler and simple_group_sampler"
     print(f"> init_dataloader for split {split}")
     dl_param_d = {
         "dataset": ds,
@@ -380,6 +381,11 @@ def validate_sampler_config(config_d: dict) -> None:
     Raises:
         ValueError: If the sampler configuration is invalid.
     """
+
+    # `init_dataloader` takes the first group sampler set, so a second one would be ignored.
+    group_samplers = [key for key in GROUP_SAMPLER_KEYS if config_d[key]]
+    if len(group_samplers) > 1:
+        raise ValueError(f"group samplers are mutually exclusive (got {group_samplers})")
 
     if (
         config_d.get("simple_group_sampler")
@@ -506,7 +512,7 @@ def restore_held_checkpoints(hold_dp: str, ckpt_dp: str) -> None:
     os.rmdir(hold_dp)
 
 
-def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
+def merge_wandb_config(config_d: dict, saved_run_config: dict, *, resumed: bool = False) -> None:
     """Take the values W&B holds for this run (sweep or resumed run) into ``config_d``, in place.
 
     Configs nest at most two levels. A value is replaced only when it differs: W&B stores
@@ -514,17 +520,38 @@ def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
     which is equal but would rename the metrics built from it, e.g. ``cos_sim_1.0`` to
     ``cos_sim_1``, away from ``checkpoint_metric``.
 
+    On a new run, a key ``config_d`` does not declare can only come from the sweep, so it is a
+    typo and raises, as it does in a custom config. A resumed run's saved config may hold keys
+    the template has since dropped; those are logged and skipped.
+
     Args:
         config_d: Resolved run configuration, updated in place.
         saved_run_config: ``dict(wandb.config)`` after ``wandb.init``.
+        resumed: Whether ``saved_run_config`` was saved by an earlier attempt of this job.
+
+    Raises:
+        ValueError: If a new run's W&B config sets undeclared keys, a section is not a mapping,
+            the merge would change ``model_type``, or the merged config names a retired
+            instrument type.
     """
     saved_run_config = dict(saved_run_config)
     retire_pair_bce_hparams(saved_run_config)
+    unknown = find_unknown_config_keys(saved_run_config, config_d)
+    if unknown and not resumed:
+        raise ValueError(f"W&B config sets keys the template does not declare: {unknown}")
+    if unknown:
+        logging.warning("Skipping keys the template no longer declares: %s", unknown)
     for key in list(config_d.keys()):
         if key not in saved_run_config:
             continue
+        if key == "model_type" and config_d[key] != saved_run_config[key]:
+            raise ValueError(
+                f"W&B config sets model_type {saved_run_config[key]!r}; "
+                f"the config resolved {config_d[key]!r}"
+            )
         if isinstance(config_d[key], dict):
-            assert isinstance(saved_run_config[key], dict)
+            if not isinstance(saved_run_config[key], dict):
+                raise ValueError(f"W&B config sets section {key!r} to a non-mapping")
             for sub_key in list(config_d[key].keys()):
                 if (
                     sub_key in saved_run_config[key]
@@ -538,6 +565,11 @@ def merge_wandb_config(config_d: dict, saved_run_config: dict) -> None:
         elif config_d[key] != saved_run_config[key]:
             print(f"> config diff -- {key}: {config_d[key]} vs {saved_run_config[key]}")
             config_d[key] = saved_run_config[key]
+    retired = find_retired_inst_type_refs(config_d)
+    if retired:
+        raise ValueError(
+            f"W&B config names a retired instrument type at {retired}. {RETIRED_INST_TYPE_HELP}"
+        )
 
 
 def match_sweep_schedule(config_d: dict, train_size: int) -> None:
@@ -550,12 +582,14 @@ def match_sweep_schedule(config_d: dict, train_size: int) -> None:
         raise ValueError("train_size must be positive")
     if not config_d["lr_schedule"] or config_d["lr_schedule_type"] != "cosine":
         raise ValueError("Sweep schedule matching requires a cosine schedule")
-    sampler_keys = (
-        "masster_batch_sampler", "dynamic_batch_sampler", "group_sampler",
-        "simple_group_sampler", "dual_group_dynamic_batch_sampler",
-        "formula_prec_type_group_sampler",
-    )
-    if any(config_d[key] for key in sampler_keys):
+    # The bond-size curriculum trains on a growing subset, so its epochs have fewer batches.
+    model_hooks = registry.get_model_hooks(config_d["model_type"])
+    if (
+        any(config_d[key] for key in GROUP_SAMPLER_KEYS)
+        or config_d["bond_size_curriculum"]
+        or model_hooks.builds_own_batch_sampler(config_d)
+        or model_hooks.uses_ce_context_sampler(config_d)
+    ):
         raise ValueError("Sweep schedule matching requires a simple spectrum loader")
     if config_d["drop_last"]:
         raise ValueError("Sweep schedule matching requires drop_last=False")
@@ -564,6 +598,295 @@ def match_sweep_schedule(config_d: dict, train_size: int) -> None:
     steps = math.ceil(batches / config_d["accumulate_grad_batches"]) * config_d["max_epochs"]
     config_d["lr_total_steps"] = steps
     config_d["lr_warmup_steps"] = round(warmup_fraction * steps)
+
+
+def fall_back_precision(config_d: dict) -> None:
+    """Fall back to 32-bit precision when the device cannot run the configured one, in place.
+
+    Args:
+        config_d: Resolved config; ``precision`` may be replaced.
+    """
+    if str(config_d["precision"]) in ["bf16-mixed", "bf16"]:
+        if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
+            logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
+            config_d["precision"] = 32
+    elif str(config_d["precision"]) in ["16-mixed", "16"] and not th.cuda.is_available():
+        logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
+        config_d["precision"] = 32
+
+
+def validate_run_config(config_d: dict, wandb_mode: str) -> None:
+    """Check the final run config before any dataset or model is built.
+
+    Args:
+        config_d: Final run config (after the W&B merge and derived settings).
+        wandb_mode: "online", "offline" or "disabled".
+
+    Raises:
+        ValueError: If the configuration is invalid.
+    """
+    if config_d["upload_checkpoints"] and wandb_mode == "disabled":
+        raise ValueError("upload_checkpoints requires W&B; got wandb_mode='disabled'")
+    if config_d["ema_switch_every_n_epochs"] is not None and config_d["ema_decay"] is None:
+        raise ValueError("ema_switch_every_n_epochs requires ema_decay")
+    validate_sampler_config(config_d)
+
+
+@dataclass
+class WandbRunState:
+    """The job's W&B run, or the empty state when W&B is disabled.
+
+    Attributes:
+        run: The active W&B run, or None when W&B is disabled.
+        logger: Lightning logger for ``run``, or None.
+        is_resume: Whether a job-tracking file named an earlier attempt of this job.
+        job_id_fp: Job-tracking file to remove once the run finishes, or None.
+        old_wandb_dp: The earlier attempt's run directory, whose checkpoints carry over.
+    """
+
+    run: Any | None = None
+    logger: WandbLogger | None = None
+    is_resume: bool = False
+    job_id_fp: str | None = None
+    old_wandb_dp: str | None = None
+
+
+def setup_wandb(config_d: dict, wandb_mode: str, job_id: str | None) -> WandbRunState:
+    """Start or resume the job's W&B run and take the config W&B holds into ``config_d``.
+
+    With a ``job_id`` and checkpoints enabled, ``job_id/<job_id>.id`` records the run ID and run
+    directory, so a requeued job resumes the same run and finds its checkpoints.
+
+    Args:
+        config_d: Resolved config, updated in place by the merge.
+        wandb_mode: "online", "offline" or "disabled".
+        job_id: Job identifier, or None.
+
+    Returns:
+        The run state; empty when W&B is disabled.
+
+    Raises:
+        RuntimeError: If ``wandb.init`` starts no run.
+    """
+    if wandb_mode == "disabled":
+        return WandbRunState()
+    import wandb
+
+    wandb_init_d = {
+        "project": config_d["wandb_project"],
+        "name": config_d["wandb_name"],
+        "group": config_d["wandb_group"],
+        "mode": wandb_mode,
+        "entity": config_d["wandb_entity"],
+        "tags": config_d["wandb_tags"],
+        "resume": "allow",
+        "config": config_d,
+    }
+    is_resume = False
+    job_id_fp = None
+    old_wandb_dp = None
+    if job_id and not config_d["disable_checkpoints"]:
+        job_id_fp = os.path.join("job_id", f"{job_id}.id")
+        run_id = None
+        if os.path.isfile(job_id_fp):
+            is_resume = True
+            with open(job_id_fp) as job_id_file:
+                job_id_fields = job_id_file.read().strip().split(";", 1)
+            run_id = job_id_fields[0]
+            old_wandb_dp = job_id_fields[1] if len(job_id_fields) > 1 else None
+        wandb_init_d["id"] = run_id
+        wandb_init_d["resume"] = "must" if run_id is not None else "allow"
+    wandb.init(**wandb_init_d)
+    if wandb.run is None:
+        raise RuntimeError("wandb.init started no run")
+    wandb_logger = WandbLogger(**wandb_init_d, offline=wandb_mode == "offline")
+    if job_id_fp:
+        os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
+        with open(job_id_fp, "w+") as job_id_file:
+            job_id_file.write(f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}")
+    # A sweep or an earlier attempt of this job may hold values the files do not.
+    saved_run_config = dict(wandb.config)
+    migrate_legacy_masster_name(saved_run_config)
+    migrate_masster_proposal_method(saved_run_config)
+    merge_wandb_config(config_d, saved_run_config, resumed=is_resume)
+    return WandbRunState(
+        run=wandb.run,
+        logger=wandb_logger,
+        is_resume=is_resume,
+        job_id_fp=job_id_fp,
+        old_wandb_dp=old_wandb_dp,
+    )
+
+
+def apply_process_settings(config_d: dict) -> None:
+    """Set the process-wide numeric and parallelism settings the config names.
+
+    Args:
+        config_d: Final run config.
+    """
+    if config_d["use_tensor_float32"] and config_d["accelerator"] == "gpu":
+        # The flag below controls whether to allow TF32 on matmul. This flag defaults to False in PyTorch 1.12 and later.
+        th.backends.cuda.matmul.allow_tf32 = True
+        # The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
+        th.backends.cudnn.allow_tf32 = True
+    if config_d["log_zero_fp32"] is not None:
+        misc_utils.LOG_ZERO_FP32 = float(config_d["log_zero_fp32"])
+    if config_d["log_zero_fp16"] is not None:
+        misc_utils.LOG_ZERO_FP16 = float(config_d["log_zero_fp16"])
+    pandarallel.initialize(
+        progress_bar=config_d["pandarallel_enable_progress_bar"],
+        nb_workers=get_core_count(),
+    )
+
+
+def migrate_resume_checkpoints(old_wandb_dp: str, new_wandb_dp: str, ckpt_dp: str) -> None:
+    """Copy an earlier attempt's checkpoints into this run, repointing their saved paths.
+
+    ``ModelCheckpoint`` restores its best-k state only when the saved ``dirpath`` matches its
+    own, so the paths it stored are rewritten from the old run directory to the new one.
+
+    Args:
+        old_wandb_dp: The earlier attempt's W&B run directory.
+        new_wandb_dp: This run's W&B run directory.
+        ckpt_dp: This run's checkpoint directory.
+
+    Raises:
+        ValueError: If a checkpoint holds no ``ModelCheckpoint`` state.
+    """
+    old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
+    if not old_ckpt_fps:
+        logging.warning(
+            f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch"
+        )
+    old_prefix = os.path.realpath(old_wandb_dp)
+    new_prefix = os.path.realpath(new_wandb_dp)
+    for old_ckpt_fp in old_ckpt_fps:
+        ckpt_data = th.load(old_ckpt_fp, map_location="cpu", weights_only=False)
+        ckpt_callback_data = None
+        for callback_key, callback_state in ckpt_data["callbacks"].items():
+            if callback_key.startswith("ModelCheckpoint"):
+                ckpt_callback_data = callback_state
+                break
+        if ckpt_callback_data is None:
+            raise ValueError(f"{old_ckpt_fp} holds no ModelCheckpoint state")
+        for path_key in ("best_model_path", "last_model_path", "dirpath", "kth_best_model_path"):
+            if path_key in ckpt_callback_data:
+                ckpt_callback_data[path_key] = ckpt_callback_data[path_key].replace(
+                    old_prefix, new_prefix
+                )
+        if "best_k_models" in ckpt_callback_data:
+            for old_path in list(ckpt_callback_data["best_k_models"].keys()):
+                new_path = old_path.replace(old_prefix, new_prefix)
+                ckpt_callback_data["best_k_models"][new_path] = ckpt_callback_data[
+                    "best_k_models"
+                ].pop(old_path)
+        th.save(ckpt_data, os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp)))
+
+
+def build_callbacks(config_d: dict, ckpt_dp: str) -> list[L.Callback]:
+    """Build the checkpoint and EMA callbacks the config enables.
+
+    Args:
+        config_d: Final run config.
+        ckpt_dp: Checkpoint directory.
+
+    Returns:
+        The callbacks, checkpointing first.
+    """
+    callbacks = []
+    if not config_d["disable_checkpoints"]:
+        callbacks.append(
+            ModelCheckpoint(
+                dirpath=ckpt_dp,
+                filename="model-{epoch:03d}",
+                monitor=config_d["checkpoint_metric"],
+                mode=config_d["checkpoint_metric_mode"],
+                save_last=config_d["checkpoint_save_last"],
+                every_n_epochs=config_d["checkpoint_every_n_epochs"],
+                save_top_k=config_d["checkpoint_save_top_k"],
+            )
+        )
+    if config_d["ema_decay"] is not None:
+        callbacks.append(
+            ExponentialMovingAverage(config_d["ema_decay"], config_d["ema_switch_every_n_epochs"])
+        )
+    return callbacks
+
+
+def build_trainer(
+    config_d: dict,
+    loggers: list,
+    callbacks: list[L.Callback],
+    profiler: Profiler | None,
+    train_dl: DataLoader,
+) -> L.Trainer:
+    """Build the Lightning trainer.
+
+    Args:
+        config_d: Final run config.
+        loggers: Lightning loggers.
+        callbacks: Lightning callbacks.
+        profiler: Profiler, or None.
+        train_dl: Training loader; caps ``log_every_n_steps`` at one epoch.
+
+    Returns:
+        The trainer.
+    """
+    trainer_param_d = {
+        "logger": loggers,
+        "callbacks": callbacks,
+        "accelerator": config_d["accelerator"],
+        "devices": config_d["devices"],
+        "min_epochs": config_d["min_epochs"],
+        "max_epochs": config_d["max_epochs"],
+        "precision": config_d["precision"],
+        "log_every_n_steps": min(len(train_dl), config_d["log_every_n_steps"]),
+        "detect_anomaly": config_d["detect_anomaly"],
+        "overfit_batches": config_d["debug_overfit_batches"] if config_d["debug_overfit"] else 0,
+        "profiler": profiler,
+        "num_sanity_val_steps": config_d["num_sanity_val_steps"],
+        "enable_progress_bar": config_d["pl_enable_progress_bar"],
+        "enable_checkpointing": not config_d["disable_checkpoints"],
+    }
+    # this things can only set if automatic_optimization
+    if config_d["automatic_optimization"]:
+        trainer_param_d["accumulate_grad_batches"] = config_d["accumulate_grad_batches"]
+        trainer_param_d["gradient_clip_val"] = config_d["gradient_clip_val"]
+        trainer_param_d["gradient_clip_algorithm"] = config_d["gradient_clip_algorithm"]
+    # Dataloader reloading and validation cadence depend on the model's batching.
+    model_hooks = registry.get_model_hooks(config_d["model_type"])
+    trainer_param_d.update(model_hooks.trainer_options(config_d))
+    return L.Trainer(**trainer_param_d)
+
+
+def finalize_checkpoints(config_d: dict, ckpt_dp: str, wandb_run: Any | None) -> None:
+    """Upload or hold checkpoints, finish the W&B run, then restore or delete them.
+
+    ``wandb.finish()`` uploads every file under the run directory, so checkpoints that are not
+    meant for upload wait outside it until the run has finished. Without W&B nothing is
+    uploaded and the checkpoints stay where they are.
+
+    Args:
+        config_d: Final run config.
+        ckpt_dp: Checkpoint directory.
+        wandb_run: The active W&B run, or None when W&B is disabled.
+    """
+    held_ckpt_dp = None
+    if wandb_run is not None and not config_d["disable_checkpoints"]:
+        if config_d["upload_checkpoints"]:
+            for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
+                wandb_run.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
+        else:
+            held_ckpt_dp = hold_checkpoints_from_wandb(ckpt_dp)
+    try:
+        if wandb_run is not None:
+            wandb_run.finish()
+    finally:
+        if held_ckpt_dp is not None:
+            restore_held_checkpoints(held_ckpt_dp, ckpt_dp)
+    if not config_d["disable_checkpoints"] and config_d["delete_checkpoints"]:
+        for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
+            os.remove(ckpt_fp)
 
 
 def run_training(
@@ -582,130 +905,56 @@ def run_training(
     Returns:
                     model: The trained model (LightningModule).
     """
-
+    # 1. Process setup and the config from files and overrides.
     # Must be set before the CUDA allocator initialises (first tensor.cuda() call).
     # setdefault lets a SLURM-level export override this if needed.
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
-    # setup logger
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[logging.StreamHandler()],
     )
-
     log_cuda_info()
-
-    # load config
     config_d = load_config(template_path, custom_fp, override)
-
-    # set random seeds
     seed_everything(config_d["seed"], workers=True)
-
-    # set torch multiprocessing strategy
     th.multiprocessing.set_sharing_strategy(config_d["mp_sharing_strategy"])
 
-    # setup logging and wandb
+    # 2. W&B: start or resume the run and merge the config it holds.
     logging.info("setup loggers")
-    loggers = []
-    console_logger = ConsoleLogger()
-    loggers.append(console_logger)
+    wandb_state = setup_wandb(config_d, wandb_mode, job_id)
+    loggers = [ConsoleLogger()]
+    if wandb_state.logger is not None:
+        loggers.append(wandb_state.logger)
 
-    if wandb_mode != "disabled":
-        import wandb
+    # 3. Settings derived from the final config, recorded in W&B, then validation, all before
+    # anything expensive is built.
+    derived_keys = ("lr_total_steps", "lr_warmup_steps", "precision")
+    derived_before = {key: config_d[key] for key in derived_keys}
+    if schedule_train_size is not None:
+        match_sweep_schedule(config_d, schedule_train_size)
+    fall_back_precision(config_d)
+    derived_changes = {
+        key: config_d[key] for key in derived_keys if config_d[key] != derived_before[key]
+    }
+    if wandb_state.run is not None and derived_changes:
+        wandb_state.run.config.update(derived_changes, allow_val_change=True)
+    validate_run_config(config_d, wandb_mode)
+    apply_process_settings(config_d)
 
-        wandb_init_d = {
-            "project": config_d["wandb_project"],
-            "name": config_d["wandb_name"],
-            "group": config_d["wandb_group"],
-            "mode": wandb_mode,
-            "entity": config_d["wandb_entity"],
-            "tags": config_d["wandb_tags"],
-            "resume": "allow",
-        }
-
-        if job_id and not config_d["disable_checkpoints"]:
-            job_id_fp = os.path.join("job_id", f"{job_id}.id")
-            if os.path.isfile(job_id_fp):
-                is_resume = True
-                with open(job_id_fp) as job_id_file:
-                    job_id_fields = job_id_file.read().strip().split(";", 1)
-                run_id = job_id_fields[0]
-                old_wandb_dp = job_id_fields[1] if len(job_id_fields) > 1 else None
-            else:
-                is_resume = False
-                run_id = None
-                old_wandb_dp = None
-            wandb_init_d["id"] = run_id
-            wandb_init_d["resume"] = "must" if run_id is not None else "allow"
-            wandb_init_d["config"] = config_d
-        else:
-            is_resume = False
-            job_id_fp = None
-            old_wandb_dp = None
-            wandb_init_d["config"] = config_d
-        wandb.init(**wandb_init_d)
-        assert wandb.run is not None, wandb.run
-        wandb_logger_d = {**wandb_init_d, "offline": wandb_mode == "offline"}
-        wandb_logger = WandbLogger(**wandb_logger_d)
-        if job_id_fp:
-            os.makedirs(os.path.dirname(job_id_fp), exist_ok=True)
-            with open(job_id_fp, "w+") as job_id_file:
-                job_id_file.write(f"{wandb.run.id};{os.path.realpath(wandb.run.dir)}")
-        # update config results (primarily for wandb)
-        # configs can be nested up to 2 levels
-        saved_run_config = dict(wandb.config)
-        migrate_legacy_masster_name(saved_run_config)
-        migrate_masster_proposal_method(saved_run_config)
-        merge_wandb_config(config_d, saved_run_config)
-        if schedule_train_size is not None:
-            match_sweep_schedule(config_d, schedule_train_size)
-            wandb.config.update(
-                {key: config_d[key] for key in ("lr_total_steps", "lr_warmup_steps")},
-                allow_val_change=True,
-            )
-        loggers.append(wandb_logger)
-    else:
-        is_resume = False
-        job_id_fp = None
-        if schedule_train_size is not None:
-            match_sweep_schedule(config_d, schedule_train_size)
-
-    # CUDA and TF32 setup
-    if config_d["use_tensor_float32"] and config_d["accelerator"] == "gpu":
-        # The flag below controls whether to allow TF32 on matmul. This flag defaults to False in PyTorch 1.12 and later.
-        th.backends.cuda.matmul.allow_tf32 = True
-        # The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
-        th.backends.cudnn.allow_tf32 = True
-
-    # LOG_ZERO setup
-    if config_d["log_zero_fp32"] is not None:
-        misc_utils.LOG_ZERO_FP32 = float(config_d["log_zero_fp32"])
-    if config_d["log_zero_fp16"] is not None:
-        misc_utils.LOG_ZERO_FP16 = float(config_d["log_zero_fp16"])
-
-    # setup pandarallel
-    pandarallel.initialize(
-        progress_bar=config_d["pandarallel_enable_progress_bar"],
-        nb_workers=get_core_count(),
-    )
-
-    # setup model
+    # 4. Model.
     logging.info("setup model")
-
-    model_cls = get_model_cls(config_d["model_type"])
-    model = model_cls(**config_d)
+    model = get_model_cls(config_d["model_type"])(**config_d)
     model.train()
     registry.get_model_hooks(config_d["model_type"]).log_resolved_settings(
-        model, config_d, wandb.run if wandb_mode != "disabled" else None
+        model, config_d, wandb_state.run
     )
 
-    # setup callbacks
-    callbacks = []
+    # 5. Checkpoint directory (with an earlier attempt's checkpoints), callbacks, profiler.
     # Names the on-disk checkpoint and profile directories when wandb is disabled.
     run_name = job_id if job_id else config_d.get("wandb_name", "run")
-    if wandb_mode != "disabled":
-        ckpt_dp = os.path.realpath(os.path.join(wandb.run.dir, "ckpt"))
+    if wandb_state.run is not None:
+        ckpt_dp = os.path.realpath(os.path.join(wandb_state.run.dir, "ckpt"))
+        profile_dp = os.path.join(wandb_state.run.dir, "profile")
     else:
         logging.info(
             "wandb is disabled; checkpoints will be saved to "
@@ -713,122 +962,19 @@ def run_training(
             "use unique job_id or enable wandb to avoid this issue."
         )
         ckpt_dp = os.path.join("ckpts", run_name)
-    os.makedirs(ckpt_dp, exist_ok=True)
-    if is_resume and old_wandb_dp is not None:
-        assert not config_d["disable_checkpoints"]
-        # copy the checkpoint files
-        old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
-        if not old_ckpt_fps:
-            logging.warning(
-                f"Resume requested but no checkpoints found in {old_wandb_dp}/ckpt/, starting from scratch"
-            )
-        for old_ckpt_fp in old_ckpt_fps:
-            new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
-            # modify checkpoint metadata (hacky)
-            ckpt_data = th.load(old_ckpt_fp, weights_only=False)
-            ckpt_callback_data = None
-            for callback_key, callback_state in ckpt_data["callbacks"].items():
-                if callback_key.startswith("ModelCheckpoint"):
-                    ckpt_callback_data = callback_state
-                    break
-            assert ckpt_callback_data is not None
-            ckpt_path_keys = [
-                "best_model_path",
-                "last_model_path",
-                "dirpath",
-                "kth_best_model_path",
-            ]
-            for path_key in ckpt_path_keys:
-                if path_key in ckpt_callback_data:
-                    ckpt_callback_data[path_key] = ckpt_callback_data[path_key].replace(
-                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
-                    )
-            if "best_k_models" in ckpt_callback_data:
-                for old_path in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_path = old_path.replace(
-                        os.path.realpath(old_wandb_dp), os.path.realpath(wandb.run.dir)
-                    )
-                    ckpt_callback_data["best_k_models"][new_path] = ckpt_callback_data[
-                        "best_k_models"
-                    ].pop(old_path)
-            # save modified checkpoint in new wandb dir
-            th.save(ckpt_data, new_ckpt_fp)
-    if not config_d["disable_checkpoints"]:
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=ckpt_dp,
-            filename="model-{epoch:03d}",
-            monitor=config_d["checkpoint_metric"],
-            mode=config_d["checkpoint_metric_mode"],
-            save_last=config_d["checkpoint_save_last"],
-            every_n_epochs=config_d["checkpoint_every_n_epochs"],
-            save_top_k=config_d["checkpoint_save_top_k"],
-        )
-        callbacks.append(checkpoint_callback)
-    if config_d["ema_decay"] is not None:
-        callbacks.append(
-            ExponentialMovingAverage(config_d["ema_decay"], config_d["ema_switch_every_n_epochs"])
-        )
-    elif config_d["ema_switch_every_n_epochs"] is not None:
-        raise ValueError("ema_switch_every_n_epochs requires ema_decay")
-
-    # setup profiler
-    logging.info("setup profiler")
-    if wandb_mode != "disabled":
-        profile_dp = os.path.join(wandb.run.dir, "profile")
-    else:
         profile_dp = os.path.join("tmp_profile", run_name)
+    os.makedirs(ckpt_dp, exist_ok=True)
+    if wandb_state.is_resume and wandb_state.old_wandb_dp is not None:
+        migrate_resume_checkpoints(wandb_state.old_wandb_dp, wandb_state.run.dir, ckpt_dp)
+    callbacks = build_callbacks(config_d, ckpt_dp)
+    logging.info("setup profiler")
     os.makedirs(profile_dp, exist_ok=True)
-    if config_d["profiler"] == "simple":
-        profiler = SimpleProfiler(dirpath=profile_dp, filename="profile")
-    elif config_d["profiler"] == "advanced":
-        profiler = AdvancedProfiler(dirpath=profile_dp, filename="profile")
-    elif config_d["profiler"] == "pytorch":
-        th.profiler._utils._init_for_cuda_graphs()
-        profiler_wait = int(config_d["profiler_wait_steps"])
-        profiler_warmup = int(config_d["profiler_warmup_steps"])
-        profiler_active = int(config_d["profiler_active_steps"])
-        profiler_repeat = int(config_d["profiler_repeat"])
-        profiler_skip_first = int(config_d["profiler_skip_first_steps"])
-        profiler = MyPyTorchProfiler(
-            dirpath=profile_dp,
-            filename="profile",
-            activities=[
-                th.profiler.ProfilerActivity.CPU,
-                th.profiler.ProfilerActivity.CUDA,
-            ],
-            # on_trace_ready=th.profiler.tensorboard_trace_handler(profile_dp),
-            profile_memory=True,
-            record_shapes=False,  # True,
-            with_flops=False,  # True,
-            with_stack=True,
-            with_modules=False,
-            export_to_chrome=False,
-            export_to_flame_graph=True,
-            experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
-            schedule=th.profiler.schedule(
-                wait=profiler_wait,
-                warmup=profiler_warmup,
-                active=profiler_active,
-                repeat=profiler_repeat,
-                skip_first=profiler_skip_first,
-            ),
-        )
-    else:
-        assert config_d["profiler"] == "none", config_d["profiler"]
-        # no profiler
-        profiler = None
+    profiler = build_profiler(config_d, profile_dp)
 
-    # setup datasets — test is intentionally excluded here and loaded after
-    # training to avoid holding the test set in memory throughout the run.
+    # 6. Datasets and loaders. The test set is loaded after training so it is not held in
+    # memory throughout the run.
     logging.info("setup dataset")
-    datasets = init_dataset(config_d, splits=["train", "val"])
-    train_ds = datasets[0]
-    val_ds = datasets[1]
-
-    # check config for sampler
-    validate_sampler_config(config_d)
-
-    # setup dataloaders
+    train_ds, val_ds = init_dataset(config_d, splits=["train", "val"])
     logging.info("setup dataloader")
     if schedule_train_size is not None and len(train_ds) != schedule_train_size:
         raise ValueError(
@@ -837,67 +983,24 @@ def run_training(
     train_dl = init_dataloader(train_ds, config_d)
     val_dl = init_dataloader(val_ds, config_d)
 
-    # setup trainer
+    # 7. Trainer and debugging switches.
     logging.info("setup trainer")
-    if config_d["debug_overfit"]:
-        overfit_batches = config_d["debug_overfit_batches"]
-    else:
-        overfit_batches = 0
-    log_every_n_steps = min(len(train_dl), config_d["log_every_n_steps"])
-
-    # check precision support
-    if str(config_d["precision"]) in ["bf16-mixed", "bf16"]:
-        if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
-            logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
-            config_d["precision"] = 32
-    elif str(config_d["precision"]) in ["16-mixed", "16"] and not th.cuda.is_available():
-        logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
-        config_d["precision"] = 32
-
-    trainer_param_d = {
-        "logger": loggers,
-        "callbacks": callbacks,
-        "accelerator": config_d["accelerator"],
-        "devices": config_d["devices"],
-        "min_epochs": config_d["min_epochs"],
-        "max_epochs": config_d["max_epochs"],
-        "precision": config_d["precision"],
-        "log_every_n_steps": log_every_n_steps,
-        "detect_anomaly": config_d["detect_anomaly"],
-        "overfit_batches": overfit_batches,
-        "profiler": profiler,
-        "num_sanity_val_steps": config_d["num_sanity_val_steps"],
-        "enable_progress_bar": config_d["pl_enable_progress_bar"],
-        "enable_checkpointing": not config_d["disable_checkpoints"],
-    }
-
-    # this things can only set if automatic_optimization
-    if config_d["automatic_optimization"]:
-        trainer_param_d["accumulate_grad_batches"] = config_d["accumulate_grad_batches"]
-        trainer_param_d["gradient_clip_val"] = config_d["gradient_clip_val"]
-        trainer_param_d["gradient_clip_algorithm"] = config_d["gradient_clip_algorithm"]
-    # Dataloader reloading and validation cadence depend on the model's batching.
-    model_hooks = registry.get_model_hooks(config_d["model_type"])
-    trainer_param_d.update(model_hooks.trainer_options(config_d))
-
-    trainer = L.Trainer(**trainer_param_d)
-
-    # set determinism
+    trainer = build_trainer(config_d, loggers, callbacks, profiler, train_dl)
     th.use_deterministic_algorithms(config_d["deterministic"], warn_only=True)
-
-    # register nan hook
     if config_d["nan_module_hook"]:
         th.nn.modules.module.register_module_forward_hook(nan_forward_hook)
         th.nn.modules.module.register_module_full_backward_hook(nan_backward_hook)
 
-    # fit
+    # 8. Fit, resuming from this run's last checkpoint when the job was requeued.
     if config_d["debug_overfit"]:
-        assert not is_resume
+        if wandb_state.is_resume:
+            raise ValueError("debug_overfit cannot resume an earlier attempt of the job")
         logging.info("debug overfit model")
         trainer.fit(model, train_dl)
     else:
         logging.info("fit model")
-        if is_resume:
+        resume_ckpt_fp = None
+        if wandb_state.is_resume:
             resume_ckpt_fp = os.path.join(ckpt_dp, "last.ckpt")
             if os.path.isfile(resume_ckpt_fp):
                 logging.info(f"resuming from checkpoint: {resume_ckpt_fp}")
@@ -906,59 +1009,26 @@ def run_training(
                     f"Resume requested but last.ckpt not found in {ckpt_dp}, starting from epoch 0"
                 )
                 resume_ckpt_fp = None
-        else:
-            resume_ckpt_fp = None
         trainer.fit(model, train_dl, val_dl, ckpt_path=resume_ckpt_fp)
-    logging.info("callback metrics")
 
-    if not trainer.interrupted and config_d["eval_test_split"]:
+    # 9. Test the best checkpoint when one was saved, otherwise the final weights.
+    if config_d["eval_test_split"]:
         logging.info("setup test dataset")
         test_ds = init_dataset(config_d, splits=["test"])[0]
         test_dl = init_dataloader(test_ds, config_d)
         logging.info("test model")
-        trainer.test(
-            model=model,
-            ckpt_path="best" if config_d["min_epochs"] > 0 else None,
-            dataloaders=test_dl,
-        )
+        checkpoint_callback = trainer.checkpoint_callback
+        has_best = checkpoint_callback is not None and bool(checkpoint_callback.best_model_path)
+        trainer.test(model=model, ckpt_path="best" if has_best else None, dataloaders=test_dl)
 
-    if config_d["compile"]:
-        print(model.dynamo_prof.report())
+    # Only models built with the compile profiler carry a report.
+    dynamo_prof = getattr(model, "dynamo_prof", None)
+    if config_d["compile"] and dynamo_prof is not None:
+        logging.info("%s", dynamo_prof.report())
 
-    # Handle checkpoint cleanup/saving after training
-    if not trainer.interrupted and not config_d["disable_checkpoints"]:
-        ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
-
-        if config_d["upload_checkpoints"]:
-            # Upload checkpoints to wandb
-            for ckpt_fp in ckpt_fps:
-                wandb.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
-
-        # Checkpoints that must not be uploaded wait outside the W&B run dir until
-        # wandb.finish() is done. Without W&B nothing is uploaded, so they stay where they are.
-        held_ckpt_dp = None
-        if (
-            wandb_mode != "disabled"
-            and not config_d["upload_checkpoints"]
-            and not config_d["delete_checkpoints"]
-        ):
-            held_ckpt_dp = hold_checkpoints_from_wandb(ckpt_dp)
-
-    if wandb_mode != "disabled":
-        wandb.finish()
-
-    # Final checkpoint cleanup after wandb is finished
-    if not trainer.interrupted and not config_d["disable_checkpoints"]:
-        if config_d["delete_checkpoints"]:
-            # Delete all checkpoints
-            ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
-            for ckpt_fp in ckpt_fps:
-                os.remove(ckpt_fp)
-        elif held_ckpt_dp is not None:
-            restore_held_checkpoints(held_ckpt_dp, ckpt_dp)
-
-    # cleanup job tracking file
-    if job_id_fp:
-        os.remove(job_id_fp)
+    # 10. Checkpoints and W&B, then the job-tracking file.
+    finalize_checkpoints(config_d, ckpt_dp, wandb_state.run)
+    if wandb_state.job_id_fp:
+        os.remove(wandb_state.job_id_fp)
 
     return model

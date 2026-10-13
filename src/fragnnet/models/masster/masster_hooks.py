@@ -145,6 +145,9 @@ class MassterHooks(ModelHooks):
             config["masster_h_transfer_bound"],
         )
 
+    def builds_own_batch_sampler(self, config_d: dict[str, Any]) -> bool:
+        return bool(config_d["masster_batch_sampler"])
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:

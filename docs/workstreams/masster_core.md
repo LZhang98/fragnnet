@@ -23,6 +23,7 @@
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
+| [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 in the working tree: review and commit; decide the branch for Phases 3–4 |
 | [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Matched Enveda multitask/control evaluation; coordinated in the [CASMI/Enveda hub](casmi_enveda.md) |
 | [Architecture review todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED | `a1_prenorm` seed replicate; `a5` read against `a3`; RWSE needs the `random_walk_pe` fix ported |
@@ -70,6 +71,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
+| [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE (2026-10-12) | `runner.py` audit: 10 bugs (W&B-off upload, `ckpt_path="best"` without checkpoints, dead `interrupted` guards, silent sweep typos), then a behavior-preserving split into config and loading modules |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Reproduced correctness issues and prioritized simplifications |
 | [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Prioritized cleanup; items 1–4 implemented and committed; candidate generation in `candidates/` |
 | [Annotated export merge bug](../findings/masster/masster_export_merge_untransform_2026_10_12.md) | FINDING (2026-10-12) | sqrt/log10 exports untransformed each pathway before summing; fixed |

@@ -113,6 +113,17 @@ class ModelHooks:
         """
         return None
 
+    def builds_own_batch_sampler(self, config_d: dict[str, Any]) -> bool:
+        """Whether ``build_batch_sampler`` returns a batch sampler for this config.
+
+        Core code that needs standard fixed-size batches, such as sweep schedule matching,
+        checks this without building a dataset.
+
+        Args:
+            config_d: Resolved config.
+        """
+        return False
+
     def dataloader_options(self, config_d: dict[str, Any]) -> dict[str, Any]:
         """Extra DataLoader keyword arguments.
 

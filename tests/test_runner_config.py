@@ -543,3 +543,59 @@ def test_merge_wandb_config_keeps_integral_floats() -> None:
     # Real differences (a sweep or resumed run) are still taken from W&B.
     assert config["lr"] == 0.002
     assert config["spec_params"]["nce"] is True
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ("group_sampler", "simple_group_sampler"),
+        ("group_sampler", "formula_prec_type_group_sampler"),
+        ("simple_group_sampler", "formula_prec_type_group_sampler"),
+    ],
+)
+def test_group_samplers_are_mutually_exclusive(first: str, second: str) -> None:
+    """``init_dataloader`` would silently use only the first group sampler set."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        validate_sampler_config(
+            _base_config(dynamic_batch_sampler=False, **{first: True, second: True})
+        )
+
+
+class TestMergeWandbConfigChecks:
+    """A W&B config is checked like a custom config before it reaches the run."""
+
+    @staticmethod
+    def _config() -> dict:
+        return {"model_type": "masster", "lr": 0.001, "spec_params": {"inst_types": ["ORB"]}}
+
+    def test_undeclared_sweep_key_raises_on_a_new_run(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match=r"\['lr_typo', 'spec_params.typo'\]"):
+            merge_wandb_config(self._config(), {"lr_typo": 1, "spec_params": {"typo": 1}})
+
+    def test_resumed_run_skips_keys_the_template_dropped(self, caplog) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        config = self._config()
+        merge_wandb_config(config, {"dropped_key": 1, "lr": 0.002}, resumed=True)
+        assert config == {**self._config(), "lr": 0.002}
+        assert "dropped_key" in caplog.text
+
+    def test_model_type_cannot_change(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match="model_type 'frag_gnn'"):
+            merge_wandb_config(self._config(), {"model_type": "frag_gnn"})
+
+    def test_retired_instrument_type_raises(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match=r"retired instrument type at \['spec_params"):
+            merge_wandb_config(self._config(), {"spec_params": {"inst_types": ["FT"]}})
+
+    def test_section_must_stay_a_mapping(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match="non-mapping"):
+            merge_wandb_config(self._config(), {"spec_params": 1})
