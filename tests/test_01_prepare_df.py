@@ -1,17 +1,23 @@
 """Unit tests for preproc_scripts/01_prepare_df.py module.
 
 Tests validate:
-- MSP parsing and column renaming
+- MSP parsing (plain, .gz and .zip) and column renaming
 - NIST EI CSV processing
 - Comment field parsing
 - Data dictionary validation
 """
 
+import gzip
 import importlib.util
+import json
 import tempfile
+import zipfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
+
+from fragnnet.utils import spec_parse_utils
 
 
 def load_prepare_module():
@@ -106,6 +112,43 @@ Num peaks: 1
         Path(msp_fp).unlink()
 
 
+NIST_MSP = """Name: Compound 1
+Instrument: Orbitrap Fusion Lumos
+CAS#: 50-00-0;  NIST#: 1035166
+Num Peaks: 2
+50.0 100
+75.0 200
+
+Name: Compound 2
+Instrument: Thermo Finnigan Elite Orbitrap
+CAS#: 50-00-1;  NIST#: 1035167
+Num Peaks: 1
+60.0 300
+
+"""
+
+
+@pytest.mark.parametrize("suffix", [".msp", ".msp.gz", ".zip"])
+def test_preproc_msp_reads_compressed_nist_export(tmp_path, suffix):
+    """A NIST export parses the same plain, gzipped or zipped, with CAS# and NIST# split."""
+    module = load_prepare_module()
+    msp_fp = tmp_path / f"lib{suffix}"
+    if suffix == ".msp":
+        msp_fp.write_text(NIST_MSP)
+    elif suffix == ".msp.gz":
+        with gzip.open(msp_fp, "wt") as f:
+            f.write(NIST_MSP)
+    else:
+        with zipfile.ZipFile(msp_fp, "w") as zf:
+            zf.writestr("lib.msp", NIST_MSP)
+    keys = {"Name", "Instrument", "CAS#", "NIST#", "Num peaks", "MS"}
+    df = module.preproc_msp(str(msp_fp), keys, num_entries=-1)
+    assert df["NIST#"].tolist() == ["1035166", "1035167"]
+    assert df["CAS#"].tolist() == ["50-00-0", "50-00-1"]
+    assert df["Instrument"].tolist() == ["Orbitrap Fusion Lumos", "Thermo Finnigan Elite Orbitrap"]
+    assert df["MS"].tolist() == ["50.0 100\n75.0 200\n", "60.0 300\n"]
+
+
 def test_merge_and_check_with_smiles():
     """Test merge_and_check when mol_df is None (SMILES in MSP)."""
     module = load_prepare_module()
@@ -171,6 +214,39 @@ Compound2,"60 300
         Path(csv_fp).unlink()
 
 
+def test_process_ms_gym_infers_negative_ion_mode():
+    """MassSpecGym ion polarity should follow the adduct charge."""
+    module = load_prepare_module()
+
+    tsv_content = (
+        "simulation_challenge\tmzs\tintensities\tprecursor_mz\tadduct\tparent_mass\t"
+        "instrument_type\tcollision_energy\tidentifier\tfold\tsmiles\n"
+        "True\t100,150\t10,20\t99.0\t[M-H]-\t100.0\tQTOF\t20\tMSG0001\t0\tCCO\n"
+        "False\t101\t11\t103.0\t[M+H]+\t102.0\tOrbitrap\t30 normalized=True\t"
+        "MSG0002\t1\tCCN\n"
+    )
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
+        f.write(tsv_content)
+        tsv_fp = f.name
+
+    try:
+        sim_df, sim_split_df = module.process_ms_gym(tsv_fp, "simulation_challenge")
+        extra_df, _ = module.process_ms_gym(tsv_fp, "extra")
+
+        assert len(sim_df) == 1
+        assert sim_df.iloc[0]["ion_mode"] == "N"
+        assert sim_df.iloc[0]["peaks"] == "100 10\n150 20"
+        assert sim_df.iloc[0]["prec_type"] == "[M-H]-"
+        assert sim_split_df.to_dict("records") == [{"dset_spec_id": "MSG0001", "fold": 0}]
+
+        assert len(extra_df) == 1
+        assert extra_df.iloc[0]["ion_mode"] == "P"
+        assert extra_df.iloc[0]["normalized"]
+        assert extra_df.iloc[0]["col_energy"] == "NCE=30%"
+    finally:
+        Path(tsv_fp).unlink()
+
+
 def test_msp_key_dict_has_required_keys():
     """Verify MSP key dictionary contains expected keys."""
     module = load_prepare_module()
@@ -193,3 +269,120 @@ def test_pcdl_keys_dict_has_required_keys():
     ]
     for key in required_keys:
         assert key in module.PCDL_KEYS, f"Missing key: {key}"
+
+
+def _enveda_entry(title: str, adduct: str, ce: str, ionmode: str) -> dict:
+    return {
+        "title": title,
+        "pepmass": "326.198845",
+        "charge": "1-" if ionmode == "ESI Negative" else "1+",
+        "adduct": adduct,
+        "collision_energies": ce,
+        "instrument": "Bruker timsTOF Pro 2",
+        "instrument_type": "Q-TOF",
+        "ionmode": ionmode,
+        "inchikey": "AAAAMGLVZZXVDT-UHFFFAOYSA-N",
+        "formula": "C18H25N5O",
+        "smiles": "CC(C)N1C=NN=C1C1CCCN(CC(=O)NC2=CC=CC=C2)C1",
+        "iupac_name": "N-phenyl-2-acetamide",
+        "ccs": "190.94",
+        "num_peaks": 2,
+        "mzs": ["92.050941", "149.071959"],
+        "intensities": ["8751.00", "13456.00"],
+        "num_isotope_peaks": 2,
+        "isotope_mzs": ["326.198653", "327.202283"],
+        "isotope_intensities": ["0.93", "0.07"],
+    }
+
+
+@pytest.fixture
+def enveda_jsonl_fp(tmp_path: Path) -> Path:
+    """Enveda-180 export with a stepped negative, a single positive and a 2-energy entry."""
+    entries = [
+        _enveda_entry("enveda_000001_01", "[M-H]-", "-60,-40,-20", "ESI Negative"),
+        _enveda_entry("enveda_000001_02", "[M+H]+", "40", "ESI Positive"),
+        _enveda_entry("enveda_000001_03", "[M+H]+", "20,60", "ESI Positive"),
+    ]
+    fp = tmp_path / "enveda-180-filtered.jsonl.gz"
+    with gzip.open(fp, "wt") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+    return fp
+
+
+def test_parse_enveda_ce_str_strips_polarity_and_sorts():
+    """Negative-mode energies lose their sign; stepped lists come out lowest first."""
+    module = load_prepare_module()
+
+    assert module.parse_enveda_ce_str("-40") == ["40 eV"]
+    assert module.parse_enveda_ce_str("-60,-40,-20") == ["20 eV", "40 eV", "60 eV"]
+    assert module.parse_enveda_ce_str("20,40,60") == ["20 eV", "40 eV", "60 eV"]
+
+
+def test_process_enveda_maps_columns(enveda_jsonl_fp: Path):
+    """Enveda rows reach the unified schema, and their CE strings parse downstream."""
+    module = load_prepare_module()
+
+    spec_df = module.process_enveda(str(enveda_jsonl_fp))
+
+    assert spec_df["spec_id"].tolist() == [0, 1, 2]
+    assert spec_df["dset_spec_id"].tolist() == [
+        "enveda_000001_01",
+        "enveda_000001_02",
+        "enveda_000001_03",
+    ]
+    assert spec_df["ion_mode"].tolist() == ["N", "P", "P"]
+    assert spec_df["prec_type"].tolist() == ["[M-H]-", "[M+H]+", "[M+H]+"]
+    assert spec_df["stepped"].tolist() == [True, False, True]
+    neg = spec_df.iloc[0]
+    assert neg["peaks"] == "92.050941 8751.00\n149.071959 13456.00"
+    assert neg["prec_mz"] == "326.198845"
+    assert neg["inst_type"] == "Q-TOF"
+    assert neg["inst"] == "Bruker timsTOF Pro 2"
+    assert neg["spec_type"] == "MS2"
+    assert neg["frag_mode"] == "CID"
+    assert [neg[col] for col in module.CE_COLS] == ["20 eV", "40 eV", "60 eV"]
+    assert spec_parse_utils.parse_ace_str(neg["col_energy_extra_2"]) == pytest.approx(60.0)
+    assert "isotope_mzs" not in spec_df.columns
+    assert "mzs" not in spec_df.columns
+    for value in module.MSP_KEY_DICT.values():
+        assert value in spec_df.columns
+
+    single = spec_df.iloc[1]
+    assert single["col_energy"] == "40 eV"
+    assert pd.isna(single["col_energy_extra_1"])
+    assert pd.isna(single["col_energy_extra_2"])
+
+    two_step = spec_df.iloc[2]
+    assert [two_step["col_energy"], two_step["col_energy_extra_1"]] == ["20 eV", "60 eV"]
+    assert pd.isna(two_step["col_energy_extra_2"])
+
+
+def test_preproc_ms_files_reads_ms_dir(tmp_path):
+    """The ms+meta format enumerates .ms files from ms_dp, with and without a limit."""
+    module = load_prepare_module()
+
+    ms_dp = tmp_path / "ms"
+    ms_dp.mkdir()
+    for name in ["specA", "specB"]:
+        (ms_dp / f"{name}.ms").write_text(
+            f">compound {name}\n>parentmass 47.05\n#instrumentation QTOF\n\n"
+            ">collision 20eV\n30.0 10.0\n45.0 100.0\n"
+        )
+    meta_fp = tmp_path / "meta.tsv"
+    pd.DataFrame(
+        {
+            "name": ["specA", "specB"],
+            "spec": ["specA", "specB"],
+            "ionization": ["[M+H]+", "[M+H]+"],
+            "formula": ["C2H6O", "C2H6O"],
+            "smiles": ["CCO", "CCO"],
+        }
+    ).to_csv(meta_fp, sep="\t", index=False)
+
+    spec_df = module.preproc_ms_files(str(ms_dp), str(meta_fp), set(), -1)
+    assert sorted(spec_df["dset_spec_id"]) == ["specA_0", "specB_0"]
+    assert set(spec_df["col_energy"]) == {"20eV"}
+
+    limited_df = module.preproc_ms_files(str(ms_dp), str(meta_fp), set(), 1)
+    assert limited_df["dset_spec_id"].tolist() == ["specA_0"]

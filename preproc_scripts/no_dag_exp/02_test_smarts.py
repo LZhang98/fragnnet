@@ -10,11 +10,12 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 from tqdm import tqdm
 
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
+from fragnnet.utils.formula_utils import th_long_to_mask
 from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.mol_utils import mol_from_smiles
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def remove_atoms_and_group_by_connected(adj_matrix, atom_ids_to_remove):
@@ -123,7 +124,7 @@ def get_substructure_from_smarts(target_smiles, substructure_smart):
 def get_args():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--template_fp", type=str, default="config/template.yml", help="Path to the config file"
+        "--template_fp", type=str, default="config", help="Path to the config file"
     )
     parser.add_argument(
         "--custom_fp",

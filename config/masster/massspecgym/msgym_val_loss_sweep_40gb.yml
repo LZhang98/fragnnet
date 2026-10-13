@@ -1,0 +1,174 @@
+# Sweep base: k1/EMA/Fourier MSGYM control; loss-minimizing checkpoints.
+# 99,306 train spectra, 128 epochs. Agent derives cosine steps per sampled batch.
+#
+# 2026-10-08: ints_transform pow0.75 + masster_merge_same_mz_rows true (the pow075 arm's pair;
+# merge is required with an exact-mass MASSter and a non-none transform, template.yml:834-839).
+# WHY. The 2026-10-03 screen read (docs/findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md):
+# pow075 (q3oxbpgx@55) beats ll04i00m on formula test retrieval, mspred_ent hit@1 +0.031
+# [+0.017, +0.046] and loglik +0.018 [+0.003, +0.033], and val cosine does not rank checkpoints
+# for retrieval -- so the sweep trains at the pow0.75 operating point. pm1 is NOT taken: it
+# passed val cosine alone (+0.0041 vs a 0.0025 control spread) but pow075_pm1 measured 0.5829,
+# control-level, and pm1 has no retrieval read. wd10 needs no base change: weight_decay 0.1 is
+# in the sweep's weight_decay values. val_primary_loss is now CE against pow0.75 targets --
+# comparable within the sweep, not against pre-change runs. Sweep tiwhun9q's W&B description
+# still says "linear-intensity Gaussian CE"; its sampled parameters are unchanged.
+wandb_name: msgym_masster_val_loss_40gb
+wandb_group: msgym_masster_val_loss_48_20261003
+wandb_tags:
+- masster
+- massspecgym
+- val_loss_sweep
+- fir_h100_3g40gb
+- ints_pow075
+- merge_same_mz_rows
+seed: 397623
+spec_fp: data/proc/ms_gym_benchmark_1_5/spec_df.pkl
+mol_fp: data/proc/ms_gym_benchmark_1_5/mol_df.pkl
+split_dp: data/split/ms_gym_benchmark_1_5
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - ORB
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+int_embedder: fourier
+nce_max: 300
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+# 16 (the 2026-10-03 screen ran at 64): loss_batch_size only sets the padded-chunk window in
+# sparse_cross_entropy_vec (float accumulation order, not a modeling knob). Measured NVML peaks
+# scale ~0.22 GiB/lb unit above a ~12.3 GiB base at batch 512 (lb64 25.1-26.9 GiB, lb8 14.1 GiB);
+# lb16 keeps the worst 3g.40gb trial clear of OOM without touching the loss.
+# docs/plans/masster/masster_regularization_sweep_plan.md#slice-sizing-is-a-measured-open-question-not-a-settled-choice
+loss_batch_size: 16
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: true
+lr_schedule_type: cosine
+lr_total_steps: 24832
+lr_min_ratio: 0.01
+lr_warmup_steps: 1000
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 128
+max_epochs: 128
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: true
+checkpoint_metric: val_primary_loss_epoch/mean
+checkpoint_metric_mode: min
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+compute_train_auxiliary_metrics: false
+masster_candidate_backend: cuda
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+masster_intensity_norm_placement: pre
+masster_boundary_encoder_dropout: 0.2
+masster_intensity_input_dropout: 0.2
+ema_decay: 0.999
+eval_test_split: false
+# pow075 pair (2026-10-08, see header)
+ints_transform: pow0.75
+masster_merge_same_mz_rows: true

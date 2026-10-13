@@ -1,7 +1,7 @@
 """Tests for validated gas-phase rearrangement SMARTS rules.
 
 Covers the 7 SMIRKS-implementable rearrangement rules identified in the
-rearrangement SMARTS review (docs/rearrangement_smarts.md).  Each test
+rearrangement SMARTS review (docs/reference/rearrangement_smarts.md).  Each test
 checks substrate match, correct product SMILES, and at least one negative
 (non-matching) case.
 
@@ -15,11 +15,10 @@ Rules that require custom Python (not SMIRKS-implementable in RDKit):
 
 from __future__ import annotations
 
-import pytest
+import warnings
+
 from rdkit import Chem
 from rdkit.Chem import AllChem
-
-import warnings
 
 warnings.filterwarnings("ignore")
 
@@ -31,16 +30,12 @@ warnings.filterwarnings("ignore")
 # Product is enol (single bond O-C) + alkene.  The original buggy version had
 # =[C:2]= (ketene, pentavalent C); the fix uses -[C:2]= (enol O-H).
 MCLAFF_CARBONYL = (
-    "[O,N,S:1]=[C:2]-[#6:3]-[#6:4]-[#6:5]-[H:6]"
-    ">>[O,N,S:1](-[H:6])-[C:2]=[#6:3].[#6:4]=[#6:5]"
+    "[O,N,S:1]=[C:2]-[#6:3]-[#6:4]-[#6:5]-[H:6]>>[O,N,S:1](-[H:6])-[C:2]=[#6:3].[#6:4]=[#6:5]"
 )
 
 # McLafferty nitrile: gamma-H to nitrile N; produces ketenimine (N=C=C) + alkene.
 # Correct as-is — the cumulene product is chemically right for nitriles.
-MCLAFF_NITRILE = (
-    "[N:1]#[C:2]-[#6:3]-[#6:4]-[#6:5]-[H:6]"
-    ">>[N:1](-[H:6])=[C:2]=[#6:3].[#6:4]=[#6:5]"
-)
+MCLAFF_NITRILE = "[N:1]#[C:2]-[#6:3]-[#6:4]-[#6:5]-[H:6]>>[N:1](-[H:6])=[C:2]=[#6:3].[#6:4]=[#6:5]"
 
 # RDA all-carbon: breaks C4-C5 and C6-C1 ring bonds; forms C3=C4 and C5=C6.
 # r6 guard prevents matching non-6-membered rings.  Use without AddHs.
@@ -65,17 +60,11 @@ RETRO_ENE_CARBONYL = (
 
 # Cope [3,3]: isomerization of 1,5-diene.  Produces structural isomer that
 # feeds into BFS — not a direct fragment ion.
-COPE = (
-    "[#6:1]=[#6:2]-[#6:3]-[#6:4]-[#6:5]=[#6:6]"
-    ">>[#6:3]=[#6:2]-[#6:1]-[#6:6]-[#6:5]=[#6:4]"
-)
+COPE = "[#6:1]=[#6:2]-[#6:3]-[#6:4]-[#6:5]=[#6:6]>>[#6:3]=[#6:2]-[#6:1]-[#6:6]-[#6:5]=[#6:4]"
 
 # Claisen: allyl vinyl ether → gamma,delta-unsaturated carbonyl.  Isomerization.
 # NOTE: the original list mislabeled this as "Oxa-Cope".
-CLAISEN = (
-    "[#6:1]=[#6:2]-[#6:3]-[O:4]-[#6:5]=[#6:6]"
-    ">>[#6:3]=[#6:2]-[#6:1]-[#6:6]-[#6:5]=[O:4]"
-)
+CLAISEN = "[#6:1]=[#6:2]-[#6:3]-[O:4]-[#6:5]=[#6:6]>>[#6:3]=[#6:2]-[#6:1]-[#6:6]-[#6:5]=[O:4]"
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +92,18 @@ def _run(smarts: str, smi: str, add_h: bool = False) -> set[str]:
 
 
 def _no_match(smarts: str, smi: str, add_h: bool = False) -> bool:
-    """Return True when the reaction produces no valid sanitized products."""
-    return len(_run(smarts, smi, add_h=add_h)) == 0
+    """Return True when the reactant template does not match at all.
+
+    Checks the raw ``RunReactants`` output, so a match whose products fail sanitization still
+    counts as a match.
+    """
+    rxn = AllChem.ReactionFromSmarts(smarts)
+    mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        raise ValueError(f"Bad SMILES: {smi}")
+    if add_h:
+        mol = Chem.AddHs(mol)
+    return len(rxn.RunReactants((mol,))) == 0
 
 
 # ---------------------------------------------------------------------------

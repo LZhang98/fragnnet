@@ -1,0 +1,232 @@
+# Connected-fragment beam sibling of nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast.yml.
+#
+# Purpose: measure the beam's candidate ceiling on the split and recipe the current lead
+# actually uses. Every existing connected_fragment_beam config sits on the MA/MI split
+# (data/split/nist20_ma_mi_inchikey, four adducts, cross_entropy), so none of them is
+# comparable to the merged JSS arm behind W&B run 8v0i0fq7. This one is, because it changes
+# nothing but the proposal method.
+#
+# Exactly four things differ from the _fast baseline:
+#
+#   masster_proposal_method: cut_masks -> connected_fragment_beam
+#       Plus the two budgets it requires. Beam width matches
+#       masster_unique_fragment_target (256), so search and output budgets agree.
+#   masster_candidate_coverage_metrics: False -> True
+#       candidate_wrecall every step and candidate_recall at validation. This is the point of
+#       the arm: the 2026-09-17 finding puts the beam's captured mass at 0.8695 against 1.0000
+#       for cut_masks, and nothing has measured that on a beam that is actually training.
+#       The every-step half is batched, so it costs ~1.3 ms/batch, not ~45 ms.
+#   The cut_masks-only CUDA candidate backend selector is dropped.
+#       That key belongs to cut_masks. Beam search follows the model device regardless, and the
+#       runner logs the resolved backend as torch_device, so leaving cuda here would only
+#       suggest a device-side candidate path that this arm does not use.
+#
+# The beam's own constraints are already satisfied by the baseline: unique-fragment mode, one
+# proposal mixture, SMARTS off, share_proposal_across_ev off, zero mask-probability floor.
+# masster_ranked_mask_budget and masster_include_single_bond_cuts are cut_masks-only
+# and inert here; they are kept so the diff against the baseline stays readable.
+#
+# Note the beam bypasses charge/pathway marginalization entirely: masster_charge_pooling
+# is inert and the charge head is frozen, so this is NOT an ablation of the proposal search
+# alone - it also drops the learned charge split. See docs/plans/masster/masster_fast_gnn_proposal.md.
+#
+# Everything else - split, subformula filter, merge method, encoder, intensity head,
+# jss_distance objective, warmup boundary at epoch 4, seed, LR, batch sizes, epoch budget -
+# is byte-identical to the _fast baseline.
+wandb_name: nist20_merged_independent_jss_warmup_e0_4_dense_subformula_fast_gnn_proposal
+wandb_group: nist20_mass_shatter_warmup_loss_transform
+wandb_tags:
+  - subformula_filter
+  - masster
+  - vulcan_l40s
+  - nist20
+  - merged
+  - unique_fragments_256
+  - fast_gnn_proposal
+  - beam_width_256
+  - candidate_coverage
+  - deterministic
+  - gine_gsa384
+  - bond_centric
+  - atom_layers_2
+  - bond_layers_3
+  - intensity_transformer
+  - intensity_dim_384
+  - intensity_layers_3
+  - intensity_ff_1024
+  - intensity_inducing_128
+  - independent_intensity
+  - jss_distance
+  - hungarian_peak_matching
+  - gaussian_h_attribution
+  - separate_h_support
+  - h_support_loss_0.1
+  - ce_embed
+  - adduct_embed
+  - proposal_selection_only
+  - proposal_loss_0.1
+  - proposal_mixtures_1
+  - proposal_intensity_transform_none
+  - candidate_conditional
+  - shared_proposal_encoder
+  - proposal_warmup_epochs_0_4
+  - dense_evaluation
+  - mass_only_h_attribution
+  - no_forced_single_cuts
+  - charge_logsumexp
+  - reduced_monitoring
+  - loss_batch_32
+
+seed: 397623
+
+# 1. Merge spectra within each precursor/adduct group while retaining collision
+# energies as context.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  filter_subformula_peaks: True
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: True
+  merge_normalize_each_spectrum: True
+  merge_equal_ce_weight: True
+  preprocess: True
+mol_params:
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_ring_size
+    - a_num_hs
+    - a_mass
+    - a_chiral
+    - a_charge
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+
+# 2. Share the molecular encoder and train proposal only in epochs 0-4.
+# Proposal gradients continue into the shared encoder during joint training.
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: True
+masster_ranked_mask_budget: 1024
+masster_include_single_bond_cuts: False
+masster_max_h_transfer: 4
+masster_include_cmf: True
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_proposal_num_mixtures: 1
+masster_proposal_method: connected_fragment_beam
+masster_fast_gnn_beam_width: 256
+masster_fast_gnn_max_boundary_cuts: 5
+masster_intensity_transformer_dim: 384
+masster_intensity_transformer_num_layers: 3
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 1024
+masster_intensity_transformer_num_inducing_points: 128
+masster_intensity_transformer_dropout: 0.1
+masster_intensity_output: independent
+masster_use_mask_residuals: True
+masster_proposal_anchored: True
+masster_log_base_ce: False
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: True
+masster_proposal_selection_only: True
+masster_proposal_loss_weight: 0.1
+masster_proposal_ints_transform: none
+masster_separate_proposal_encoder: False
+masster_proposal_only_until_epoch: 4
+masster_share_proposal_across_ev: False
+masster_min_mask_relative_probability: 0.0
+masster_min_fragment_relative_probability: 0.0
+masster_min_ion_mode_relative_probability: 0.0
+masster_separate_ion_h_support_head: True
+masster_ion_h_support_binary_logits: True
+masster_gate_independent_intensity_with_support: True
+masster_min_ion_h_relative_probability: 0.0
+masster_min_ion_h_absolute_probability: 0.0
+masster_ion_h_support_loss_weight: 0.1
+masster_apply_channel_selection_in_training: False
+masster_channel_support_attribution: gaussian_posterior
+masster_channel_support_use_intensity_prior: False
+masster_channel_diagnostics: False
+masster_candidate_coverage_metrics: True
+
+# 3. Optimize nonnegative, non-normalized peak intensities with the configured
+# direct objective and separately supervise supported hydrogen-transfer channels.
+loss_type: jss_distance
+ints_transform: none
+masster_peak_matching: hungarian
+masster_kl_epsilon: 1.0e-4
+masster_intensity_entropy_match_weight: 0.0
+predict_oos: False
+oos_loss: False
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 32
+primary_loss_weight: 1.0
+
+dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 64
+eval_batch_size: 64
+accumulate_grad_batches: 4
+automatic_optimization: True
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: False
+
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: True
+min_epochs: 60
+max_epochs: 200
+debug_overfit: False
+compile: False
+pl_enable_progress_bar: True
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - precision
+  - wrecall
+  - wprecision
+  - jss
+eval_mz_bin_res:
+  - 0.01
+
+# Per-instrument loss tolerance. QTOF floors at 0.015 Da to cover NIST23 floor-truncated
+# m/z; FT stays at 10 ppm. FT-only configs are numerically unaffected.
+inst_type_loss_tol:
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}

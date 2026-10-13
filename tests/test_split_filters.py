@@ -16,6 +16,8 @@ import pandas as pd
 import pytest
 
 from fragnnet.dataset.base_dataset import BaseDataset
+from fragnnet.utils import formula_utils, spec_parse_utils
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 # ============================================================================
 # Helpers
@@ -46,13 +48,18 @@ def _make_mol_df(mol_ids: list[int]) -> pd.DataFrame:
     return pd.DataFrame({"mol_id": mol_ids})
 
 
-def _make_split_dir(split_name: str, spec_ids: list[int], mol_ids: list[int]) -> str:
-    """Write a <split>_ids.csv to a temp directory and return the directory path."""
-    tmp = tempfile.mkdtemp()
+def _write_split_file(
+    split_dp: str, split_name: str, spec_ids: list[int], mol_ids: list[int]
+) -> None:
+    """Write a <split>_ids.csv into an existing directory.
+
+    Takes the directory rather than creating one: this used to call mkdtemp() and never
+    remove it, so every test run left one directory per test behind in /tmp (thousands of
+    them accumulated).
+    """
     pd.DataFrame({"spec_id": spec_ids, "mol_id": mol_ids}).to_csv(
-        os.path.join(tmp, f"{split_name}_ids.csv"), index=False
+        os.path.join(split_dp, f"{split_name}_ids.csv"), index=False
     )
-    return tmp
 
 
 def _base_spec_params(**overrides) -> dict:
@@ -65,18 +72,37 @@ def _base_spec_params(**overrides) -> dict:
         "prec_type_str": False,
         "prec_types": ["[M+H]+", "[M-H]-"],
         "inst_type": False,
-        "inst_types": ["FT", "QTOF"],
+        "inst_types": ["ORB", "QTOF"],
         "frag_mode": False,
         "frag_modes": [],
         "prec_mz": False,
         "prec_mass_diff": False,
         "nce": True,
         "ace": True,
+        "fill_missing_ace": True,
         "preprocess": False,
         "unique_id": False,
         "counts": False,
         "test_ces": None,
         "split_filters": {},
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+def _spectrum_cleanup_params(**overrides) -> dict:
+    defaults = {
+        "centroid_peaks": False,
+        "centroid_ppm": 20.0,
+        "centroid_use_instrument_tolerance": False,
+        "centroid_method": "common_overlap",
+        "filter_subformula_peaks": False,
+        "subformula_ppm": 5.0,
+        "subformula_use_instrument_tolerance": True,
+        "filter_above_precursor_peaks": False,
+        "above_precursor_ppm": 10.0,
+        "above_precursor_use_instrument_tolerance": True,
+        "drop_empty_spectra": True,
     }
     defaults.update(overrides)
     return defaults
@@ -89,19 +115,21 @@ def _run_setup_dfs(
     spec_params: dict,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Run BaseDataset._setup_dfs and return (spec_df, mol_df)."""
-    split_dp = _make_split_dir(
-        split_name,
-        spec_ids=spec_df["spec_id"].tolist(),
-        mol_ids=spec_df["mol_id"].tolist(),
-    )
-    result = BaseDataset._setup_dfs(
-        spec_fp_or_df=spec_df,
-        mol_fp_or_df=mol_df,
-        split_dp=split_dp,
-        splits=[split_name],
-        subsample_params={},
-        spec_params=spec_params,
-    )
+    with tempfile.TemporaryDirectory() as split_dp:
+        _write_split_file(
+            split_dp,
+            split_name,
+            spec_ids=spec_df["spec_id"].tolist(),
+            mol_ids=spec_df["mol_id"].tolist(),
+        )
+        result = BaseDataset._setup_dfs(
+            spec_fp_or_df=spec_df,
+            mol_fp_or_df=mol_df,
+            split_dp=split_dp,
+            splits=[split_name],
+            subsample_params={},
+            spec_params=spec_params,
+        )
     out_spec_df, out_mol_df = result[0], result[1]
     return out_spec_df, out_mol_df
 
@@ -121,7 +149,7 @@ def mixed_spec_df():
             "mol_id": 1,
             "group_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 30.0,
             "ace": 15.0,
             "prec_mz": 300.0,
@@ -131,7 +159,7 @@ def mixed_spec_df():
             "mol_id": 1,
             "group_id": 1,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 50.0,
             "ace": 25.0,
             "prec_mz": 300.0,
@@ -141,7 +169,7 @@ def mixed_spec_df():
             "mol_id": 2,
             "group_id": 2,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 70.0,
             "ace": 35.0,
             "prec_mz": 300.0,
@@ -151,7 +179,7 @@ def mixed_spec_df():
             "mol_id": 2,
             "group_id": 2,
             "prec_type": "[M+H]+",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": float("nan"),
             "ace": float("nan"),
             "prec_mz": 300.0,
@@ -162,7 +190,7 @@ def mixed_spec_df():
             "mol_id": 3,
             "group_id": 3,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 40.0,
             "ace": 20.0,
             "prec_mz": 298.0,
@@ -172,7 +200,7 @@ def mixed_spec_df():
             "mol_id": 3,
             "group_id": 3,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 60.0,
             "ace": 30.0,
             "prec_mz": 298.0,
@@ -182,7 +210,7 @@ def mixed_spec_df():
             "mol_id": 4,
             "group_id": 4,
             "prec_type": "[M-H]-",
-            "inst_type": "FT",
+            "inst_type": "ORB",
             "nce": 80.0,
             "ace": 40.0,
             "prec_mz": 298.0,
@@ -304,13 +332,13 @@ class TestFilterCEByInstNCE:
             ft_cfg["nce_min"] = nce_min
         if nce_max is not None:
             ft_cfg["nce_max"] = nce_max
-        return _base_spec_params(split_filters={"train": {"filter_ce_by_inst": {"FT": ft_cfg}}})
+        return _base_spec_params(split_filters={"train": {"filter_ce_by_inst": {"ORB": ft_cfg}}})
 
     def test_ft_spectra_above_nce_max_dropped(self, mixed_spec_df, mixed_mol_df):
         """FT spectra with NCE > 60 (spec_ids 3, 7) are dropped."""
         params = self._params_ft_nce(nce_max=60.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist()
+        ft_ids = out_spec[out_spec["inst_type"] == "ORB"]["spec_id"].tolist()
         assert 3 not in ft_ids
         assert 7 not in ft_ids
 
@@ -318,7 +346,7 @@ class TestFilterCEByInstNCE:
         """FT spectra with 0 ≤ NCE ≤ 60 (spec_ids 1, 2, 5, 6) are kept."""
         params = self._params_ft_nce(nce_min=0.0, nce_max=60.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = set(out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist())
+        ft_ids = set(out_spec[out_spec["inst_type"] == "ORB"]["spec_id"].tolist())
         assert {1, 2, 5, 6}.issubset(ft_ids)
 
     def test_ft_missing_nce_dropped_when_filter_active(self, mixed_spec_df, mixed_mol_df):
@@ -366,7 +394,7 @@ class TestFilterCEByInstACE:
         """FT spectra are not touched by a QTOF-only ACE filter."""
         params = self._params_qtof_ace(ace_max=40.0)
         out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
-        ft_ids = set(out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist())
+        ft_ids = set(out_spec[out_spec["inst_type"] == "ORB"]["spec_id"].tolist())
         assert {1, 2, 3, 4, 5, 6, 7}.issubset(ft_ids)
 
     def test_qtof_ace_filter_with_nce_only_mode(self, mixed_spec_df, mixed_mol_df):
@@ -406,7 +434,7 @@ class TestRampedSteppedCE:
                 "mol_id": 1,
                 "group_id": 1,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "ORB",
                 "nce": 10.0,
                 "nce_extra_1": 50.0,
                 "nce_extra_2": float("nan"),
@@ -421,7 +449,7 @@ class TestRampedSteppedCE:
                 "mol_id": 2,
                 "group_id": 2,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "ORB",
                 "nce": 10.0,
                 "nce_extra_1": 70.0,
                 "nce_extra_2": float("nan"),
@@ -436,7 +464,7 @@ class TestRampedSteppedCE:
                 "mol_id": 3,
                 "group_id": 3,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "ORB",
                 "nce": 20.0,
                 "nce_extra_1": 40.0,
                 "nce_extra_2": 60.0,
@@ -451,7 +479,7 @@ class TestRampedSteppedCE:
                 "mol_id": 4,
                 "group_id": 4,
                 "prec_type": "[M+H]+",
-                "inst_type": "FT",
+                "inst_type": "ORB",
                 "nce": 20.0,
                 "nce_extra_1": 40.0,
                 "nce_extra_2": 80.0,
@@ -468,7 +496,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_max": 60.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"ORB": {"nce_max": 60.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 1 in out_spec["spec_id"].values  # ramp [10–50]: within range
@@ -479,7 +507,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_max": 60.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"ORB": {"nce_max": 60.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 3 in out_spec["spec_id"].values  # stepped [20/40/60]: all ≤ 60
@@ -490,7 +518,7 @@ class TestRampedSteppedCE:
         spec_df = self._make_ramped_spec_df()
         mol_df = _make_mol_df([1, 2, 3, 4])
         params = _base_spec_params(
-            split_filters={"train": {"filter_ce_by_inst": {"FT": {"nce_min": 15.0}}}}
+            split_filters={"train": {"filter_ce_by_inst": {"ORB": {"nce_min": 15.0}}}}
         )
         out_spec, _ = _run_setup_dfs(spec_df, mol_df, "train", params)
         assert 1 not in out_spec["spec_id"].values  # primary 10 < 15 → dropped
@@ -509,7 +537,7 @@ class TestCombinedFilter:
                 "train": {
                     "filter_prec_types": True,
                     "filter_ce_by_inst": {
-                        "FT": {"nce_min": 0.0, "nce_max": 60.0},
+                        "ORB": {"nce_min": 0.0, "nce_max": 60.0},
                         "QTOF": {"ace_min": 0.0, "ace_max": 40.0},
                     },
                 },
@@ -550,3 +578,218 @@ class TestCombinedFilter:
         assert 4 not in mol_ids  # spec 7 (only spec for mol 4) dropped
         assert 6 not in mol_ids  # spec 10 ([M+Na]+) dropped
         assert {1, 3, 5}.issubset(mol_ids)  # these mols still have surviving spectra
+
+
+class TestSpectrumCleanup:
+    def test_above_precursor_filter_runs_during_dataframe_preprocessing(self):
+        """The above-precursor cut must reach the target through spec_params, not just the util."""
+        # 101.0 is the precursor, 102.0034 its M+1 isotopologue, 150.0 a co-isolated species.
+        peaks = [(50.0, 1.0), (101.0, 5.0), (102.0034, 2.0), (150.0, 3.0)]
+        spec_df = _make_spec_df(
+            [
+                {
+                    "spec_id": 1,
+                    "mol_id": 1,
+                    "group_id": 1,
+                    "prec_type": "[M+H]+",
+                    "inst_type": "ORB",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 101.0,
+                    "peaks": peaks,
+                }
+            ]
+        )
+        mol_df = _make_mol_df([1])
+
+        off = _run_setup_dfs(
+            spec_df,
+            mol_df,
+            "train",
+            _base_spec_params(**_spectrum_cleanup_params()),
+        )[0]
+        on = _run_setup_dfs(
+            spec_df,
+            mol_df,
+            "train",
+            _base_spec_params(
+                **_spectrum_cleanup_params(filter_above_precursor_peaks=True)
+            ),
+        )[0]
+
+        assert [mz for mz, _ in off.loc[0, "peaks"]] == [50.0, 101.0, 102.0034, 150.0]
+        assert [mz for mz, _ in on.loc[0, "peaks"]] == [50.0, 101.0]
+
+    def test_template_cleanup_settings_only_drop_preexisting_empty_spectra(self):
+        peaks = [(100.0, 1.0), (100.001, 2.0)]
+        spec_df = _make_spec_df(
+            [
+                {
+                    "spec_id": 1,
+                    "mol_id": 1,
+                    "group_id": 1,
+                    "prec_type": "[M+H]+",
+                    "inst_type": "ORB",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 101.0,
+                    "peaks": peaks,
+                },
+                {
+                    "spec_id": 2,
+                    "mol_id": 2,
+                    "group_id": 2,
+                    "prec_type": "[M+H]+",
+                    "inst_type": "ORB",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 101.0,
+                    "peaks": [],
+                },
+            ]
+        )
+        mol_df = _make_mol_df([1, 2])
+        params = _base_spec_params(**_spectrum_cleanup_params())
+
+        out_spec, out_mol = _run_setup_dfs(spec_df, mol_df, "train", params)
+
+        assert out_spec["spec_id"].tolist() == [1]
+        assert out_spec.loc[0, "peaks"] == peaks
+        assert out_mol["mol_id"].tolist() == [1]
+
+    @pytest.mark.parametrize(
+        ("use_instrument_tolerance", "expected_spec_ids"),
+        [(True, [1]), (False, [])],
+    )
+    def test_subformula_instrument_tolerance_overrides_fixed_ppm(
+        self, use_instrument_tolerance, expected_spec_ids
+    ):
+        theoretical_mz = (
+            formula_utils.formula_to_mass("CH4")
+            + PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+        )
+        spec_df = _make_spec_df(
+            [
+                {
+                    "spec_id": 1,
+                    "mol_id": 1,
+                    "group_id": 1,
+                    "prec_type": "[M+H]+",
+                    "inst_type": "QTOF",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": theoretical_mz,
+                    "peaks": [(theoretical_mz + 0.01, 1.0)],
+                }
+            ]
+        )
+        mol_df = pd.DataFrame({"mol_id": [1], "formula": ["CH4"]})
+        params = _base_spec_params(
+            **_spectrum_cleanup_params(
+                filter_subformula_peaks=True,
+                subformula_ppm=5.0,
+                subformula_use_instrument_tolerance=use_instrument_tolerance,
+            )
+        )
+
+        out_spec, out_mol = _run_setup_dfs(spec_df, mol_df, "train", params)
+
+        assert out_spec["spec_id"].tolist() == expected_spec_ids
+        assert out_mol["mol_id"].tolist() == expected_spec_ids
+
+    def test_centroid_and_subformula_filter_run_during_dataframe_preprocessing(self):
+        carbon_ion_mz = formula_utils.formula_to_mass("C") - spec_parse_utils.ELECTRON_MASS
+        spec_df = _make_spec_df(
+            [
+                {
+                    "spec_id": 1,
+                    "mol_id": 1,
+                    "group_id": 1,
+                    "prec_type": "[M]+",
+                    "inst_type": "ORB",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 16.0,
+                    "peaks": [
+                        (carbon_ion_mz - 2e-5, 1.0),
+                        (carbon_ion_mz + 2e-5, 3.0),
+                        (50.0, 2.0),
+                    ],
+                },
+                {
+                    "spec_id": 2,
+                    "mol_id": 2,
+                    "group_id": 2,
+                    "prec_type": "[M]+",
+                    "inst_type": "ORB",
+                    "nce": 20.0,
+                    "ace": 10.0,
+                    "prec_mz": 16.0,
+                    "peaks": [(50.0, 2.0)],
+                },
+            ]
+        )
+        mol_df = pd.DataFrame(
+            {"mol_id": [1, 2], "formula": ["CH4", "CH4"]}
+        )
+        params = _base_spec_params(
+            prec_types=["[M]+"],
+            **_spectrum_cleanup_params(
+                centroid_peaks=True,
+                filter_subformula_peaks=True,
+                drop_empty_spectra=True,
+            ),
+        )
+
+        out_spec, out_mol = _run_setup_dfs(spec_df, mol_df, "train", params)
+
+        assert out_spec["spec_id"].tolist() == [1]
+        assert out_mol["mol_id"].tolist() == [1]
+        assert out_spec.loc[0, "peaks"] == pytest.approx([(carbon_ion_mz + 1e-5, 4.0)])
+
+    def test_partial_cleanup_config_is_rejected(self, mixed_spec_df, mixed_mol_df):
+        params = _base_spec_params(centroid_peaks=True)
+
+        with pytest.raises(ValueError, match="missing required spectrum cleanup settings"):
+            _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
+
+
+# ============================================================================
+# Tests: fill_missing_ace
+# ============================================================================
+
+
+class TestFillMissingAce:
+    """spec_params.fill_missing_ace decides whether a missing eV is filled from NCE."""
+
+    @pytest.fixture
+    def ce_spec_df(self) -> pd.DataFrame:
+        base = {"group_id": 1, "prec_type": "[M+H]+", "inst_type": "ORB", "prec_mz": 300.0}
+        return _make_spec_df(
+            [
+                {**base, "spec_id": 1, "mol_id": 1, "nce": 30.0, "ace": 15.0},  # recorded eV
+                {**base, "spec_id": 2, "mol_id": 1, "nce": 30.0, "ace": float("nan")},  # no eV
+                {**base, "spec_id": 3, "mol_id": 2, "nce": float("nan"), "ace": 20.0},  # no NCE
+            ]
+        )
+
+    def _ces(self, ce_spec_df: pd.DataFrame, fill: bool) -> pd.DataFrame:
+        params = _base_spec_params(fill_missing_ace=fill)
+        out_spec, _ = _run_setup_dfs(ce_spec_df, _make_mol_df([1, 2]), "train", params)
+        return out_spec.set_index("spec_id")[["nce", "ace"]]
+
+    def test_default_fills_missing_ace_from_nce(self, ce_spec_df):
+        ces = self._ces(ce_spec_df, fill=True)
+        # 30 NCE x 300 m/z x charge factor 1.0 / 500
+        assert ces.loc[2, "ace"] == pytest.approx([18.0])
+
+    def test_disabled_leaves_missing_ace_as_sentinel(self, ce_spec_df):
+        ces = self._ces(ce_spec_df, fill=False)
+        assert ces.loc[2, "ace"] == [-1]
+        assert ces.loc[1, "ace"] == pytest.approx([15.0])
+
+    @pytest.mark.parametrize("fill", [True, False])
+    def test_nce_still_filled_from_ace(self, ce_spec_df, fill):
+        ces = self._ces(ce_spec_df, fill=fill)
+        assert ces.loc[3, "nce"] == pytest.approx([20.0 * 500.0 / 300.0])
+        assert ces.loc[3, "ace"] == pytest.approx([20.0])

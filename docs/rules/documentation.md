@@ -1,0 +1,83 @@
+# Documentation rules
+
+> **Status:** REFERENCE · **Updated:** 2026-10-12
+> Placement and maintenance conventions for project documentation. The 2026-10-06 consolidation
+> added workstream hubs, the project-state size cap, and `docs/history/`.
+
+- Put code documentation in docstrings and config documentation in YAML comments under `config/`.
+- Create README files only at the repository root or `docs/README.md`, unless explicitly
+  requested elsewhere. Preserve existing README files. Do not put Markdown alongside source code
+  or under `src/`.
+- Organize project documents by purpose:
+
+  | Location | Purpose |
+  | --- | --- |
+  | `docs/workstreams/` | One hub per workstream: where it stands, open threads, settled conclusions, and every plan and finding in it |
+  | `docs/guides/` | How to run a specific operation |
+  | `docs/reference/` | Detailed current system behavior |
+  | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASSter findings in `masster/`, cross-model and shared-data findings at top level |
+  | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASSter plans in `masster/`, cross-model plans at top level |
+  | `docs/history/` | Frozen verbatim logs moved out of live documents; never the canonical home of a fact |
+  | `docs/notes/` | Scratch and literature notes |
+  | `docs/figures/` | Figures referenced by documentation |
+  | `docs/rules/` | Shared constraints |
+  | `docs/workflow/` | Shared development and experiment procedures |
+
+- Keep the architecture map, current-state entry point, and documentation index at `docs/`
+  top level. The curated `findings/fragnnet/missing_peak_findings.md` and
+  `findings/fragnnet/missing_peak_findings_m-h.md` analyses are append-only. Use their `/analyze-subclass` and
+  `/analyze-subclass-mh` procedures when available; if unavailable, read the procedure and
+  resolve how to preserve its append-only contract before changing the logs.
+
+## Where each kind of fact goes
+
+- **`docs/project-state.md` is a dashboard, capped at about 200 lines.** It holds one block per
+  workstream (status, best result, prepared or uncommitted work, next action, hub link) and a
+  list of uncommitted working-tree changes. Update a workstream by **replacing** its block, never
+  by prepending a dated entry. Dated narrative, numbers, run IDs and decisions go in the plan or
+  finding; project-state only points at them.
+- **A workstream hub** (`docs/workstreams/<name>.md`) is a map, not a copy: its "Where it stands"
+  and "Open threads" stay current, its "Settled" list gives one-line verdicts with links, and its
+  "All documents" table lists every plan and finding in the workstream. A new workstream gets a
+  new hub and a row in `docs/README.md` and project-state.
+- **A plan** carries its own dated progress. When a plan passes about 600 lines, move its dated
+  log sections verbatim to `docs/history/<plan-stem>_log.md`, keep a `## Current summary` in the
+  plan, and repoint inbound anchor links. Keep heading text identical so anchors survive the move.
+- **Findings** hold measurements and conclusions; one canonical location per fact. Link to it
+  instead of restating numbers elsewhere.
+- **Paths in frozen records** (findings, plans, `docs/history/`) are as of `13b1599d`, before
+  the reorganization moved FraGNNet, MASSter and the baselines into `src/fragnnet/models/` and
+  `src/fragnnet/baselines/`; use git history to resolve them. Repoint links only in live
+  documents (the architecture map, README files, `docs/reference/`, `docs/guides/`, hubs, notes).
+
+## Status banners
+
+Every project document needs a status banner directly below its H1:
+`> **Status:** <STATUS> · **Updated:** YYYY-MM-DD`, then a one-line current state. Tool entry
+points and thin rule pointers need not repeat it. Update the banner when a conclusion or task
+status changes, and use only these statuses:
+
+| Status | Meaning |
+|--------|---------|
+| `HUB` | Workstream map in `docs/workstreams/`. |
+| `ACTIVE` | Current: someone is working on it and something happens next. |
+| `PREPARED` | Configs or code ready; not submitted or not run. |
+| `PROPOSED` | Written up, not started. |
+| `DEFERRED` | Not pursued now; still open. Mark an `ACTIVE` plan idle for over a week `DEFERRED`. |
+| `LANDED` | Shipped; the doc now describes production behavior. |
+| `FINDING` | A measurement and its conclusion. |
+| `CLOSED NULL` | Measured, no headroom. **Read before re-proposing the same mechanism.** |
+| `STOPPED` / `SUPERSEDED` | Do not resume without reading why it stopped or what replaced it. |
+| `GUIDE` / `REFERENCE` / `NOTE` | How to run something, how the system works, or scratch/literature; verify against current code. |
+| `CURATED ANALYSIS` | Long-running append-only analysis. Append via its slash command rather than hand-editing. |
+
+Keep failed and negative-result plans in place with `CLOSED NULL`, `STOPPED`, or `SUPERSEDED`
+and the reason they stopped. Do not archive or delete them.
+
+## Adding, moving, or renaming a document
+
+Add or update its row in its workstream hub (or, for guides, reference, notes, rules and hubs,
+in `docs/README.md`). Search for affected paths in `src/`, `tests/`, `scripts/`, `config/`,
+`slurm_scripts/`, and `INSTALL.md`, including `.yaml`, `.yml`, `.sh`, and `.pyx` files.
+Check relative links from the document's actual directory; links from a subdirectory
+to the repository root typically need `../../`, and to figures need `../figures/`.

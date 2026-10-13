@@ -9,26 +9,26 @@ Tests cover:
 - ce_embed_dim: CEModel sets this correctly for mol, mlp, and dual-CE configurations.
 """
 
-import pytest
 import torch
 import torch.nn as nn
 
-from fragnnet.model.base_model import CEModel
+from fragnnet.layers.metadata_embedding import CEModel
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-CE_DIM = 32        # single NCE embed size
-NUM_DEPTH = 3      # depth 0..3 → 4 buckets
-OUTPUT_DIM = 9     # 2*num_hs+1 (num_hs=4)
+CE_DIM = 32  # single NCE embed size
+NUM_DEPTH = 3  # depth 0..3 → 4 buckets
+OUTPUT_DIM = 9  # 2*num_hs+1 (num_hs=4)
 BATCH_SIZE = 3
-NUM_NODES = 9      # 3 nodes per sample
+NUM_NODES = 9  # 3 nodes per sample
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_layer(ce_dim: int = CE_DIM, num_depth: int = NUM_DEPTH) -> nn.Linear:
     """Return a zero-initialised depth_ce_bias_layer."""
@@ -39,14 +39,14 @@ def _make_layer(ce_dim: int = CE_DIM, num_depth: int = NUM_DEPTH) -> nn.Linear:
 
 
 def _apply_depth_ce_bias(
-    logits: torch.Tensor,             # (n_nodes, output_dim)
+    logits: torch.Tensor,  # (n_nodes, output_dim)
     layer: nn.Linear,
-    ce_embed: torch.Tensor,           # (batch, ce_dim)
-    depth_idx: torch.Tensor,          # (n_nodes,) int in [0, num_depth]
+    ce_embed: torch.Tensor,  # (batch, ce_dim)
+    depth_idx: torch.Tensor,  # (n_nodes,) int in [0, num_depth]
     frag_node_batch_idxs: torch.Tensor,  # (n_nodes,) int
 ) -> torch.Tensor:
     """Mirror the forward-pass application logic from fragnnet_model.py."""
-    bias_per_depth = layer(ce_embed)                               # (batch, num_depth+1)
+    bias_per_depth = layer(ce_embed)  # (batch, num_depth+1)
     per_node_bias = bias_per_depth[frag_node_batch_idxs, depth_idx]  # (n_nodes,)
     return logits + per_node_bias.unsqueeze(-1)
 
@@ -69,9 +69,7 @@ class TestDepthCEBiasIdentityAtInit:
         with torch.no_grad():
             out = _apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs)
 
-        assert torch.allclose(out, logits, atol=1e-6), (
-            f"Max diff: {(out - logits).abs().max()}"
-        )
+        assert torch.allclose(out, logits, atol=1e-6), f"Max diff: {(out - logits).abs().max()}"
 
     def test_layer_weights_are_zero(self) -> None:
         """Verify that zero-init creates exactly zero weight and bias tensors."""
@@ -130,9 +128,7 @@ class TestDepthCEBiasKnownWeights:
         # Depth-1 nodes (indices 1 and 4) should be shifted by +0.5
         expected = logits.clone()
         expected[[1, 4]] += 0.5
-        assert torch.allclose(out, expected, atol=1e-6), (
-            f"Max diff: {(out - expected).abs().max()}"
-        )
+        assert torch.allclose(out, expected, atol=1e-6), f"Max diff: {(out - expected).abs().max()}"
 
     def test_negative_bias_suppresses_logits(self) -> None:
         """Negative bias at depth-3 suppresses those nodes' logits."""
@@ -165,13 +161,17 @@ class TestDepthCEBiasDifferentiation:
 
         # Create two samples at depth=1 with different CE embeddings
         ce_embed = torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
-        depth_idx = torch.tensor([1, 1])    # both nodes at depth 1
+        depth_idx = torch.tensor([1, 1])  # both nodes at depth 1
         node_batch_idxs = torch.tensor([0, 1])
         logits = torch.ones(2, 5)
         target = torch.tensor([[2.0] * 5, [0.5] * 5])
 
         optimizer = torch.optim.SGD(layer.parameters(), lr=0.5)
-        loss = (_apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs) - target).pow(2).mean()
+        loss = (
+            (_apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs) - target)
+            .pow(2)
+            .mean()
+        )
         loss.backward()
         optimizer.step()
 
@@ -179,31 +179,35 @@ class TestDepthCEBiasDifferentiation:
             out = _apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs)
 
         # After training the two CE inputs must produce different outputs
-        assert not torch.allclose(out[0], out[1], atol=1e-4), (
-            "Samples with different CE embeddings should produce different biases after training"
-        )
+        assert not torch.allclose(
+            out[0], out[1], atol=1e-4
+        ), "Samples with different CE embeddings should produce different biases after training"
 
     def test_different_depth_same_ce_gives_different_bias(self) -> None:
         """After one SGD step, nodes at different depths get different biases."""
         layer = _make_layer(ce_dim=4, num_depth=3)
 
-        ce_embed = torch.zeros(1, 4)   # single sample
-        depth_idx = torch.tensor([0, 3])   # depth 0 vs depth 3
+        ce_embed = torch.zeros(1, 4)  # single sample
+        depth_idx = torch.tensor([0, 3])  # depth 0 vs depth 3
         node_batch_idxs = torch.zeros(2, dtype=torch.long)
         logits = torch.ones(2, 5)
         target = torch.tensor([[3.0] * 5, [-1.0] * 5])
 
         optimizer = torch.optim.SGD(layer.parameters(), lr=0.5)
-        loss = (_apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs) - target).pow(2).mean()
+        loss = (
+            (_apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs) - target)
+            .pow(2)
+            .mean()
+        )
         loss.backward()
         optimizer.step()
 
         with torch.no_grad():
             out = _apply_depth_ce_bias(logits, layer, ce_embed, depth_idx, node_batch_idxs)
 
-        assert not torch.allclose(out[0], out[1], atol=1e-4), (
-            "Nodes at different depths should produce different biases after training"
-        )
+        assert not torch.allclose(
+            out[0], out[1], atol=1e-4
+        ), "Nodes at different depths should produce different biases after training"
 
 
 # ---------------------------------------------------------------------------

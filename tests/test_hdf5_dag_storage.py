@@ -1,15 +1,114 @@
 """Tests for HDF5 DAG serialization round-trip."""
 
+import json
+from unittest.mock import patch
+
 import h5py
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 import torch_geometric as pyg
 
-from fragnnet.utils.frag_utils import dump_dag_hdf5, load_dag_hdf5
+from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.dag.storage import (
+    PACKED_DAG_BYTES_DATASET,
+    PACKED_DAG_FORMAT,
+    PACKED_DAG_FORMAT_ATTR,
+    PACKED_DAG_INDEX_DATASET,
+    dump_dag_hdf5_packed,
+    initialize_packed_dag_hdf5,
+    load_dag_hdf5,
+    load_dag_hdf5_from_group,
+)
 
 
-def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int) -> dict:
+# The legacy per-group HDF5 writer. Production writes the packed format and only reads legacy
+# per-group files (load_dag_hdf5_from_group), so the writer lives here to build their fixtures.
+def dump_dag_hdf5(h5_group: h5py.Group, dag_d: dict) -> None:
+    """Write one DAG dictionary into an open h5py group.
+
+    All PyTorch tensors are converted to numpy arrays before writing.
+    Dict-typed fields (``idx_to_formula``, ``idx_by_h_delta``, depth-by-depth
+    counts) are JSON-encoded and stored as group attributes.
+
+    Args:
+        h5_group: An open, writable ``h5py.Group`` for this molecule.
+        dag_d: DAG payload dictionary as returned by ``compute_dags``.
+    """
+
+    dag = dag_d["dag"]
+    g = h5_group.create_group("dag")
+    g.create_dataset("x", data=dag.x.numpy(), compression="gzip", compression_opts=4)
+    g.create_dataset(
+        "edge_index", data=dag.edge_index.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset(
+        "edge_attr", data=dag.edge_attr.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
+    g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(dag, name):
+            g.create_dataset(
+                name, data=getattr(dag, name).numpy(), compression="gzip", compression_opts=4
+            )
+
+    h5_group.create_dataset(
+        "formula_peak_mzs",
+        data=dag_d["formula_peak_mzs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+    h5_group.create_dataset(
+        "formula_peak_probs",
+        data=dag_d["formula_peak_probs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+
+    edges_min_depth = dag_d["edges_min_depth"]
+    nodes_min_depth = dag_d["nodes_min_depth"]
+    h5_group.create_dataset("edges_min_depth", data=edges_min_depth)
+    h5_group.create_dataset("nodes_min_depth", data=nodes_min_depth)
+
+    # JSON-encoded variable-structure fields
+    h5_group.attrs["idx_to_formula"] = json.dumps(
+        {str(k): v for k, v in dag_d["idx_to_formula"].items()}
+    )
+    h5_group.attrs["idx_by_h_delta"] = json.dumps(
+        [sorted(map(int, s)) for s in dag_d["idx_by_h_delta"]]
+    )
+    h5_group.attrs["dag_num_edges_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_edges_by_depth"].items()}
+    )
+    h5_group.attrs["dag_num_nodes_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_nodes_by_depth"].items()}
+    )
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        h5_group.attrs[key] = int(dag_d[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        h5_group.attrs[key] = float(dag_d[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        h5_group.attrs[key] = bool(dag_d[key])
+
+
+def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int, seed: int = 0) -> dict:
     """Build a minimal dag_d dict matching the structure from compute_dags."""
     node_feat_dim = 10
     edge_feat_dim = 8
@@ -31,20 +130,24 @@ def _make_dag_d(num_nodes: int, num_edges: int, num_formulae: int) -> dict:
     dag.boundary_pair_in_local = torch.tensor([0, 1 if num_nodes > 1 else 0], dtype=torch.long)
     dag.boundary_pair_out_local = torch.tensor([1 if num_nodes > 1 else 0, 0], dtype=torch.long)
 
-    idx_to_formula = {i: f"C{i}H{i+2}" for i in range(num_formulae)}
+    idx_to_formula = {i: f"C{i}H{i + 2}" for i in range(num_formulae)}
     idx_to_formula[0] = ""  # root node has empty formula
 
+    # Seeded generator: the round-trip assertions compare exact values, so the fixture
+    # must not depend on global RNG state left behind by whatever test ran before.
+    rng = np.random.default_rng(seed)
     num_h_delta_slots = 1 + 2 * max_h_transfer
     idx_by_h_delta = [
-        set(np.random.choice(num_formulae, size=2, replace=False).tolist())
+        set(rng.choice(num_formulae, size=2, replace=False).tolist())
         for _ in range(num_h_delta_slots)
     ]
 
     edges_min_depth = (
-        np.random.randint(0, 3, size=num_edges).astype(np.int32) if num_edges > 0
+        rng.integers(0, 3, size=num_edges).astype(np.int32)
+        if num_edges > 0
         else np.array([], dtype=np.int32)
     )
-    nodes_min_depth = np.random.randint(0, 3, size=num_nodes).astype(np.int32)
+    nodes_min_depth = rng.integers(0, 3, size=num_nodes).astype(np.int32)
 
     return {
         "dag": dag,
@@ -115,7 +218,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group(mol_key), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f[mol_key])
+            loaded = load_dag_hdf5_from_group(h5f[mol_key])
 
         _assert_dag_d_equal(dag_d, loaded)
 
@@ -129,7 +232,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group(mol_key), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f[mol_key])
+            loaded = load_dag_hdf5_from_group(h5f[mol_key])
 
         assert loaded["dag"].num_edges == 0
         assert loaded["dag"].num_nodes == 1
@@ -146,8 +249,90 @@ class TestDagHdf5RoundTrip:
 
         with h5py.File(h5_fp, "r") as h5f:
             for mol_id, orig in dags.items():
-                loaded = load_dag_hdf5(h5f[f"{int(mol_id)}"])
+                loaded = load_dag_hdf5_from_group(h5f[f"{int(mol_id)}"])
                 _assert_dag_d_equal(orig, loaded)
+
+    def test_packed_round_trip_with_sparse_ids(self, tmp_path):
+        """Packed storage provides direct lookup while allowing gaps in mol_ids."""
+        dags = {0: _make_dag_d(5, 6, 4), 5: _make_dag_d(12, 20, 10)}
+        h5_fp = str(tmp_path / "packed_dags.h5")
+
+        with h5py.File(h5_fp, "w") as h5f:
+            initialize_packed_dag_hdf5(h5f)
+            for mol_id, dag_d in reversed(dags.items()):
+                dump_dag_hdf5_packed(h5f, mol_id, dag_d)
+
+        with h5py.File(h5_fp, "r") as h5f:
+            assert h5f[PACKED_DAG_INDEX_DATASET].shape == (6,)
+            assert int(h5f[PACKED_DAG_INDEX_DATASET][1]["length"]) == 0
+            for mol_id, orig in dags.items():
+                _assert_dag_d_equal(orig, load_dag_hdf5(h5f, mol_id))
+
+    def test_packed_missing_and_duplicate_ids(self, tmp_path):
+        """Zero-length index records mark missing IDs and duplicate writes fail."""
+        dag_d = _make_dag_d(5, 6, 4)
+        h5_fp = str(tmp_path / "packed_dags.h5")
+
+        with h5py.File(h5_fp, "w") as h5f:
+            initialize_packed_dag_hdf5(h5f)
+            dump_dag_hdf5_packed(h5f, 3, dag_d)
+
+            with pytest.raises(KeyError, match="mol_id 2"):
+                load_dag_hdf5(h5f, 2)
+            with pytest.raises(ValueError, match="Duplicate mol_id"):
+                dump_dag_hdf5_packed(h5f, 3, dag_d)
+
+    def test_legacy_file_lookup_by_mol_id(self, tmp_path):
+        """The dataset-facing API continues to read existing group-based files."""
+        dag_d = _make_dag_d(5, 6, 4)
+        h5_fp = str(tmp_path / "legacy_dags.h5")
+
+        with h5py.File(h5_fp, "w") as h5f:
+            dump_dag_hdf5(h5f.create_group("7"), dag_d)
+
+        with h5py.File(h5_fp, "r") as h5f:
+            _assert_dag_d_equal(dag_d, load_dag_hdf5(h5f, 7))
+
+    def test_frag_generation_consumes_results_unordered(self, tmp_path):
+        """HDF5 keys make fragment-generation result order irrelevant."""
+        mol_df = pd.DataFrame({"mol": ["first", "second"], "mol_id": [1, 2]})
+        results_by_id = {
+            1: _make_dag_d(4, 3, 3),
+            2: _make_dag_d(6, 7, 5),
+        }
+        results = iter([(2, results_by_id[2]), (1, results_by_id[1])])
+        h5_fp = str(tmp_path / "dags.h5")
+
+        with (
+            patch("fragnnet.models.fragnnet.dag.builder.par_apply", return_value=results) as mock_apply,
+            h5py.File(h5_fp, "w") as h5f,
+        ):
+            meta_info = run_frag_gen_hdf5(
+                mol_df=mol_df,
+                h5_file=h5f,
+                max_depth=3,
+                max_h_transfer=4,
+                max_time=150,
+                isotopes=True,
+                nb_isomorphic=False,
+                wl_max_iterations=3,
+                multi_cut_bfs=False,
+                max_cut_size=2,
+                smarts_prepass=False,
+                min_frag_atoms=0,
+                disable_tqdm=True,
+            )
+
+            assert set(h5f.keys()) == {
+                PACKED_DAG_BYTES_DATASET,
+                PACKED_DAG_INDEX_DATASET,
+            }
+            assert h5f.attrs[PACKED_DAG_FORMAT_ATTR] == PACKED_DAG_FORMAT
+            _assert_dag_d_equal(results_by_id[1], load_dag_hdf5(h5f, 1))
+            _assert_dag_d_equal(results_by_id[2], load_dag_hdf5(h5f, 2))
+
+        assert set(meta_info) == {"1", "2"}
+        assert mock_apply.call_args.kwargs == {"return_as_generator": True}
 
     def test_dtype_preservation(self, tmp_path):
         """node features (int64) and formula tensors (float32) dtypes survive round-trip."""
@@ -158,7 +343,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert loaded["dag"].x.dtype == torch.int64
         assert loaded["dag"].edge_index.dtype == torch.int64
@@ -176,7 +361,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert loaded["idx_to_formula"][0] == ""
 
@@ -190,7 +375,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert len(loaded["idx_by_h_delta"]) == 1 + 2 * max_h_transfer
         for slot in loaded["idx_by_h_delta"]:
@@ -205,10 +390,18 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
-        for key in ["max_depth", "reached_depth", "max_h_transfer", "dag_num_edges",
-                    "dag_num_nodes", "dag_num_nodes_nb", "node_feature_size", "edge_feature_size"]:
+        for key in [
+            "max_depth",
+            "reached_depth",
+            "max_h_transfer",
+            "dag_num_edges",
+            "dag_num_nodes",
+            "dag_num_nodes_nb",
+            "node_feature_size",
+            "edge_feature_size",
+        ]:
             assert isinstance(loaded[key], int), f"{key} should be int, got {type(loaded[key])}"
         for key in ["dag_sparsity", "formula_redundancy"]:
             assert isinstance(loaded[key], float), f"{key} should be float, got {type(loaded[key])}"
@@ -226,7 +419,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert loaded["dag_num_edges_by_depth"] == {0: 4, 1: 3, 2: 2}
         assert loaded["dag_num_nodes_by_depth"] == {0: 1, 1: 3, 2: 3}
@@ -244,7 +437,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert loaded["formula_peak_mzs"].shape == (num_formulae, num_isotopes)
         assert loaded["formula_peak_probs"].shape == (num_formulae, num_isotopes)
@@ -259,7 +452,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         np.testing.assert_array_equal(loaded["nodes_min_depth"], [0, 1, 1, 2, 2])
 
@@ -275,7 +468,7 @@ class TestDagHdf5RoundTrip:
             dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["0"])
+            loaded = load_dag_hdf5_from_group(h5f["0"])
 
         assert loaded["force_stopped"] == force_stopped
         assert loaded["h_prior"] == h_prior

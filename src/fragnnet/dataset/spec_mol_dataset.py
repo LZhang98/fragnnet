@@ -1,14 +1,20 @@
+import logging
+
 from torch_geometric.data import Batch
 from tqdm import tqdm
 
-# TODO move this another Class
-import fragnnet.massformer.data_utils as mf_data_utils
+from fragnnet import registry
 from fragnnet.dataset import BaseDataset
 from fragnnet.utils.feat_utils import get_mol_fp, get_mol_graph
 from fragnnet.utils.misc_utils import get_mol_graph_size
 
+logger = logging.getLogger(__name__)
+
 
 class SpecMolDataset(BaseDataset):
+    # Whether this class builds MassFormer's ``mol_mf`` input; only ``SpecMolMFDataset`` does.
+    handles_mol_mf = False
+
     def __init__(
         self,
         spec_fp: str,
@@ -48,6 +54,11 @@ class SpecMolDataset(BaseDataset):
             subsample_params=subsample_params,
             spec_params=spec_params,
             enable_progress_bar=pl_enable_progress_bar,
+        )
+        # Model-specific filtering (MASSter drops pairs without a valid ion), after the frames are
+        # built and before preprocessing. Unknown, legacy or missing types filter nothing.
+        registry.get_model_hooks(kwargs.get("model_type"), strict=False).filter_dataset(
+            self, kwargs
         )
 
         if spec_pp_sd is None:
@@ -109,7 +120,7 @@ class SpecMolDataset(BaseDataset):
                 mol_data = self._process_mol(mol_entry)
                 total_mol_graph_size += self._get_mol_graph_size(mol_data)
                 self.mol_datas[mol_entry["mol_id"]] = mol_data
-            print(f"> total_mol_graph_size: {total_mol_graph_size / 1e6:.2f} MB")
+            logger.info("total_mol_graph_size: %.2f MB", total_mol_graph_size / 1e6)
 
     def __getitem__(self, idx: int) -> dict:
         """
@@ -147,8 +158,12 @@ class SpecMolDataset(BaseDataset):
                 - mol_smiles: SMILES string (if smiles enabled)
                 - mol_fingerprint: Molecular fingerprint (if fingerprint enabled)
                 - mol_pyg: PyG graph representation (if pyg enabled)
-                - mol_mf: MassFormer preprocessed data (if mf enabled)
         """
+        if self.mol_params["mf"] and not self.handles_mol_mf:
+            raise ValueError(
+                "mol_params.mf needs MassFormer's dataset (SpecMolMFDataset, model_type "
+                f"'massformer'); {type(self).__name__} does not build mol_mf"
+            )
         mol_data = {}
         mol = mol_entry["mol"]
         if self.mol_params["smiles"]:
@@ -174,9 +189,6 @@ class SpecMolDataset(BaseDataset):
                 self.mol_params["pyg_bigraph"],
             )
             mol_data["mol_pyg"] = mol_pyg
-        if self.mol_params["mf"]:
-            mol_mf = mf_data_utils.gf_preprocess(mol, -1)
-            mol_data["mol_mf"] = mol_mf
         return mol_data
 
     @staticmethod
@@ -192,7 +204,7 @@ class SpecMolDataset(BaseDataset):
     @staticmethod
     def _special_collate(keys: list[str], collate_data: dict) -> None:
         """
-        Handle special collation for molecular graph data and MassFormer data.
+        Handle special collation for molecular graph data.
 
         Mutates keys and collate_data in-place to batch molecular graphs and special data types.
 
@@ -205,19 +217,6 @@ class SpecMolDataset(BaseDataset):
             collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
             # remove from list
             keys.remove("mol_pyg")
-        if "mol_mf" in keys:
-            # batch
-            mol_mf_d = mf_data_utils.collator(collate_data["mol_mf"])
-            for k, v in mol_mf_d.items():
-                collate_data["mol_mf_" + k] = v
-            # remove from list
-            collate_data.pop("mol_mf")
-            keys.remove("mol_mf")
-        if "mol_graff" in keys:
-            # batch
-            collate_data["mol_graff"] = Batch.from_data_list(collate_data["mol_graff"])
-            # remove from list
-            keys.remove("mol_graff")
         BaseDataset._special_collate(keys, collate_data)
 
     @staticmethod

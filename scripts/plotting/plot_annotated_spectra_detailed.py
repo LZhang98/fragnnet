@@ -15,8 +15,8 @@ from PIL import Image
 from rdkit.Chem import Draw
 from tqdm import tqdm
 
-from fragnnet.utils.frag_utils import th_long_to_mask
-from fragnnet.utils.plot_utils import get_highlighted_bonds
+from fragnnet.utils.formula_utils import th_long_to_mask
+from fragnnet.utils.mol_utils import get_highlighted_bonds
 
 
 def font_size_from_ax_height(ax, fraction=6):

@@ -1,5 +1,8 @@
 import argparse
 import glob
+import gzip
+import io
+import json
 import logging
 import os
 import re
@@ -9,8 +12,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from fragnnet.utils.data_utils import par_apply, parse_mass_gym_ce_str, rdkit_import, seq_apply
 from fragnnet.utils.misc_utils import flatten_lol
+from fragnnet.utils.mol_utils import rdkit_import
+from fragnnet.utils.parallel_utils import par_apply, seq_apply
+from fragnnet.utils.spec_parse_utils import parse_mass_gym_ce_str
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +51,12 @@ following standard columns (filled when available from the source):
 - misc placeholders (e.g., notes, rating, cas_num, pressure, ri, ionization extras) to retain upstream metadata
 
 Additional split helper files (written by some input formats) keep only ids needed
-for downstream splitting (e.g., *_fold.csv for MS-Gym, Spectraverse folds).
+for downstream splitting (e.g., *_fold.csv for MS-Gym). Spectraverse v1.0.2 writes one
+`<output_name>_fold.csv` (columns spec_id,dset_spec_id,fold; spec_id is the 0-based MGF record
+order, dset_spec_id the TITLE integer, and the single FOLD field of each record is the benchmark's
+MCES fold, 1..10). The legacy
+FOLD_INCHI/FOLD_FORM/FOLD_MCES/FOLD_MCESFORM + INDEX format still writes one CSV per fold column
+and fold value; MGFs without any fold field (v1.0.0/1.0.1) write no fold helper.
 """
 
 MSP_KEY_DICT = {
@@ -116,26 +126,43 @@ No type conversions or filtering: all of that is done downstream
 """
 
 
-def preproc_msp(msp_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
-    """ """
+def iter_msp_lines(msp_fp: str):
+    """Yield the lines of an MSP file: plain, gzipped (.gz), or the single file in a .zip.
 
-    with open(msp_fp) as f:
-        raw_data_lines = f.readlines()
-    # split CAS# and NIST# on different lines
-    _raw_data_lines = []
-    for line in raw_data_lines:
+    A NIST ``CAS#: ...;  NIST#: ...`` line is yielded as two lines.
+    """
+    if msp_fp.endswith(".zip"):
+        with zipfile.ZipFile(msp_fp) as zf:
+            (name,) = [n for n in zf.namelist() if not n.endswith("/")]
+            with zf.open(name) as fh:
+                lines = io.TextIOWrapper(fh, encoding="utf-8")
+                yield from _split_cas_nist(lines)
+    elif msp_fp.endswith(".gz"):
+        with gzip.open(msp_fp, "rt", encoding="utf-8") as fh:
+            yield from _split_cas_nist(fh)
+    else:
+        with open(msp_fp) as fh:
+            yield from _split_cas_nist(fh)
+
+
+def _split_cas_nist(lines):
+    for line in lines:
         if "CAS#" in line and "NIST#" in line:
             assert ";" in line, line
             split_lines = line.split(";")
-            _raw_data_lines.append(split_lines[0].rstrip(";") + "\n")
-            _raw_data_lines.append(split_lines[1].lstrip())
+            yield split_lines[0].rstrip(";") + "\n"
+            yield split_lines[1].lstrip()
         else:
-            _raw_data_lines.append(line)
-    raw_data_lines = _raw_data_lines
+            yield line
+
+
+def preproc_msp(msp_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
+    """Parse an MSP file (plain, .gz or .zip, see :func:`iter_msp_lines`), streaming its lines."""
+
     raw_data_list = []
     raw_data_item = dict.fromkeys(keys)
     read_ms = False
-    for raw_l in tqdm(raw_data_lines, desc=f"> processing {msp_fp}", total=len(raw_data_lines)):
+    for raw_l in tqdm(iter_msp_lines(msp_fp), desc=f"> processing {msp_fp}", unit=" lines"):
         if num_entries > -1 and len(raw_data_list) == num_entries:
             break
         raw_l = raw_l.replace("\n", "")
@@ -239,6 +266,7 @@ def preproc_ms_files(ms_dp: str, ms_meta_fp: str, keys: set, num_entries: int) -
         columns={"ionization": "prec_type", "spec": "dset_spec_id_base"}
     ).drop(columns=["name"])
     assert not ms_meta_df.isna().any().any(), ms_meta_df.isna().any()
+    ms_fp_list = sorted(glob.glob(os.path.join(ms_dp, "*.ms")))
     if num_entries > -1:
         ms_fp_list = ms_fp_list[:num_entries]
 
@@ -416,6 +444,21 @@ def read_pcdl(zipped_spectra_dp: str) -> pd.DataFrame:
     return spec_df
 
 
+def _ion_mode_from_adduct(adduct: str) -> str | float:
+    if pd.isna(adduct):
+        return np.nan
+    adduct = str(adduct).strip()
+    if adduct.endswith("+"):
+        return "P"
+    if adduct.endswith("-"):
+        return "N"
+    if "+" in adduct:
+        return "P"
+    if "-" in adduct:
+        return "N"
+    return np.nan
+
+
 def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     spec_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
 
@@ -427,6 +470,7 @@ def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.Da
         "If you are doing simulation challenge, make sure to use only simulation_challenge subset"
     )
 
+    # spec_df["dset"] = "ms_gym_benchmark" if subset == "simulation_challenge" else "ms_gym_extra"
     if subset == "simulation_challenge":
         spec_df = spec_df[spec_df["simulation_challenge"]]
         logger.info(f"{len(spec_df)} rows selected for subset {subset}")
@@ -465,7 +509,7 @@ def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.Da
     # spec_df = spec_df.astype({"prec_mz":float,"exact_mass":float})
 
     # add ion_mode
-    spec_df["ion_mode"] = "P"
+    spec_df["ion_mode"] = spec_df["prec_type"].apply(_ion_mode_from_adduct)
     # add spec_type
     spec_df["spec_type"] = "MS2"
     # add ion_type
@@ -483,7 +527,7 @@ SPECTRAVERSE_MGF_KEY_DICT = {
     "FORMULA": "formula",
     "SMILES": "smiles",
     "INCHI": "inchi",
-    "INCHIKEY": "inchi_key",
+    "INCHIKEY": "inchikey",
     "IONMODE": "ion_mode",
     "ADDUCT": "prec_type",
     "COMPOUND_NAME": "compound_name",
@@ -500,6 +544,9 @@ SPECTRAVERSE_MGF_KEY_DICT = {
     #'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy',
     #'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
     #'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
+    # v1.0.2: one FOLD field per record (the benchmark's MCES fold, 1..10)
+    "FOLD": "fold",
+    # legacy (v1.0.0-era) fold fields and explicit spectrum index
     "FOLD_INCHI": "fold_inchi",
     "FOLD_FORM": "fold_form",
     "FOLD_MCES": "fold_mces",
@@ -507,77 +554,265 @@ SPECTRAVERSE_MGF_KEY_DICT = {
     "INDEX": "spec_id",
     "SOURCE": "source",
     "TITLE": "title",
-    "NUM_PEAKS": "num_peaks",
 }
+SPECTRAVERSE_LEGACY_FOLD_COLS = ["fold_inchi", "fold_form", "fold_mces", "fold_mcesform"]
+SPECTRAVERSE_TITLE_PREFIX = "SPECTRAVERSE"
+SPECTRAVERSE_NUM_FOLDS = 10
+SPECTRAVERSE_MISSING_VALUES = ["nan", "N/A", "None", "null", ""]
 
 
-def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    spectra_list = []
+def _parse_specverse_value(col: str, value: str) -> object:
+    """Convert one raw Spectraverse MGF value to the type of its output column.
+
+    Args:
+        col: Output column name (a value of `SPECTRAVERSE_MGF_KEY_DICT`).
+        value: Stripped raw text after the first "=".
+
+    Returns:
+        The typed value, or `np.nan` when the field is empty or a null marker (except for
+        fold columns, which must be present and integer).
+
+    Raises:
+        ValueError: If a fold field is empty or not an integer.
+    """
+    is_fold = col == "fold" or col in SPECTRAVERSE_LEGACY_FOLD_COLS
+    if value in SPECTRAVERSE_MISSING_VALUES:
+        if is_fold:
+            raise ValueError(f"Spectraverse {col} field is empty ({value!r})")
+        return np.nan
+    if is_fold:
+        return int(value)
+    if col in ["exact_mass", "prec_mz"]:
+        return float(value)
+    if col == "ion_mode":
+        return {"POSITIVE": "P", "NEGATIVE": "N"}.get(value, value)
+    if col == "num_peaks":
+        return int(value)
+    if col == "smiles":
+        # in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
+        return value.split()[0]
+    if col.startswith("col_energy"):
+        # force eV unit
+        return str(value) + " eV"
+    return value
+
+
+def _parse_specverse_title(title: str, mgf_fp: str) -> int:
+    """Parse the integer of a `SPECTRAVERSE<int>` TITLE.
+
+    Args:
+        title: TITLE value of one record.
+        mgf_fp: MGF path, for the error message.
+
+    Returns:
+        The integer after the `SPECTRAVERSE` prefix.
+
+    Raises:
+        ValueError: If the prefix differs or the rest is not all digits.
+    """
+    number = title[len(SPECTRAVERSE_TITLE_PREFIX) :]
+    if not title.startswith(SPECTRAVERSE_TITLE_PREFIX) or not number.isdigit():
+        raise ValueError(
+            f"TITLE {title!r} in {mgf_fp} is not {SPECTRAVERSE_TITLE_PREFIX}<int>"
+        )
+    return int(number)
+
+
+def _read_specverse_records(mgf_fp: str) -> list[dict]:
+    """Read every record of a Spectraverse MGF into a dict of typed header fields + peaks.
+
+    Args:
+        mgf_fp: Path to the Spectraverse MGF.
+
+    Returns:
+        One dict per record (output column name -> value, plus `peaks` as "mz int\n" text).
+
+    Raises:
+        ValueError: On a header or peak line outside BEGIN/END IONS, a nested BEGIN IONS, an
+            unterminated final record, a repeated header key, a line that is neither a header
+            nor a peak, or a parsed peak count different from NUM_PEAKS.
+    """
+    key_to_col = SPECTRAVERSE_MGF_KEY_DICT
+    peak_re = re.compile(r"^(\d+(?:\.\d+)?)\s(\d+(?:\.\d+)?)")
+    spectra_list: list[dict] = []
+    data_dict: dict | None = None
+    n_peaks = 0
     with open(mgf_fp) as mgf_in:
-        data_dict = None
         for row in tqdm(mgf_in, desc=f"> processing {mgf_fp}"):
             row = row.strip()
             if len(row) == 0:
                 continue
-            elif row == "BEGIN IONS":
-                data_dict = {}
+            rec_no = len(spectra_list) + 1
+            if row == "BEGIN IONS":
+                if data_dict is not None:
+                    raise ValueError(f"{mgf_fp}: BEGIN IONS inside record {rec_no}")
+                data_dict, n_peaks = {}, 0
             elif row == "END IONS":
+                if data_dict is None:
+                    raise ValueError(f"{mgf_fp}: END IONS without BEGIN IONS (record {rec_no})")
+                if "num_peaks" in data_dict and data_dict["num_peaks"] != n_peaks:
+                    raise ValueError(
+                        f"{mgf_fp}: record {rec_no} has NUM_PEAKS={data_dict['num_peaks']} "
+                        f"but {n_peaks} peak lines"
+                    )
                 spectra_list.append(data_dict)
                 data_dict = None
-            elif re.match(r"^(\d+(?:\.\d+)?)\s(\d+(?:\.\d+)?)", row):
+            elif data_dict is None:
+                raise ValueError(f"{mgf_fp}: line outside BEGIN/END IONS: {row!r}")
+            elif peak_re.match(row):
                 mz, rel_int = [float(i) for i in row.split()]
-                if "peaks" not in data_dict:
-                    data_dict["peaks"] = ""
-                data_dict["peaks"] += f"{mz} {rel_int}\n"
+                data_dict["peaks"] = data_dict.get("peaks", "") + f"{mz} {rel_int}\n"
+                n_peaks += 1
+            elif "=" in row:
+                key, value = row.split("=", 1)
+                col = key_to_col.get(key.strip())
+                if col is None:
+                    continue
+                if col in data_dict:
+                    raise ValueError(f"{mgf_fp}: record {rec_no} repeats {key.strip()}")
+                data_dict[col] = _parse_specverse_value(col, value.strip())
             else:
-                for key, col in SPECTRAVERSE_MGF_KEY_DICT.items():
-                    if row.startswith(key):
-                        value = row.split("=", 1)[1].strip()
-                        # in case of empty values
-                        if value in ["nan", "N/A", "None", "null", ""]:
-                            value = np.nan
-                        # convert to correct type
-                        if col in ["exact_mass", "prec_mz"]:
-                            value = float(value)
-                        elif col == "ion_mode" and value == "POSITIVE":
-                            value = "P"
-                        elif col == "ion_mode" and value == "NEGATIVE":
-                            value = "N"
-                        elif col == "num_peaks":
-                            value = int(value)
-                        elif (
-                            col == "smiles"
-                        ):  # in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
-                            value = value.split()[0]
-                        elif col.startswith("col_energy"):
-                            if value is not np.nan:
-                                # force eV unit
-                                value = str(value) + " eV"
-                        data_dict[col] = value
+                raise ValueError(f"{mgf_fp}: record {rec_no} has an unparsable line {row!r}")
+    if data_dict is not None:
+        raise ValueError(f"{mgf_fp} ends inside record {len(spectra_list) + 1} (no END IONS)")
+    return spectra_list
+
+
+def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
+    """Read a Spectraverse MGF (v1.0.2 or the legacy INDEX/FOLD_* format) into a spec_df.
+
+    Header lines are matched on the exact key before the first "=" (so `INCHI` never matches an
+    `INCHIKEY=` line). `spec_id` is the INDEX field when present (legacy) and otherwise the
+    0-based record order; `dset_spec_id` is the integer parsed from TITLE. Fold columns present
+    in the file are kept in the returned split_df: `fold` (v1.0.2, one FOLD field per record,
+    1..10) and/or the legacy `fold_*` columns. The split_df also carries `dset_spec_id`, the
+    key that stays stable through step 2 (which relabels `spec_id`). Files without any fold
+    field (v1.0.0/1.0.1) yield no split_df and a warning.
+
+    Args:
+        mgf_fp: Path to the Spectraverse MGF.
+
+    Returns:
+        Tuple of the spec_df (fold columns dropped) and the split_df (`spec_id`,
+        `dset_spec_id` + fold columns), or None for the split_df when the MGF has no fold field.
+
+    Raises:
+        ValueError: If the MGF has no records or is malformed (see `_read_specverse_records`),
+            a record lacks TITLE/ADDUCT/INDEX/a fold field that other records have, a TITLE is
+            not `SPECTRAVERSE<int>`, or a `FOLD` is outside 1..10.
+    """
+    spectra_list = _read_specverse_records(mgf_fp)
+    if len(spectra_list) == 0:
+        raise ValueError(f"No spectra found in {mgf_fp}")
 
     spec_df = pd.DataFrame(spectra_list)
-    spec_verse_folds_keys = ["fold_inchi", "fold_form", "fold_mces", "fold_mcesform"]
-    for col in spec_verse_folds_keys:
+    if "title" not in spec_df.columns or spec_df["title"].isna().any():
+        raise ValueError(f"Every record in {mgf_fp} needs a TITLE")
+    if "prec_type" not in spec_df.columns or spec_df["prec_type"].isna().any():
+        raise ValueError(f"Every record in {mgf_fp} needs an ADDUCT")
+    fold_cols = [c for c in ["fold"] + SPECTRAVERSE_LEGACY_FOLD_COLS if c in spec_df.columns]
+    for col in fold_cols:
+        if spec_df[col].isna().any():
+            raise ValueError(f"Column {col} is missing for some records in {mgf_fp}")
         spec_df[col] = spec_df[col].astype(int)
-
-    # spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
-    # spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
-    # spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
+    if "fold" in spec_df.columns and not spec_df["fold"].between(1, SPECTRAVERSE_NUM_FOLDS).all():
+        bad = sorted(set(spec_df["fold"]) - set(range(1, SPECTRAVERSE_NUM_FOLDS + 1)))
+        raise ValueError(f"FOLD values {bad} in {mgf_fp} are outside 1..{SPECTRAVERSE_NUM_FOLDS}")
+    if "spec_id" in spec_df.columns:
+        if spec_df["spec_id"].isna().any():
+            raise ValueError(f"INDEX is missing for some records in {mgf_fp}")
+    else:
+        # v1.0.2 has no INDEX: spec_id is the 0-based record order
+        spec_df["spec_id"] = np.arange(len(spec_df))
 
     # setup dset
     spec_df["dset"] = "spectraverse"
-    spec_df["dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE") :]))
+    spec_df["dset_spec_id"] = spec_df["title"].apply(lambda x: _parse_specverse_title(x, mgf_fp))
     spec_df["ion_mode"] = spec_df["prec_type"].apply(
         lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan)
     )
-    split_df = spec_df[["spec_id"] + spec_verse_folds_keys]
-    spec_df.drop(columns=spec_verse_folds_keys, inplace=True)
+    if fold_cols:
+        split_df = spec_df[["spec_id", "dset_spec_id"] + fold_cols].copy()
+        spec_df = spec_df.drop(columns=fold_cols)
+    else:
+        logger.warning("%s has no fold field; no fold helper will be written", mgf_fp)
+        split_df = None
     # add extra columns for compatibility
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
             spec_df[value] = np.nan
 
     return spec_df, split_df
+
+
+ENVEDA_JSONL_KEY_DICT = {
+    "title": "dset_spec_id",
+    "pepmass": "prec_mz",
+    "adduct": "prec_type",
+    "instrument_type": "inst_type",
+    "instrument": "inst",
+    "iupac_name": "name",
+}
+ENVEDA_ION_MODE_DICT = {"ESI Positive": "P", "ESI Negative": "N"}
+CE_COLS = ["col_energy", "col_energy_extra_1", "col_energy_extra_2"]
+
+
+def parse_enveda_ce_str(ce_str: str) -> list[str]:
+    """Split an Enveda collision-energy field into ascending absolute energies.
+
+    Enveda writes negative-mode energies with the polarity sign ("-40") and stepped-CE
+    acquisitions as a comma-separated list ("20,40,60", "-60,-40,-20").
+
+    Args:
+        ce_str: Raw `collision_energies` value.
+
+    Returns:
+        Energies as "<value> eV" strings, lowest first, e.g. ["20 eV", "40 eV", "60 eV"].
+    """
+    energies = sorted(abs(float(ce)) for ce in ce_str.split(","))
+    return [f"{ce:g} eV" for ce in energies]
+
+
+def process_enveda(jsonl_fp: str) -> pd.DataFrame:
+    """Read an Enveda-180 JSON-lines export into the unified spectrum table.
+
+    Every spectrum is ESI MS2 from a Bruker timsTOF Pro 2 (CID). A multi-energy entry is a
+    stepped-CE acquisition with its own retention time and peaks, not a merge of the
+    single-energy spectra, so its energies fill `col_energy`, `col_energy_extra_1` and
+    `col_energy_extra_2` in ascending order. The MS1 isotope pattern is dropped.
+
+    Args:
+        jsonl_fp: Path to `enveda-180[-filtered].jsonl.gz`.
+
+    Returns:
+        One row per spectrum, `title` as `dset_spec_id`, other source fields kept as-is.
+    """
+    rows = []
+    with gzip.open(jsonl_fp, "rt") as jsonl_in:
+        for line in tqdm(jsonl_in, desc=f"> processing {jsonl_fp}"):
+            row = json.loads(line)
+            row["peaks"] = "\n".join(
+                f"{mz} {inten}" for mz, inten in zip(row.pop("mzs"), row.pop("intensities"))
+            )
+            del row["isotope_mzs"], row["isotope_intensities"]
+            energies = parse_enveda_ce_str(row.pop("collision_energies"))
+            if len(energies) > len(CE_COLS):
+                raise ValueError(f"{row['title']} has {len(energies)} collision energies")
+            row.update(zip(CE_COLS, energies))
+            row["stepped"] = len(energies) > 1
+            row["ion_mode"] = ENVEDA_ION_MODE_DICT[row.pop("ionmode")]
+            rows.append(row)
+
+    spec_df = pd.DataFrame(rows).rename(columns=ENVEDA_JSONL_KEY_DICT)
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_type"] = "MS2"
+    spec_df["ion_type"] = "ESI"
+    spec_df["frag_mode"] = "CID"
+    # add extra columns for compatibility
+    for value in MSP_KEY_DICT.values():
+        if value not in spec_df.columns:
+            spec_df[value] = np.nan
+    return spec_df
 
 
 def process_nist_ei_csv(csv_fp: str) -> pd.DataFrame:
@@ -637,6 +872,7 @@ if __name__ == "__main__":
     parser.add_argument("--ms_meta_file", type=str, required=False)
     parser.add_argument("--mgf_file", type=str, required=False)
     parser.add_argument("--csv_file", type=str, required=False)
+    parser.add_argument("--jsonl_file", type=str, required=False)
 
     parser.add_argument(
         "--input_format",
@@ -648,9 +884,11 @@ if __name__ == "__main__":
             "msp+pkl",
             "ms_gym",
             "ms_gym_extra",
+            "ms_gym_all",
             "pcdl_zip",
             "spectraverse",
             "nist_csv",
+            "enveda",
         ],
         required=True,
     )
@@ -706,6 +944,12 @@ if __name__ == "__main__":
         spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, "extra")
         split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
         split_df.to_csv(split_df_fp, index=False)
+    elif args.input_format == "ms_gym_all":
+        ms_gym_tsv_fp = os.path.join(args.raw_data_dp, args.ms_gym_tsv)
+        assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+        spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, "all")
+        split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
+        split_df.to_csv(split_df_fp, index=False)
     elif args.input_format == "pcdl_zip":
         pcdl_dp = os.path.join(args.raw_data_dp, args.pcdl_dir)
         assert os.path.isdir(pcdl_dp), pcdl_dp
@@ -714,18 +958,34 @@ if __name__ == "__main__":
         mgf_fp = os.path.join(args.raw_data_dp, args.mgf_file)
         assert os.path.isfile(mgf_fp), mgf_fp
         spec_df, split_df = process_specverse(mgf_fp)
-        for fold_type in ["fold_inchi", "fold_form", "fold_mces", "fold_mcesform"]:
-            for fold, fold_grp in split_df.groupby(fold_type):
-                print(f"> {fold_type} fold {fold} has {len(fold_grp)} spectra")
-                fold_grp_fp = os.path.join(
-                    args.output_dp, f"{args.output_name}_{fold_type}_{fold}.csv"
-                )
-                ids_df = fold_grp[["spec_id"]]
-                fold_grp.to_csv(fold_grp_fp, index=False)
+        if split_df is None:
+            print(f"> WARNING: {mgf_fp} has no fold field; no fold helper written")
+        else:
+            if "fold" in split_df.columns:
+                # v1.0.2: one file for the whole set; dset_spec_id is the key that survives step 2
+                split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
+                print(f"> saving fold helper ({len(split_df)} spectra) to {split_df_fp}")
+                split_df[["spec_id", "dset_spec_id", "fold"]].to_csv(split_df_fp, index=False)
+            for fold_type in SPECTRAVERSE_LEGACY_FOLD_COLS:
+                if fold_type not in split_df.columns:
+                    continue
+                for fold, fold_grp in split_df.groupby(fold_type):
+                    print(f"> {fold_type} fold {fold} has {len(fold_grp)} spectra")
+                    fold_grp_fp = os.path.join(
+                        args.output_dp, f"{args.output_name}_{fold_type}_{fold}.csv"
+                    )
+                    legacy_cols = ["spec_id"] + [
+                        c for c in SPECTRAVERSE_LEGACY_FOLD_COLS if c in fold_grp.columns
+                    ]
+                    fold_grp[legacy_cols].to_csv(fold_grp_fp, index=False)
     elif args.input_format == "nist_csv":
         csv_fp = os.path.join(args.raw_data_dp, args.csv_file)
         assert os.path.isfile(csv_fp), csv_fp
         spec_df = process_nist_ei_csv(csv_fp)
+    elif args.input_format == "enveda":
+        jsonl_fp = os.path.join(args.raw_data_dp, args.jsonl_file)
+        assert os.path.isfile(jsonl_fp), jsonl_fp
+        spec_df = process_enveda(jsonl_fp)
     else:
         raise ValueError(f"Invalid input format: {args.input_format}")
 

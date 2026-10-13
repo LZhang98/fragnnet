@@ -7,7 +7,10 @@ It is intended to be subclassed for specific model architectures and tasks.
 """
 
 import inspect
+import logging
+import math
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 import lightning as L
@@ -18,133 +21,26 @@ import torch as th
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
-from fragnnet.model.loss import sparse_entropy_fn
-from fragnnet.utils.misc_utils import (
-    TOLERANCE_MIN_MZ,
-    flatten_lol,
-    safelog,
-    scatter_l1normalize,
-    th_temp_generator,
-    to_cpu,
-)
+from fragnnet import registry
+from fragnnet.loss.spectrum_distance import sparse_outside_window_intensity_fraction
+from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
+from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
+from fragnnet.utils.migrations import migrate_legacy_hparams
+from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ, flatten_lol, to_cpu
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
-from fragnnet.utils.plot_utils import plot_spectra_sparse
+from fragnnet.utils.scatter_utils import safelog
 from fragnnet.utils.spec_utils import (
-    batch_cos_hun_helper,
-    batch_jss_hun_helper,
     batched_bin_func,
     batched_filter_func,
     batched_l1_normalize,
     batched_mf1000_normalize,
     batched_rel_filter_func,
-    calculate_match_mzs,
-    cos_sim_helper,
     get_ints_transform_func,
     get_ints_untransform_func,
-    jss_helper,
-    ndcg_helper,
-    opt_cos_sim_helper,
-    round_aggregate_peaks,
-    scatter_reduce,
+    primary_ce_to_batch,
 )
 
-
-def get_split_fn(bs_idx):
-    # check the validity of bs idx
-    diffs = bs_idx[1:] - bs_idx[:-1]
-    assert len(diffs) == 0 or diffs.min() >= 0
-    batch_counts = th.bincount(bs_idx)
-    batch_counts = batch_counts.tolist()
-
-    def split_fn(inp_tensor):
-        return th.split(inp_tensor, batch_counts)
-
-    return split_fn
-
-
-def list_to_batch_tensor(inp, pad):
-    max_l = max([len(_) for _ in inp])
-
-    def padv(v):
-        if len(v) < max_l:
-            return th.cat([v, v.new_zeros(max_l - len(v)) + pad], 0)
-        return v
-
-    return th.stack([padv(_) for _ in inp], 0)
-
-
-def ragged_to_batch(feat: th.Tensor, batch_idx: th.Tensor, pad_value=0):
-    assert batch_idx.ndim == 1
-    assert feat.size(0) == batch_idx.size(0)
-
-    device = feat.device
-    N = batch_idx.size(0)
-
-    lengths = th.bincount(batch_idx)
-    B = lengths.size(0)
-    max_len = lengths.max()
-
-    offsets = th.cumsum(lengths, dim=0)
-    offsets = th.cat([th.zeros(1, device=device, dtype=offsets.dtype), offsets[:-1]])
-    local_idx = th.arange(N, device=device) - offsets[batch_idx]
-    assert feat.ndim == 1
-
-    out = th.full((B, max_len), pad_value, device=device, dtype=feat.dtype)
-    out[batch_idx, local_idx] = feat
-    return out
-
-
-def primary_ce_to_batch(
-    spec_ce: th.Tensor, spec_ce_batch_idxs: th.Tensor | None, batch_size: int
-) -> th.Tensor:
-    """Extract one collision energy value per batch element.
-
-    Args:
-        spec_ce: Collision energy tensor. This is typically flattened by collation and has
-            shape (num_ce_values,) or (batch_size, num_ce_values_per_sample).
-        spec_ce_batch_idxs: Batch indices for flattened CE values of shape (num_ce_values,).
-        batch_size: Number of samples in the batch.
-
-    Returns:
-        Collision energy tensor of shape (batch_size,).
-    """
-    if spec_ce.ndim == 2:
-        if spec_ce.size(1) == 1:
-            # batch_func produced (total_ces, 1) — squeeze trailing dim and
-            # fall through to the sparse batch_idxs path below.
-            spec_ce = spec_ce.squeeze(-1)
-        elif spec_ce.size(0) == batch_size:
-            # Dense layout (batch_size, num_ces) — take first CE per sample.
-            return spec_ce[:, 0].detach().cpu()
-        else:
-            raise ValueError(
-                "Expected spec_ce to have batch_size rows when it is 2D, "
-                f"got shape {tuple(spec_ce.shape)} and batch_size={batch_size}"
-            )
-
-    flat_spec_ce = spec_ce.reshape(-1).detach().cpu()
-    if spec_ce_batch_idxs is None:
-        if flat_spec_ce.numel() != batch_size:
-            raise ValueError(
-                "spec_ce_batch_idxs is required when spec_ce is flattened and does not "
-                f"already have one value per batch item; got {flat_spec_ce.numel()} values "
-                f"for batch_size={batch_size}"
-            )
-        return flat_spec_ce
-
-    flat_batch_idxs = spec_ce_batch_idxs.reshape(-1).detach().cpu().long()
-    if flat_batch_idxs.numel() != flat_spec_ce.numel():
-        raise ValueError(
-            "spec_ce and spec_ce_batch_idxs must have the same number of elements; "
-            f"got {flat_spec_ce.numel()} and {flat_batch_idxs.numel()}"
-        )
-
-    ce_primary = th.full((batch_size,), float("nan"), dtype=flat_spec_ce.dtype)
-    for batch_idx in range(batch_size):
-        batch_mask = flat_batch_idxs == batch_idx
-        if batch_mask.any():
-            ce_primary[batch_idx] = flat_spec_ce[batch_mask][0]
-    return ce_primary
+logger = logging.getLogger(__name__)
 
 
 class SpectrumPL(L.LightningModule):
@@ -156,7 +52,10 @@ class SpectrumPL(L.LightningModule):
 
     hparams: Any
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
+        # Backfill keys that older checkpoints predate, before `save_hyperparameters` freezes
+        # them. Fresh configs carry every key from `config/template.yml` and are unchanged.
+        migrate_legacy_hparams(kwargs)
         super().__init__()
         self.save_hyperparameters()
         # setup functions and state
@@ -189,7 +88,10 @@ class SpectrumPL(L.LightningModule):
             self.relative = True
             self.tolerance_min_mz = self.hparams["loss_tolerance_min_mz"]
         else:
-            assert self.hparams["loss_tolerance_abs"] is not None
+            if self.hparams["loss_tolerance_abs"] is None:
+                raise ValueError(
+                    "loss_tolerance_abs must be set when loss_tolerance_rel is not used"
+                )
             self.tolerance = self.hparams["loss_tolerance_abs"]
             self.relative = False
             self.tolerance_min_mz = None
@@ -197,7 +99,7 @@ class SpectrumPL(L.LightningModule):
         # Per-instrument-type tolerance lookup tensors: shape [num_inst_types].
         # Indexed by inst_type_idx in _common_step to build per-sample tolerance tensors
         # without a Python loop. None when inst_type_loss_tol is not configured (fast path).
-        inst_type_loss_tol = self.hparams.get("inst_type_loss_tol")
+        inst_type_loss_tol = self.hparams["inst_type_loss_tol"]
         if inst_type_loss_tol is not None and len(inst_type_loss_tol) > 0:
             inst_types_sorted = sorted(self.hparams.spec_params["inst_types"])
             global_min_mz = (
@@ -221,6 +123,20 @@ class SpectrumPL(L.LightningModule):
         else:
             self.register_buffer("inst_tol_lookup", None, persistent=False)
             self.register_buffer("inst_min_mz_lookup", None, persistent=False)
+            # Without the lookup, `_common_step` skips these scores entirely, but they are
+            # still registered as metric names - so the exporters wrote a column of -1 for
+            # every spectrum and the run reported success. `inst_type_loss_tol` is null in
+            # config/template.yml while run_save_inference_eval.py requests
+            # cos_hun_inst_tol by default, so that combination is easy to hit by accident.
+            needs_inst_tol = {"cos_hun_inst_tol", "jss_hun_inst_tol"}.intersection(
+                self.hparams["auxiliary_scores"]
+            )
+            if needs_inst_tol:
+                raise ValueError(
+                    f"auxiliary_scores {sorted(needs_inst_tol)} need per-instrument match "
+                    "tolerances, but inst_type_loss_tol is unset. Configure it (see "
+                    "config/template.yml) or remove those scores from auxiliary_scores."
+                )
 
         # idx↔str maps are fetched lazily from the dataloader dataset via
         # _get_dataset_maps() — the dataset is the canonical source of truth.
@@ -231,18 +147,121 @@ class SpectrumPL(L.LightningModule):
         """
         raise NotImplementedError
 
+    # Shared spectrum objectives. FraGNNet and MASSter prepare the inputs, call these where their
+    # loss functions evaluate each term, and weight, add and log the results themselves; nothing
+    # here touches the total loss.
+
+    def _validate_spectral_auxiliary_weights(self) -> None:
+        """Check the spectral-leak and spectral-CE-auxiliary weights.
+
+        Raises:
+            ValueError: If a weight is not finite and nonnegative, or if a positive weight is
+                paired with a ``loss_type`` other than ``hellinger_distance``.
+        """
+        weights = {
+            "spectral_leak_loss_weight": self.hparams.spectral_leak_loss_weight,
+            "spectral_ce_auxiliary_weight": self.hparams.spectral_ce_auxiliary_weight,
+        }
+        for name, weight in weights.items():
+            if not math.isfinite(weight) or weight < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+            if weight > 0.0 and self.hparams.loss_type != "hellinger_distance":
+                raise ValueError(f"{name} is supported only with hellinger_distance")
+
+    def _spectral_leak_loss(
+        self,
+        true_mzs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_ints: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        *,
+        batch_size: int,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample share of predicted intensity outside every target peak's window.
+
+        Args:
+            true_mzs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_batch_idxs: Predicted peaks.
+            pred_ints: Predicted probabilities or intensities, as the caller defines them.
+            batch_size: Number of spectra.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Spectral leak per spectrum.
+        """
+        return sparse_outside_window_intensity_fraction(
+            true_mzs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_ints,
+            pred_batch_idxs,
+            batch_size=batch_size,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+            loss_batch_size=self.hparams.loss_batch_size,
+        )
+
+    @staticmethod
+    def _spectral_ce_auxiliary(
+        sparse_ce_fn: Callable[..., tuple[th.Tensor, ...]],
+        true_mzs: th.Tensor,
+        true_logprobs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_logprobs: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        pred_oos_logprobs: th.Tensor,
+        *,
+        include_oos: bool,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample spectral cross-entropy used as an auxiliary to the primary loss.
+
+        Args:
+            sparse_ce_fn: The caller's ``get_sparse_cross_entropy_fn`` result.
+            true_mzs, true_logprobs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_logprobs, pred_batch_idxs: Predicted peaks.
+            pred_oos_logprobs: Predicted out-of-support log-probability per spectrum.
+            include_oos: Add the out-of-support CE to the in-support CE.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Auxiliary CE per spectrum.
+        """
+        ios_ce, oos_ce, _, _ = sparse_ce_fn(
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+        )
+        return ios_ce + oos_ce if include_oos else ios_ce
+
+
     def _setup_spec_fns(self):
         """
         Setup spectrum preprocessing functions: filtering, binning, intensity transforms, and normalization.
         """
 
-        def _rel_filter_func(mzs, ints, batch_idxs):
+        def _rel_filter_func(mzs, ints, batch_idxs, batch_size=None):
             return batched_rel_filter_func(
                 mzs,
                 ints,
                 batch_idxs,
                 rel_thresh=self.hparams["target_rel_ints_thresh"],
                 mz_max=self.hparams["mz_max"],
+                dim_size=batch_size,
             )
 
         self.rel_filter_func = _rel_filter_func
@@ -279,712 +298,35 @@ class SpectrumPL(L.LightningModule):
         self.ints_normalize_func = batched_l1_normalize
 
     def _setup_metric_fns(self):
-        """
-        Setup all auxiliary and main metric functions, including configuration for different evaluation modes.
-        """
-
-        # setup metrics
-        self.metric_min_max = {"loss": "min"}
-        self.metric_bests = ["loss"]
-        for k in self.metric_names:
-            if k not in self.metric_min_max:
-                self.metric_min_max[k] = None
-        self.auxiliary_metric_names = set()
-
-        bin_sqrt_flags = [False]
-        if self.hparams.eval_bin_sqrt:
-            bin_sqrt_flags.append(True)
-        bin_remove_prec_peak_flags = [False]
-        if self.hparams.eval_bin_remove_prec_peaks:
-            bin_remove_prec_peak_flags.append(True)
-        hun_sqrt_flags = [False]
-        if self.hparams.eval_hun_sqrt:
-            hun_sqrt_flags.append(True)
-        hun_remove_prec_peak_flags = [False]
-        if self.hparams.eval_hun_remove_prec_peaks:
-            hun_remove_prec_peak_flags.append(True)
-        nb_flags = [False]
-        if self.hparams.nb_iso:
-            nb_flags.append(True)
-        self.extra_metric_args = []
-
-        eval_mz_bin_reses = self.hparams.eval_mz_bin_res
-
-        if len(self.hparams.auxiliary_scores) > 0:
-            assert self.hparams.sparse_cosine_similarity
-        compute_match_mzs = False
-        compute_rounded_match_mzs = False
-        compute_bin_specs = False
-        compute_entropies = False
-        compute_pred_entropies = False
-        compute_inst_tol_match_mzs = False
-        self.batch_metric_args: set[str] = set()
-
-        for metric_name in self.hparams.auxiliary_scores:
-            if metric_name == "cos_sim":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "cos_sim"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = "max"
-                            self.metric_bests.append(fname)
-                            self.auxiliary_metric_names.add(fname)
-                    compute_bin_specs = True
-            elif metric_name == "jss":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "jss"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = "max"
-                            self.metric_bests.append(fname)
-                            self.auxiliary_metric_names.add(fname)
-            elif metric_name == "recall":
-                self.metric_min_max["recall"] = "max"
-                self.auxiliary_metric_names.add("recall")
-                compute_match_mzs = True
-            elif metric_name == "wrecall":
-                self.metric_min_max["wrecall"] = "max"
-                self.auxiliary_metric_names.add("wrecall")
-                compute_match_mzs = True
-            elif metric_name == "opt_cos_sim":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "opt_cos_sim"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = None
-                            self.auxiliary_metric_names.add(fname)
-                    compute_bin_specs = True
-            elif metric_name == "true_spec_e":
-                self.metric_min_max["true_spec_e"] = None
-                self.auxiliary_metric_names.add("true_spec_e")
-                compute_entropies = True
-            elif metric_name == "true_spec_ne":
-                self.metric_min_max["true_spec_ne"] = None
-                self.auxiliary_metric_names.add("true_spec_ne")
-                compute_entropies = True
-            elif metric_name == "pred_spec_e":
-                self.metric_min_max["pred_spec_e"] = None
-                self.auxiliary_metric_names.add("pred_spec_e")
-                compute_pred_entropies = True
-            elif metric_name == "pred_spec_ne":
-                self.metric_min_max["pred_spec_ne"] = None
-                self.auxiliary_metric_names.add("pred_spec_ne")
-                compute_pred_entropies = True
-            elif metric_name == "cos_hun":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-            elif metric_name == "precision":
-                self.metric_min_max["precision"] = "max"
-                self.metric_bests.append("precision")
-                self.auxiliary_metric_names.add("precision")
-                compute_match_mzs = True
-            elif metric_name == "wprecision":
-                self.metric_min_max["wprecision"] = "max"
-                self.metric_bests.append("wprecision")
-                self.auxiliary_metric_names.add("wprecision")
-                compute_match_mzs = True
-            # elif metric_name == "dice":
-            #   self.metric_min_max["dice"] = "max"
-            #   self.metric_bests.append("dice")
-            #   compute_match_mzs = True
-            elif metric_name == "ndcg":
-                for union in [True, False]:
-                    if union:
-                        fname_base = "ndcg_un"
-                        tie_break_flags = [True, False]
-                    else:
-                        fname_base = "ndcg_int"
-                        tie_break_flags = [True]
-                    for optimistic in tie_break_flags:
-                        if union:
-                            suffix = "_opt" if optimistic else "_pess"
-                        else:
-                            suffix = ""
-                        fname = f"{fname_base}{suffix}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-                compute_match_mzs = True
-            elif metric_name == "jss_hun":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-            elif metric_name == "true_oos_prob":
-                self.metric_min_max["true_oos_prob"] = None
-                self.auxiliary_metric_names.add("true_oos_prob")
-                compute_match_mzs = True
-            elif metric_name == "true_oos_e":
-                self.metric_min_max["true_oos_e"] = None
-                self.auxiliary_metric_names.add("true_oos_e")
-                compute_match_mzs = True
-            elif metric_name == "pred_node_count":
-                for nb_flag in nb_flags:
-                    if nb_flag:
-                        fname = "pred_nb_node_count"
-                        self.extra_metric_args.extend(["pred_nb_node_batch_idxs"])
-                    else:
-                        fname = "pred_node_count"
-                        self.extra_metric_args.extend(["pred_node_batch_idxs"])
-                    self.metric_min_max[fname] = None
-                    self.auxiliary_metric_names.add(fname)
-            elif metric_name == "pred_formula_count":
-                fname = "pred_formula_count"
-                self.extra_metric_args.extend(["pred_formula_batch_idxs"])
-                self.metric_min_max[fname] = None
-                self.auxiliary_metric_names.add(fname)
-            elif metric_name == "pred_edge_count":
-                fname = "pred_edge_count"
-                self.extra_metric_args.extend(["pred_edge_batch_idxs"])
-                self.metric_min_max[fname] = None
-                self.auxiliary_metric_names.add(fname)
-            elif metric_name == "cos_hun_inst_tol":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun_inst_tol"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = fname_base
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_inst_tol_match_mzs = True
-                compute_rounded_match_mzs = True
-                self.batch_metric_args.add("spec_inst_type")
-            elif metric_name == "jss_hun_inst_tol":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun_inst_tol"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = fname_base
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_inst_tol_match_mzs = True
-                compute_rounded_match_mzs = True
-                self.batch_metric_args.add("spec_inst_type")
-            else:
-                raise ValueError(f"metric_name {metric_name} not recognized")
-
-        self.metric_names.update(self.auxiliary_metric_names)
-
-        def calculate_all_auxiliary_metrics(
-            true_mzs,
-            true_ints,
-            true_batch_idxs,
-            pred_mzs,
-            pred_ints,
-            pred_batch_idxs,
-            true_prec_mzs,
-            split="test",
-            **kwargs,
-        ):
-            # assumes both true/pred spectra are already L1-normalized
-
-            batch_size = th.max(true_batch_idxs) + 1
-            assert batch_size == th.max(pred_batch_idxs) + 1, (
-                batch_size,
-                th.max(pred_batch_idxs) + 1,
-            )
-
-            if split == "train" or split == "val":
-                metric_d = {
-                    k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
-                    for k in self.auxiliary_metric_names
-                }
-            else:
-                metric_d = {}
-            # define aggregation
-            agg = "sum" if self.hparams.sum_ints else "amax"
-
-            # global calculations
-            if compute_rounded_match_mzs:
-                true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
-                    true_mzs, true_ints, true_batch_idxs, agg=agg
-                )
-                pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
-                    pred_mzs, pred_ints, pred_batch_idxs, agg=agg
-                )
-
-            if compute_bin_specs:
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        if sqrt:
-                            ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            ints_transform = get_ints_transform_func("none")
-                        for mz_bin_res in eval_mz_bin_reses:
-                            # bin, transform, normalize
-                            true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
-                                true_mzs,
-                                true_ints,
-                                true_batch_idxs,
-                                mz_max=self.hparams.mz_max,
-                                mz_bin_res=mz_bin_res,
-                                agg=agg,
-                                sparse=True,
-                                remove_prec_peaks=remove_prec_peak,
-                                prec_mzs=true_prec_mzs,
-                            )
-                            pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
-                                pred_mzs,
-                                pred_ints,
-                                pred_batch_idxs,
-                                mz_max=self.hparams.mz_max,
-                                mz_bin_res=mz_bin_res,
-                                agg=agg,
-                                sparse=True,
-                                remove_prec_peaks=remove_prec_peak,
-                                prec_mzs=true_prec_mzs,
-                            )
-                            # apply intensity transform (e.g. sqrt); helpers normalize internally
-                            true_bin_ints = ints_transform(true_bin_ints)
-                            pred_bin_ints = ints_transform(pred_bin_ints)
-                            if "cos_sim" in self.hparams.auxiliary_scores:
-                                fname_base = "cos_sim"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                cos_sim = cos_sim_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                )
-                                # print(cos_sim)
-                                metric_d[fname] = cos_sim
-                            if "opt_cos_sim" in self.hparams.auxiliary_scores:
-                                fname_base = "opt_cos_sim"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                opt_cos_sim = opt_cos_sim_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                )
-                                metric_d[fname] = opt_cos_sim
-                            if "jss" in self.hparams.auxiliary_scores:
-                                fname_base = "jss"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                jss = jss_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                    log_min=self.hparams.log_min,
-                                )
-                                metric_d[fname] = jss
-
-            if compute_entropies:
-                true_log_probs = kwargs.get("true_logprobs")
-                if true_log_probs is None:
-                    true_log_probs = safelog(
-                        scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
-                    )
-                true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs, true_batch_idxs)
-                if "true_spec_e" in self.hparams.auxiliary_scores:
-                    metric_d["true_spec_e"] = true_spec_e
-                if "true_spec_ne" in self.hparams.auxiliary_scores:
-                    metric_d["true_spec_ne"] = true_spec_ne
-
-            if compute_pred_entropies:
-                pred_log_probs = kwargs.get("pred_logprobs")
-                if pred_log_probs is None:
-                    pred_log_probs = safelog(
-                        scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
-                    )
-                pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
-                if "pred_spec_e" in self.hparams.auxiliary_scores:
-                    metric_d["pred_spec_e"] = pred_spec_e
-                if "pred_spec_ne" in self.hparams.auxiliary_scores:
-                    metric_d["pred_spec_ne"] = pred_spec_ne
-
-            true_ion_num = th.bincount(true_batch_idxs)
-            pred_ion_num = th.bincount(pred_batch_idxs)
-            if compute_rounded_match_mzs:
-                batched_true_ints_r = ragged_to_batch(true_ints_r, true_batch_idxs_r, pad_value=0)
-                batched_pred_ints_r = ragged_to_batch(pred_ints_r, pred_batch_idxs_r, pad_value=0)
-                sqrt_batched_true_ints_r = get_ints_transform_func("sqrt")(batched_true_ints_r)
-                sqrt_batched_pred_ints_r = get_ints_transform_func("sqrt")(batched_pred_ints_r)
-
-            if compute_match_mzs:
-                batch_true_ints = ragged_to_batch(
-                    true_ints, true_batch_idxs, pad_value=float("inf")
-                )
-                batch_pred_ints = ragged_to_batch(
-                    pred_ints, pred_batch_idxs, pad_value=float("inf")
-                )
-                batch_true_mzs = ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
-                batch_pred_mzs = ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
-                batch_match_mask = calculate_match_mzs(
-                    batch_true_mzs,
-                    batch_pred_mzs,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                )
-                batch_true_match_mask = batch_match_mask.max(-1).values
-                batch_pred_match_mask = batch_match_mask.max(-2).values
-            if compute_rounded_match_mzs:
-                batch_true_mzs_r = ragged_to_batch(
-                    true_mzs_r, true_batch_idxs_r, pad_value=float("inf")
-                )
-                batch_pred_mzs_r = ragged_to_batch(
-                    pred_mzs_r, pred_batch_idxs_r, pad_value=float("inf")
-                )
-                batch_true_prec_mask_r = calculate_match_mzs(
-                    batch_true_mzs_r,
-                    true_prec_mzs[..., None],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                ).squeeze(-1)
-                batch_pred_prec_mask_r = calculate_match_mzs(
-                    batch_pred_mzs_r,
-                    true_prec_mzs[..., None],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                ).squeeze(-1)
-                # match
-                batch_match_mask_r = calculate_match_mzs(
-                    batch_true_mzs_r,
-                    batch_pred_mzs_r,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                )
-                batch_true_match_mask_r = batch_match_mask_r.max(
-                    -1
-                ).values  # th.any(b_match_mask_r, dim=1)
-                batch_pred_match_mask_r = batch_match_mask_r.max(
-                    -2
-                ).values  # th.any(b_match_mask_r, dim=0)
-
-            # calculate batched cosine and batched jss
-            batched_metric = {}
-            if "cos_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        if sqrt:
-                            inp_true = sqrt_batched_true_ints_r
-                            inp_pred = sqrt_batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            inp_true = batched_true_ints_r
-                            inp_pred = batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("none")
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        # metric_d[fname][b_idx] = b_cos_hun
-                        batched_metric[fname] = batch_cos_hun_helper(
-                            inp_true,
-                            inp_pred,
-                            batch_match_mask_r,
-                            batch_true_match_mask_r,
-                            batch_pred_match_mask_r,
-                            remove_prec_peak,
-                            batch_true_prec_mask_r,
-                            batch_pred_prec_mask_r,
-                        )
-            if "jss_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        if sqrt:
-                            inp_true = sqrt_batched_true_ints_r
-                            inp_pred = sqrt_batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            inp_true = batched_true_ints_r
-                            inp_pred = batched_pred_ints_r
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-
-                        batched_metric[fname] = batch_jss_hun_helper(
-                            inp_true,
-                            inp_pred,
-                            batch_match_mask_r,
-                            batch_true_match_mask_r,
-                            batch_pred_match_mask_r,
-                            remove_prec_peak,
-                            batch_true_prec_mask_r,
-                            batch_pred_prec_mask_r,
-                            log_min=self.hparams.log_min,
-                        )
-
-            if "recall" in self.hparams.auxiliary_scores:
-                metric_d["recall"] = batch_true_match_mask.float().sum(-1) / true_ion_num.float()
-            if "wrecall" in self.hparams.auxiliary_scores:
-                metric_d["wrecall"] = (batch_true_ints * batch_true_match_mask.float()).sum(-1)
-            if "precision" in self.hparams.auxiliary_scores:
-                metric_d["precision"] = batch_pred_match_mask.float().sum(-1) / pred_ion_num.float()
-            if "wprecision" in self.hparams.auxiliary_scores:
-                metric_d["wprecision"] = (batch_pred_ints * batch_pred_match_mask.float()).sum(-1)
-            if "cos_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        metric_d[fname] = batched_metric[fname]
-            if "jss_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        metric_d[fname] = batched_metric[fname]
-            if compute_inst_tol_match_mzs and (
-                "cos_hun_inst_tol" in self.hparams.auxiliary_scores
-                or "jss_hun_inst_tol" in self.hparams.auxiliary_scores
-            ):
-                spec_inst_type = kwargs.get("spec_inst_type")
-                if spec_inst_type is not None and self.inst_tol_lookup is not None:
-                    inst_idxs = spec_inst_type.reshape(-1)
-                    device = true_ints.device
-                    dtype = true_ints.dtype
-                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=dtype)
-                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(dtype=dtype)
-                    # Build per-peak effective absolute tolerance: (B, N_true).
-                    # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
-                    safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
-                    tol_per_peak = tol_per_sample[:, None] * th.maximum(
-                        safe_mzs, min_mz_per_sample[:, None]
-                    )
-                    batch_match_mask_it = calculate_match_mzs(
-                        batch_true_mzs_r,
-                        batch_pred_mzs_r,
-                        tolerance=0.0,
-                        relative=False,
-                        tol_per_true=tol_per_peak,
-                    )
-                    batch_true_match_mask_it = batch_match_mask_it.max(-1).values
-                    batch_pred_match_mask_it = batch_match_mask_it.max(-2).values
-                    if "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
-                        for remove_prec_peak in hun_remove_prec_peak_flags:
-                            for sqrt in hun_sqrt_flags:
-                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
-                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
-                                fname_base = "cos_hun_inst_tol"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                metric_d[fname_base] = batch_cos_hun_helper(
-                                    inp_true,
-                                    inp_pred,
-                                    batch_match_mask_it,
-                                    batch_true_match_mask_it,
-                                    batch_pred_match_mask_it,
-                                    remove_prec_peak,
-                                    batch_true_prec_mask_r,
-                                    batch_pred_prec_mask_r,
-                                )
-                    if "jss_hun_inst_tol" in self.hparams.auxiliary_scores:
-                        for remove_prec_peak in hun_remove_prec_peak_flags:
-                            for sqrt in hun_sqrt_flags:
-                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
-                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
-                                fname_base = "jss_hun_inst_tol"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                metric_d[fname_base] = batch_jss_hun_helper(
-                                    inp_true,
-                                    inp_pred,
-                                    batch_match_mask_it,
-                                    batch_true_match_mask_it,
-                                    batch_pred_match_mask_it,
-                                    remove_prec_peak,
-                                    batch_true_prec_mask_r,
-                                    batch_pred_prec_mask_r,
-                                    log_min=self.hparams.log_min,
-                                )
-            if (
-                "ndcg" in self.hparams.auxiliary_scores
-                or "true_oos_prob" in self.hparams.auxiliary_scores
-                or "true_oos_e" in self.hparams.auxiliary_scores
-            ):
-                pred_split_fn = get_split_fn(pred_batch_idxs)
-                true_split_fn = get_split_fn(true_batch_idxs)
-                split_true_ints = true_split_fn(true_ints)
-                split_pred_ints = pred_split_fn(pred_ints)
-                for b_idx in range(batch_size):  # the followings are not speed up yet
-                    b_true_ints = split_true_ints[b_idx]
-                    b_pred_ints = split_pred_ints[b_idx]
-
-                    if compute_match_mzs:
-                        b_true_match_mask = batch_true_match_mask[b_idx][: b_true_ints.shape[0]]
-                        b_pred_match_mask = batch_pred_match_mask[b_idx][: b_pred_ints.shape[0]]
-
-                    if "ndcg" in self.hparams.auxiliary_scores:
-                        for union in [True, False]:
-                            if union:
-                                fname_base = "ndcg_un"
-                                tie_break_flags = [True, False]
-                            else:
-                                fname_base = "ndcg_int"
-                                tie_break_flags = [True]
-                            for optimistic in tie_break_flags:
-                                if union:
-                                    suffix = "_opt" if optimistic else "_pess"
-                                else:
-                                    suffix = ""
-                                b_ndcg = ndcg_helper(
-                                    b_true_ints,
-                                    b_pred_ints,
-                                    batch_match_mask[b_idx][
-                                        : b_true_ints.shape[0], : b_pred_ints.shape[0]
-                                    ],
-                                    b_true_match_mask,
-                                    b_pred_match_mask,
-                                    optimistic,
-                                    union,
-                                )
-                                fname = f"{fname_base}{suffix}"
-                                metric_d[fname][b_idx] = b_ndcg
-
-                    if "true_oos_prob" in self.hparams.auxiliary_scores:
-                        b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(
-                            b_true_ints
-                        )
-                        metric_d["true_oos_prob"][b_idx] = b_true_oos_prob
-
-                    if "true_oos_e" in self.hparams.auxiliary_scores:
-                        b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(
-                            b_true_ints[~b_true_match_mask]
-                        )
-                        b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
-                        b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
-                        metric_d["true_oos_e"][b_idx] = b_true_oos_e
-
-            if "pred_node_count" in self.hparams.auxiliary_scores:
-                for nb_flag in nb_flags:
-                    if nb_flag:
-                        key = "nb_node"
-                    else:
-                        key = "node"
-                    b_pred_node_count = scatter_reduce(
-                        th.ones_like(kwargs[f"pred_{key}_batch_idxs"]),
-                        kwargs[f"pred_{key}_batch_idxs"],
-                        reduce="sum",
-                        dim=0,
-                    )
-                    assert th.min(b_pred_node_count) > 0, b_pred_node_count
-                    metric_d[f"pred_{key}_count"] = b_pred_node_count
-
-            if "pred_formula_count" in self.hparams.auxiliary_scores:
-                b_pred_formula_count = scatter_reduce(
-                    th.ones_like(kwargs["pred_formula_batch_idxs"]),
-                    kwargs["pred_formula_batch_idxs"],
-                    reduce="sum",
-                    dim=0,
-                )
-                b_pred_formula_count = b_pred_formula_count - 1  # -1 for OOS!
-                assert th.min(b_pred_formula_count) > 0, b_pred_formula_count
-                metric_d["pred_formula_count"] = b_pred_formula_count
-
-            if "pred_edge_count" in self.hparams.auxiliary_scores:
-                b_pred_edge_count = scatter_reduce(
-                    th.ones_like(kwargs["pred_edge_batch_idxs"]),
-                    kwargs["pred_edge_batch_idxs"],
-                    reduce="sum",
-                    dim=0,
-                )
-                assert th.min(b_pred_edge_count) > 0, b_pred_edge_count
-                metric_d["pred_edge_count"] = b_pred_edge_count
-
-            return metric_d
-
-        self.metric_fn = calculate_all_auxiliary_metrics
+        """Set up the auxiliary metric functions (see ``pl_model/spectrum_metrics.py``)."""
+        setup_metric_fns(self)
 
     def _get_batch_metric_reduce_fn(self, sample_weight):
-        if sample_weight == "none":
-            calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(
-                spec_per_group, dtype=th.float32
+        # All four share one signature so `_batch_metric_reduce` can call them uniformly.
+        def _weight_none(spec_per_group, spec_per_mol, group_per_mol):
+            return th.ones_like(spec_per_group, dtype=th.float32)
+
+        def _weight_group(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / spec_per_group
+
+        def _weight_mol(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / spec_per_mol
+
+        def _weight_group_mol(spec_per_group, spec_per_mol, group_per_mol):
+            return 1.0 / (spec_per_group * group_per_mol)
+
+        sample_weight_fns = {
+            "none": _weight_none,
+            "group": _weight_group,
+            "mol": _weight_mol,
+            "group_mol": _weight_group_mol,
+        }
+        if sample_weight not in sample_weight_fns:
+            raise ValueError(
+                f"unknown sample_weight {sample_weight!r}; "
+                f"expected one of {sorted(sample_weight_fns)}"
             )
-        elif sample_weight == "group":
-            calc_sample_weights = (
-                lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / spec_per_group
-            )
-        elif sample_weight == "mol":
-            calc_sample_weights = (
-                lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / spec_per_mol
-            )
-        elif sample_weight == "group_mol":
-            calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1.0 / (
-                spec_per_group * group_per_mol
-            )
+        calc_sample_weights = sample_weight_fns[sample_weight]
 
         def _batch_metric_reduce(
             b_metric,
@@ -1039,7 +381,7 @@ class SpectrumPL(L.LightningModule):
             self.max_num_datapoints = 22000
         else:
             self.max_num_datapoints = 270000
-        report_metric_std = getattr(self.hparams, "report_metric_std", False)
+        report_metric_std = self.hparams["report_metric_std"]
         for split in ["train", "val", "test"]:
             setattr(self, f"{split}_results", None)
             setattr(self, f"{split}_counter", 0)
@@ -1090,6 +432,7 @@ class SpectrumPL(L.LightningModule):
         bin_spec=False,
         transform_spec=False,
         normalize_spec=False,
+        batch_size=None,
     ):
         """
         Preprocess a spectrum: filter, bin, transform, and normalize intensities as needed.
@@ -1099,7 +442,7 @@ class SpectrumPL(L.LightningModule):
 
         if rel_filter_spec:
             spec_mzs, spec_ints, spec_batch_idxs = self.rel_filter_func(
-                spec_mzs, spec_ints, spec_batch_idxs
+                spec_mzs, spec_ints, spec_batch_idxs, batch_size=batch_size
             )
         if target_rank_filter_spec:
             spec_mzs, spec_ints, spec_batch_idxs = self.target_rank_filter_func(
@@ -1122,14 +465,15 @@ class SpectrumPL(L.LightningModule):
 
     def preproc_spec(
         self,
-        spec_mzs,
-        spec_ints,
-        spec_batch_idxs,
+        spec_mzs: th.Tensor,
+        spec_ints: th.Tensor,
+        spec_batch_idxs: th.Tensor,
         train: bool,
         pred: bool,
         log_in: bool = False,
         log_out: bool = False,
-    ):
+        batch_size: int | None = None,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
         Convenience wrapper for spectrum preprocessing, handling different modes for train/pred.
         """
@@ -1144,6 +488,7 @@ class SpectrumPL(L.LightningModule):
                 bin_spec=self.binned_loss,
                 transform_spec=False,
                 normalize_spec=False,
+                batch_size=batch_size,
             )
         elif train and (not pred):
             spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
@@ -1155,6 +500,7 @@ class SpectrumPL(L.LightningModule):
                 bin_spec=self.binned_loss,
                 transform_spec=True,
                 normalize_spec=True,
+                batch_size=batch_size,
             )
         elif (not train) and pred:
             # untransform
@@ -1167,25 +513,26 @@ class SpectrumPL(L.LightningModule):
                 spec_ints,
                 spec_batch_idxs,
                 rel_filter_spec=True,
-                target_rank_filter_spec=self.hparams.get(
-                    "eval_target_apply_train_rank_filters",
-                    self.hparams.get("eval_target_apply_train_peak_filters", False),
-                ),
+                target_rank_filter_spec=self.hparams["eval_target_apply_train_rank_filters"],
                 bin_spec=False,
                 transform_spec=False,
                 normalize_spec=True,
+                batch_size=batch_size,
             )
         if log_out:
             spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
         return spec_mzs, spec_ints, spec_batch_idxs
 
-    def predict_step(self, **batch_kwargs):
+    def predict_step(self, **batch_kwargs: Any) -> dict[str, Any]:
         """
         PyTorch Lightning predict_step override.
+
+        Pure prediction: no loss, no metrics. The caller declares what it needs via
+        `return_explainability_tensors` in the batch, which rides straight through.
         """
         return self.forward(**batch_kwargs)
 
-    def forward(self, **batch_kwargs):
+    def forward(self, **batch_kwargs: Any) -> dict[str, Any]:
         """
         Forward pass through the model, with optional activation checkpointing.
         """
@@ -1218,23 +565,61 @@ class SpectrumPL(L.LightningModule):
         group_per_mol = batch["group_per_mol"]
         # prepare ground truth
         train_true_mzs, train_true_logprobs, train_true_batch_idxs = self.preproc_spec(
-            true_mzs, true_ints, true_batch_idxs, train=True, pred=False, log_in=False, log_out=True
+            true_mzs,
+            true_ints,
+            true_batch_idxs,
+            train=True,
+            pred=False,
+            log_in=False,
+            log_out=True,
+            batch_size=batch_size,
         )
+        train_true_intensities = train_true_logprobs.exp()
         # forward pass and get predictions
         pred_d = self.forward(**batch)
         pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_logprobs = pred_d.pop("pred_logprobs", None)
+        pred_intensities = pred_d.pop("pred_intensities", None)
+        if (pred_logprobs is None) == (pred_intensities is None):
+            raise ValueError(
+                "model output must contain exactly one of pred_logprobs or pred_intensities"
+            )
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
-        train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            train=True,
-            pred=True,
-            log_in=True,
-            log_out=True,
-        )
+        base_pred_logprobs = pred_d.pop("base_pred_logprobs", None)
+        train_pred_logprobs = None
+        if pred_logprobs is not None:
+            train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
+                pred_mzs,
+                pred_logprobs,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=True,
+                log_out=True,
+            )
+            train_pred_intensities = train_pred_logprobs.exp()
+        else:
+            train_pred_mzs, train_pred_intensities, train_pred_batch_idxs = self.preproc_spec(
+                pred_mzs,
+                pred_intensities,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=False,
+                log_out=False,
+            )
+        train_base_pred_logprobs = None
+        if base_pred_logprobs is not None:
+            _, train_base_pred_logprobs, _ = self.preproc_spec(
+                pred_mzs,
+                base_pred_logprobs,
+                pred_batch_idxs,
+                train=True,
+                pred=True,
+                log_in=True,
+                log_out=True,
+            )
 
         # Build per-sample tolerance tensors when inst_type_loss_tol is configured.
         # Each sample gets the (rel, min_mz) pair for its instrument type, looked up from
@@ -1248,7 +633,7 @@ class SpectrumPL(L.LightningModule):
             # reshape(-1) instead of squeeze(-1): squeeze would collapse [1] → 0-d scalar
             # when batch_size=1. reshape(-1) always produces a flat 1-D tensor.
             inst_type_idxs = batch["spec_inst_type"].reshape(-1)  # [batch_size]
-            dtype, device = train_true_logprobs.dtype, train_true_logprobs.device
+            dtype = train_true_logprobs.dtype
             # Tensor indexing (no Python loop) — lookup tensors built once in _setup_tolerance
             tol_per_sample = self.inst_tol_lookup[inst_type_idxs].to(dtype=dtype)
             min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs].to(dtype=dtype)
@@ -1257,14 +642,19 @@ class SpectrumPL(L.LightningModule):
         train_d = {
             "true_mzs": train_true_mzs,
             "true_logprobs": train_true_logprobs,
+            "true_intensities": train_true_intensities,
             "true_batch_idxs": train_true_batch_idxs,
             "pred_mzs": train_pred_mzs,
-            "pred_logprobs": train_pred_logprobs,
+            "pred_intensities": train_pred_intensities,
             "pred_batch_idxs": train_pred_batch_idxs,
             "pred_oos_logprobs": pred_oos_logprobs,
             "batch_size": batch_size,
             **pred_d,
         }
+        if train_pred_logprobs is not None:
+            train_d["pred_logprobs"] = train_pred_logprobs
+        if train_base_pred_logprobs is not None:
+            train_d["base_pred_logprobs"] = train_base_pred_logprobs
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample
@@ -1305,15 +695,20 @@ class SpectrumPL(L.LightningModule):
                     pred=False,
                     log_in=False,
                     log_out=False,
+                    batch_size=batch_size,
                 )
                 eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
                 eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
                     pred_mzs.detach(),
-                    pred_logprobs.detach(),
+                    (
+                        pred_logprobs.detach()
+                        if pred_logprobs is not None
+                        else pred_intensities.detach()
+                    ),
                     pred_batch_idxs.detach(),
                     train=False,
                     pred=True,
-                    log_in=True,
+                    log_in=pred_logprobs is not None,
                     log_out=False,
                 )
                 eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
@@ -1401,7 +796,7 @@ class SpectrumPL(L.LightningModule):
                 results["ce_ace"] = th.full((batch_size,), float("nan"))
         return results
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning training_step override.
         Handles automatic optimization only.
@@ -1414,7 +809,7 @@ class SpectrumPL(L.LightningModule):
         else:
             raise NotImplementedError("Manual optimization not implemented")
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning validation_step override.
         """
@@ -1424,7 +819,7 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "val")
         return mean_loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """
         PyTorch Lightning test_step override.
         """
@@ -1434,81 +829,130 @@ class SpectrumPL(L.LightningModule):
         self._update_results(batch_results, "test")
         return mean_loss
 
-    def inference_with_ground_truth_step(self, batch, split="test"):
-        """Run inference and compute evaluation metrics against ground truth without loss.
+    def inference_step(
+        self, batch: dict[str, Any], *, metrics: str | None = None
+    ) -> dict[str, Any]:
+        """Run inference outside Lightning's test/val loop, optionally scoring it.
 
-        Performs a forward pass and computes auxiliary metrics (e.g. cos_sim, cos_hun)
-        against the ground-truth spectrum. Loss functions are never called, making this
-        cheaper than ``_common_step`` for pure inference evaluation.
+        Runs a forward pass and pushes the predicted spectrum through
+        ``preproc_spec(train=False, pred=True)``, which applies ``ints_untransform_func``
+        and then L1-normalizes. The postcondition is the same in both modes: ``pred_ints``
+        is linear and sums to 1 per spectrum, so no consumer has to ask which path ran.
+
+        When ``metrics`` is set the ground-truth spectrum is preprocessed the same way and
+        the auxiliary metrics (e.g. ``cos_sim``, ``cos_hun``) are computed against it. Loss
+        functions are never called in either mode, which is what makes this cheaper than
+        ``_common_step``. Assumes the model is in eval mode but does not switch modes.
 
         Args:
-            batch: Input batch dict containing ground-truth spectrum fields
-                (``spec_mzs``, ``spec_ints``, ``spec_batch_idxs``, etc.).
-            split: Metric split name used to select which auxiliary metrics to compute.
+            batch: Input batch dict. Ground-truth spectrum fields (``spec_mzs``,
+                ``spec_ints``, ``spec_batch_idxs``, ``spec_prec_mz``) are read only when
+                ``metrics`` is set, so a prediction-only batch need not carry them.
+            metrics: Metric split name (e.g. ``"test"``) selecting which auxiliary metrics
+                to compute against ground truth, or None to skip ground truth entirely.
 
         Returns:
-            Dict with predicted spectrum tensors (``pred_mzs``, ``pred_logprobs``,
-            ``pred_batch_idxs``), ``oos_prob`` if available, and all auxiliary metric
-            values (e.g. ``cos_sim``, ``cos_hun``).
+            Dict with ``pred_mzs``, ``pred_ints`` (linear, L1-normalized per spectrum),
+            ``pred_batch_idxs``, ``pred_oos_logprobs``, and every other forward output.
+            When ``metrics`` is set, additionally ``true_mzs``/``true_logprobs``/
+            ``true_batch_idxs``/``true_prec_mzs``, ``oos_prob``, the auxiliary metric
+            values, and ``pred_logprobs`` (see Note).
+
+        Note:
+            ``pred_logprobs`` is emitted in metrics mode only, as ``log(pred_ints)``, to
+            keep saved ``vals.pkl`` artifacts readable by
+            ``scripts/stats_scripts/calculate_ensemble_agreement_stats.py``, which
+            ensembles it in log space. It is a compatibility key: ``pred_ints`` is the
+            only intensity contract, and nothing in the live code path reads
+            ``pred_logprobs`` to obtain intensities.
         """
         if self.training:
-            warnings.warn("Model is in training mode")
+            warnings.warn("Model is in training mode", stacklevel=2)
 
-        true_mzs = batch["spec_mzs"]
-        true_ints = batch["spec_ints"]
-        true_batch_idxs = batch["spec_batch_idxs"]
-        true_prec_mzs = batch["spec_prec_mz"]
-        spec_per_group = batch["spec_per_group"]
-        spec_per_mol = batch["spec_per_mol"]
-        group_per_mol = batch["group_per_mol"]
+        # Auxiliary metrics can need a marginal the caller did not ask to export, so this
+        # step ORs its own demand onto whatever the caller declared.
+        if (
+            metrics is not None
+            and self.expl_metric_args
+            and not batch.get(
+                "return_explainability_tensors", RETURN_EXPLAINABILITY_TENSORS_DEFAULT["fragnnet"]
+            )
+        ):
+            batch = {**batch, "return_explainability_tensors": True}
 
         pred_d = self.forward(**batch)
         pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
         pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+        pred_logprobs = pred_d.pop("pred_logprobs", None)
+        pred_intensities = pred_d.pop("pred_intensities", None)
+        if (pred_logprobs is None) == (pred_intensities is None):
+            raise ValueError(
+                "model output must contain exactly one of pred_logprobs or pred_intensities"
+            )
         pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
 
         with th.inference_mode():
+            eval_pred_mzs, eval_pred_ints, eval_pred_batch_idxs = self.preproc_spec(
+                pred_mzs.detach(),
+                (
+                    pred_logprobs.detach()
+                    if pred_logprobs is not None
+                    else pred_intensities.detach()
+                ),
+                pred_batch_idxs.detach(),
+                train=False,
+                pred=True,
+                log_in=pred_logprobs is not None,
+                log_out=False,
+            )
+
+        results = {
+            "pred_mzs": eval_pred_mzs,
+            "pred_ints": eval_pred_ints,
+            "pred_batch_idxs": eval_pred_batch_idxs,
+            "pred_oos_logprobs": pred_oos_logprobs,
+            **pred_d,
+        }
+        # P(out of spectrum) is a forward output and needs no ground truth. This exp() used
+        # to sit below the early return, on the metrics side, so a prediction-only run could
+        # never export `pred_oos_prob` - `--output_everything` emitted it as NaN.
+        if pred_oos_logprobs is not None:
+            results["oos_prob"] = th.exp(pred_oos_logprobs)
+        if metrics is None:
+            return results
+
+        batch_size = batch["batch_size"]
+        true_prec_mzs = batch["spec_prec_mz"]
+        with th.inference_mode():
             eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
-                true_mzs,
-                true_ints,
-                true_batch_idxs,
+                batch["spec_mzs"],
+                batch["spec_ints"],
+                batch["spec_batch_idxs"],
                 train=False,
                 pred=False,
                 log_in=False,
                 log_out=False,
+                batch_size=batch_size,
             )
             eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
-            eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
-                pred_mzs.detach(),
-                pred_logprobs.detach(),
-                pred_batch_idxs.detach(),
-                train=False,
-                pred=True,
-                log_in=True,
-                log_out=False,
-            )
-            eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+            eval_pred_logprobs = safelog(eval_pred_ints, eps=self.hparams.log_min)
 
-        results = {
-            "unique_id": batch["spec_unique_id"],
-            "smiles": batch["mol_smiles"],
-            "spec_per_group": spec_per_group,
-            "spec_per_mol": spec_per_mol,
-            "group_per_mol": group_per_mol,
-            "true_mzs": eval_true_mzs,
-            "true_logprobs": eval_true_logprobs,
-            "true_batch_idxs": eval_true_batch_idxs,
-            "true_prec_mzs": true_prec_mzs,
-            "pred_mzs": eval_pred_mzs,
-            "pred_logprobs": eval_pred_logprobs,
-            "pred_batch_idxs": eval_pred_batch_idxs,
-            **pred_d,
-        }
-        if pred_oos_logprobs is not None:
-            results["oos_prob"] = th.exp(pred_oos_logprobs)
+        results.update(
+            {
+                "unique_id": batch["spec_unique_id"],
+                "smiles": batch["mol_smiles"],
+                "spec_per_group": batch["spec_per_group"],
+                "spec_per_mol": batch["spec_per_mol"],
+                "group_per_mol": batch["group_per_mol"],
+                "true_mzs": eval_true_mzs,
+                "true_logprobs": eval_true_logprobs,
+                "true_batch_idxs": eval_true_batch_idxs,
+                "true_prec_mzs": true_prec_mzs,
+                "pred_logprobs": eval_pred_logprobs,
+            }
+        )
 
-        active_metric_names = self._get_active_metric_names(split)
+        active_metric_names = self._get_active_metric_names(metrics)
         need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
         if need_aux_metrics:
             with th.inference_mode():
@@ -1518,11 +962,11 @@ class SpectrumPL(L.LightningModule):
                     "true_logprobs": eval_true_logprobs,
                     "true_batch_idxs": eval_true_batch_idxs,
                     "pred_mzs": eval_pred_mzs,
-                    "pred_ints": eval_pred_probs,
+                    "pred_ints": eval_pred_ints,
                     "pred_logprobs": eval_pred_logprobs,
                     "pred_batch_idxs": eval_pred_batch_idxs,
                     "true_prec_mzs": true_prec_mzs,
-                    "split": split,
+                    "split": metrics,
                 }
                 for arg in self.extra_metric_args:
                     metric_input_d[arg] = results[arg]
@@ -1535,58 +979,112 @@ class SpectrumPL(L.LightningModule):
 
         return results
 
-    def inference_step(self, batch):
+    def _split_weight_decay_parameters(self) -> tuple[list[th.nn.Parameter], list[th.nn.Parameter]]:
+        """Split parameters into weight-decayed and decay-exempt groups.
+
+        Exempt: every parameter of a normalization module, every bias, and any parameter
+        whose tensor is one-dimensional (which covers learned scale/offset vectors and
+        free token parameters registered outside a module).
+
+        Returns:
+            ``(decay, no_decay)`` parameter lists covering every trainable parameter once.
         """
-        Custom inference step for evaluation outside of Lightning's test/val loop.
-        This will assume that the model is in eval mode, but will not switch modes.
+        norm_module_parameters: set[int] = set()
+        for module in self.modules():
+            if isinstance(
+                module, (th.nn.LayerNorm, th.nn.GroupNorm, th.nn.modules.batchnorm._NormBase)
+            ):
+                norm_module_parameters.update(id(p) for p in module.parameters(recurse=False))
+        decay: list[th.nn.Parameter] = []
+        no_decay: list[th.nn.Parameter] = []
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            if (
+                id(parameter) in norm_module_parameters
+                or name.endswith("bias")
+                or parameter.ndim <= 1
+            ):
+                no_decay.append(parameter)
+            else:
+                decay.append(parameter)
+        return decay, no_decay
+
+    def _weight_decay_overrides(self) -> dict[int, float]:
+        """Return per-parameter weight decay overrides, keyed by ``id(parameter)``.
+
+        An empty mapping, the default, leaves every parameter on ``weight_decay``. A
+        subclass overrides this to give one branch of the model its own decay.
         """
-        if self.training:
-            warnings.warn("Model is in training mode")
+        return {}
 
-        # forward pass and get predictions
-        pred_d = self.forward(**batch)
-        pred_mzs = pred_d.pop("pred_mzs")
-        pred_logprobs = pred_d.pop("pred_logprobs")
-        pred_batch_idxs = pred_d.pop("pred_batch_idxs")
-        pred_oos_logprobs = pred_d.pop("pred_oos_logprobs", None)
-        eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            train=False,
-            pred=True,
-            log_in=True,
-            log_out=False,
-        )
+    def _weight_decay_parameter_groups(self) -> list[dict[str, Any]] | None:
+        """Build optimizer parameter groups when some parameter needs its own decay.
 
-        results = {
-            "pred_mzs": eval_pred_mzs,
-            "pred_ints": eval_pred_probs,
-            "pred_batch_idxs": eval_pred_batch_idxs,
-            "pred_oos_logprobs": pred_oos_logprobs,
-        }
-        # get rest of pred_d
-        for k, v in pred_d.items():
-            results[k] = v
-        return results
+        Returns:
+            One group per distinct weight decay, or None when a single global group
+            covers the model, which keeps the historical single-group optimizer exactly.
+        """
+        weight_decay = self.hparams.weight_decay
+        exclude_norm_bias = getattr(self.hparams, "weight_decay_exclude_norm_bias", False)
+        overrides = self._weight_decay_overrides()
+        if not exclude_norm_bias and not overrides:
+            return None
+        if exclude_norm_bias:
+            # A single parameter group applies weight decay to every tensor, including
+            # LayerNorm/BatchNorm weights, all biases, and free learned tokens such as the
+            # candidate transformer's inducing set (initialized at std=model_dim**-0.5 and
+            # then pulled toward zero on every step). Standard practice excludes all three.
+            decay_parameters, no_decay_parameters = self._split_weight_decay_parameters()
+        else:
+            decay_parameters = list(self.parameters())
+            no_decay_parameters = []
+        # The norm/bias exemption wins over an override: a decay-exempt tensor stays exempt
+        # whichever branch it belongs to, so overrides only redistribute the decayed group.
+        grouped: dict[float, list[th.nn.Parameter]] = {}
+        for parameter in decay_parameters:
+            grouped.setdefault(overrides.get(id(parameter), weight_decay), []).append(parameter)
+        if no_decay_parameters:
+            grouped.setdefault(0.0, []).extend(no_decay_parameters)
+        return [
+            {"params": parameters, "weight_decay": group_weight_decay}
+            for group_weight_decay, parameters in grouped.items()
+        ]
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> dict[str, Any]:
         """
         Configure optimizer and learning rate scheduler for Lightning.
         """
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
-        optimizer = optimizer_cls(
-            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
-        )
+        weight_decay = self.hparams.weight_decay
+        parameter_groups = self._weight_decay_parameter_groups()
+        if parameter_groups is not None:
+            optimizer = optimizer_cls(
+                parameter_groups, lr=self.hparams.lr, weight_decay=weight_decay
+            )
+        else:
+            optimizer = optimizer_cls(
+                self.parameters(), lr=self.hparams.lr, weight_decay=weight_decay
+            )
         ret = {
             "optimizer": optimizer,
         }
         if self.hparams.lr_schedule:
+            # `lr_schedule_type`, `lr_total_steps` and `lr_min_ratio` were previously dropped
+            # here, so a config asking for `cosine` silently ran exponential decay: six runs in
+            # 2026-09 carried `lr_schedule_type: cosine` and trained at 3.774e-04 where the
+            # configured schedule wanted 1.000e-05 by step 100k. `build_lr_scheduler` raises when
+            # cosine is requested without `lr_total_steps`, which is deliberate -- the total is
+            # the run's planned steps, not the config's `max_epochs`, whenever a job is capped by
+            # wall clock.
             scheduler = build_lr_scheduler(
                 optimizer=optimizer,
                 decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
+                schedule_type=self.hparams.lr_schedule_type,
+                total_steps=self.hparams.lr_total_steps,
+                min_lr_ratio=self.hparams.lr_min_ratio,
             )
             ret["lr_scheduler"] = {
                 "scheduler": scheduler,
@@ -1622,11 +1120,6 @@ class SpectrumPL(L.LightningModule):
         object.__setattr__(self, "_cached_ds_maps", (idx_to_inst, idx_to_prec, inst_to_idx))
         return self._cached_ds_maps
 
-    def _should_store_raw_epoch_results(self, split: str) -> bool:
-        """Return whether raw spectra/IDs must be retained for epoch-end logging."""
-        num_log_images = getattr(self.hparams, f"num_log_{split}_images", 0)
-        return num_log_images > 0
-
     def _should_store_ce_metadata(self, split: str) -> bool:
         """Return whether CE/adduct/instrument metadata must be retained."""
         return bool(self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"))
@@ -1634,44 +1127,30 @@ class SpectrumPL(L.LightningModule):
     def _should_store_metric_vectors(self, split: str) -> bool:
         """Return whether per-example metric tensors must be retained for a split."""
         return bool(
-            self._should_store_raw_epoch_results(split)
-            or self._should_store_ce_metadata(split)
+            self._should_store_ce_metadata(split)
             or self.hparams.log_hist_metrics
             or self.hparams.track_datapoint_metrics
         )
 
     def _should_report_metric_std(self) -> bool:
         """Return whether epoch std metrics should be computed and logged."""
-        return bool(getattr(self.hparams, "report_metric_std", True))
+        return bool(self.hparams["report_metric_std"])
 
     def _needs_eval_tensors(self, split: str) -> bool:
         """Return whether eval spectra must be materialized for this split."""
         active_metric_names = self._get_active_metric_names(split)
         need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
-        return bool(need_aux_metrics or self._should_store_raw_epoch_results(split))
+        return bool(need_aux_metrics)
 
     def _get_active_metric_names(self, split: str) -> set[str]:
         """Return the metric names that should be computed and reduced for a split."""
-        if split == "train":
+        if split == "train" and not self.hparams.compute_train_auxiliary_metrics:
             return self.metric_names.difference(self.auxiliary_metric_names)
         return self.metric_names
 
     def _get_result_keys(self, split: str) -> list[str]:
         """Return the minimal set of batch-result keys required for a split."""
         keys = []
-        if self._should_store_raw_epoch_results(split):
-            keys.extend(
-                [
-                    "unique_ids",
-                    "smiles",
-                    "true_mzs",
-                    "true_logprobs",
-                    "true_unique_ids",
-                    "pred_mzs",
-                    "pred_logprobs",
-                    "pred_unique_ids",
-                ]
-            )
         if self._should_store_ce_metadata(split):
             keys.extend(
                 [
@@ -1790,29 +1269,16 @@ class SpectrumPL(L.LightningModule):
         # filter keys (filtering first to save time/memory)
         keys = self._get_result_keys(split)
         unique_ids = batch_results.pop("unique_id")
-        true_batch_idxs = batch_results.pop("true_batch_idxs", None)
-        pred_batch_idxs = batch_results.pop("pred_batch_idxs", None)
         batch_results = {k: v for k, v in batch_results.items() if k in keys}
-        # update unique IDs only when raw spectra are retained for image logging
-        if (
-            self._should_store_raw_epoch_results(split)
-            and true_batch_idxs is not None
-            and pred_batch_idxs is not None
-        ):
-            true_unique_ids = unique_ids[true_batch_idxs]
-            pred_unique_ids = unique_ids[pred_batch_idxs]
-            batch_results["unique_ids"] = unique_ids
-            batch_results["true_unique_ids"] = true_unique_ids
-            batch_results["pred_unique_ids"] = pred_unique_ids
         # check all metrics
         if self._should_store_metric_vectors(split):
-            assert all([metric_name in batch_results for metric_name in active_metric_names])
+            assert all(metric_name in batch_results for metric_name in active_metric_names)
         if keys:
             # transfer to cpu
             batch_results = to_cpu(batch_results, detach=True)
             # setup results dict
             if getattr(self, results_attr) is None:
-                setattr(self, results_attr, {k: list() for k in keys})
+                setattr(self, results_attr, {k: [] for k in keys})
             else:
                 assert set(keys) == set(getattr(self, results_attr).keys())
             results_dict = getattr(self, results_attr)
@@ -1857,7 +1323,7 @@ class SpectrumPL(L.LightningModule):
             and results is not None
         ):
             self._log_adduct_inst_ce_table(results, split)
-        for k in mean_metrics.keys():
+        for k in mean_metrics:
             self.log(
                 f"{split}_{k}_epoch/mean",
                 mean_metrics[k],
@@ -1870,11 +1336,11 @@ class SpectrumPL(L.LightningModule):
         if split != "test":
             # update epoch stats
             mean_metrics_epochs = getattr(self, f"{split}_mean_metrics")
-            for k in mean_metrics.keys():
+            for k in mean_metrics:
                 mean_metrics_epochs[k.replace(".", "-")][self.current_epoch] = mean_metrics[k]
             if self._should_report_metric_std():
                 std_metrics_epochs = getattr(self, f"{split}_std_metrics")
-                for k in mean_metrics.keys():
+                for k in mean_metrics:
                     std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
             # log histograms
             if self.hparams.log_hist_metrics and results is not None:
@@ -1952,7 +1418,7 @@ class SpectrumPL(L.LightningModule):
                 num_datapoints,
                 datapoint_metrics[example_key.replace(".", "-")].shape[0],
             )
-            for k in mean_metrics.keys():
+            for k in mean_metrics:
                 assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
                 datapoint_metrics[k.replace(".", "-")][:num_datapoints] = results[k]
 
@@ -2079,128 +1545,56 @@ class SpectrumPL(L.LightningModule):
             # Full table at test time for detailed inspection.
             wandb_logger.experiment.log({f"{split}_adduct_inst_ce_table": table})
 
-    def _log_images(self, split):
-        """
-        Log example spectra as images to WandB for the given split.
-        """
-        results = getattr(self, f"{split}_results")
-        num_log_images = getattr(self.hparams, f"num_log_{split}_images")
-        if num_log_images <= 0 or results is None:
-            return
-        counter = getattr(self, f"{split}_counter")
-        num_log_images = min(num_log_images, counter)
-        wandb_logger = self._get_wandb_logger()
-        if wandb_logger is None:
-            return
-        # randomly sample unique_ids
-        unique_ids = th.unique(results["unique_ids"], sorted=True)
-        if num_log_images == unique_ids.shape[0]:
-            sample_idxs = th.arange(num_log_images)
-            sample_unique_ids = unique_ids
-        else:
-            # use a non-global torch Generator for deterministic selection
-            with th_temp_generator(420) as gen:
-                sample_idxs = th.randperm(unique_ids.shape[0], generator=gen)[:num_log_images]
-            sample_unique_ids = unique_ids[sample_idxs]
-        # plot images
-        for i in range(num_log_images):
-            unique_id = sample_unique_ids[i].item()
-            unique_idx = th.nonzero(results["unique_ids"] == unique_id, as_tuple=False).item()
-            true_mask = results["true_unique_ids"] == unique_id
-            pred_mask = results["pred_unique_ids"] == unique_id
-            smiles = results["smiles"][unique_idx]
-            loss = results["loss"][unique_idx].item()
-            if "cos_sim" in results:
-                cos_sim = results["cos_sim"][unique_idx].item()
-            else:
-                cos_sim = np.nan
-            if "wrecall" in results:
-                wrecall = results["wrecall"][unique_idx].item()
-            else:
-                wrecall = np.nan
-            # note: these are already untransformed and normalized (with possibility of oos)
-            true_mzs = results["true_mzs"][true_mask]
-            true_ints = th.exp(results["true_logprobs"][true_mask])
-            pred_mzs = results["pred_mzs"][pred_mask]
-            pred_ints = th.exp(results["pred_logprobs"][pred_mask])
-            # cast to numpy
-            true_mzs = true_mzs.numpy()
-            true_ints = true_ints.numpy()
-            pred_mzs = pred_mzs.numpy()
-            pred_ints = pred_ints.numpy()
-            assert np.isclose(np.sum(true_ints), 1.0), np.sum(true_ints)
-            assert np.isclose(np.sum(pred_ints), 1.0), np.sum(pred_ints)
-            # plot
-            data = plot_spectra_sparse(
-                true_mzs, true_ints, pred_mzs, pred_ints, smiles, return_data=True
-            )
-            wandb_logger.log_image(
-                key=f"{split}_example_{i}",
-                caption=[
-                    f"unique_id = {unique_id}, epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"
-                ],
-                images=[data],
-            )
-
-    def on_train_epoch_start(self):
+    def on_train_epoch_start(self) -> None:
         self._seed_dataloader(self.current_epoch)
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self) -> None:
         # consolidate results
         self._consolidate_results("train")
-        # log images
-        self._log_images("train")
         # reset
         self.train_results = None
         self._reset_running_metrics("train")
-        self.train_counter = 0
-        # seed dataloader
-        # self._seed_dataloader(self.current_epoch+1)
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking:
             # consolidate results
             self._consolidate_results("val")
-            # log images
-            self._log_images("val")
         # reset
         self.val_results = None
         self._reset_running_metrics("val")
-        self.val_counter = 0
 
-    def on_test_epoch_end(self):
+    def on_test_epoch_end(self) -> None:
         # consolidate results
         self._consolidate_results("test")
         # reset
         self.test_results = None
         self._reset_running_metrics("test")
-        self.test_counter = 0
 
     def _print_grad_norm(self, prefix=None, total_num_params=5):
         if prefix is None:
             prefix = "no_prefix"
-        print(f">> {prefix}, {self._cur_batch_size}, {self._max_batch_size}")
+        logger.debug("%s, %s, %s", prefix, self._cur_batch_size, self._max_batch_size)
         opt = self.optimizers()
         num_params = 0
         for pg in opt.param_groups:
             for p in pg["params"]:
                 if p.grad is not None:
-                    print(th.norm(p.grad))
+                    logger.debug("grad norm: %s", th.norm(p.grad))
                     num_params += 1
                 if num_params > total_num_params:
                     break
             if num_params > total_num_params:
                 break
 
-    def on_after_backward(self):
+    def on_after_backward(self) -> None:
         if self.hparams.check_gradient_norm:
             self._print_grad_norm(prefix="after_backward")
 
-    def on_before_optimizer_step(self, optimizer):
+    def on_before_optimizer_step(self, optimizer: th.optim.Optimizer) -> None:
         if self.hparams.check_gradient_norm:
             self._print_grad_norm(prefix="before_optimizer_step")
 
-    def on_after_optimizer_step(self, optimizer):
+    def on_after_optimizer_step(self, optimizer: th.optim.Optimizer) -> None:
         self._cur_batch_size = 0
         self._cur_batch_weight = 0.0
 
@@ -2219,21 +1613,43 @@ class SpectrumPL(L.LightningModule):
         train_dataloader = self.trainer.train_dataloader
         batch_sampler = train_dataloader.batch_sampler
 
-        # Seed generator and recompute batches on whichever object(s) own them.
-        # Walk inner sampler first (so nested pre_compute runs before outer),
-        # then the batch_sampler itself. Works for SpecMolFragDynamicBatchSampler
-        # (nested sampler owns generator), DualGroupDynamicBatchSampler (owns its
-        # own generator), and standard BatchSampler (nested sampler may own generator).
+        # Seed generators on whichever object owns them.
         inner = getattr(batch_sampler, "sampler", None)
         for obj in [inner, batch_sampler]:
             if obj is None:
                 continue
             if hasattr(obj, "generator"):
                 obj.generator = generator
-            if hasattr(obj, "_pre_compute_batches"):
-                obj._pre_compute_batches()
 
-    def on_save_checkpoint(self, checkpoint):
+        model_hooks = registry.get_model_hooks(
+            getattr(self.hparams, "model_type", None), strict=False
+        )
+        if model_hooks.advances_sampler_each_epoch(self.hparams):
+            # Advance the sampler owning curriculum or CE-window state before Lightning
+            # reads the epoch's batch count.
+            epoch_sampler = batch_sampler if hasattr(batch_sampler, "set_epoch") else inner
+            if epoch_sampler is None or not hasattr(epoch_sampler, "set_epoch"):
+                raise RuntimeError("curriculum sampler does not support set_epoch")
+            epoch_sampler.set_epoch(seed)
+
+            # Lightning caches these before set_epoch and this hook run, including on resume.
+            num_batches = len(train_dataloader)
+            fit_loop = self.trainer.fit_loop
+            # Mutate in place because the active CombinedLoader iterator holds this list.
+            fit_loop._combined_loader.limits[0] = num_batches
+            fit_loop._data_fetcher.reset()
+            fit_loop.max_batches = num_batches
+            if not isinstance(self.trainer.val_check_interval, int):
+                self.trainer.val_check_batch = max(
+                    1, int(num_batches * self.trainer.val_check_interval)
+                )
+        else:
+            # Preserve existing recomputation behavior for non-curriculum samplers.
+            for obj in [inner, batch_sampler]:
+                if obj is not None and hasattr(obj, "_pre_compute_batches"):
+                    obj._pre_compute_batches()
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # rng
         checkpoint["rng_states"] = _collect_rng_states(include_cuda=th.cuda.is_available())
         # metrics
@@ -2248,7 +1664,7 @@ class SpectrumPL(L.LightningModule):
             checkpoint["train_datapoint_metrics"] = self.train_datapoint_metrics
             checkpoint["val_datapoint_metrics"] = self.val_datapoint_metrics
 
-    def on_load_checkpoint(self, checkpoint):
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         # rng
         if "torch" in checkpoint["rng_states"]:
             checkpoint["rng_states"]["torch"] = checkpoint["rng_states"]["torch"].cpu()

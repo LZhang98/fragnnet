@@ -6,24 +6,39 @@ import time
 from typing import cast
 
 import pandas as pd
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from fragnnet.dataset import SpecMolFragDataset
-from fragnnet.runner import init_dataloader
-from fragnnet.utils import data_utils, frag_utils
-from fragnnet.utils.misc_utils import booltype
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     get_config_from_ckpt,
-    get_required_config_indices,
-    get_tabular_columns,
     init_model_from_ckpt,
-    list_output_subset_options,
-    prepare_output_subset,
-    run_inference_tabular_iter,
     setup_device,
 )
+from fragnnet.inference.export_columns import (
+    get_required_config_indices,
+    get_tabular_columns,
+    list_output_subset_options,
+    prepare_output_subset,
+)
+from fragnnet.inference.runners import run_inference_tabular_iter
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.models.fragnnet.dag.storage import available_frag_mol_ids
+from fragnnet.models.fragnnet.fragnnet_dataset import IterableSpecMolFragDataset, SpecMolFragDataset
+from fragnnet.runner import init_dataloader
+from fragnnet.utils import dag_format_utils, parallel_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.setup_utils import get_dataset_cls
+
+
+def passthrough_collate(batch):
+    """Identity collate: IterableSpecMolFragDataset already yields collated batches.
+
+    Defined at module level rather than as a lambda so DataLoader workers can pickle it.
+    """
+    return batch
+
 
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
@@ -40,10 +55,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config",
         help="Path to the template config file",
     )
     parser.add_argument("--custom_fp", type=str, default=None, help="Path to custom config file")
+    parser.add_argument(
+        "--masster_candidate_backend",
+        choices=("cpu", "cuda"),
+        default=None,
+        help="Override only MASSter candidate construction after loading checkpoint settings",
+    )
     # Model checkpoint loading
     parser.add_argument(
         "--wandb_run_id",
@@ -74,9 +95,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save_format",
         type=str,
-        default="parquet",
-        choices=["pkl", "pkl.gz", "parquet"],
-        help="File format for saving predictions (pkl or parquet)",
+        default="pkl",
+        choices=["pkl", "pkl.gz"],
+        help="File format for saving predictions. Parquet is not supported: prediction "
+        "cells are torch.Tensors, which pyarrow cannot serialize.",
     )
     # Output control arguments
     parser.add_argument(
@@ -116,6 +138,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--return_cc_hash", type=booltype, default=True, help="Whether to return node CC hashes"
+    )
+    parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
     )
     parser.add_argument(
         "--drop_none_cols",
@@ -161,8 +190,29 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=1,
-        help="Batch size for evaluation/inference (use 1 for variable-size molecules)",
+        default=16,
+        help="Fixed batch size for evaluation/inference; ignored when --dynamic_batch_max is set. "
+        "Matches eval_batch_size in config/template.yml. Note that 1 is not just slow: it "
+        "also feeds return_batch_at in init_dataloader, so a config with "
+        "dynamic_batch_sampler=True would flush after every sample and never reach "
+        "dynamic_batch_sampler_max",
+    )
+    parser.add_argument(
+        "--dynamic_batch_max",
+        type=int,
+        default=None,
+        help="If set, pack batches greedily up to this many frag_node/frag_edge "
+        "(see --dynamic_batch_limited_by) instead of using a fixed --batch_size. "
+        "Uses IterableSpecMolFragDataset, which batches lazily as it streams. "
+        "In frag_node units, config/template.yml uses 100000 for training.",
+    )
+    parser.add_argument(
+        "--dynamic_batch_limited_by",
+        type=str,
+        default="frag_node",
+        choices=["frag_node", "frag_edge"],
+        help="Quantity capped by --dynamic_batch_max. Only use frag_edge for configs "
+        "that materialize fragment edges; otherwise every sample measures 0.",
     )
     parser.add_argument(
         "--save_chunk_size",
@@ -170,11 +220,20 @@ if __name__ == "__main__":
         default=10_000,
         help="Number of predictions per chunk file (for resumable inference)",
     )
+    # Sharding (SLURM array jobs)
     parser.add_argument(
-        "--save_interval",
+        "--start_mol_idx",
         type=int,
-        default=1_000,
-        help="Write predictions to disk every N predictions (lower = more disk I/O but safer)",
+        default=0,
+        help="Row offset into mol_df: this run only predicts molecules "
+        "[start_mol_idx, start_mol_idx + num_mols). Use the same offset/size as the "
+        "DAG preprocessing array so each task lines up with one frag shard.",
+    )
+    parser.add_argument(
+        "--num_mols",
+        type=int,
+        default=-1,
+        help="Number of mol_df rows in this shard (-1 = all remaining rows).",
     )
     args = parser.parse_args()
 
@@ -197,6 +256,12 @@ if __name__ == "__main__":
         custom_fp=custom_fp,
         template_fp=template_fp,
     )
+    if args.masster_candidate_backend is not None:
+        if config_d["model_type"] != "masster":
+            parser.error("--masster_candidate_backend requires a MASSter checkpoint")
+        config_d["masster_candidate_backend"] = args.masster_candidate_backend
+    if config_d["model_type"] == "masster":
+        print(f"> MASSter candidate backend: {config_d['masster_candidate_backend']}")
 
     # Load Input Data (molecules and spectra)
     print("> Loading mol_df")
@@ -210,10 +275,34 @@ if __name__ == "__main__":
     print(spec_df.head(5))
 
     # =========================================
+    # Shard selection (SLURM array jobs)
+    # =========================================
+    # Slice by mol_df ROW POSITION, matching how the DAG preprocessing array sharded,
+    # so shard i of the frag output holds exactly the molecules selected here.
+    if args.start_mol_idx > 0 or args.num_mols >= 0:
+        if args.start_mol_idx >= len(mol_df):
+            print(
+                f"> start_mol_idx {args.start_mol_idx} is beyond mol_df ({len(mol_df)} rows), "
+                "nothing to do"
+            )
+            sys.exit(0)
+        stop = len(mol_df) if args.num_mols < 0 else args.start_mol_idx + args.num_mols
+        mol_df = mol_df.iloc[args.start_mol_idx : stop]
+        spec_df = spec_df[spec_df["mol_id"].isin(set(mol_df["mol_id"]))]
+        print(
+            f"> Shard [{args.start_mol_idx}, {args.start_mol_idx + len(mol_df)}): "
+            f"{len(mol_df)} molecules, {len(spec_df)} spectra"
+        )
+        if len(spec_df) == 0:
+            print("> Shard has no spectra, nothing to do")
+            sys.exit(0)
+
+    # =========================================
     # Resume logic
     # =========================================
     start_chunk_idx = 0
 
+    os.makedirs(args.save_dp, exist_ok=True)
     print(f"> Checking for existing predictions in {args.save_dp}...")
     existing_files = [
         f
@@ -234,17 +323,17 @@ if __name__ == "__main__":
 
         fp = os.path.join(args.save_dp, f)
         try:
-            if args.save_format == "parquet":
-                # Only read spec_id column for speed
-                df = pd.read_parquet(fp, columns=["spec_id"])
-            else:
-                df = pd.read_pickle(fp)
+            df = pd.read_pickle(fp)
 
             if "spec_id" in df.columns:
                 finished_spec_ids.update(df["spec_id"].unique())
         except Exception as e:
             print(f"Warning: Could not read {fp}: {e}")
 
+    # Filter once, after every chunk has been read. Doing it inside the loop re-filtered
+    # spec_df/mol_df once per chunk file and made the "skipped" count report only the
+    # spectra the latest file contributed.
+    if existing_files:
         print(f"> Found {len(finished_spec_ids)} finished spectra.")
         start_chunk_idx = max_chunk_idx + 1
 
@@ -275,10 +364,17 @@ if __name__ == "__main__":
         disable_preproc=args.disable_preproc,
         eval_batch_size=args.batch_size,
         auxiliary_scores=[],
+        # Prediction-only input: spec_df has no ground-truth peaks to clean or to drop on.
+        drop_empty_spectra=False,
     )
 
     # Fragment graphs (DAGs) are computationally expensive to generate
     # Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
+    # Preserve the CLI's legacy FraGNNet spelling while using canonical dispatch.
+    ds_cls = get_dataset_cls(
+        "frag_gnn" if config_d["model_type"] == "fragnnet" else config_d["model_type"]
+    )
+    requires_dags = issubclass(ds_cls, SpecMolFragDataset)
     temp_frag_dir = None
     if args.frag_dp is not None:
         # Use pre-computed fragments
@@ -286,12 +382,8 @@ if __name__ == "__main__":
         print(f"> Using provided fragment directory: {config_d['frag_dp']}")
     else:
         # Auto-generate fragments in temporary directory (only for FraGNNet models)
-        temp_frag_dir = (
-            tempfile.TemporaryDirectory()
-            if config_d["model_type"] in ["frag_gnn", "fragnnet"]
-            else None
-        )
-        if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
+        temp_frag_dir = tempfile.TemporaryDirectory() if requires_dags else None
+        if requires_dags:
             if temp_frag_dir is None:
                 raise RuntimeError("Temporary fragment directory could not be created")
             print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
@@ -325,8 +417,8 @@ if __name__ == "__main__":
                 f"> Running parallel fragment generation for {len(dag_feat_inputs_l)} molecules..."
             )
             # Generate fragment graphs in parallel across CPU cores
-            frag_results = data_utils.par_apply(
-                iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True
+            frag_results = parallel_utils.par_apply(
+                iter(dag_feat_inputs_l), timed_get_dags, True, return_as_generator=True
             )
             if frag_results is None:
                 raise RuntimeError("Parallel fragment generation did not return any results")
@@ -339,7 +431,7 @@ if __name__ == "__main__":
                 if not dag_d:
                     failed_frag_count += 1
                     continue
-                frag_utils.save_frag_d(
+                dag_format_utils.save_frag_d(
                     frag_d=dag_d,
                     mol_id=mol_id,
                     frag_dp=config_d["frag_dp"],
@@ -353,13 +445,23 @@ if __name__ == "__main__":
             print(f"> Fragment generation failures: {failed_frag_count}")
 
     # Filter input data to only include molecules with successfully generated fragments
-    print(">> Filtering molecules without fragments...")
-    all_frags = {f.split(".")[0] for f in os.listdir(config_d["frag_dp"])}
-    print(f">> Found {len(all_frags)} fragment files")
-    mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
-    print(f"> Molecules after filtering: {len(mol_df)}")
-    spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
-    print(f"> Spectra after filtering: {len(spec_df)}")
+    if requires_dags:
+        print(">> Filtering molecules without fragments...")
+        all_frags = available_frag_mol_ids(config_d["frag_dp"])
+        print(f">> Found {len(all_frags)} fragment entries")
+        mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
+        print(f"> Molecules after filtering: {len(mol_df)}")
+        spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"].to_list())]
+        print(f"> Spectra after filtering: {len(spec_df)}")
+        # Report this cause here rather than letting the empty-dataset guard below blame
+        # the dataset: nothing reaches it, so its message about spec_params would send the
+        # reader looking in the wrong place.
+        if len(spec_df) == 0:
+            raise RuntimeError(
+                f"No molecule has a fragment graph in {config_d['frag_dp']} "
+                f"({len(all_frags)} entries found), so every spectrum was filtered out. "
+                "Check --frag_dp, or drop it to generate fragments on the fly."
+            )
 
     # Set dataframes in config for dataset initialization
     config_d["mol_fp"] = mol_df
@@ -367,18 +469,45 @@ if __name__ == "__main__":
 
     # Initialize Dataset and DataLoader
     print(">>> Initializing dataset...")
-    ds_cls = SpecMolFragDataset
     ds = ds_cls(split="predict_only", **config_d)
-    dl = init_dataloader(ds, config_d)
     print(f">>> Dataset size: {len(ds)} spectra")
+    # The legitimate "nothing to do" cases (empty shard, fully resumed) already exited
+    # above, so an empty dataset here means the dataset silently dropped every spectrum
+    # it was handed. Fail instead of writing an empty prediction set and exiting 0.
+    if len(ds) == 0:
+        raise RuntimeError(
+            f"Dataset is empty although {len(spec_df)} spectra reached it; the dataset "
+            "dropped all of them. Check the checkpoint's spec_params against the input: "
+            "prec_types, inst_types, split_filters and drop_empty_spectra."
+        )
+    if args.dynamic_batch_max is not None:
+        stream_ds = IterableSpecMolFragDataset(
+            dataset=ds,
+            index_stream=range(len(ds)),
+            max_num=args.dynamic_batch_max,
+            limited_by=args.dynamic_batch_limited_by,
+        )
+        dl = DataLoader(
+            stream_ds,
+            # The dataset yields collated batches, so disable a second round of batching.
+            # Keep iteration in this process: worker-based iteration of this nested dataset
+            # currently deadlocks before yielding its first batch.
+            batch_size=None,
+            collate_fn=passthrough_collate,
+            num_workers=0,
+            pin_memory=config_d["pin_memory"] and (config_d["accelerator"] != "cpu"),
+        )
+        print(
+            f">>> Dynamic batching: max_{args.dynamic_batch_limited_by}="
+            f"{args.dynamic_batch_max} (batch count known only once the stream is consumed)"
+        )
+    else:
+        dl = init_dataloader(ds, config_d)
 
     device = setup_device(config_d)
     model = init_model_from_ckpt(ckpt_fp, config_d, device)
     print(f">>> Model loaded and ready on device: {device}")
     print(f">>> Model in eval mode: {not model.training}")
-
-    # Create output directory for predictions
-    os.makedirs(args.save_dp, exist_ok=True)
 
     # Run inference with periodic saving
     print(">>> Running inference and saving predictions...")
@@ -388,7 +517,11 @@ if __name__ == "__main__":
     # Show which index variables will be required for the chosen output_subset
     if output_set is not None:
         req_batch, req_node, req_formula, req_nb_node = get_required_config_indices(
-            output_set, model, nb_iso=False
+            output_set,
+            model,
+            nb_iso=False,
+            return_formula_str=args.return_formula_str or args.output_everything,
+            return_cc_hash=args.return_cc_hash or args.output_everything,
         )
         print("> Required index variables for output_subset:")
         if req_batch:
@@ -403,6 +536,7 @@ if __name__ == "__main__":
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         output_subset=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     )
 
     # =========================================
@@ -415,31 +549,30 @@ if __name__ == "__main__":
     total_preds = 0
     file_ext = args.save_format
 
-    # Calculate save interval in batches based on chunk size
-    save_interval_batches = max(1, args.save_chunk_size // args.batch_size)
-    print(
-        f"> Saving every {save_interval_batches} batches (approx {save_interval_batches * args.batch_size} predictions per chunk)"
-    )
+    print(f"> Saving every ~{args.save_chunk_size} predictions")
 
-    for batch_idx, batch_rows in enumerate(
-        run_inference_tabular_iter(
-            model,
-            dl,
-            device,
-            evaluate=False,
-            batch_cutoff=-1,
-            min_peak_int=args.min_intensity,
-            return_formula_str=args.return_formula_str or args.output_everything,
-            return_cc_hash=args.return_cc_hash or args.output_everything,
-            rebase_indices=True,
-            output_set=output_set,
-        )
+    for batch_rows in run_inference_tabular_iter(
+        model,
+        dl,
+        device,
+        evaluate=False,
+        batch_cutoff=-1,
+        min_peak_int=args.min_intensity,
+        return_formula_str=args.return_formula_str or args.output_everything,
+        return_cc_hash=args.return_cc_hash or args.output_everything,
+        rebase_indices=True,
+        output_set=output_set,
+        return_rule_provenance=args.return_rule_provenance,
     ):
-        preds_l.extend(batch_rows)
-        total_preds += len(batch_rows)
+        # batch_rows is COLUMN-major: one list per column, each holding a value per
+        # spectrum in the batch. Transpose to per-spectrum rows for the DataFrame.
+        rows = list(zip(*batch_rows))
+        preds_l.extend(rows)
+        total_preds += len(rows)
 
-        # Save periodically every save_interval batches
-        if (batch_idx + 1) % save_interval_batches == 0:
+        # Save periodically once enough predictions have accumulated (batches may be
+        # variable-sized under dynamic batching, so trigger on prediction count, not batch count)
+        if len(preds_l) >= args.save_chunk_size:
             pred_df = pd.DataFrame(preds_l, columns=columns_name)
             if args.drop_none_cols:
                 before_cols = set(pred_df.columns)
@@ -448,10 +581,7 @@ if __name__ == "__main__":
                 if dropped:
                     print(f"> Dropped all-NaN columns: {dropped}")
             chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
-            if args.save_format == "parquet":
-                pred_df.to_parquet(chunk_fp, index=False)
-            else:
-                pred_df.to_pickle(chunk_fp)
+            pred_df.to_pickle(chunk_fp)
             print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
             preds_l = []
             chunk_idx += 1
@@ -466,10 +596,7 @@ if __name__ == "__main__":
             if dropped:
                 print(f"> Dropped all-NaN columns: {dropped}")
         chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
-        if args.save_format == "parquet":
-            pred_df.to_parquet(chunk_fp, index=False)
-        else:
-            pred_df.to_pickle(chunk_fp)
+        pred_df.to_pickle(chunk_fp)
         print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
 
     print(f"\n>>> Inference complete! Total predictions: {total_preds}")

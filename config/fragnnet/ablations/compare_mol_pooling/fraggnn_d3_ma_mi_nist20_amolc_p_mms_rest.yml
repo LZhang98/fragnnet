@@ -1,0 +1,120 @@
+wandb_name: fraggnn_d3_ma_mi_nist20_amolc_p_mms_rest
+wandb_tags:
+- retrieval
+- nist20
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256
+- vectorized_loss
+- lb32
+- preload
+- preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
+- m+h
+- m-h
+- m+na
+- m+cl
+
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
+num_depth: 4
+num_hs: 4
+frag_gnn_type: NodeMLP
+frag_params:
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+spec_params:
+  merge: False
+  nce: True
+  merge_keep_ces: False
+  preprocess: True
+  prec_type_str: False
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
+  inst_type: True
+  inst_types:
+    - "ORB"
+    - "ORB_F"
+    - "QTOF"
+    - 'IT'
+mol_params:
+  preprocess: True
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: False # merge ce embedding
+ce_insert_size: 32
+prec_insert_location: mol
+prec_insert_size: 32
+inst_insert_location: mol
+inst_insert_size: 32
+cc_interstage_type: gated
+cc_interstage_use_rest: True
+
+mol_params:
+  preprocess: True
+
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 50
+max_epochs: 50
+lr_schedule: False
+debug_overfit: False
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean_max_sum
+frag_pool_type: none
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+  - cos_sim
+eval_mz_bin_res:
+  - 0.01
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+dynamic_batch_sampler:  True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 25000
+
+group_sampler: False
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group #[group, group_mol, mol]
+
+pl_enable_progress_bar: True
+activation_checkpointing: False
+compile: False
+pin_memory: True
+loss_vectorized: True
+loss_batch_size: 16

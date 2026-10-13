@@ -18,8 +18,9 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from fragnnet.frag.compute_frags import update_bonds
-from fragnnet.utils.frag_utils import compute_cc_h_cap, compute_dags, extract_mol_info
+from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.compute_frags import update_bonds
 
 _NITROBENZENE = "c1ccc([N+](=O)[O-])cc1"
 
@@ -199,7 +200,7 @@ def test_cation_element_counts_correct():
 
 def test_cation_h_cap_is_nonnegative():
     """H-cap for any fragment of a charge-1 molecule must be >= 0."""
-    from fragnnet.utils.frag_utils import compute_cc_h_cap
+    from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 
     mol = Chem.MolFromSmiles("C[N+](C)(C)C")
     mol_d = extract_mol_info(mol)
@@ -207,7 +208,7 @@ def test_cation_h_cap_is_nonnegative():
     import numpy as np
 
     atom_ids = np.array(all_atoms, dtype=np.int32)
-    from fragnnet.frag.compute_frags import update_bonds
+    from fragnnet.models.fragnnet.dag.compute_frags import update_bonds
 
     updated_sbond, _ = update_bonds(
         atom_ids,

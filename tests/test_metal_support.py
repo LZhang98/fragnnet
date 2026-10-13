@@ -12,7 +12,7 @@ METAL_SMILES = [
 @pytest.mark.parametrize("smiles,name", METAL_SMILES)
 def test_metal_featurization(smiles, name):
     """Metal atoms should featurize without error."""
-    from fragnnet.utils.frag_utils import extract_mol_info
+    from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 
     mol_d = extract_mol_info(smiles)
     assert mol_d is not None, f"featurization failed for {name}"
@@ -21,7 +21,7 @@ def test_metal_featurization(smiles, name):
 @pytest.mark.parametrize("smiles,name", METAL_SMILES)
 def test_metal_in_element_counts(smiles, name):
     """Metal element should appear in element_counts with count > 0."""
-    from fragnnet.utils.frag_utils import extract_mol_info
+    from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 
     non_organic = {"C", "H", "O", "N", "P", "S", "F", "Cl", "Br", "I", "Se", "Si", "As", "B"}
     mol_d = extract_mol_info(smiles)
@@ -31,7 +31,7 @@ def test_metal_in_element_counts(smiles, name):
 
 def test_metal_not_disconnected():
     """Normalize+Reionize must not disconnect C–Hg bond (no MetalDisconnector)."""
-    from fragnnet.utils.data_utils import mol_from_smiles
+    from fragnnet.utils.mol_utils import mol_from_smiles
 
     mol = mol_from_smiles("[CH3][Hg]Cl")
     assert mol is not None
@@ -41,14 +41,9 @@ def test_metal_not_disconnected():
 
 def test_element_whitelist_contains_metals():
     """ELEMENT_TO_VE must include all three Tier-1 metals."""
-    from fragnnet.utils.frag_utils import ELEMENT_TO_VE
+    from fragnnet.utils.formula_utils import ELEMENT_TO_VE
 
     for metal in ("Hg", "Sn", "Pb"):
         assert metal in ELEMENT_TO_VE, f"{metal} missing from ELEMENT_TO_VE"
 
 
-def test_num_heavy_elements_matches_whitelist():
-    """NUM_HEAVY_ELEMENTS must equal len(ELEMENT_TO_VE)."""
-    from fragnnet.utils.frag_utils import ELEMENT_TO_VE, NUM_HEAVY_ELEMENTS
-
-    assert NUM_HEAVY_ELEMENTS == len(ELEMENT_TO_VE)

@@ -13,10 +13,10 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
-
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _cumsum_unique(batch_idxs: th.Tensor, batch_size: int) -> th.Tensor:
     return th.cumsum(
@@ -25,7 +25,9 @@ def _cumsum_unique(batch_idxs: th.Tensor, batch_size: int) -> th.Tensor:
 
 
 def _cumsum_bincount(batch_idxs: th.Tensor, batch_size: int) -> th.Tensor:
-    return th.cat([batch_idxs.new_zeros(1), th.bincount(batch_idxs, minlength=batch_size).cumsum(0)])
+    return th.cat(
+        [batch_idxs.new_zeros(1), th.bincount(batch_idxs, minlength=batch_size).cumsum(0)]
+    )
 
 
 def _make_batch_idxs(batch_size: int, peaks_per_spec: list[int], device: th.device) -> th.Tensor:
@@ -50,20 +52,30 @@ def _make_sparse_ce_fn():
 
 # ── correctness: cumsum ───────────────────────────────────────────────────────
 
+
 class TestCumsumEquivalence:
     """Verify th.bincount produces the same cumsum as th.unique."""
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
-    @pytest.mark.parametrize("peaks_per_spec", [
-        [1] * 4,                        # uniform
-        [1, 5, 10, 3, 8, 2],           # variable
-        [50] * 256,                     # realistic batch
-        [1, 100, 1, 100, 1],           # highly skewed
-        # Note: [0, 5, 0, 3] is intentionally excluded — th.unique silently drops empty
-        # batch elements (shape mismatch), which is a bug the bincount path fixes.
-    ])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "peaks_per_spec",
+        [
+            [1] * 4,  # uniform
+            [1, 5, 10, 3, 8, 2],  # variable
+            [50] * 256,  # realistic batch
+            [1, 100, 1, 100, 1],  # highly skewed
+            # Note: [0, 5, 0, 3] is intentionally excluded — th.unique silently drops empty
+            # batch elements (shape mismatch), which is a bug the bincount path fixes.
+        ],
+    )
     def test_cumsum_matches(self, device_str, peaks_per_spec):
         device = th.device(device_str)
         batch_size = len(peaks_per_spec)
@@ -75,16 +87,22 @@ class TestCumsumEquivalence:
         cs_unique = _cumsum_unique(idxs, batch_size)
         cs_bincount = _cumsum_bincount(idxs, batch_size)
 
-        assert cs_unique.shape == cs_bincount.shape, (
-            f"shapes differ: {cs_unique.shape} vs {cs_bincount.shape}"
-        )
-        assert th.all(cs_unique == cs_bincount), (
-            f"mismatch: unique={cs_unique.tolist()} bincount={cs_bincount.tolist()}"
-        )
+        assert (
+            cs_unique.shape == cs_bincount.shape
+        ), f"shapes differ: {cs_unique.shape} vs {cs_bincount.shape}"
+        assert th.all(
+            cs_unique == cs_bincount
+        ), f"mismatch: unique={cs_unique.tolist()} bincount={cs_bincount.tolist()}"
 
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_empty_spectrum_bincount_is_correct_unique_is_not(self, device_str):
         """th.unique drops empty-spectrum batch elements; th.bincount handles them correctly."""
         device = th.device(device_str)
@@ -100,9 +118,9 @@ class TestCumsumEquivalence:
         assert int(cs_bincount[-1]) == sum(peaks_per_spec)
 
         # unique gives wrong shape (skips the zero-count elements)
-        assert cs_unique.shape != (batch_size + 1,), (
-            "th.unique unexpectedly returned correct shape for empty-spectrum batch"
-        )
+        assert cs_unique.shape != (
+            batch_size + 1,
+        ), "th.unique unexpectedly returned correct shape for empty-spectrum batch"
 
     def test_cumsum_last_element_equals_total(self):
         """Last element of the cumsum must equal total number of peaks."""
@@ -131,18 +149,33 @@ class TestCumsumEquivalence:
 
 # ── correctness: end-to-end sparse_cross_entropy_vec ─────────────────────────
 
+
 class TestSparseVecEndToEnd:
     """Verify that swapping cumsum methods does not change loss values."""
 
-    def _run_old(self, true_mzs, true_logprobs, true_batch_idxs,
-                 pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs,
-                 tolerance, relative, tolerance_min_mz, oos_tol, gaussian_renorm,
-                 loss_batch_size, batch_size):
+    def _run_old(
+        self,
+        true_mzs,
+        true_logprobs,
+        true_batch_idxs,
+        pred_mzs,
+        pred_logprobs,
+        pred_batch_idxs,
+        pred_oos_logprobs,
+        tolerance,
+        relative,
+        tolerance_min_mz,
+        oos_tol,
+        gaussian_renorm,
+        loss_batch_size,
+        batch_size,
+    ):
         """Old implementation (th.unique)."""
         import math
-        from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
-        from fragnnet.utils.spec_utils import calculate_match_mzs
-        from fragnnet.model.loss import scatter_reduce
+
+        from fragnnet.utils.misc_utils import LOG_ZERO
+        from fragnnet.utils.scatter_utils import scatter_logsumexp
+        from fragnnet.utils.spec_similarity import calculate_match_mzs
 
         float_dtype = true_logprobs.dtype
         device = true_logprobs.device
@@ -186,8 +219,10 @@ class TestSparseVecEndToEnd:
 
             bl_batch_mask = bl_true_batch_idxs.reshape(-1, 1) == bl_pred_batch_idxs.reshape(1, -1)
             bl_match_mask = calculate_match_mzs(
-                bl_true_mzs, bl_pred_mzs,
-                tolerance=oos_tol * tolerance, relative=relative,
+                bl_true_mzs,
+                bl_pred_mzs,
+                tolerance=oos_tol * tolerance,
+                relative=relative,
                 tolerance_min_mz=tolerance_min_mz,
             )
             bl_both_mask = bl_batch_mask & bl_match_mask
@@ -195,11 +230,12 @@ class TestSparseVecEndToEnd:
 
             bl_true_both_mask = th.any(bl_both_mask, dim=1)
             bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
-            bl_vars = bl_stds ** 2
+            bl_vars = bl_stds**2
             bl_log_trunc_factors = log_trunc * th.ones_like(bl_pred_mzs)
 
             bl_ios_log_probs = (
-                -0.5 * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
+                -0.5
+                * (bl_true_mzs.reshape(-1, 1) - bl_pred_mzs.reshape(1, -1)) ** 2
                 / bl_vars.reshape(1, -1)
                 - 0.5 * th.log(2 * math.pi * bl_vars.reshape(1, -1))
                 + bl_pred_logprobs.reshape(1, -1)
@@ -209,11 +245,15 @@ class TestSparseVecEndToEnd:
             bl_ios_log_probs = th.logsumexp(bl_ios_log_probs, dim=1)
 
             if th.any(bl_true_both_mask):
-                from fragnnet.utils.misc_utils import scatter_reduce as _sr
+                from fragnnet.utils.scatter_utils import scatter_reduce as _sr
+
                 bl_ios_ce = _sr(
                     (-th.exp(bl_true_logprobs) * bl_ios_log_probs)[bl_true_both_mask],
                     bl_true_batch_idxs[bl_true_both_mask],
-                    "sum", dim=0, dim_size=bl_batch_size, default=0.0,
+                    "sum",
+                    dim=0,
+                    dim_size=bl_batch_size,
+                    default=0.0,
                 )
                 ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
@@ -244,17 +284,31 @@ class TestSparseVecEndToEnd:
         pred_mzs = th.rand(sum(peaks_pred)) * 900 + 50
         true_logprobs = th.log_softmax(th.randn(sum(peaks_true)), dim=0)
         # normalize pred logprobs per spectrum
-        pred_logprobs = th.cat([
-            th.log_softmax(th.randn(n), dim=0) for n in peaks_pred
-        ])
+        pred_logprobs = th.cat([th.log_softmax(th.randn(n), dim=0) for n in peaks_pred])
         pred_oos_logprobs = th.full((batch_size,), -2.0)
-        return (true_mzs, true_logprobs, true_batch_idxs,
-                pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs, batch_size)
+        return (
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            batch_size,
+        )
 
     def test_end_to_end_matches_unique(self, batch_data):
         """Full sparse_cross_entropy_vec must produce identical ios_ce/oos_ce."""
-        (true_mzs, true_logprobs, true_batch_idxs,
-         pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs, batch_size) = batch_data
+        (
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            batch_size,
+        ) = batch_data
 
         tolerance = 1e-5
         relative = True
@@ -264,9 +318,20 @@ class TestSparseVecEndToEnd:
         loss_batch_size = 4
 
         ios_old, oos_old, _ = self._run_old(
-            true_mzs, true_logprobs, true_batch_idxs,
-            pred_mzs, pred_logprobs, pred_batch_idxs, pred_oos_logprobs,
-            tolerance, relative, tol_min_mz, oos_tol, gaussian_renorm, loss_batch_size, batch_size,
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            tolerance,
+            relative,
+            tol_min_mz,
+            oos_tol,
+            gaussian_renorm,
+            loss_batch_size,
+            batch_size,
         )
 
         # New path: use get_sparse_cross_entropy_fn (the production path) which we'll patch
@@ -283,24 +348,32 @@ class TestSparseVecEndToEnd:
 
 # ── benchmark ─────────────────────────────────────────────────────────────────
 
+
 class TestCumsumBenchmark:
     """Wall-clock timing of th.unique vs th.bincount cumsum (informational)."""
 
     REPEATS = 200
     WARMUP = 20
 
-    @pytest.mark.parametrize("batch_size,peaks_per_spec", [
-        (256, 50),   # typical training batch
-        (64, 50),    # smaller batch
-    ])
-    @pytest.mark.parametrize("device_str", ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(
-        not th.cuda.is_available(), reason="no GPU"
-    ))])
+    @pytest.mark.parametrize(
+        "batch_size,peaks_per_spec",
+        [
+            (256, 50),  # typical training batch
+            (64, 50),  # smaller batch
+        ],
+    )
+    @pytest.mark.parametrize(
+        "device_str",
+        [
+            "cpu",
+            pytest.param(
+                "cuda", marks=pytest.mark.skipif(not th.cuda.is_available(), reason="no GPU")
+            ),
+        ],
+    )
     def test_benchmark_cumsum(self, batch_size, peaks_per_spec, device_str, capsys):
         device = th.device(device_str)
-        idxs = _make_batch_idxs(
-            batch_size, [peaks_per_spec] * batch_size, device
-        )
+        idxs = _make_batch_idxs(batch_size, [peaks_per_spec] * batch_size, device)
 
         def time_fn(fn, warmup, repeats):
             for _ in range(warmup):

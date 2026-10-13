@@ -1,3 +1,22 @@
+# ==========================================================================
+# FraGNNet / MASSter configuration template
+# ==========================================================================
+#
+# One template for every model. A run resolves as:
+#
+#     config/template.yml  ->  your custom config  ->  CLI --override
+#
+# Every model reads this same schema, so shared code can read any key without
+# checking model_type first. A model's own keys are inert for the others.
+#
+# Layout: the shared core comes first, grouped by who consumes it, then one
+# clearly-marked block per model. Model-owned keys stay flat and prefixed
+# (masster_*, iceberg_*, mf_*, graff_*, clip_*) -- nesting them would
+# invalidate the hparams of every trained checkpoint. `gnn` and `precursor`
+# have no keys of their own; they run entirely on the shared core.
+#
+# Ownership is enforced by tests/test_config_templates.py, which checks that
+# each key sits in the section of the model that reads it.
 # ============================================================================
 # Wandb
 # ============================================================================
@@ -6,7 +25,6 @@ wandb_project: frag-gnn # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
 wandb_tags:
-wandb_root_dir: wandb
 
 # ============================================================================
 # Data File Paths
@@ -15,9 +33,6 @@ spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
 frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
-magma_dp: data/magma  # MAGMA annotation data directory
-ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
-mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
 
 # ============================================================================
 # Data Processing Parameters
@@ -30,26 +45,88 @@ subsample_params:
   test: True
   secondary: True
 spec_params:
+  rt: False  # Load RT targets independently; requires unmerged spectra.
+  ccs: False  # Load CCS targets independently; requires unmerged spectra.
+  rt_labels_fp: null  # CSV with dset_spec_id and rtinseconds; partial coverage allowed.
+  ccs_labels_fp: null  # CSV with dset_spec_id and ccs; partial coverage allowed.
+  rt_ccs: False  # Deprecated alias enabling both label sets.
+  rt_ccs_labels_fp: null  # Optional imported single-source CSV keyed by dset_spec_id.
   merge: True
   merge_keep_ces: False
+  # Merge only the train split (needs merge: False); val/test stay one row per spectrum.
+  # The merged train rows keep their CE ladder whenever nce or ace is on.
+  merge_train_only: False
+  # exact_sum preserves the historical exact-m/z union. tolerance_consensus
+  # normalizes source spectra, clusters peaks at instrument tolerance, averages
+  # replicates, and can give distinct CE schedules equal weight.
+  merge_method: exact_sum  # ["exact_sum", "tolerance_consensus"]
+  merge_tolerance_common_overlap: True
+  merge_normalize_each_spectrum: False
+  merge_equal_ce_weight: False
+  merge_ce_aggregation: legacy  # weighted: retain all CE readings with target-matched weights (equal-CE consensus only).
+  merge_tolerance_by_inst:
+    ORB: {rel: 1.0e-5, min_mz: 200.0}
+    ORB_F: {rel: 1.0e-5, min_mz: 200.0}
+    QTOF: {rel: 2.0e-5, min_mz: 750.0}
   sparse: True
   prec_type: True
   prec_type_str: False
   prec_types:
     - "[M+H]+"
   inst_type: True
+  # Orbitraps: ORB_F = Orbitrap Fusion family (NIST's Lumos); ORB = every other Orbitrap (Elite,
+  # Velos, unnamed). "FT" is retired and refused; migrate old data with
+  # preproc_scripts/dataset_migration/relabel_orbitrap_inst_type.py.
   inst_types:
-    - "FT"
+    - "ORB"
+    - "ORB_F"
   frag_mode: False          # load fragmentation mode (HCD/CID) from spectrum metadata
   frag_modes: []            # known frag modes; unknown falls back to index num_frag_modes
   prec_mz: True
   prec_mass_diff: True
   nce: False
   ace: False
+  # Fill a missing ACE (eV) from NCE as NCE x m/z x charge factor / 500. That is the Elite
+  # convention (Elite records floor/round of it); Lumos records eV a median 12.6 eV above it, and
+  # 67% of NIST20 [M+H]+ Lumos spectra record none, so the fill puts them on the Elite scale.
+  # False leaves a missing eV at -1, which the embed / fourier CE tables read as a learned extra
+  # token. Read whenever nce or ace is on; NCE is still filled from eV either way.
+  # docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
+  fill_missing_ace: True
   preprocess: False
-  # Monoisotopic target cleanup. When True, isotope peaks are removed from
-  # observed spectra before they become training/evaluation targets; isotope
-  # envelopes can then be added back as a post-process.
+  # Per-spectrum peak cleanup, applied before replicate-spectrum merging.
+  centroid_peaks: False
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: False
+  centroid_method: common_overlap  # ["common_overlap", "naive_centroid"]
+  filter_subformula_peaks: False  # when True, candidates always include charge-migration ions ([M+Na]+ -> [frag+H]+, [M+Cl]- -> [frag-H]-)
+  subformula_ppm: 5.0 # only use if filter_subformula_peaks is True and subformula_use_instrument_tolerance is False
+  subformula_use_instrument_tolerance: True
+  # Drop observed peaks above the precursor m/z, widened by one matching tolerance. This is the
+  # same cutoff scripts/eval/dag_oracle_scores.py applies for its `1_above_prec` tier, which is
+  # the default tier for every oracle number in docs/findings - so with this off, the published
+  # ceilings are measured on a target the model does not train on. Measured on the merged MA/MI
+  # val split (docs/findings/masster/unexplained_peak_split_2026_09_22.md): 0.0090 of target intensity
+  # sits above the precursor, of which 0.0065 is the precursor's OWN isotopologue ladder (real
+  # analyte signal that a monoisotopic candidate set can never match) and 0.0025 is co-isolation
+  # or multiply-charged material. Turning this on therefore also removes the precursor isotope
+  # ladder; that is intended while isotopes are unmodelled (num_isotopes is 1 everywhere and all
+  # DAGs are isoFalse), but it changes the target, so cosines are NOT comparable across it.
+  filter_above_precursor_peaks: False
+  above_precursor_ppm: 10.0  # only used when above_precursor_use_instrument_tolerance is False
+  above_precursor_use_instrument_tolerance: True
+  drop_empty_spectra: True
+  # Monoisotopic target cleanup. NOT HOOKED UP: the feature is off everywhere and no run has
+  # been evaluated with it on; the keys are kept so older configs and checkpoints still
+  # resolve. When on, isotope peaks are removed from observed spectra before they become
+  # training/evaluation targets; isotope envelopes can then be added back as a post-process.
+  # `remove_isotope_formula_source` picks where a fragment's composition comes from, which is
+  # what the expected M+k/M+0 ratio needs: `subformula` decomposes the peak against the
+  # precursor formula and works for every model, `dag` reads the molecule's DAG and therefore
+  # needs `frag_dp`, which only the FraGNNet template declares, and `none` falls back to the
+  # m/z-scaled precursor proxy (wrong for Cl/Br). Measured head to head on 1,500 FT NIST20
+  # spectra, subformula and DAG agree on 99.2% of peak decisions:
+  # docs/plans/subformula_isotope_detection_plan.md.
   remove_isotope_peaks: False
   remove_regular_isotope_peaks: False
   remove_coisolation_peaks: False
@@ -61,15 +138,19 @@ spec_params:
   remove_isotope_precursor_envelope_hi: 5.0
   remove_isotope_group_min_count: 1
   remove_isotope_group_max_cv: 1.0
-  remove_isotope_use_dag_formula: False
+  remove_isotope_formula_source: none  # ["none", "subformula", "dag"]
+  remove_isotope_candidate_rule: median  # ["median", "all", "any"] when subformulas disagree
+  remove_isotope_subformula_mz_tol:  # blank = instrument tolerance
+  remove_isotope_use_dag_formula: False  # SUPERSEDED by remove_isotope_formula_source: dag
   remove_isotope_dag_dp:
   remove_isotope_dag_compressed: False
   remove_isotope_dag_mz_tol: 0.015
-  remove_isotope_protect_dag_mono: False
+  remove_isotope_protect_known_mono: False  # never flag a peak the source explains on its own
+  remove_isotope_protect_dag_mono: False  # SUPERSEDED by remove_isotope_protect_known_mono
   remove_isotope_regular_mz_tol:
   unique_id: True
   counts: True
-  # this is deplicated and will be removed in favor of split_filters.val.filter_ce_by_inst.QTOF. Use split_filters instead.
+  # Deprecated; superseded by split_filters.val.filter_ce_by_inst.QTOF. Use split_filters instead.
   test_ces:
   # Per-split spectrum filters applied at dataset load time.
   # Only the entry matching the current split is used.  Missing entry = no filter.
@@ -83,11 +164,13 @@ spec_params:
   # split_filters:
   #  train:
   #    filter_ce_by_inst:
-  #      FT:   {nce_min: 0, nce_max: 60}
+  #      ORB:   {nce_min: 0, nce_max: 60}
+  #      ORB_F: {nce_min: 0, nce_max: 60}
   #      QTOF: {ace_min: 0, ace_max: 40}
   #  val:
   #    filter_ce_by_inst:
-  #      FT:   {nce_min: 0, nce_max: 60}
+  #      ORB:   {nce_min: 0, nce_max: 60}
+  #      ORB_F: {nce_min: 0, nce_max: 60}
   #      QTOF: {ace_min: 0, ace_max: 40}
   split_filters: {}
 mol_params:
@@ -111,191 +194,54 @@ mol_params:
     - a_chiral
     # - a_ring_size # ring size membership: [in3, in4, in5, in6, inGe7]; no DAG recomputation needed
     # - a_charge    # Gasteiger partial charge (continuous); computed on-the-fly, no DAG recomputation needed
+    # - a_num_hs    # total H count one-hot [0, 1, 2, 3, >=4]; complements a_degree (heavy-atom only)
+    # - a_fused_ring # atom in >=2 SSSR rings (2 bits); a ring-junction atom cannot be freed by one cut
   pyg_edge_feats:
     - b_degree
     # - b_ring      # bond ring membership (2 bits); no DAG recomputation needed
     # - b_conj      # bond conjugation (2 bits); no DAG recomputation needed
+    # - b_stereo    # bond stereo one-hot (none/any/Z/E/cis/trans + unspecified); preprocessing strips stereo
+    # - b_ring_size # bond ring size membership [in3, in4, in5, in6, inGe7]; bond analogue of a_ring_size
+    # - b_fused_ring # bond in >=2 SSSR rings (2 bits); cleaving one cannot disconnect the molecule
   pyg_pe_embed_k: 0
   pyg_bigraph: True
   mf: False
   graff: False
   preprocess: False
-frag_params:
-  pyg: True
-  pyg_node_feats:
-    - cc              # mol_embedder atom embeddings pooled over fragment atoms
-    - base_formula    # fragment's elemental formula (one-hot)
-    - depth           # depth of fragment in the DAG
-    - h_formulae_idx  # index into list of possible H-shifted formulae
-    # - cmf_h_formulae_idx  # CMF-derived H-formula index (filled at dataset load time)
-    # - h_counts            # explicit H counts per fragment atom
-    # - nb_iso_idx          # isotope index; requires nb_iso=True
-    # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
-    # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
-    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; does not expose full-fragment cc
-  pyg_edge_feats:
-    - cc
-    - base_formula
-    # - h_range
-  pyg_edges: True
-  pyg_bigraph: True
-  num_isotopes: 1
-  formula_peak_mzs: True
-  formula_peak_probs: True
-  formula_str: False
-  compressed: True
-  preload: False
-  preprocess: False
-  include_cmf: False
-magma_params:
-  pe_embed_k: 0
-  root_encode: gnn
-  add_hs: False
-  binned_targs: False
-  mz_bin_res: 0.1
-  mz_max: 1500.0
-  sum_ints: True
-  adduct_form_deltas: False
-  preprocess: False
-ann_params:
-  max_isotope: 2
-  library_size: 1000 #10000
-  num_eigs: 8
-  filter_peaks: False
-  filter_peaks_tol: 1.0
-  library_splits:
-    - train
-  formula_str: False
-  # Absolute m/z error threshold (Da). Spectra with any annotation whose
-  # |peak_mz - exact_mz| exceeds this value are dropped entirely.
-  # Set to null to disable. Default: 0.1 Da.
-  huge_mz_diff_threshold: 0.1
-  # Relative m/z error threshold (fraction, not ppm). Individual annotations
-  # whose |peak_mz - exact_mz| / max(peak_mz, 200) exceeds this value are
-  # pruned (spectrum is kept). Equivalent to ~10 ppm at the 200 Da floor.
-  # Set to null to disable. Default: 1e-5.
-  big_mz_diff_ppm_threshold:
-  library_fp:
-  preprocess: False
 
 # ============================================================================
 # Model Architecture
 # ============================================================================
-model_type: frag_gnn  # Model type: ["frag_gnn", "mces", "neims", "precursor", "spec_mol_clip_pretraining", etc.]
-num_depth: 5  # Maximum fragmentation depth for DAG
+# Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
+# masster, neims, massformer, graff, precursor, gnn. iceberg_gen, iceberg_inten,
+# mces_pretraining, chemlm, clip and spec_mol_clip_pretraining are retired (RETIRED_MODEL_TYPES).
+model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
-num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
-int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinusoidal"]
+int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
 
 # ============================================================================
-# Spectrum-Molecule CLIP Pretraining
-# ============================================================================
-clip_temperature: 0.07
-clip_embed_dim: 256
-clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
-clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
-spectrum_encoder_params:
-  encoder_type: set_transformer
-  input_dim: 2
-  hidden_dim: 256
-  embed_dim: 256
-  num_layers: 2
-  num_heads: 4
-  num_inds: 32
-  dropout: 0.1
-  normalization: layer
-
-# ============================================================================
 # Molecular GNN Configuration
-# NOTE: If using MCES pre-training, these MUST match the pre-training config
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
-mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
+mol_gnn_type: GINE  # GNN architecture: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "MPNN", "NodeMLP"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
-mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
-mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
-mol_num_heads: 4  # Number of attention heads (GINE_EFA only); must divide mol_hidden_size
-
-# ============================================================================
-# Inter-stage Configuration (Mol → Frag connection)
-# ============================================================================
-cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
-cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
-cc_feature_dropout: 0.0  # Training-only batch-level dropout for full-fragment cc node feature group
-
-# ============================================================================
-# Fragment GNN Configuration
-# ============================================================================
-frag_hidden_size: 256  # Hidden dimension for fragment GNN
-frag_num_layers: 4  # Number of GNN layers for fragment encoding
-frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
-frag_dropout: 0.0  # Dropout rate for fragment GNN
-frag_normalization: batch  # Normalization: ["batch", "layer", "none"]
-frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
-frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
-frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
-
-# ============================================================================
-# MLP/Output Configuration
-# ============================================================================
-mlp_output_format: formula  # Output format: ["formula", "peak"]
+mol_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]; Graphormer requires "layer"
+mol_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "mean_max_sum", "mean_std_softmax", "none"]
+mol_num_heads: 4  # Attention heads (GINE_GSA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
+mol_max_degree: 64  # Graphormer: largest atom degree the degree embedding distinguishes
+mol_max_spatial_distance: 128  # Graphormer: largest shortest-path distance the spatial embedding distinguishes
+mol_multi_hop_max_distance: 5  # Graphormer: leading bonds encoded along each shortest path
 mlp_hidden_size: 256  # Hidden dimension for MLP layers
 mlp_dropout: 0.0  # Dropout rate for MLP
-mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
 mlp_num_layers: 2  # Number of MLP layers
 mlp_use_residuals: True  # Use residual connections in MLP
-# ============================================================================
-# NEIMS/Binned Spectrum Model Configuration
-# ============================================================================
-neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
 ff_output_map_size: -1  # Low-rank size (-1 = standard Linear layers, >0 = LowRankDense with this rank)
 ff_output_activation: relu  # Output activation: "relu" or "sigmoid"
-# ============================================================================
-# iceberg model
-# ============================================================================
-iceberg_hidden_size: 256
-iceberg_num_layers: 3
-iceberg_num_set_layers: 1
-iceberg_num_frag_set_layers: 0
-iceberg_num_mlp_layers: 0
-iceberg_num_gnn_layers: 0
-iceberg_dropout: 0.0
-iceberg_gnn_type: GGNN
-iceberg_pool_type: avg
-iceberg_inject_early: False
-iceberg_embed_adduct: False
-iceberg_encode_forms: False
-iceberg_fix_batch_bug: False
-# ============================================================================
-# massformer model
-# ============================================================================
-mf_flag: False
-mf_pt_weight_decay: 0.0
-mf_fix_num_pt_layers: 0
-mf_reinit_num_pt_layers: -1
-mf_reinit_layernorm: True
-mf_lr_schedule: True
-mf_tot_updates: 400
-mf_warmup_frac: 0.1
-mf_high_lr: 0.0002
-mf_low_lr: 0.000000001
-# ============================================================================
-# graff stuff
-# ============================================================================
-graff_encoder_dim: 512
-graff_decoder_dim: 1024
-graff_encoder_depth: 6
-graff_decoder_depth: 2
-graff_eig_dim: 32
-graff_eig_depth: 2
-graff_dropout: 0.1
-graff_min_probability: 0.0
-graff_min_mz: 0.0
 # ============================================================================
 # other training options
 # ============================================================================
@@ -305,11 +251,38 @@ lr_schedule_type: exponential  # "exponential" or "cosine"
 lr_total_steps: null           # required for cosine; set to max_epochs * steps_per_epoch
 lr_min_ratio: 0.0              # cosine: final LR as fraction of peak (e.g. 0.01)
 weight_decay: 0.01
+# Exclude normalization weights, biases and 1-D parameters (e.g. the candidate
+# transformer's inducing tokens) from weight decay by putting them in a second optimizer
+# group. False keeps the historical single-group behaviour.
+weight_decay_exclude_norm_bias: False
+# Exponential moving average of the weights, per optimizer step (null = off). Validation, the
+# best-checkpoint choice and every saved checkpoint's state_dict use the AVERAGE; the training
+# weights are stored beside it and restored on resume (fragnnet.utils.trainer_utils.
+# ExponentialMovingAverage). Mean age of the average is decay/(1-decay) steps, so pick decay
+# from the run's steps per epoch: the merged ma_mi batch-512 lineage runs 90 steps/epoch, where
+# 0.998 averages over ~5.5 epochs. Train-side auxiliary metrics still measure the raw weights.
+ema_decay: null
+# Switch EMA (null = off; requires ema_decay): at the start of every n-th epoch the average
+# becomes the training weights and training continues from it, so the average feeds back into
+# the trajectory instead of only being read out. The optimizer state is kept. A window longer
+# than the interval slows steady drift: at 0.999 and 308 steps/epoch, a per-epoch switch keeps
+# ~14% of each late epoch's movement in a pure-drift model.
+ema_switch_every_n_epochs: null
+# Activation applied to a GNN layer's residual branch before the skip add. "relu" is
+# historical and makes every layer strictly additive per coordinate -- it can never
+# attenuate the residual stream. "identity" removes that restriction.
+gnn_residual_activation: relu  # ["relu", "identity", "gelu"]
 lr_decay_rate: 0.95
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 optimizer: adamw
 output_distribution: gaussian
+# cross_entropy keeps the historical coverage-weighted sparse CE.
+# conditional_cross_entropy (MASSter only) divides its in-support term by represented
+# target mass; spectra with no represented target peaks contribute zero to that term.
+# hellinger_distance uses 1 minus the Bhattacharyya coefficient on L1-normalized spectra.
+# That is the SQUARED Hellinger distance H^2, not sqrt(1 - BC); its values are not
+# comparable with published Hellinger numbers.
 loss_type: cross_entropy
 loss_vectorized: False
 loss_tolerance_rel: 0.00001 # 10 ppm
@@ -318,11 +291,13 @@ loss_batch_size: 32
 loss_tolerance_min_mz: 200.0
 # Per-instrument-type tolerance override. When set, overrides loss_tolerance_rel/abs for
 # specific instrument types. All entries must use relative tolerance (rel + min_mz).
-# Example: QTOF floor 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
-inst_type_loss_tol: # null = use global loss_tolerance_rel/abs for all inst types
-#   FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
+# The QTOF floor of 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
+# Example:
+# inst_type_loss_tol:
+#   ORB:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
+#   ORB_F: {rel: 1.0e-5, min_mz: 200.0}
 #   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
-bin_output: False
+inst_type_loss_tol: # null = use global loss_tolerance_rel/abs for all inst types
 auxiliary_scores:
   - cos_sim
   - recall
@@ -346,8 +321,8 @@ target_rel_ints_thresh: 0.0
 train_target_top_k_peaks: -1
 train_target_drop_min_int_peak: False
 eval_target_apply_train_rank_filters: False
-mz_max: 1500.0  # this is also used for bin-specific seondary loss
-mz_bin_res: 0.01 # this is also used for bin-specific seondary loss
+mz_max: 1500.0  # also used for the bin-specific secondary loss
+mz_bin_res: 0.01 # also used for the bin-specific secondary loss
 eval_mz_bin_res:
   - 0.1
   - 0.01
@@ -356,10 +331,9 @@ eval_bin_remove_prec_peaks: False
 eval_hun_sqrt: False
 eval_hun_remove_prec_peaks: False
 sum_ints: True
-ints_transform: none # none, sqrt, log10, log10t3, loge
+ints_transform: none # none, sqrt, pow0.75, log10, log10t3, loge
 train_batch_size: 16
 eval_batch_size: 16
-retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP models only)
 accelerator: cpu
 devices: auto
 logging:
@@ -380,6 +354,316 @@ log_every_n_steps: 0
 # Loss Weights Configuration
 # ============================================================================
 primary_loss_weight: 1.0
+# Hellinger-only auxiliaries. The leak term is predicted intensity outside every true
+# tolerance window; CE is the historical coverage-weighted sparse Gaussian score.
+spectral_leak_loss_weight: 0.0
+spectral_ce_auxiliary_weight: 0.0
+# Same-fragment adjacent-eV delta supervision for MASSter. Requires shared
+# proposals, unique-fragment mode, and CE-context batches.
+cross_ev_fragment_loss_weight: 0.0
+# nb (isotope) options; set the nb_* entropy weights below to 0 to disable.
+nb_iso: False
+# DAG-based models only; MASSter has no OOS class.
+predict_oos: False
+oos_tolerance_multiple: -1
+# DAG-based models only; ignored by MASSter's candidate-conditional loss.
+oos_loss: False
+# ============================================================================
+# PyTorch Lightning Configuration
+# ============================================================================
+seed: 42
+detect_anomaly: False
+debug_validate_outputs: False
+automatic_optimization: True
+profiler: none
+profiler_wait_steps: 10
+profiler_warmup_steps: 2
+profiler_active_steps: 12
+profiler_repeat: 0
+profiler_skip_first_steps: 0
+compile: False
+deterministic: False
+drop_last: False
+num_sanity_val_steps: 0
+# -- Collision Energy (CE) Configuration --
+ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin","qet","qet_mlp"]
+# "embed"/"embed_clamped" look the rounded CE up in the int_embedder table. The default abs-sines
+# table gives CE x and 2**k - x identical rows (NCE 76 and 180 at nce_max 200; ACE 52 and 460 eV at
+# ace_max 460) and neighbouring values unrelated rows, so a CE unseen in training gets arbitrary
+# features. "qet" embeds the raw CE plus a missing-CE flag through a learned linear layer
+# (QETEnergyEncoder): NCE as a standardized 1 / (NCE + 200), the breakdown-curve axis, and ACE (eV)
+# linearly, as the QTOF eV series fit best. nce_max/ace_max do not clamp it. "qet_mlp" is "qet" with
+# a hidden SiLU layer of width ce_insert_size in place of the single linear layer. "id"/"lin" read a missing CE (-1) as z = -1, one std below the mean.
+# See docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md.
+ce_insert_location: none # FraGNNet: none, mol, mlp, or mol,mlp (frag insertion unsupported)
+ce_insert_merge: False # FraGNNet: mean-pool CE-reading embeddings within each spectrum
+ce_insert_size: 32 # Dimension of CE embedding
+context_insert_location: mol,mlp  # where to inject the context vector (mol and/or mlp)
+# Rough approximations from NIST20 Orbitrap/FT MS
+nce_max: 200  # Maximum NCE value for normalization/binning
+nce_mean: 60  # Mean NCE for normalization (dataset-specific)
+nce_std: 40   # Standard deviation of NCE for normalization (dataset-specific)
+# ace_max covers the largest NIST eV: 457 recorded in NIST20 Orbitrap, 376 (recorded or NCE-filled)
+# in NIST23. embed/embed_clamped clamp above it, so 100 collapsed 3.5-3.9% of Orbitrap spectra onto
+# one row.
+ace_max: 460  # Maximum ACE value (eV) for normalization/binning
+# Rough approximations from NIST20 QToF (ACE values, use_ace only)
+ace_mean: 20  # Mean ACE value (eV) for normalization (dataset-specific)
+ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
+# Rough approximations from NIST20 QToF (alternative NCE values)
+# nce_mean: 20
+# nce_std: 10
+# nce_max: 60
+# -- Precursor Type Configuration --
+
+prec_insert_location: none  # Where precursor type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
+prec_insert_size: 32  # Dimension of precursor type embedding
+# -- Instrument Type Configuration --
+
+inst_insert_location: none  # Where instrument type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
+inst_insert_size: 32  # Dimension of instrument type embedding
+# -- Fragmentation Mode Configuration --
+
+frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
+frag_mode_insert_size: 8         # Dimension of frag-mode embedding
+# Combined context (stratum) embedding: consolidate CE + adduct + instrument + frag_mode into
+# ONE learned vector injected at context_insert_location, instead of four separate *_insert
+# paths (see docs/plans/conditioning_refactor_plan.md). When True, the individual metadata embeddings
+# feed the context and are NOT injected separately. Off = existing per-metadata behavior.
+context_embedding: False
+context_embedding_dim: 64       # width of the produced context vector
+context_embedding_hidden_dim: 64  # hidden width of the combining MLP
+# Read only by the FraGNNet/MASSter/NEIMS/MassFormer wrappers, which pass spec_params.nce/ace
+# as the model's use_nce/use_ace arguments; these top-level keys do not override that wiring.
+# When both model arguments are True, the two CE embeddings are concatenated, doubling the CE
+# dim. Every other model's wrapper reads neither key.
+use_nce: True
+use_ace: False
+
+# ============================================================================
+# Finetune Configuration
+# ============================================================================
+finetune: False
+
+# ============================================================================
+# Additional Training Options
+# ============================================================================
+dynamic_batch_sampler: False
+batch_sampler_type: spec_mol_frag  # [spec_mol_frag, ce_context]
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 100000
+ce_context_spectra_per_context: 5
+ce_context_ce_key_by_inst:
+  ORB: nce
+  ORB_F: nce
+  QTOF: ace
+  IT: nce
+# Curriculum learning: begin at a whole-dataset node-count quantile and linearly
+# add larger DAGs. At dag_size_curriculum_epochs, the full training set is eligible.
+dag_size_curriculum: False
+dag_size_curriculum_start_fraction: 0.25
+dag_size_curriculum_epochs: 10  # Must be less than max_epochs when enabled.
+# MASSter curriculum: begin with low-heavy-bond precursors and linearly add
+# larger molecules. This is training-only and requires fixed-size, non-group batches.
+bond_size_curriculum: False
+bond_size_curriculum_start_fraction: 0.25
+bond_size_curriculum_epochs: 20  # Must be less than max_epochs when enabled.
+dual_group_dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler_mode: frag_node
+dual_group_dynamic_batch_sampler_max: 100000
+# Number of distinct group-1 keys (adduct + mol_id) to seed per batch.
+# Each key contributes up to dual_group_sampler_k1_per_key spectra.
+dual_group_sampler_k1: 1
+# Number of distinct group-2 keys (adduct + formula) to seed per batch.
+# Each key contributes up to dual_group_sampler_k2_per_key spectra.
+# Group-2 seeds isomer contrast: a different molecule with the same formula lands
+# alongside the group-1 anchor.
+dual_group_sampler_k2: 1
+# Maximum spectra to take from each group-1 key (same adduct + mol_id).
+# Setting this > 1 places multiple spectra of the same molecule (e.g. different CEs)
+# in a single batch, creating same-molecule pairs for pairwise similarity losses.
+# Total group-1 slots per batch = k1 * k1_per_key.
+dual_group_sampler_k1_per_key: 1
+# Maximum spectra to take from each group-2 key (same adduct + formula).
+# Usually 1 is sufficient; the isomer contrast is provided by the key itself,
+# not by multiple spectra of the same isomer.
+dual_group_sampler_k2_per_key: 1
+group_sampler: False
+group_sampler_max_per_group: 3
+simple_group_sampler: False
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group #[group, mol, group_mol, adduct_inst_type, adduct_inst_type_group, adduct_inst_type_frag_mode, adduct_inst_type_frag_mode_group]
+formula_prec_type_group_sampler: False
+formula_prec_type_group_sampler_max_per_group: 5
+mp_sharing_strategy: file_descriptor
+check_gradient_norm: False
+use_tensor_float32: False
+nan_module_hook: False
+checkpoint_metric: epoch
+checkpoint_metric_mode: max
+checkpoint_save_last: True  # Keep the final checkpoint for resume/debugging.
+checkpoint_every_n_epochs: 1  # Save a checkpoint every n epochs.
+checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
+# Modes:
+# - online: set upload_checkpoints=True to upload checkpoints to W&B artifacts.
+# - offline/local-only: keep upload_checkpoints=False and store checkpoints on disk.
+# - no checkpoints: set disable_checkpoints=True for fast debug runs.
+# - cleanup after training: set delete_checkpoints=True if checkpoints are temporary.
+upload_checkpoints: False  # Upload checkpoints to W&B artifacts when running online.
+disable_checkpoints: False  # Disable checkpoint saving entirely.
+delete_checkpoints: False  # Delete checkpoint files after training finishes.
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
+sparse_cosine_similarity: False
+train_sample_weight: none
+eval_sample_weight: none
+log_hist_metrics: False
+log_adduct_inst_ce_metrics: False  # log per-(adduct×inst, CE-bin) metrics to wandb (val: bar chart, test: table)
+log_adduct_inst_ce_min_count: 20  # min spectra per group to include in the table/chart
+report_metric_std: False
+track_datapoint_metrics: False
+compute_train_auxiliary_metrics: False  # also compute auxiliary_scores (cos_sim, cos_hun, pred_node_count, etc.) on train, not just val/test -- adds eval-tensor overhead to every train batch
+gaussian_renormalize: False
+pm_tolerance_multiple: 3.0
+activation_checkpointing: False
+
+log_zero_fp16: null
+log_zero_fp32: null
+share_memory: False
+log_min: 0.000000001 # 1e-9
+eval_test_split: False
+
+# ==========================================================================
+# FraGNNet only
+# model_type: frag_gnn (aliases fraggnet, fragnnet)
+# ==========================================================================
+frag_params:
+  pyg: True
+  pyg_node_feats:
+    - cc              # mol_embedder atom embeddings pooled over fragment atoms
+    - base_formula    # fragment's elemental formula (one-hot)
+    - depth           # depth of fragment in the DAG
+    - h_formulae_idx  # index into list of possible H-shifted formulae
+    # - cmf_h_formulae_idx  # CMF-derived H-formula index (filled at dataset load time)
+    # - h_counts            # explicit H counts per fragment atom
+    # - nb_iso_idx          # isotope index; requires nb_iso=True
+    # - num_cut_bonds       # how many bonds were broken to make this fragment. NO-OP on plain
+    #                       # single-bond BFS DAGs (cut count == depth there); only informative
+    #                       # on multi-cut DAGs (_mbfs / _ringmerge / SMARTS prepass)
+    # - rdbe                # ring-and-double-bond equivalents, 1 + sum_i n_i*(v_i-2)/2.
+    #                       # REQUIRES base_formula + h_counts (base_formula has no H column);
+    #                       # h_counts adds a DAG column but contributes 0 feature dims
+    # - neutral_loss_formula # precursor formula minus this fragment's; REQUIRES base_formula + depth
+    # - frag_q              # summed Gasteiger charge over the fragment's atoms; computed on-the-fly
+    # - out_degree          # DAG out-degree of the fragment node
+    # - in_degree           # DAG in-degree of the fragment node
+    #                       # Both go through the int_embedder table (abs-sines, 255 entries),
+    #                       # which aliases degree x with 256 - x: 0.5% / 0.2% of NIST20 DAG
+    #                       # nodes (hubs) have degrees 129-254. See the QET projection finding.
+    # - num_heavy_atoms     # heavy-atom count of the fragment
+    # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
+    # - boundary_pair       # cut-bond pair encoding pooled over precomputed cut atom pairs; superseded by cut_bond
+    # - cut_bond            # cut bonds as (retained, lost) pairs; see cut_bond_hidden_dim below
+  pyg_edge_feats:
+    - cc
+    - base_formula
+    # - h_range
+  pyg_edges: True
+  pyg_bigraph: True
+  num_isotopes: 1
+  formula_peak_mzs: True
+  formula_peak_probs: True
+  formula_str: False
+  compressed: True
+  preload: False
+  preprocess: False
+  # Per-molecule LRU of processed neutral DAGs, used whenever preload/preprocess are off
+  # (which apply_inference_config forces for every inference run). __getitem__ is
+  # per-spectrum but a DAG is per-molecule, so without this every collision energy of a
+  # molecule re-reads and re-builds the same graph. 0 disables.
+  cache_size: 16
+  include_cmf: False
+
+num_depth: 5  # Maximum fragmentation depth for DAG
+num_elements: 17  # Number of elements including H (16 heavy: 11 base + As + B + Hg + Sn + Pb)
+# GINE_GATED: each bond's message is scaled by a context-conditioned scalar gate in [0, 2], so
+# which bonds conduct can change with CE/adduct instead of context only rescaling the output.
+# Requires context_embedding: True (supplies the conditioning vector). Zero-init => gate == 1.0
+# at init, i.e. bit-identical to GINE, so it is a strict superset. Ignored for other gnn_types.
+mol_msg_gate_mode: static  # ["static", "dynamic"] — static: one gate from (bond, context),
+                           # reused every layer. dynamic: recomputed per layer, also sees the
+                           # live hidden states (x_src, x_dst); subsumes static, costs one gate
+                           # MLP per layer.
+mol_msg_gate_hidden_dim: 64  # Hidden width of the gate MLP(s)
+# Hidden width of the cut_bond encoder MLP (frag_params.pyg_node_feats: cut_bond).
+# cut_bond replaces boundary_pair: boundary_pair encodes a cut bond as Linear(cat(in, out)),
+# which is additive and commutes through pooling, so the pooled feature collapses to
+# Linear(mean(inside_atoms), mean(outside_atoms)) and WHICH atom bonded to which is lost.
+# cut_bond adds an in*out interaction plus a hidden nonlinearity. Same output width and
+# pooling as boundary_pair, and it reuses the same precomputed cut-bond indices, so it is a
+# drop-in swap needing no DAG regeneration.
+cut_bond_hidden_dim: 256
+
+# ============================================================================
+# Inter-stage Configuration (Mol → Frag connection)
+# ============================================================================
+cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "mlp", "bilinear"]
+cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
+cc_feature_dropout: 0.0  # Training-only batch-level dropout for full-fragment cc node feature group
+# Training-only dropout over pooled cc embedding dimensions. One inverted-dropout mask is shared
+# across all fragments in the batch, so it directly regularizes the mean-pooled cc fingerprint.
+cc_channel_dropout: 0.0
+# Training-only PER-ATOM dropout on the cc mask: independently drop each atom from a fragment's
+# atom-membership set, so the pooled cc embedding sees a random subset of the fragment's atoms.
+# Regularizes against memorizing exact atom sets (aimed at the train->val gap). Much finer-grained
+# than cc_feature_dropout (which drops the whole cc group for the whole batch on one scalar draw).
+# boundary_cc / boundary_pair keep the true mask. Fragments are never fully emptied.
+cc_atom_dropout: 0.0
+
+# ============================================================================
+# Fragment GNN Configuration
+# ============================================================================
+frag_hidden_size: 256  # Hidden dimension for fragment GNN
+frag_num_layers: 4  # Number of GNN layers for fragment encoding
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "MPNN", "NodeMLP"]
+frag_dropout: 0.0  # Dropout rate for fragment GNN
+frag_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]
+frag_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
+frag_embed_combine: cat  # How to combine fragment embeddings: ["cat", "avg"]
+frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "concat", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
+
+# ============================================================================
+# MLP/Output Configuration
+# ============================================================================
+mlp_output_format: formula  # Output format: ["formula", "peak"]
+candidate_ion_head: False  # Score each (node, H/formula-channel) candidate row with ion identity features, then reshape to the usual logits
+candidate_ion_formula_features: True  # Add reconstructed candidate formula features; requires h_counts in frag_params.pyg_node_feats
+candidate_ion_neutral_loss_features: True  # Add precursor_formula - candidate_formula features; requires depth and candidate formula features
+candidate_ion_chunk_size: 32768  # Candidate rows scored at once; lower this if large DAGs OOM
+candidate_ion_checkpoint: True  # Checkpoint candidate chunks during training to avoid retaining every chunk activation
+ion_channel_factorized: False  # Cheap alternative: keep per-node H logits and add a low-rank learned H/CMF-channel residual
+ion_channel_adduct_gated: False  # Adduct-conditioned variant: gate the low-rank node factor by spec_prec_type for a node x channel x adduct residual (mutually exclusive with ion_channel_factorized)
+ion_channel_rank: 32
+# FraGNNet-only supervised support gate. A separate sigmoid head attenuates the
+# existing joint intensity logits; the spectrum remains normalized by softmax.
+fragnnet_formula_support: False
+fragnnet_formula_support_initial_probability: 0.99
+fragnnet_formula_support_loss_weight: 0.0
+fragnnet_formula_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+fragnnet_formula_support_threshold: 0.5  # Absolute sigmoid probability; hard selection is eval/inference-only
+# Rank fragments by their aggregate real-channel logits, then use a context-conditioned
+# transformer to add one residual shared by every valid channel of each selected fragment.
+frag_competition: False
+frag_competition_top_k: 128
+frag_competition_hidden_dim: 64
+frag_competition_layers: 2
+frag_competition_heads: 4
+frag_competition_dropout: 0.1
+# Detaching shared-model inputs avoids unstable gradients from the competition transformer.
+frag_competition_detach_encoder: True
+frag_competition_max_delta: 5.0
+mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
+bin_output: False
 # H(P(formula)): penalizes spread across empirical formulas. Indirect effect on peak sparsity
 # since multiple nodes can share the same formula. Raw scale — grows with number of formulas.
 formula_entropy_weight: 0.0
@@ -416,13 +700,10 @@ pairwise_cross_entropy_loss_weight: 0.0
 cross_jss_contrastive_loss_weight: 0.0
 cross_jss_contrastive_temperature: 0.07
 cross_jss_contrastive_sqrt: true
-# nb stuff, set all to 0 to disable
-nb_iso: False
 nb_node_entropy_weight: 0.0
 nb_node_formula_entropy_weight: 0.0
 nb_formula_node_entropy_weight: 0.0
 nb_joint_entropy_weight: 0.0
-nb_formula_normalized_entropy_weight: 0.0
 nb_node_normalized_entropy_weight: 0.0
 nb_node_formula_normalized_entropy_weight: 0.0
 nb_formula_node_normalized_entropy_weight: 0.0
@@ -438,72 +719,8 @@ edge_h_transfer_loss_fn: linear
 edge_entropy_weight: 0.0
 edge_normalized_entropy_weight: 0.0
 mask_null_formula: True
-predict_oos: False
-oos_tolerance_multiple: -1
-oos_loss: False
 null_loss: False
 null_loss_weight: 1.0
-# ============================================================================
-# PyTorch Lightning Configuration
-# ============================================================================
-seed: 42
-detect_anomaly: False
-debug_validate_outputs: False
-automatic_optimization: True
-profiler: none
-profiler_wait_steps: 10
-profiler_warmup_steps: 2
-profiler_active_steps: 12
-profiler_repeat: 0
-profiler_skip_first_steps: 0
-compile: False
-num_log_train_images: 0
-num_log_val_images: 0
-deterministic: False
-drop_last: False
-num_sanity_val_steps: 0
-# ============================================================================
-# Collision Energy (CE) Configuration
-# ============================================================================
-ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
-ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
-ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
-ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
-# Dataset CE flags live under spec_params.nce/ace. Model CE embedding is controlled by
-# use_nce/use_ace when constructing FraGNNetModel. When both model flags are True, the two
-# CE embeddings are concatenated, doubling the CE dim.
-use_nce: True
-use_ace: False
-# Rough approximations from NIST20 Orbitrap/FT MS
-nce_max: 200  # Maximum NCE value for normalization/binning
-nce_mean: 60  # Mean NCE for normalization (dataset-specific)
-nce_std: 40   # Standard deviation of NCE for normalization (dataset-specific)
-# Rough approximations from NIST20 QToF (ACE values, use_ace only)
-ace_max: 100  # Maximum ACE value (eV) for normalization/binning
-ace_mean: 20  # Mean ACE value (eV) for normalization (dataset-specific)
-ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
-# Rough approximations from NIST20 QToF (alternative NCE values)
-# nce_mean: 20
-# nce_std: 10
-# nce_max: 60
-
-# ============================================================================
-# Precursor Type Configuration
-# ============================================================================
-prec_insert_location: none  # Where precursor type is inserted: ["none","mol_input","frag_input","mlp_input"]
-prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES config if using pre-training)
-
-# ============================================================================
-# Instrument Type Configuration
-# ============================================================================
-inst_insert_location: none  # Where instrument type is inserted: ["none","mol_input","frag_input","mlp_input"]
-inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
-
-# ============================================================================
-# Fragmentation Mode Configuration
-# ============================================================================
-frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
-frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
 # Note: frag_modes list is declared under spec_params.frag_modes (e.g. ["HCD", "CID"]);
 # unknown modes fall back to embedding index num_frag_modes.
@@ -517,24 +734,6 @@ depth_ce_bias: False         # §3c: CE×depth prior — per-depth logit bias co
 adduct_scale: False           # §3a: Enable adduct-type FiLM output scaling (prec_type token)
 stratum_scale: False          # §3b: Enable combined inst/frag_mode/adduct FiLM output scaling
 stratum_scaler_embed_dim: 16  # Embedding dim for each categorical axis in StratumScaler
-# Note: adduct_scale and stratum_scale are independent ablation toggles.
-# stratum_scale subsumes adduct_scale — do not enable both simultaneously.
-
-# ============================================================================
-# MCES Pre-training Configuration
-# ============================================================================
-# mces stuff
-mces_min: 1
-mces_max: 15
-mces_mean: 12
-mces_std: 2
-mces_normalization: zscore  # options: none, zscore, minmax
-mces_embed_combine: concat_avg #  options: abs_diff cross_attn
-
-# ============================================================================
-# Finetune Configuration
-# ============================================================================
-finetune: False
 finetune_pretrained_ckpt: none
 finetune_strict_load: True
 finetune_freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
@@ -542,77 +741,600 @@ finetune_freeze_components: ["mol_embedder", "mol_pool"] # Optional
 finetune_shared_all: False  # Whether to share all components, if False, specify below
 finetune_shared_components: ['mol_embedder', 'mol_pool'] # Optional 
 finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
-
-# ============================================================================
-# Additional Training Options
-# ============================================================================
-dynamic_batch_sampler: False
-dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 100000
-dual_group_dynamic_batch_sampler: False
-dual_group_dynamic_batch_sampler_mode: frag_node
-dual_group_dynamic_batch_sampler_max: 100000
-# Number of distinct group-1 keys (adduct + mol_id) to seed per batch.
-# Each key contributes up to dual_group_sampler_k1_per_key spectra.
-dual_group_sampler_k1: 1
-# Number of distinct group-2 keys (adduct + formula) to seed per batch.
-# Each key contributes up to dual_group_sampler_k2_per_key spectra.
-# Group-2 seeds isomer contrast: a different molecule with the same formula lands
-# alongside the group-1 anchor.
-dual_group_sampler_k2: 1
-# Maximum spectra to take from each group-1 key (same adduct + mol_id).
-# Setting this > 1 places multiple spectra of the same molecule (e.g. different CEs)
-# in a single batch, creating same-molecule pairs for pairwise similarity losses.
-# Total group-1 slots per batch = k1 * k1_per_key.
-dual_group_sampler_k1_per_key: 1
-# Maximum spectra to take from each group-2 key (same adduct + formula).
-# Usually 1 is sufficient; the isomer contrast is provided by the key itself,
-# not by multiple spectra of the same isomer.
-dual_group_sampler_k2_per_key: 1
-group_sampler: False
-group_sampler_type: group #[group, group_mol, mol]
-group_sampler_max_per_group: 3
-simple_group_sampler: False
-simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group #[group, mol, group_mol, adduct_inst_type, adduct_inst_type_group, adduct_inst_type_frag_mode, adduct_inst_type_frag_mode_group]
-formula_prec_type_group_sampler: False
-formula_prec_type_group_sampler_max_per_group: 5
-mp_sharing_strategy: file_descriptor
-check_gradient_norm: False
-use_tensor_float32: False
-nan_module_hook: False
 debug_zero_loss: False
-checkpoint_metric: epoch
-checkpoint_metric_mode: max
-checkpoint_save_last: True  # Keep the final checkpoint for resume/debugging.
-checkpoint_every_n_epochs: 1  # Save a checkpoint every n epochs.
-checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
-# Modes:
-# - online: set upload_checkpoints=True to upload checkpoints to W&B artifacts.
-# - offline/local-only: keep upload_checkpoints=False and store checkpoints on disk.
-# - no checkpoints: set disable_checkpoints=True for fast debug runs.
-# - cleanup after training: set delete_checkpoints=True if checkpoints are temporary.
-upload_checkpoints: False  # Upload checkpoints to W&B artifacts when running online.
-disable_checkpoints: False  # Disable checkpoint saving entirely.
-delete_checkpoints: False  # Delete checkpoint files after training finishes.
-pl_enable_progress_bar: False
-pandarallel_enable_progress_bar: False
-sparse_cosine_similarity: False
-debug_val_loop_trigger: False
-debug_bypass_train_val: False
-train_sample_weight: none
-eval_sample_weight: none
-log_hist_metrics: False
-log_adduct_inst_ce_metrics: False  # log per-(adduct×inst, CE-bin) metrics to wandb (val: bar chart, test: table)
-log_adduct_inst_ce_min_count: 20  # min spectra per group to include in the table/chart
-report_metric_std: False
-track_datapoint_metrics: False
-gaussian_renormalize: False
-pm_tolerance_multiple: 3.0
-activation_checkpointing: False
+# Skip the frag_real_* / nb_iso explainability marginals (P(n), P(f), P(f|n), P(n|f), P(h)) on
+# TRAINING forwards to cut the forward-pass memory peak. Those marginals are consumed only by the
+# entropy aux losses and by eval/inference, so this is a no-op on the trained model when they are
+# off. Refuses to enable while an explainability loss is active. Eval/val/inference always compute
+# them (so aux metrics are unaffected). Only enable when train aux metrics also don't need them.
+skip_train_explainability: False
 
-log_zero_fp16: null
-log_zero_fp32: null
-share_memory: False
-log_min: 0.000000001 # 1e-9
-eval_test_split: False
+# ==========================================================================
+# MASSter only
+# model_type: masster
+# ==========================================================================
+# Optional intact-molecule regression; RT seconds and source CCS units.
+masster_predict_rt: False
+masster_predict_ccs: False
+masster_predict_rt_ccs: False  # Deprecated alias enabling both heads.
+masster_rt_loss_weight: 0.1
+masster_ccs_loss_weight: 0.1
+masster_rt_scale: 60.0  # Fixed units, not fitted statistics; Smooth-L1 beta is one scale.
+masster_ccs_scale: 100.0
+masster_proposal_method: cut_masks  # cut_masks | connected_fragment_beam; default preserves checkpoints.
+masster_fast_gnn_beam_width: 256  # Unique connected sets expanded per growth round.
+masster_fast_gnn_max_boundary_cuts: 5  # Proper-fragment boundary limit; precursor always kept.
+  # connected_fragment_beam: unique mode, one mixture, SMARTS/share_proposal_across_ev off, zero mask floor.
+  # Runs on the model device. Uses unique_fragment_target as a strict cap including precursor.
+  # candidate_backend, ranked_mask_budget, mask_selection_threads and forced single cuts
+  # apply only to cut_masks; connected_fragment_beam searches up to ceil(molecule atoms / 2) then mirrors.
+  # Probability normalizes boundary-cut/internal-intact scores over retained fragments.
+masster_candidate_backend: cpu  # cpu | cuda; independent of the model device.
+  # Experimental CUDA: FP32, one mixture, unique mode, zero mask floors; SMARTS supported.
+masster_unique_fragment_mode: False
+masster_selected_mask_limit: 256  # Non-unique mode: maximum selected cut masks per precursor.
+masster_unique_fragment_target: 256  # Unique mode: requested unique atom-set count.
+masster_ranked_mask_budget: 256  # Unique mode: ranked latent-mask cap; must be >= the target.
+masster_mask_selection_threads: 4  # CPU threads shared by mask selection and topology/assembly.
+  # Numeric kernels drop the GIL; >1 preserves exact candidates. Best near
+  # the physical core count, minus what num_workers already uses. 1 disables threading.
+masster_min_mask_relative_probability: 0.0  # Minimum mask probability relative to the MAP mask; 0 disables.
+masster_min_fragment_relative_probability: 0.0  # Unique fragments below this fraction of the MAP fragment are pruned; 0 disables.
+masster_fragment_selection: mask_order  # mask_order | marginal: which pool fragments reach the intensity head.
+  # mask_order keeps every fragment the enumeration produced (the unique target is the budget).
+  # marginal treats the unique target as a POOL, keeps the precursor and single cuts plus the
+  # highest closed-form release probabilities P(boundary cut, interior intact) up to
+  # masster_selected_fragment_target, and trains the proposal coverage loss on the whole
+  # pool. Requires unique mode, proposal_selection_only, one mixture, cut_masks, SMARTS off, a
+  # zero fragment floor and share_proposal_across_ev off.
+  # See docs/plans/masster/masster_fragment_marginal_selection_plan.md.
+masster_selected_fragment_target: null  # marginal only: fragments kept per precursor, <= unique target; null otherwise.
+masster_include_single_bond_cuts: True
+masster_max_h_transfer: 4
+# Which of FraGNNet's hydrogen-transfer bounds MASSter applies to a candidate channel.
+#   none       - only element counts must stay nonnegative (historical behaviour). Hydrogen
+#                can be gained with no source, so the intact molecule reaches
+#                prec_mz + masster_max_h_transfer * H. Those channels are chemically
+#                unreachable, but they act as negatives in the candidate softmax and they
+#                absorb M+1 isotope peaks, so dropping them is a trade, not a free win.
+#   complement - a gain may not exceed the hydrogens held by the complementary neutral
+#                fragment; the intact molecule can then only lose them.
+#   valence    - also caps the gain at the fragment's free valence slots plus one per severed
+#                bond, i.e. full parity with FraGNNet's compute_cc_h_cap. DEFAULT since
+#                2026-09-20: measured free on merged MA/MI at epoch 64 (val cosine -0.0002 vs a
+#                control pair agreeing to 0.0016), while cutting retained ion-H channels 9.0%
+#                and epoch time 2.2%. `complement` measured -0.0009 and no speedup. Runs from
+#                before this date used `none` and have a larger candidate set.
+masster_h_transfer_bound: valence
+# Ion m/z convention. exact: monoisotopic m/z. nominal: integer nominal m/z for unit-resolution
+# libraries (NIST EI): mass numbers of the most abundant isotopes, the H shift at 1 Da and the
+# adduct's rounded delta, no electron. Pair nominal with loss_tolerance_rel: null,
+# loss_tolerance_abs below 1 (integer channels then match integer peaks only) and
+# eval_mz_bin_res: [1.0]. Candidate features keep exact masses.
+# See docs/plans/masster/masster_ei_nominal_plan.md.
+masster_mass_mode: exact  # ["exact", "nominal"]
+# Isotope rows. none: one row per emitted pathway. natural (needs masster_mass_mode: nominal):
+# each emitted pathway is split over nominal offsets by the natural isotope pattern of its ion
+# composition, conserving its probability; right for EI, which has no isolation step. Candidate,
+# proposal and dense channel outputs stay monoisotopic, so candidate_wrecall does not count
+# isotope peaks.
+masster_isotope_envelope: none  # ["none", "natural"]
+masster_isotope_max_order: 4  # largest absolute nominal offset of an isotope row
+masster_isotope_min_ratio: 0.001  # isotope rows under this share of their pathway are dropped
+# Merge prediction rows of one spectrum that share a 4-decimal m/z (probabilities summed), as
+# nominal mode always does; the annotation export keeps one row per pathway. Required with an
+# exact-mass MASSter and ints_transform other than none: training learns the transformed
+# intensity of each m/z (pathways summed in the Gaussian mixture), so evaluation must untransform
+# that sum, not each pathway (sqrt: (sum p)^2, not sum p^2). Off keeps historical outputs.
+masster_merge_same_mz_rows: false
+masster_include_cmf: True
+masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
+masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.
+# SMARTS rule provenance in the intensity token (arm p1;
+# docs/plans/masster/masster_smarts_pathway_plan.md, Track A). Per candidate, a 0/1 indicator
+# for each rule of MASSTER_RULE_VOCABULARY that produces it (either side of the template),
+# through a zero-initialized, bias-free projection added right after input_projection. False
+# builds nothing and adds no state_dict key. Requires masster_smarts_templates and
+# masster_unique_fragment_mode.
+masster_rule_pathway_token: False
+# Encode each severed bond from its (retained, lost) atom embeddings instead of averaging the
+# two endpoints. The average is degenerate: pooled over a fragment's cut bonds it equals
+# half the mean inside atom plus half the mean outside atom, so cutting a1-b1 + a2-b2 gives a
+# bit-identical embedding to cutting a1-b2 + a2-b1, and the retained and lost sides cannot be
+# told apart. This is the defect FraGNNet fixed for `boundary_pair` with CutBondEncoder, which
+# this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
+masster_boundary_bond_encoder: True
+# Descriptor columns appended to each candidate's intensity token, concatenated in registry
+# order regardless of the order listed here. `src/fragnnet/models/masster/candidate_features.py` holds
+# the specs and documents what each one measures and why. An unknown or duplicated name raises
+# at model construction, which is also where the resolved layout is logged.
+#   c_cut_count       1                                bonds severed
+#   c_size            1                                log1p atom count
+#   c_mass            2                                log1p neutral mass, precursor fraction
+#   c_charge          1                                summed Gasteiger partial charges
+#   c_nl_composition  18                               log1p complement element counts
+#   c_cut_bonds       2 x edge_feature_dim             severed-bond attributes, sum then mean
+#   c_cut_adjacency   2                                adjacent cut pairs, retained then lost
+# The token also carries the pooled fragment/complement/boundary embeddings, the context vector,
+# and -- only when masster_proposal_anchored is off -- the proposal log-probability
+# columns. None of those are governed by this list.
+# `c_charge` requires atom_gasteiger_charges, absent from molecular caches written before
+# 2026-09-20; `c_nl_composition` and `c_cut_bonds` widen the token, so a checkpoint trained
+# with a different list will not load.
+masster_candidate_features:
+  - c_cut_count
+  - c_size
+  - c_mass
+  - c_charge
+# Training-only PER-ATOM dropout on each candidate's atom-membership set, applied before the
+# component pool, so the pooled fragment embedding sees a random subset of the candidate's
+# atoms. Regularizes against memorizing exact atom sets (aimed at the train->val gap, which the
+# 2026-09-22 read-out puts ~98% in intensity allocation rather than coverage). The complement is
+# the precursor minus the candidate, so dropped atoms move to the complement side and both pools
+# stay means over a well-formed atom set; keeping the complement exact would leave the true
+# candidate sum recoverable as precursor - complement. Sizes, masses, charges, compositions, cut
+# counts and the boundary embedding all keep the true membership. A candidate is never emptied.
+# The MASSter analogue of `cc_atom_dropout`. No effect at eval, and no width change.
+masster_candidate_atom_dropout: 0.0
+# Training-only dropout of each candidate's WHOLE boundary block (the pooled embedding of the
+# severed bonds' endpoints) from the intensity token. A dropped block is zeroed and kept blocks
+# are scaled by 1/(1-p), so the token projection sees the same expected input at eval. Aimed at
+# the boundary block because the 2026-09-23 memorization probe located most of the train-only
+# intensity allocation there, while candidate_atom_dropout above leaves it exact. Proposal branch
+# and candidate descriptors are untouched. 0.0 draws no random numbers (bit-identical default).
+masster_candidate_boundary_dropout: 0.0
+# --- Memorization-route plan, Step 1 (docs/plans/masster/masster_memorization_route_plan.md).
+# Every key below is off at its default: the model is unchanged and draws no extra random numbers.
+# False feeds the intensity head a ZERO boundary block in training and evaluation, i.e. removes
+# the block (arm r0, the rerouting test). The keys that act on the block must then be off:
+# masster_boundary_bond_encoder, masster_boundary_local_layers and
+# masster_candidate_boundary_dropout.
+masster_candidate_boundary_block: True
+# 0 builds the boundary block from the shared encoder's globally attended atom embeddings. k > 0
+# builds it from a separate k-layer plain GINE over the raw atom features, with no global attention
+# and no context, so the cut term sees only the cut site's k-hop chemistry and cannot name the
+# molecule (arm r1). Requires masster_boundary_bond_encoder: True.
+masster_boundary_local_layers: 0
+# Training-only dropout on the CutBondEncoder hidden layer (arm k1). Requires
+# masster_boundary_bond_encoder: True.
+masster_boundary_encoder_dropout: 0.0
+# Retained-fragment branch (arm fc1; docs/plans/masster/masster_hierarchical_fragment_graph_plan.md).
+# 0 disables the whole branch: no module built, nothing computed in forward, zero new token
+# columns, zero new state_dict keys, bit-identical to every existing checkpoint. k > 0 runs a
+# k-layer plain GINE over each candidate's OWN retained bonds (chemical bonds with both
+# endpoints kept after its own cut), seeded from raw atom/bond features plus a per-(fragment,
+# atom) retained-bond degree and boundary-cut-bond count, pooled twice (all retained atoms;
+# cut-site atoms only) and added to the intensity token as a zero-initialized residual right
+# after input_projection. Requires masster_unique_fragment_mode. Independent of
+# masster_boundary_bond_encoder/masster_boundary_local_layers: that option re-sources the same
+# two cut-bond endpoints from a k-hop view of the WHOLE INTACT molecule (identical across every
+# fragment sharing an atom), while this branch message-passes only over the bonds a SPECIFIC
+# fragment retains after its own cut.
+masster_fragment_connectivity_layers: 0
+# Hidden width of the branch's GINE and of each of its two pooled vectors (the token grows by
+# 2x this width when the branch is on). Read regardless of whether the branch is enabled; only
+# used when masster_fragment_connectivity_layers > 0.
+masster_fragment_connectivity_hidden_dim: 32
+# True (default) message-passes over each fragment's retained bonds, as above. False (arm fc1p,
+# the matched pooled control) runs the identical module -- same parameters, same features, same
+# pooling -- over an EMPTY edge set, so no message crosses a retained bond; only the extra
+# per-atom retained-degree/cut-bond-count features and the two pooled reductions reach the
+# token. Inert when masster_fragment_connectivity_layers == 0.
+masster_fragment_connectivity_messages: True
+# Training-only dropout on the projected candidate token, before candidate attention (arm k1).
+masster_intensity_input_dropout: 0.0
+# Training-only noise on the allocator's set message (arm sm1). In each induced attention layer,
+# each candidate, with this probability ([0, 1)), receives the detached mean of the messages its
+# own spectrum's candidates receive, instead of its own. It keeps the set summary and loses what it
+# retrieved from the set for itself, the route the set-message probe found most train-specific.
+# Requires masster_intensity_transformer_attention: induced; at 0.0 it draws no random numbers.
+masster_set_message_substitution: 0.0
+# Training-only set dropout on the allocator's keys (arm sd1). In each induced attention layer,
+# each candidate, with this probability ([0, 1)), is hidden from the keys the inducing tokens
+# summarize its set from; it still queries that summary and is still predicted and scored, so the
+# output set and the loss are unchanged. A set never loses all its keys. Requires
+# masster_intensity_transformer_attention: induced; at 0.0 it draws no random numbers.
+masster_set_key_dropout: 0.0
+# Memorization sink (arm m1): a zero-initialized row per molecule, indexed by mol_id, adds
+# row . phi(token) to each candidate's intensity residual in TRAINING only, from the start epoch
+# on. Validation, test and inference never use it, so they score the shared model. 0 disables it.
+# Requires masster_unique_fragment_mode and spec_params.unique_id (which puts mol_id in the
+# batch).
+masster_memorization_sink_dim: 0
+# Rows in the sink table; must exceed the largest mol_id trained on (NIST20 split files reach
+# 35024). Set together with masster_memorization_sink_dim.
+masster_memorization_sink_num_molecules: 0
+# First training epoch (0-based) at which the sink is applied.
+masster_memorization_sink_start_epoch: 0
+# Training-only probability, drawn per spectrum, that the sink row is zeroed (arm m2), so the
+# shared path fits that spectrum alone (MemSinks mixing). Kept rows are not rescaled. 0 applies the
+# sink to every training spectrum, as in m1. Requires masster_memorization_sink_dim > 0.
+masster_memorization_sink_dropout: 0.0
+# Training-only noise on the shared encoder's global-attention message, applied after its norm
+# (arms gm1 and gm2). The route map found this message writes the per-molecule lookup key.
+# Substitution replaces an atom's whole message, per layer, by the batch mean with this probability
+# ([0, 1)); noise_std adds Gaussian noise scaled to each feature's batch standard deviation. Both
+# require mol_gnn_type: GINE_GSA; at 0.0 they draw no random numbers (bit-identical default).
+masster_global_message_substitution: 0.0
+masster_global_message_noise_std: 0.0
+# Swap noise on the same message (arms gm3-gm6), a feature-level CutMix that keeps the original
+# label: with this probability ([0, 1)) per layer, a message is replaced by another molecule's real,
+# detached message. Unlike the batch mean, a swapped message is in-distribution, so the head cannot
+# tell when the key is wrong. The unit is what one draw replaces: atom (an atom's whole message,
+# from a random batch atom), molecule (every atom of a molecule, each from a random atom of one
+# other molecule) or feature (one entry, from the same feature of a random batch atom). Requires
+# mol_gnn_type: GINE_GSA; at 0.0 it draws no random numbers, whatever the unit.
+masster_global_message_swap: 0.0
+masster_global_message_swap_unit: atom
+# Training-only structural noise on the shared encoder's inputs (arms am1 and de1). Atom mask:
+# with this probability ([0, 1)), per atom and forward pass, the atom's projected input is replaced
+# by a learned mask vector; the atom keeps its bonds and its place in every candidate. Bond dropout:
+# with this probability ([0, 1)), per chemical bond and forward pass, local message passing drops
+# the bond (both directions, every layer), and kept messages are scaled by 1/(1 - p); candidates,
+# cut bonds and global attention still see every bond. Bond dropout requires
+# mol_gnn_type: GINE_GSA. Neither reaches a separate proposal encoder. At 0.0 neither draws random
+# numbers, and the atom mask adds its one vector only when positive.
+masster_encoder_atom_mask: 0.0
+masster_encoder_bond_dropout: 0.0
+# True represents each candidate by the lighter side of its cut (arms nl1-nl3): the token's
+# fragment slot takes the lighter side's pool (the fragment, or the neutral loss of a large
+# fragment) and the complement slot is zeroed, so no pool of a near-whole molecule reaches the
+# head. The heavier side enters only through the c_heavy_side descriptor, which must be in
+# masster_candidate_features. Requires masster_unique_fragment_mode. The 2026-09-26 side-of-cut
+# probe found the heavier side's identity train-specific (1.78x) and the lighter side carrying
+# most of what val uses.
+masster_light_side_token: False
+masster_context_dim: 64
+# Normalization on the metadata context projector, whose output conditions the GNN and
+# every head. The projector's input scale varies with how many CE readings an acquisition
+# group contributed (merged rows pool a ladder: median 4, max 86), so `layer` appends a
+# LayerNorm to hold that output at a fixed scale. `none` keeps the original MLP.
+masster_context_normalization: none
+# Dropout inside the context projector; 0.0 keeps the original two-layer MLP unchanged.
+masster_context_dropout: 0.0
+masster_context_in_gnn: False  # Append spectrum context to atom inputs in both molecular GNNs; incompatible with share_proposal_across_ev.
+# The spectrum's context (NCE, adduct, instrument) as one extra key/value per molecule in every
+# global-attention layer of the precursor encoder: each atom attends to it inside the same softmax
+# as the molecule's atoms, per layer and head. Requires mol_gnn_type GINE_GSA; incompatible with
+# share_proposal_across_ev. Adds 2 x layers x (context_dim + 1) x mol_hidden_size parameters, built
+# on a forked RNG so every other parameter initializes as without it. False keeps the encoder
+# context-free (unless masster_context_in_gnn).
+masster_encoder_context_token: False
+masster_metadata_embedding_dim: 16
+masster_head_hidden_dim: 256
+masster_head_dropout: 0.0
+masster_bond_num_layers: 0  # 0: endpoint baseline; >0: alternating bond/atom updates.
+masster_proposal_num_mixtures: 1  # 1 preserves the original Bernoulli proposal.
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+# Candidate contextualization topology. induced routes every candidate exchange through
+# num_inducing_points latents (linear in the candidate count, rank-capped at that count);
+# full uses direct candidate-to-candidate attention (quadratic, exact pairwise interaction)
+# and ignores num_inducing_points. none keeps only the feed-forward sublayers: each candidate is
+# scored from its own token, and candidates compete only through the output normalization (the
+# allocator's no-attention floor).
+masster_intensity_transformer_attention: induced  # ["induced", "full", "none"]
+# Normalization placement inside the candidate transformer. "post" is the historical
+# residual form (LN after the skip add); "pre" normalizes the branch input instead, which
+# is the configuration that tolerates a constant LR with no warmup. Parameter counts and
+# names are identical, so the two are A/B-comparable from the same checkpoint.
+masster_intensity_norm_placement: post  # ["post", "pre"]
+# Per-head query/key LayerNorm. Adds parameters, so it is enable-only for a warm start.
+# Requires attention_type: full.
+masster_intensity_qk_norm: False
+# Additive attention bias on the signed mass difference between two candidates, as a sum
+# of learnable RBFs initialized on common neutral losses (H2O, NH3, CO, CO2, ...). The
+# weights start at zero, so enabling this is a no-op at step 0 and safe on a warm start.
+# Requires attention_type: full; the induced layer routes through latents that carry no mass.
+masster_intensity_mass_pair_bias: False
+# Standard transformer positional encoding with m/z as the position: each candidate token gets
+# sin/cos(m * 10000^(-2i/d)) of its neutral mass m in Da added after the input projection.
+# The shortest wavelength is 2 pi Da, so it resolves nominal mass, not the mass defect. Works with
+# every attention type; no parameters, and the state dict is unchanged.
+masster_intensity_mz_positional_encoding: False
+# The same encoding with each candidate's neutral loss from the precursor, M - m in Da, as the
+# position (M = the precursor's intact neutral mass): 0 for the precursor, 18.011 for water. A
+# loss recurs across molecules where a fragment mass does not; on i1, the m/z encoding alone
+# (mz1) raised train fit and lost val cosine. With masster_intensity_mz_positional_encoding also on,
+# the two split the token width (mass first, then loss), since summed at the same frequencies they
+# would not separate. Works with every attention type; no parameters, state dict unchanged.
+masster_intensity_nl_positional_encoding: False
+# Mass-local candidate attention: with a positive window (Da), each candidate attends only to the
+# candidates whose neutral mass is within that distance of its own, itself included. 0 attends
+# over the whole set. A hard -inf mask on the attention logits: no parameters, state dict
+# unchanged. With two layers a candidate reaches up to twice the window. On fa_h4's local val
+# candidate sets (median 256 candidates over 274 Da), 30 Da reaches 29% of the set in one hop and
+# 50% in two; 100 Da reaches 91% in two. Requires attention_type: full.
+masster_intensity_mass_window: 0.0
+# Candidate-graph attention (arm cg1): each candidate attends only to itself, its direct parents
+# and direct children by atom containment (no candidate strictly between them), and its
+# complement (disjoint, together the whole precursor). The intact precursor contains every other
+# candidate, so it receives from its direct children but sends to none, or it would hand every
+# candidate the set's summary in one hop. A hard -inf mask on the attention logits built from the
+# unique-fragment memberships: no parameters, state dict unchanged. Stacks with the mass window
+# and the mass pair bias. Requires masster_unique_fragment_mode and attention_type: full.
+masster_intensity_candidate_graph: False
+# Collision-energy conditioning of the candidate ATTENTION itself, as opposed to the
+# per-candidate token. Both are zero-initialized, so enabling either is a no-op at step 0.
+# `ce_pair_bias` makes the neutral-loss RBF weights a function of collision energy, so
+# w_r(CE) is directly readable after training -- it answers "which neutral-loss relations
+# govern competition at which energy" whether or not cosine moves. It requires
+# mass_pair_bias. `ce_film` modulates the query/key streams instead, which is more general
+# and less interpretable. Both require attention_type: full.
+# NOTE the standing tension: project_ce_extent_allocation_null and
+# project_stage0_branching_headroom_model both measured CE-INVARIANT error, while the
+# 2026-09-21 CE decomposition found realization falling monotonically with energy.
+masster_intensity_ce_pair_bias: False
+masster_intensity_ce_film: False
+# How the bond head pools incident-bond messages onto an atom. "mean" is historical; a mean
+# cannot separate a quaternary carbon from a methyl, which is GIN's expressiveness argument
+# for "sum". "sqrt" keeps degree signal without the raw scale growth.
+masster_bond_endpoint_aggregation: mean  # ["mean", "sum", "sqrt"]
+# REMOVED 2026-09-19. The fragment-to-atom decoder gave no epoch-matched cosine gain at
+# 1.8x the wall clock, so it was deleted. The key is retained because load_config requires
+# every custom-config key to exist here; any value other than 0 now fails at setup.
+masster_intensity_atom_decoder_num_layers: 0
+masster_intensity_transformer_dropout: 0.1
+# Escape ("dump") coordinate for the intensity output. Candidate coverage is not complete --
+# val wrecall is ~0.891 -- so part of the observed intensity sits at m/z values no candidate
+# reaches. Without an escape the predicted intensities normalize over candidates alone and the
+# model is forced to over-allocate everything it CAN reach by roughly 1/wrecall. With it, every
+# unreachable observed peak collapses into one coordinate whose mass the model predicts, which
+# removes a per-spectrum irreducible loss floor (1 - sqrt(t(S)) for Hellinger) that otherwise
+# weights training by how well enumeration happened to do on each molecule. It does NOT change
+# the optimal relative allocation over reachable peaks, so it is not a ranking change; and it
+# makes kl_distance finite on a coverage gap instead of relying on masster_kl_epsilon.
+# Requires masster_intensity_output: independent and a peak-list loss_type (the
+# cross_entropy path has its own out-of-support term). Head bias starts at logit(0.1), close to
+# the measured unreachable fraction. Changes the objective, so cosines are NOT comparable across it.
+masster_intensity_escape: False
+# Final spectrum representation. Independent mode is limited to the unique-fragment,
+# proposal-selection-only path and returns nonnegative normal-space intensities.
+masster_intensity_output: probability  # ["probability", "independent"]
+# Direct peak-list losses always coalesce numerical exact masses to four decimals,
+# then use one of these m/z-only correspondence rules inside instrument tolerance.
+masster_peak_matching: closest  # ["closest", "hungarian"]
+# Fraction of predicted mass replaced by observed mass for stable KL(true || predicted).
+masster_kl_epsilon: 1.0e-4
+masster_intensity_entropy_match_weight: 0.0
+masster_use_mask_residuals: True  # False keeps original proposal mask probabilities.
+# Proposal-anchored mode keeps base-plus-residual scoring but hides the base
+# fragment probability from the transformer, closing the direct cancellation path.
+# It requires masster_base_ce_weight > 0 so the proposer remains supervised.
+masster_proposal_anchored: False
+# Compute and log pre-residual spectrum CE when its loss weight is zero. This is
+# diagnostics-only; a positive base CE weight enables the computation automatically.
+masster_log_base_ce: False
+# Auxiliary pre-residual sparse-CE coefficient. Use 0.0 for no training effect;
+# fixed weights above 0.1 reduced held-out cosine in the first matched sweeps.
+masster_base_ce_weight: 0.0
+# Prevent base-only CE from updating the shared candidate transformer through its
+# ion/H probabilities. False preserves the behavior of existing runs.
+masster_detach_base_ion_h: False
+# V1 retrieval/ranking separation. True keeps the existing proposal generator
+# for candidate selection, but removes proposal probabilities from relative peak
+# intensity. The final spectrum is normalized over the selected candidates.
+masster_proposal_selection_only: False
+# Intensity-weighted proposal-support loss. It counts each unique fragment once
+# per matched true peak, regardless of how many CRF/CMF or delta-H channels match.
+masster_proposal_loss_weight: 0.0
+# Give every retained target peak equal weight in the proposal-support loss. This
+# affects proposal ranking only; the primary spectrum loss remains intensity-aware.
+masster_proposal_barcode_target: False
+# Proposal-target intensity transform. "same" preserves historical behavior by
+# reusing ints_transform; another standard transform is applied independently.
+masster_proposal_ints_transform: same
+# V3 ablation: give proposal bond/charge scoring an independent molecular GNN.
+# Only supported with proposal-selection-only mode.
+masster_separate_proposal_encoder: False
+# Train only proposal selection through this zero-indexed epoch, then jointly train
+# proposal and intensity. Null keeps joint training throughout.
+masster_proposal_only_until_epoch: null
+# Early-stop the proposal branch: from this zero-indexed epoch onward its parameters stop
+# updating while the intensity branch keeps training. The validation proposal term turns at
+# epochs 26-47 where the spectrum term keeps improving to 52-120, so the two branches want
+# different horizons. Only proposal-only modules freeze -- the shared molecular and context
+# encoders keep training on the spectrum objective, so the proposal function still drifts
+# unless masster_separate_proposal_encoder is on. Null trains the proposal throughout.
+masster_proposal_frozen_from_epoch: null
+# Weight decay applied to proposal-only parameters instead of the global `weight_decay`.
+# Null keeps one decay for the whole model. Under weight_decay_exclude_norm_bias the
+# norm/bias exemption still wins, so this decays only the proposal branch's matrices.
+masster_proposal_weight_decay: null
+masster_separate_ion_mode_proposal_head: False
+# Declare the score semantics separately from head construction. The current
+# balanced-BCE proposal/support losses require these flags when their heads are enabled.
+masster_ion_mode_proposal_binary_logits: False
+masster_min_ion_mode_relative_probability: 0.0
+masster_ion_mode_proposal_loss_weight: 0.0
+masster_separate_ion_h_support_head: False
+masster_ion_h_support_binary_logits: False
+# Opt-in: scale independent-output intensities by the support head's sigmoid
+# probability, in both training and evaluation. Independent of the absolute
+# floor below; requires independent intensity output and binary support logits.
+masster_gate_independent_intensity_with_support: False
+masster_min_ion_h_relative_probability: 0.0
+# Evaluation-only absolute support floor. Unlike the relative floor, this may
+# remove every ion/H channel of an unsupported fragment; zero disables it.
+masster_min_ion_h_absolute_probability: 0.0
+masster_ion_h_support_loss_weight: 0.0
+masster_apply_channel_selection_in_training: False
+# Assign observed-peak evidence to the dense channel-selection support.
+masster_channel_support_attribution: gaussian_posterior  # ["gaussian_posterior", "hungarian"]
+# Historical attribution uses detached intensity predictions as channel priors.
+# False makes support targets depend only on observed and candidate m/z values.
+masster_channel_support_use_intensity_prior: True
+# Compute dense observational channel metrics even without a support loss.
+masster_channel_diagnostics: False
+# Log the per-spectrum channel support summaries: fragment_precision,
+# fragment_weighted_precision, {ion_mode,ion_h}_support_positive_rate and the
+# required_ion_h_top_k_* ranks. They iterate over the batch in Python, which costs more than
+# building the channel targets they summarize, and no loss consumes them. A support loss no
+# longer brings them along; masster_channel_diagnostics still implies them.
+masster_channel_support_metrics: False
+# Log overall candidate coverage: candidate_wrecall (the enumerated candidates' intensity
+# ceiling, every step) and validation candidate_recall. Each costs one match-mask pass per
+# spectrum, so they are off by default; enabling them changes monitoring only, not the loss.
+masster_candidate_coverage_metrics: False
+# Log the candidate-generation speed trace (candidate_*_batch_ms, candidate_total_molecule_ms,
+# and their fast_gnn_* renames). The stage timers themselves are unconditional perf_counter
+# reads; this only controls whether the six per-batch series are logged.
+masster_candidate_timing_metrics: False
+# Log per-cut-count candidate coverage (candidate_{recall,wrecall,precision}_cut_*) during
+# validation. The buckets add one match-mask pass per bucket per spectrum, so keep them off
+# unless the cut-depth breakdown is being studied. Requires the overall coverage metrics.
+masster_candidate_cut_diagnostics: False
+# Experimental ablation: reuse one CE-independent proposal pass for spectra from the
+# same acquisition group and supervise it against their merged target. This inherits
+# the observed CE-distribution bias; keep False for the main model. Requires CE-context
+# batching; the intensity transformer and primary spectrum loss remain CE-aware.
+masster_share_proposal_across_ev: False
+# Use MASSter's molecular-edge CE-context batch sampler.
+masster_batch_sampler: False
+# Maximum summed directed molecular edges per MASSter CE-context batch.
+masster_batch_sampler_max: null
+
+# ==========================================================================
+# ICEBERG only
+# Retired 2026-10-11 (run ICEBERG through external ms-pred). These keys are inert and stay so
+# older configs and checkpoints still resolve.
+# ==========================================================================
+magma_params:
+  pe_embed_k: 0
+  root_encode: gnn
+  add_hs: False
+  binned_targs: False
+  mz_bin_res: 0.1
+  mz_max: 1500.0
+  sum_ints: True
+  adduct_form_deltas: False
+  preprocess: False
+# ============================================================================
+# iceberg model
+# ============================================================================
+iceberg_hidden_size: 256
+iceberg_num_layers: 3
+iceberg_num_set_layers: 1
+iceberg_num_frag_set_layers: 0
+iceberg_num_mlp_layers: 0
+iceberg_num_gnn_layers: 0
+iceberg_dropout: 0.0
+iceberg_gnn_type: GGNN
+iceberg_pool_type: avg
+iceberg_inject_early: False
+iceberg_embed_adduct: False
+iceberg_encode_forms: False
+iceberg_fix_batch_bug: False
+
+magma_dp: data/magma  # MAGMA annotation data directory
+
+# ==========================================================================
+# MassFormer only
+# model_type: massformer
+# ==========================================================================
+mf_flag: False
+mf_pt_weight_decay: 0.0
+mf_fix_num_pt_layers: 0
+mf_reinit_num_pt_layers: -1
+mf_reinit_layernorm: True
+mf_lr_schedule: True
+mf_tot_updates: 400
+mf_warmup_frac: 0.1
+mf_high_lr: 0.0002
+mf_low_lr: 0.000000001
+
+# ==========================================================================
+# NEIMS only
+# model_type: neims
+# ==========================================================================
+neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
+
+# ==========================================================================
+# ChemLM only
+# model_type: chemlm (retired 2026-10-12, RETIRED_MODEL_TYPES)
+# ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while ChemLM
+# existed carries them in its hparams, and such a config must still resolve.
+chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM
+chemlm_num_layers: 6
+chemlm_encoder_lr: 0.00003
+chemlm_p_trav: 0.0
+chemlm_gradient_checkpointing: False
+
+# ==========================================================================
+# GrAFF only
+# model_type: graff
+# ==========================================================================
+graff_encoder_dim: 512
+graff_decoder_dim: 1024
+graff_encoder_depth: 6
+graff_decoder_depth: 2
+graff_eig_dim: 32
+graff_eig_depth: 2
+graff_dropout: 0.1
+graff_min_probability: 0.0
+graff_min_mz: 0.0
+
+# Annotation dataset parameters: read by the GrAFF dataset and PL model.
+ann_params:
+  max_isotope: 2
+  library_size: 1000 #10000
+  num_eigs: 8
+  filter_peaks: False
+  filter_peaks_tol: 1.0
+  library_splits:
+    - train
+  formula_str: False
+  # Absolute m/z error threshold (Da). Spectra with any annotation whose
+  # |peak_mz - exact_mz| exceeds this value are dropped entirely.
+  # Set to null to disable. Default: 0.1 Da.
+  huge_mz_diff_threshold: 0.1
+  # Relative m/z error threshold (fraction, not ppm). Individual annotations
+  # whose |peak_mz - exact_mz| / max(peak_mz, 200) exceeds this value are
+  # pruned (spectrum is kept). Equivalent to ~10 ppm at the 200 Da floor.
+  # Set to null to disable. Default: 1e-5.
+  big_mz_diff_ppm_threshold:
+  library_fp:
+  preprocess: False
+
+ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
+
+# ==========================================================================
+# CLIP pretraining only
+# model_type: clip, spec_mol_clip_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
+# ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while CLIP existed
+# carries them in its hparams, and such a config must still resolve.
+clip_temperature: 0.07
+clip_embed_dim: 256
+clip_intensity_transform: sqrt
+clip_loss_type: clip
+spectrum_encoder_params:
+  encoder_type: set_transformer
+  input_dim: 2
+  hidden_dim: 256
+  embed_dim: 256
+  num_layers: 2
+  num_heads: 4
+  num_inds: 32
+  dropout: 0.1
+  normalization: layer
+
+retrieval_eval_size:
+
+# ==========================================================================
+# MCES pretraining only
+# model_type: mces_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
+# ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while MCES
+# pretraining existed carries them in its hparams, and such a config must still resolve.
+mces_min: 1
+mces_max: 15
+mces_mean: 12
+mces_std: 2
+mces_normalization: zscore
+mces_embed_combine: concat_avg
+mces_fp: data/proc/mces/mces_pairs.pkl

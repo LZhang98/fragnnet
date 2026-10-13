@@ -2,8 +2,9 @@
 
 import torch as th
 from rdkit import Chem
+from torch_geometric.data import Batch
 
-from fragnnet.utils.feat_utils import get_mol_fp
+from fragnnet.utils.feat_utils import get_mol_fp, get_mol_graph
 
 
 class TestSpecMolDatasetFingerprintConfig:
@@ -187,3 +188,36 @@ class TestSpecMolDatasetFingerprintConfig:
         # Expected: 1024 (morgan) + 512 (rdkit) + 0 (no MACCS)
         expected_size = 1024 + 512
         assert len(fp) == expected_size
+
+
+def test_molecular_graph_exposes_batched_chemical_bonds_and_atom_chemistry() -> None:
+    graphs = [
+        get_mol_graph(Chem.MolFromSmiles("CCO"), ["a_onehot"], ["b_degree"], 0, True),
+        get_mol_graph(Chem.MolFromSmiles("C=O"), ["a_onehot"], ["b_degree"], 0, True),
+    ]
+
+    batch = Batch.from_data_list(graphs)
+
+    assert batch.edge_index.shape[1] == 6
+    assert batch.chemical_bond_index.tolist() == [[0, 1, 3], [1, 2, 4]]
+    assert batch.chemical_bond_attr.shape[0] == 3
+    assert batch.atom_atomic_numbers.tolist() == [6, 6, 8, 6, 8]
+    assert batch.atom_hydrogen_counts.tolist() == [3, 2, 1, 2, 0]
+    assert batch.atom_formal_charges.tolist() == [0, 0, 0, 0, 0]
+    assert batch.atom_monoisotopic_masses.dtype == th.float64
+
+
+def test_single_atom_graph_has_empty_chemical_bond_table() -> None:
+    graph = get_mol_graph(
+        Chem.MolFromSmiles("[Na+]"),
+        ["a_onehot"],
+        ["b_degree"],
+        0,
+        True,
+    )
+
+    assert graph.edge_index.shape == (2, 0)
+    assert graph.chemical_bond_index.shape == (2, 0)
+    assert graph.chemical_bond_attr.shape[0] == 0
+    assert graph.atom_atomic_numbers.tolist() == [11]
+    assert graph.atom_formal_charges.tolist() == [1]

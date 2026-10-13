@@ -57,10 +57,9 @@ pip install --no-index \
     joblib==1.3.2 \
     matplotlib \
     pytorch_lightning==2.4.0 \
-    dgl==2.4.0 \
-    omegaconf \
     cython==3.0.12 \
-
+    pyopenms==3.3.0 \
+    
 # install from whl
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
 pip install pyteomics-4.7.5-py3-none-any.whl
@@ -98,6 +97,12 @@ python preproc_scripts/inference/02_inf_prepare_spec_df.py \
     --inst_types FT QTOF \
     --output_dir ${DATASET_NAME}/proc
 
+# 03_prepare_dag_feats.py reads plain mol_df.pkl / spec_df.pkl, but the inference
+# scripts write .pkl.gz — decompress in place (gzip'd pickle -> plain pickle).
+echo `date`: decompressing proc pickles for 03_prepare_dag_feats.py
+gunzip -c ${DATASET_NAME}/proc/mol_df.pkl.gz > ${DATASET_NAME}/proc/mol_df.pkl
+gunzip -c ${DATASET_NAME}/proc/spec_df.pkl.gz > ${DATASET_NAME}/proc/spec_df.pkl
+
 # save proc to scratch
 echo `date`: saving proc to ${DEST_PROC_DP}
 mkdir -p ${DEST_PROC_DP}
@@ -105,19 +110,39 @@ tar -cf ${DATASET_NAME}_proc.tar ${DATASET_NAME}/proc
 cp ${DATASET_NAME}_proc.tar ${DEST_PROC_DP}/
 
 # === Step 03: fragment generation ===
+# The filters MUST match what 02_inf_prepare_spec_df.py writes: dset/frag_mode/spec_type
+# are hardcoded to inference/CID/MS2, and ion_mode is derived from the adduct charge, so
+# both P and N are needed here because PREC mixes [M+H]+ and [M-H]-.
+# --skip_stats True is required: the inference spec_df carries dummy empty peaks, so the
+# coverage stats would be meaningless (and the full path is far slower).
 echo `date`: Step 03 - fragment generation
 mkdir -p frag/${FRAG_SAVE_NAME}
-python preproc_scripts/inference/03_inf_run_inference_frag_gen.py \
+python preproc_scripts/03_prepare_dag_feats.py \
     --proc_dp ${DATASET_NAME}/proc \
     --frag_dp frag/${FRAG_SAVE_NAME} \
     --max_depth ${MAX_DEPTH} \
     --max_h_transfer ${MAX_H_TRANSFER} \
-    --max_time ${MAX_TIME}
+    --max_time ${MAX_TIME} \
+    --prec_types "[M+H]+" "[M-H]-" \
+    --inst_types FT QTOF \
+    --frag_modes CID \
+    --ion_modes P N \
+    --dsets inference \
+    --spec_type MS2 \
+    --wandb_mode disabled \
+    --wandb_run_name fool \
+    --use_hdf5 False \
+    --skip_stats True
 
 # save frags to scratch
+# NOTE: 03_prepare_dag_feats.py nests the per-molecule pickles under a dags/ subdirectory,
+# so the tar now holds ${FRAG_SAVE_NAME}/dags/{mol_id}.pkl.bz2 rather than
+# ${FRAG_SAVE_NAME}/{mol_id}.pkl.bz2. This matches preproc_infer_synced_tar.sh; any config
+# pointing frag_dp at an older cspirit extraction needs /dags appended.
 echo `date`: saving frags to ${DEST_FRAG_DP}
 mkdir -p ${DEST_FRAG_DP}
 cd frag/
+ls -l ${FRAG_SAVE_NAME}
 tar -cf ${FRAG_SAVE_NAME}.tar ${FRAG_SAVE_NAME}
 cp ${FRAG_SAVE_NAME}.tar ${DEST_FRAG_DP}/
 

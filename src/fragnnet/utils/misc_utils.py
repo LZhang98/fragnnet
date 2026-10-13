@@ -7,13 +7,12 @@ and torch/pandas friendly for use in data loading, model code, and scripts.
 """
 
 import glob
+import logging
 import multiprocessing
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-import threading
 import time
 from collections import defaultdict
 from collections.abc import (
@@ -23,34 +22,25 @@ from collections.abc import (
     Iterator,
     Mapping,
     MutableMapping,
-    Sequence,
 )
 from contextlib import contextmanager
-from distutils.util import strtobool
 from functools import wraps
 from typing import Any, TypeVar
 
-import joblib
 import numpy as np
 import pandas as pd
 import torch as th
 import torch_geometric as pyg
-import tqdm
-
-from fragnnet.utils.dgl_compat_utils import DGLGraph
 
 T = TypeVar("T")
 R = TypeVar("R")
 
-TQDM_DISABLE = False
 PPM = 1 / 1000000
 EPS = 1e-7
-LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
 LOG_ZERO_FP32 = float(th.finfo(th.float32).min)
 LOG_ZERO_FP16 = float(th.finfo(th.float16).min)
 LOG_ZERO_BP16 = float(th.finfo(th.bfloat16).min)
-MAX_CROSS_ENTROPY = 1e19
 TOLERANCE_MIN_MZ = 200.0
 
 
@@ -82,10 +72,24 @@ def timeit(func: Callable[..., R]) -> Callable[..., R]:
     return timeit_wrapper
 
 
-def booltype(x: str) -> bool:
-    """Convert a string to boolean using distutils.strtobool."""
+_TRUE_STRINGS = frozenset({"y", "yes", "t", "true", "on", "1"})
+_FALSE_STRINGS = frozenset({"n", "no", "f", "false", "off", "0"})
 
-    return bool(strtobool(x))
+
+def booltype(x: str) -> bool:
+    """Parse a command-line boolean the way ``distutils.util.strtobool`` did.
+
+    ``distutils`` was removed in Python 3.12, so the accepted spellings are listed here.
+
+    Raises:
+        ValueError: If ``x`` is not one of the accepted spellings (case-insensitive).
+    """
+    value = x.lower()
+    if value in _TRUE_STRINGS:
+        return True
+    if value in _FALSE_STRINGS:
+        return False
+    raise ValueError(f"invalid truth value {x!r}")
 
 
 def none_or_nan(thing: Any) -> bool:
@@ -151,35 +155,15 @@ def none_or_nan(thing: Any) -> bool:
 def np_temp_seed(seed: int) -> Generator[None, None, None]:
     """Temporarily set the NumPy random seed within the context."""
 
-    state = np.random.get_state()
-    np.random.seed(seed)
+    # Deliberately the legacy global RNG: this context manager exists to seed and restore
+    # the process-wide state that library code already uses. np.random.Generator is a
+    # separate stream and would not affect those callers.
+    state = np.random.get_state()  # noqa: NPY002
+    np.random.seed(seed)  # noqa: NPY002
     try:
         yield
     finally:
-        np.random.set_state(state)
-
-
-@contextmanager
-def th_temp_seed(seed: int) -> Generator[None, None, None]:
-    """Temporarily set the torch random seed within the context."""
-
-    state = th.get_rng_state()
-    th.manual_seed(seed)
-    try:
-        yield
-    finally:
-        th.set_rng_state(state)
-
-
-@contextmanager
-def th_temp_generator(seed: int) -> Generator[th.Generator, None, None]:
-    """Yield an independent torch Generator seeded with ``seed`` without touching global RNG."""
-    gen = th.Generator()
-    gen.manual_seed(seed)
-    try:
-        yield gen
-    finally:
-        pass
+        np.random.set_state(state)  # noqa: NPY002
 
 
 def flatten_lol(lol: Iterable[Iterable[T]]) -> list[T]:
@@ -188,50 +172,8 @@ def flatten_lol(lol: Iterable[Iterable[T]]) -> list[T]:
     return [item for sublist in lol for item in sublist]
 
 
-def wandb_symlink(run_dir: str, wandb_symlink_dp: str, job_id: str | int) -> None:
-    """Create or refresh a symlink for a W&B run directory."""
-
-    symlink_dst = os.path.join(wandb_symlink_dp, str(job_id))
-    symlink_src = os.path.split(os.path.abspath(run_dir))[0]
-    if os.path.islink(symlink_dst):
-        os.unlink(symlink_dst)
-    os.symlink(symlink_src, symlink_dst)
-
-
-def list_str2float(str_list: Iterable[str]) -> list[float]:
-    """Convert an iterable of strings to a list of floats."""
-
-    return [float(str_item) for str_item in str_list]
-
-
-# https://stackoverflow.com/a/58936697/6937913
-@contextmanager
-def tqdm_joblib(tqdm_object: tqdm.tqdm) -> Iterator[tqdm.tqdm]:
-    """Patch joblib to report progress into the provided tqdm instance."""
-
-    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-        def __call__(self, *args, **kwargs):
-            tqdm_object.update(n=self.batch_size)
-            return super().__call__(*args, **kwargs)
-
-    old_batch_callback = joblib.parallel.BatchCompletionCallBack
-    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
-    try:
-        yield tqdm_object
-    finally:
-        joblib.parallel.BatchCompletionCallBack = old_batch_callback
-        tqdm_object.close()
-
-
 # some utils for function timeout
 # adapted from https://stackoverflow.com/questions/366682/how-to-limit-execution-time-of-a-function-call
-
-
-class TimeoutException(Exception):
-    """Raised when a function exceeds a specified timeout."""
 
 
 # @contextmanager
@@ -248,52 +190,6 @@ class TimeoutException(Exception):
 #       signal.alarm(0)
 
 
-def timeout_func(
-    func: Callable[..., R],
-    args: Sequence[Any] | None = None,
-    kwargs: Mapping[str, Any] | None = None,
-    timeout: int = 30,
-    default: R | None = None,
-) -> R:
-    """Run ``func`` with a timeout, raising if exceeded."""
-
-    class InterruptableThread(threading.Thread):
-        def __init__(self) -> None:
-            threading.Thread.__init__(self)
-            self.result: R = default  # type: ignore[assignment]
-            self.exc_info: tuple[type | None, BaseException | None, Any | None] = (
-                None,
-                None,
-                None,
-            )
-
-        def run(self) -> None:
-            try:
-                self.result = func(*(args or ()), **(kwargs or {}))
-            except Exception:
-                self.exc_info = sys.exc_info()
-
-        def suicide(self) -> None:
-            raise TimeoutException(f"{func.__name__} timeout (taking more than {timeout} sec)")
-
-    it = InterruptableThread()
-    it.start()
-    it.join(timeout)
-    if it.exc_info[0] is not None:
-        exc_type, exc_value, exc_tb = it.exc_info
-        raise Exception(exc_type, exc_value, exc_tb)
-    if it.is_alive():
-        it.suicide()
-        raise RuntimeError
-    return it.result
-
-
-def my_tqdm(*args: Any, **kwargs: Any) -> tqdm.tqdm:
-    """Wrapper around tqdm respecting the module-level disable flag."""
-
-    return tqdm.tqdm(*args, **kwargs, disable=TQDM_DISABLE)
-
-
 def get_tensor_memory_usage(tensor: th.Tensor) -> int:
     """Calculate the byte size of a tensor."""
 
@@ -304,7 +200,7 @@ def get_tensor_dict_memory_usage(**tensor_dict: Any) -> int:
     """Compute total memory usage for tensor values in a dictionary."""
 
     total_memory = 0
-    for k, v in tensor_dict.items():
+    for _k, v in tensor_dict.items():
         if isinstance(v, th.Tensor):
             total_memory += get_tensor_memory_usage(v)
     return total_memory
@@ -325,318 +221,6 @@ def get_mol_graph_size(mol_data: Mapping[str, Any], mol_params: Mapping[str, Any
     else:
         mol_graph_size = 0
     return mol_graph_size
-
-
-def scatter_masked_softmax(
-    logits: th.Tensor,
-    mask: th.Tensor,
-    subset_idxs: th.Tensor,
-    mask_logprob: float | None = None,
-    log: bool = True,
-) -> th.Tensor:
-    """Apply log-softmax over grouped logits with masking support."""
-
-    if mask_logprob is None:
-        mask_logprob = LOG_ZERO(logits.dtype)
-    # calculate appropriate mask value
-    with th.no_grad():
-        c = scatter_masked_logsumexp(logits, mask, subset_idxs)
-        lm = th.gather(input=c, index=subset_idxs, dim=0)
-        mask_value = mask_logprob + lm
-    # apply mask
-    masked_logits = mask * logits + (1 - mask) * mask_value
-    # normalize
-    masked_logits = scatter_logsoftmax(masked_logits, subset_idxs)
-    if not log:
-        # exponentiate
-        return th.exp(masked_logits)
-    return masked_logits
-
-
-def scatter_masked_logsumexp(
-    logits: th.Tensor, mask: th.Tensor, subset_idxs: th.Tensor, mask_value: float | None = None
-) -> th.Tensor:
-    """Compute logsumexp over groups after applying a mask."""
-
-    if mask_value is None:
-        mask_value = LOG_ZERO(logits.dtype)
-    masked_logits = mask * logits + (1 - mask) * mask_value
-    masked_logsumexp = scatter_logsumexp(masked_logits, subset_idxs)
-    return masked_logsumexp
-
-
-def scatter_logsumexp(
-    logits: th.Tensor, subset_idxs: th.Tensor, eps: float = EPS, dim_size: int | None = None
-) -> th.Tensor:
-    """Numerically stable logsumexp grouped by ``subset_idxs``."""
-
-    # numel() is metadata — no GPU sync. Return LOG_ZERO for every group when input is empty.
-    if logits.numel() == 0:
-        k = dim_size if dim_size is not None else 0
-        return th.full((k,), LOG_ZERO(logits.dtype), device=logits.device, dtype=logits.dtype)
-
-    if dim_size is None:
-        k = th.max(subset_idxs) + 1
-    else:
-        assert dim_size >= th.max(subset_idxs) + 1
-        k = dim_size
-
-    sm = scatter_reduce(
-        src=logits,
-        index=subset_idxs,
-        reduce="amax",
-        dim_size=k,
-        default=LOG_ZERO(logits.dtype),
-    )
-
-    lm = th.gather(input=sm, index=subset_idxs, dim=0)
-    logits = logits - lm
-
-    se = scatter_reduce(
-        src=th.exp(logits), index=subset_idxs, reduce="sum", dim_size=k, default=0.0
-    )
-    return sm + th.log(se + eps)
-
-
-def scatter_logmeanexp(
-    logits: th.Tensor, subset_idxs: th.Tensor, eps: float = EPS, dim_size: int | None = None
-) -> th.Tensor:
-    """Compute log-mean-exp across groups defined by ``subset_idxs``."""
-
-    den = scatter_reduce(
-        src=th.ones_like(logits),
-        index=subset_idxs,
-        reduce="sum",
-        dim_size=dim_size,
-        default=0.0,
-    )
-    log_num = scatter_logsumexp(logits, subset_idxs, eps=eps, dim_size=dim_size)
-    return log_num - safelog(den)
-
-
-def scatter_logsoftmax(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Compute a log-softmax over groups defined by ``subset_idxs``."""
-
-    c = scatter_logsumexp(logits, subset_idxs)
-    logits = logits - c[subset_idxs]
-    return logits
-
-
-def scatter_softmax(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Softmax over grouped logits defined by ``subset_idxs``."""
-
-    return th.exp(scatter_logsoftmax(logits, subset_idxs))
-
-
-def scatter_l1normalize(vals: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Apply L1 normalization within each group of ``subset_idxs``."""
-
-    c = scatter_reduce(src=vals, index=subset_idxs, reduce="sum", dim_size=th.max(subset_idxs) + 1)
-    c = th.clamp(c, min=EPS)
-    vals = vals / c[subset_idxs]
-    return vals
-
-
-def scatter_l2normalize(vals: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Apply L2 normalization within each group of ``subset_idxs``."""
-
-    c = scatter_reduce(
-        src=vals**2, index=subset_idxs, reduce="sum", dim_size=th.max(subset_idxs) + 1
-    )
-    c = th.clamp(th.sqrt(c), min=EPS)
-    vals = vals / c[subset_idxs]
-    return vals
-
-
-def scatter_logl2normalize(logits: th.Tensor, subset_idxs: th.Tensor) -> th.Tensor:
-    """Apply log-space L2 normalization grouped by ``subset_idxs``."""
-
-    c = scatter_logsumexp(2 * logits, subset_idxs)
-    logits = logits - 0.5 * c[subset_idxs]
-    return logits
-
-
-def scatter_var(
-    src: th.Tensor,
-    index: th.Tensor,
-    dim_size: int | None = None,
-    correction: int = 1,
-    sqrt: bool = False,
-) -> th.Tensor:
-    """Compute grouped variance (optionally sqrt) across ``index`` groups."""
-
-    if dim_size is None:
-        dim_size = th.max(index) + 1
-    else:
-        assert dim_size >= th.max(index) + 1
-    m = scatter_reduce(src=src, index=index, reduce="mean", dim_size=dim_size, include_self=False)
-    v_num = scatter_reduce(src=(src - m[index]) ** 2, index=index, reduce="sum", dim_size=dim_size)
-    v_den = scatter_reduce(src=th.ones_like(src), index=index, reduce="sum", dim_size=dim_size)
-    v = v_num / th.clamp(v_den - correction, min=EPS)
-    if sqrt:
-        v = th.sqrt(v)
-    return v
-
-
-def scatter_argmax(
-    src: th.Tensor,
-    index: th.Tensor,
-    other_index: th.Tensor,
-    dim_size: int | None = None,
-    return_max: bool = False,
-) -> th.Tensor | tuple[th.Tensor, th.Tensor]:
-    """Argmax grouped by ``index`` returning positions from ``other_index``."""
-
-    if dim_size is None:
-        dim_size = th.max(index) + 1
-    else:
-        assert dim_size >= th.max(index) + 1
-    mx = scatter_reduce(src=src, index=index, reduce="amax", dim_size=dim_size, include_self=False)
-    ma = src == mx[index]
-    ma_idx = other_index * ma + (-1) * (~ma)
-    amx = scatter_reduce(
-        src=ma_idx,
-        index=index,
-        reduce="amax",
-        dim_size=dim_size,
-        include_self=True,
-        default=-1,
-    )
-    if return_max:
-        return amx, mx
-    return amx
-
-
-def scatter_argtopk(
-    src: th.Tensor,
-    index: th.Tensor,
-    other_index: th.Tensor,
-    k: int,
-    dim_size: int | None = None,
-    return_max: bool = False,
-) -> th.Tensor | tuple[th.Tensor, th.Tensor]:
-    """Return top-k indices per group defined by ``index``."""
-
-    assert k > 0
-    assert th.is_floating_point(src)
-    src = src.detach().clone()
-    counts = scatter_reduce(
-        src=th.ones_like(src, dtype=th.long),
-        index=index,
-        reduce="sum",
-        dim_size=th.max(index) + 1,
-    )
-    amxs, mxs = [], []
-    for i in range(k):
-        amx, mx = scatter_argmax(src, index, other_index, dim_size=dim_size, return_max=True)
-        mask = (th.arange(amx.shape[0], device=index.device)[index] == index) & (
-            amx[index] == other_index
-        )
-        src[mask] = -float("inf")
-        amx[counts <= i] = -1
-        amxs.append(amx)
-        mxs.append(mx)
-    amxs = th.stack(amxs, dim=1)
-    mxs = th.stack(mxs, dim=1)
-    if return_max:
-        return amxs, mxs
-    return amxs
-
-
-def scatter_reduce(
-    src: th.Tensor,
-    index: th.Tensor,
-    reduce: str,
-    dim: int = 0,
-    dim_size: int | None = None,
-    default: float = 0.0,
-    include_self: bool = True,
-) -> th.Tensor:
-    """Thin wrapper over torch.scatter_reduce_ with validation."""
-
-    if reduce == "mean" and include_self:
-        print("scatter_reduce: mean reduce with include_self=True is not recommended")
-    index = index.to(th.int64)
-    if index.numel() == 0:
-        if dim_size is None:
-            dim_size = 0
-        result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim + 1 :]
-        return th.full(result_shape, default, dtype=src.dtype, device=src.device)
-    max_index = int(th.max(index))
-    if max_index < 0:
-        raise ValueError("scatter_reduce: index contains negative entries")
-    if dim_size is None:
-        dim_size = max_index + 1
-    elif dim_size <= max_index:
-        raise ValueError(
-            f"scatter_reduce: dim_size {dim_size} is too small for max index {max_index}"
-        )
-    result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim + 1 :]
-    results = th.full(result_shape, default, dtype=src.dtype, device=src.device)
-    results.scatter_reduce_(dim=dim, index=index, src=src, reduce=reduce, include_self=include_self)
-    return results
-
-
-def safelog(x: th.Tensor, eps: float = EPS) -> th.Tensor:
-    """Safe log with epsilon clamp."""
-
-    return th.log(th.clamp(x, min=eps))
-
-
-def batchwise_max(xs: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
-    """Compute max per batch index (debug helper)."""
-
-    batch_size = th.max(batch_idxs) + 1
-    maxs = th.zeros([batch_size], device=xs.device, dtype=xs.dtype)
-    for b in range(batch_size):
-        maxs[b] = th.max(xs[batch_idxs == b])
-    return maxs
-
-
-def batchwise_lse(xs: th.Tensor, batch_idxs: th.Tensor) -> th.Tensor:
-    """Compute logsumexp per batch index (debug helper)."""
-
-    batch_size = th.max(batch_idxs) + 1
-    lses = th.zeros([batch_size], device=xs.device, dtype=xs.dtype)
-    for b in range(batch_size):
-        lses[b] = th.logsumexp(xs[batch_idxs == b], 0)
-    return lses
-
-
-def dedup_peaks(
-    mzs: th.Tensor, logprobs: th.Tensor, batch_idxs: th.Tensor
-) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
-    """Deduplicate peaks by ``mzs`` and aggregate log probabilities."""
-
-    b_mzs = th.stack([batch_idxs.type(mzs.dtype), mzs], dim=1)
-    dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(b_mzs, *[("lse", logprobs), ("amax", batch_idxs)])
-    dd_b_mzs = dd_b_mzs[:, 1]
-    return dd_b_mzs, dd_logprobs, dd_batch_idxs
-
-
-def dedup(
-    keys: th.Tensor, *agg_vals_tups: tuple[str, th.Tensor], dim: int = 0
-) -> tuple[th.Tensor, ...]:
-    """Deduplicate rows in ``keys`` and aggregate associated values."""
-
-    un_keys, inv_keys = th.unique(keys, dim=dim, return_inverse=True)
-    res: list[th.Tensor] = [un_keys]
-    for agg_vals_tup in agg_vals_tups:
-        agg, vals = agg_vals_tup
-        assert agg in ["lse", "sum", "min", "mean", "amax"]
-        assert vals.shape[0] == keys.shape[0]
-        if agg == "lse":
-            un_vals = scatter_logsumexp(vals, inv_keys, dim_size=un_keys.shape[0])
-        else:
-            un_vals = scatter_reduce(
-                vals,
-                inv_keys,
-                reduce=agg,
-                dim_size=un_keys.shape[0],
-                include_self=False,
-            )
-        res.append(un_vals)
-    return tuple(res)
 
 
 def to_cpu(
@@ -661,8 +245,7 @@ def to_device(
 
     for k in data_d:
         v = data_d[k]
-        # Support optional DGL: use DGLGraph placeholder for isinstance checks
-        if isinstance(v, th.Tensor) or isinstance(v, DGLGraph) or isinstance(v, pyg.data.Data):
+        if isinstance(v, (th.Tensor, pyg.data.Data)):
             v = v.to(device, non_blocking=non_blocking)
             data_d[k] = v
     return data_d
@@ -691,16 +274,22 @@ def print_shapes(input_dict: Mapping[str, Any]) -> None:
     """Print shapes/types for entries in ``input_dict`` (debug helper)."""
 
     for k, v in input_dict.items():
-        if isinstance(v, th.Tensor) or isinstance(v, np.ndarray):
+        if isinstance(v, (th.Tensor, np.ndarray)):
             print(k, "/", tuple(v.shape), "/", type(v))
-        elif isinstance(v, list) or isinstance(v, tuple):
+        elif isinstance(v, (list, tuple)):
             print(k, "/", len(v), "/", type(v))
         elif isinstance(v, pyg.data.Data):
             print(k, "/", (v.num_nodes, v.num_edges), "/", type(v))
-        elif isinstance(v, DGLGraph):
-            print(k, "/", (v.number_of_nodes(), v.number_of_edges()), "/", type(v))
         else:
             print(k, "/", None, "/", type(v))
+
+
+def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
+    """Validate tensor data without synchronizing CUDA after every check."""
+    if th.compiler.is_compiling() or condition.device.type == "cuda":
+        th._assert_async(condition, message)
+    elif not bool(condition):
+        raise ValueError(message)
 
 
 def th_setdiff1d(t1: th.Tensor, t2: th.Tensor) -> th.Tensor:
@@ -736,17 +325,6 @@ def check_pyg_full_compile() -> bool:
     pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
     assert th_major_version >= 2, th_major_version
     return pyg_major_version >= 2 and pyg_minor_version >= 5
-
-
-# wandb stuff
-def check_import_wandb() -> bool:
-    """Check for wandb installation and warn if missing."""
-
-    try:
-        import wandb
-    except ImportError:
-        print("wandb is not installed. Please install it using 'pip install wandb' if needed.")
-    return False
 
 
 def get_best_ckpt_from_wandb(
@@ -793,48 +371,11 @@ def get_best_ckpt_from_wandb(
     return ckpt_fp
 
 
-def get_wandb_runs_by_grp(
-    group_name: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> list[Any]:
-    """Return all runs in a W&B group."""
-
-    import wandb
-
-    api = wandb.Api()
-    runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters={"group": group_name})
-    return list(runs)
-
-
-def get_wandb_runids_by_grp(
-    group_name: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> list[str]:
-    """Return run IDs for all runs in a W&B group."""
-
-    runs = get_wandb_runs_by_grp(group_name, entity=entity, project=project)
-    run_ids = [run.id for run in runs]
-    return run_ids
-
-
-def delete_ckpt_from_wandb(
-    run_id: str, entity: str = "frag-gnn", project: str = "frag-gnn"
-) -> None:
-    """Delete checkpoint files for a given W&B run."""
-
-    import wandb
-
-    api = wandb.Api()
-    run = api.run(f"{entity}/{project}/{run_id}")
-
-    for file in run.files():
-        if file.name.startswith("ckpt/model-epoch="):
-            file.delete()
-
-
 class NestedDefaultDict(defaultdict):
     """Nested defaultdict that auto-creates deeper levels."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super(NestedDefaultDict, self).__init__(NestedDefaultDict, *args, **kwargs)
+        super().__init__(NestedDefaultDict, *args, **kwargs)
 
     def __repr__(self) -> str:
         return repr(dict(self))
@@ -990,3 +531,89 @@ def progress_wrapper(
 
         for item in tqdm(iterable, total=total, desc=desc):
             yield item
+
+
+class ProgressLogger:
+    """Interval-based progress logger with rate, ETA, and error tracking.
+
+    A line is emitted every ``log_every`` items OR every ``log_seconds`` seconds,
+    whichever comes first, so long-running jobs stay legible in SLURM logs without
+    depending on tqdm.
+
+    Example:
+        progress = ProgressLogger(total=len(rows), desc="Fragment generation")
+        for row in rows:
+            ...
+            progress.update(is_error=failed)
+        progress.finish()
+    """
+
+    def __init__(
+        self,
+        total: int,
+        desc: str = "Progress",
+        log_every: int = 100,
+        log_seconds: float = 30.0,
+        logger: "logging.Logger | None" = None,
+    ) -> None:
+        self.total = total
+        self.desc = desc
+        self.log_every = max(1, log_every)
+        self.log_seconds = log_seconds
+        self.logger = logger if logger is not None else logging.getLogger(__name__)
+        self.n_done = 0
+        self.n_errors = 0
+        self.start_time = time.time()
+        self._last_log_time = self.start_time
+
+    @property
+    def elapsed(self) -> float:
+        """Seconds since the logger was created."""
+        return time.time() - self.start_time
+
+    @property
+    def rate(self) -> float:
+        """Completed items per second, 0.0 before any time has passed."""
+        elapsed = self.elapsed
+        return self.n_done / elapsed if elapsed > 0 else 0.0
+
+    def update(self, is_error: bool = False, n: int = 1) -> None:
+        """Record ``n`` completed items and log if an interval boundary was crossed."""
+        self.n_done += n
+        if is_error:
+            self.n_errors += n
+
+        now = time.time()
+        if self.n_done % self.log_every == 0 or (now - self._last_log_time) >= self.log_seconds:
+            self._log_progress(now)
+
+    def _log_progress(self, now: float) -> None:
+        elapsed = now - self.start_time
+        rate = self.n_done / elapsed if elapsed > 0 else 0.0
+        remaining = max(0, self.total - self.n_done)
+        eta = remaining / rate if rate > 0 else 0.0
+        pct = (self.n_done / self.total * 100) if self.total > 0 else 0.0
+
+        self.logger.info(f"{self.desc}: {self.n_done}/{self.total} ({pct:.1f}%)")
+        self.logger.info(f"  Rate: {rate:.2f} items/sec")
+        self.logger.info(f"  Elapsed: {elapsed:.0f}s, ETA: {eta:.0f}s")
+        if self.n_errors > 0:
+            self.logger.warning(f"  Errors encountered: {self.n_errors}")
+        self._last_log_time = now
+
+    def finish(self) -> None:
+        """Log the completion summary: totals, wall time, average rate, success rate."""
+        elapsed = self.elapsed
+        avg_rate = self.n_done / elapsed if elapsed > 0 else 0.0
+
+        self.logger.info(f"{self.desc} completed")
+        self.logger.info(f"Total items processed: {self.n_done}")
+        self.logger.info(f"Total time elapsed: {elapsed:.2f} seconds")
+        self.logger.info(f"Average processing rate: {avg_rate:.2f} items/second")
+        if self.n_errors > 0:
+            self.logger.warning(f"Total errors encountered: {self.n_errors}")
+            if self.n_done > 0:
+                success = (self.n_done - self.n_errors) / self.n_done * 100
+                self.logger.warning(f"Success rate: {success:.1f}%")
+        else:
+            self.logger.info("No errors encountered - 100% success rate")

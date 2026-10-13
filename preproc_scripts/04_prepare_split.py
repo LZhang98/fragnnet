@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils import frag_utils
+from fragnnet.utils import formula_utils
 from fragnnet.utils.misc_utils import booltype, np_temp_seed
 from fragnnet.utils.proc_utils import filter_spec_mol
 
@@ -227,7 +227,7 @@ def make_splits(args):
                 .tolist()
             )
         else:
-            train_keys = args.predefined_train_ids if args.predefined_train_ids is not None else []
+            train_keys = [id_dtype(k) for k in (args.predefined_train_ids or [])]
 
         if args.predefined_val_id_fp is not None:
             val_keys = (
@@ -236,7 +236,7 @@ def make_splits(args):
                 .tolist()
             )
         else:
-            val_keys = args.predefined_val_ids if args.predefined_val_ids is not None else []
+            val_keys = [id_dtype(k) for k in (args.predefined_val_ids or [])]
 
         if args.predefined_test_id_fp is not None:
             test_keys = (
@@ -245,7 +245,7 @@ def make_splits(args):
                 .tolist()
             )
         else:
-            test_keys = args.predefined_test_ids if args.predefined_test_ids is not None else []
+            test_keys = [id_dtype(k) for k in (args.predefined_test_ids or [])]
 
         if args.predefined_secondary_id_fp is not None:
             secondary_keys = (
@@ -254,9 +254,7 @@ def make_splits(args):
                 .tolist()
             )
         else:
-            secondary_keys = (
-                args.predefined_secondary_ids if args.predefined_secondary_ids is not None else []
-            )
+            secondary_keys = [id_dtype(k) for k in (args.predefined_secondary_ids or [])]
 
         if len(train_keys) == 0 and len(val_keys) == 0:
             print(
@@ -443,10 +441,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--ces",
         type=str,
-        choices=["nce", "ace", "nce_or_ace", None],
+        choices=["nce", "ace", "nce_or_ace", "none"],
         default="nce_or_ace",
         required=False,
-        help="Collision energy scale used (nce or ace)",
+        help="Collision energy scale used (nce, ace, nce_or_ace, or none to disable CE filtering)",
     )
     parser.add_argument(
         "--ce_types",
@@ -511,7 +509,7 @@ if __name__ == "__main__":
         "--elements",
         type=str,
         nargs="+",
-        default=frag_utils.ELEMENTS,
+        default=formula_utils.ELEMENTS,
         help="Allowed elements for spectra/molecules",
     )
     parser.add_argument(
@@ -590,5 +588,7 @@ if __name__ == "__main__":
         help="Output directory where splits and metadata are written",
     )
     args = parser.parse_args()
+    if args.ces == "none":
+        args.ces = None
 
     make_splits(args)

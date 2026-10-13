@@ -27,10 +27,10 @@ import pandas as pd
 from rdkit import RDLogger
 
 import fragnnet.utils.formula_utils as formula_utils
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.frag.compute_frags import MAX_NUM_NODES
-from fragnnet.utils import data_utils
-from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
+from fragnnet.utils import mol_utils
+from fragnnet.utils.formula_utils import MAX_NUM_NODES
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import par_apply_series
 
 # Suppress RDKit warnings
 RDLogger.DisableLog("rdApp.*")
@@ -69,7 +69,7 @@ def create_mol_df(
 
     # Convert SMILES to RDKit molecules
     logger.info("Converting SMILES to RDKit molecules...")
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], mol_utils.mol_from_smiles)
 
     # Remove invalid molecules
     initial_count = len(mol_df)
@@ -87,9 +87,17 @@ def create_mol_df(
     )
 
     # filter by out_set_elements
-    allowed_elements = set(frag_utils.ELEMENTS)
+    allowed_elements = set(formula_utils.ELEMENTS)
     mol_df.loc[:, "num_out_set_elements"] = mol_df["formula"].apply(
         lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements)
+    )
+
+    # Count isotope-labelled atoms ([2H], [13C], [18F], ...). The formula/mass machinery
+    # is element-count based, so a labelled atom is scored against its natural-abundance
+    # mass: the predicted peaks would be systematically off by the label's mass defect.
+    mol_df.loc[:, "num_isotope_atoms"] = par_apply_series(
+        mol_df["mol"],
+        lambda m: sum(a.GetIsotope() != 0 for a in m.GetAtoms()) if m is not None else 0,
     )
 
     # Filter out molecules based on quality criteria
@@ -103,6 +111,7 @@ def create_mol_df(
         & (mol_df["charge"] == 0)
         & (mol_df["num_heavy_atoms"] <= max_heavy_atoms)
         & (mol_df["num_out_set_elements"] == 0)
+        & (mol_df["num_isotope_atoms"] == 0)
     ]
 
     filtered_count = len(mol_df)
@@ -110,7 +119,7 @@ def create_mol_df(
         logger.warning(
             f"Filtered out {initial_count_filter - filtered_count} molecules due to quality criteria"
         )
-        logger.info("  - Kept only single molecules with no radicals and no charge")
+        logger.info("  - Kept only single molecules with no radicals, no charge, no isotope labels")
 
     # Reset mol_id after filtering
     mol_df = mol_df.reset_index(drop=True)

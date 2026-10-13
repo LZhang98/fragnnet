@@ -1,0 +1,67 @@
+# Base: config/masster/massspecgym/msgym_val_loss_sweep_40gb.yml
+# Use --schedule_train_size 99306; one agent/trial per 40 GB allocation.
+entity: frag-gnn
+project: frag-gnn
+program: scripts/run_wandb_sweep.py
+method: random
+name: msgym_masster_val_loss_48_40gb
+run_cap: 48
+description: 48 full-length trials on Fir H100 3g.40gb; fixed U256/E4096 and linear-intensity
+  Gaussian CE. Rank best validation spectral loss.
+metric:
+  goal: minimize
+  name: val_primary_loss_best/mean
+parameters:
+  train_batch_size:
+    values:
+    - 256
+    - 512
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.002
+  weight_decay:
+    values:
+    - 0.001
+    - 0.01
+    - 0.1
+  mol_dropout:
+    values:
+    - 0.0
+    - 0.1
+    - 0.2
+    - 0.3
+  masster_head_dropout:
+    values:
+    - 0.1
+    - 0.2
+    - 0.3
+  masster_boundary_encoder_dropout:
+    values:
+    - 0.1
+    - 0.2
+    - 0.3
+  masster_intensity_input_dropout:
+    values:
+    - 0.1
+    - 0.2
+    - 0.3
+  masster_intensity_transformer_dropout:
+    values:
+    - 0.1
+    - 0.2
+    - 0.3
+  mol_num_layers:
+    values:
+    - 2
+    - 3
+  masster_bond_num_layers:
+    values:
+    - 1
+    - 2
+    - 3
+  masster_intensity_transformer_num_layers:
+    values:
+    - 1
+    - 2
+    - 3

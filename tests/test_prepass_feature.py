@@ -6,7 +6,7 @@ Verifies that:
 3. Structural constraints: prepass only adds fragments, never removes them.
 4. Prepass-injected fragments have node depth 2 (not 1): prepass rules require
    >=2 bond cuts + 1 new bond, so depth 2 correctly encodes the two-cut
-   distance from the root. See docs/frag_gen_prepass.md.
+   distance from the root. See docs/reference/frag_gen_prepass.md.
 """
 
 from __future__ import annotations
@@ -14,14 +14,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.utils.frag_utils import (
-    NODE_FEAT_TO_IDX,
+from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
+from fragnnet.models.fragnnet.dag.builder import (
     compute_dags,
     extract_mol_info,
     get_fraggen_input_arrays,
-    get_node_feats,
 )
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX, get_node_feats
 
 NUM_RULES = len(FRAG_RULES)
 

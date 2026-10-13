@@ -1,0 +1,244 @@
+# Ports the merged "independent JSS" output bundle onto the fastest unmerged arm
+# (nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda.yml). Seven substantive keys move
+# together, because that is how they were measured on merged -- this is a bundle port, not
+# an isolation:
+#
+#   masster_intensity_output                        probability   -> independent
+#   loss_type                                            cross_entropy -> jss_distance
+#   masster_peak_matching                           closest       -> hungarian
+#   masster_separate_ion_h_support_head             False         -> True
+#   masster_ion_h_support_binary_logits             False         -> True
+#   masster_ion_h_support_loss_weight               0.0           -> 0.1
+#   masster_gate_independent_intensity_with_support False         -> True
+#   masster_channel_support_use_intensity_prior     True          -> False
+#
+# Encoder, head size, candidate budgets, batch, LR, seed, split and epoch budget are
+# unchanged, so this costs essentially no parameters -- the whole delta is one small
+# support head.
+#
+# WHY THIS MAY NOT PAY HERE. On the current merged target with the head held fixed
+# (384x3/ff1024/ind128/ad4), independent/jss beats probability/CE by only +0.0025 overall
+# and is BEHIND early:
+#
+#     <=ep20   0.7522  vs  0.7577   (probability/CE ahead by 0.0055)
+#     <=ep40   0.7792  vs  0.7762
+#     <=ep60   0.7912  vs  0.7872
+#     best     0.8010  vs  0.7985
+#
+# Unmerged runs die at epoch 15-25 against the 12h wall, which is exactly the window where
+# the probability/CE arm is ahead. So the honest prior is that this arm LOSES on unmerged
+# unless the extra epochs bought by cuda + loss_batch_64 carry it past the crossover.
+# A null here is a real result: it would say the merged gain is a late-training effect and
+# does not transfer to a wall-clock-limited regime.
+#
+# Comparability: masster_peak_matching changes the LOSS, not the metric.
+# val_cos_sim_0.01_epoch/mean is a binned cosine and is unaffected, so this stays directly
+# comparable to dny62x0i (0.7018) and to its own _fast_batch512_cuda parent.
+#
+# Known-null component kept on purpose: masster_gate_independent_intensity_with_support
+# has no measured benefit in the merged channel-selection work. It is included so this is a
+# faithful port of the 0.8010 arm; stripping it is the obvious follow-up ablation.
+#
+# loss_batch_size raised 8 -> 64 on 2026-09-18, from the measured ma_mi MERGED speed arms
+# (same model, same target, matched one-hour jobs, median seconds per epoch):
+#
+#     backend  train_batch  lb=8   lb=32  lb=64
+#     cuda     256          144    146    152
+#     cuda     512          143    120     88
+#
+# The gain is batch-size dependent, which is what the implementation predicts:
+# loss_batch_size is a CEILING on chunk width in build_loss_chunks and the inner guard
+# breaks a chunk as soon as padded_pairs > flat_pairs, so a wider ceiling only merges
+# chunks where padding still pays -- and there is only something to merge once a step
+# carries enough spectra. At 256 it is flat to slightly negative; at 512 it is 1.63x.
+# NOT raised on the batch-128/256 arms for that reason.
+#
+# Chunking is a partition, so it changes float association order only, not the loss.
+# The lb=64 merged arm also reached the best cosine of that family (0.7167 at ep56
+# against 0.6980 at ep22 for lb=8) purely by covering more epochs in the same hour.
+wandb_name: nist20_ma_mi_unmerged_cmf_dual_ce_fast_batch512_cuda_independent_jss
+wandb_group: nist20_mass_shatter_l40s
+wandb_tags:
+- cuda_candidates
+- loss_batch_64
+- independent_intensity
+- jss_distance
+- hungarian_peak_matching
+- separate_h_support
+- h_support_loss_0.1
+- masster
+- vulcan_l40s
+- nist20_ma_mi
+- unmerged
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- dual_ce
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- m-h
+- m+na
+- m+cl
+- cmf
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- microbatch_512
+- effective_batch_512
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  - '[M-H]-'
+  - '[M+Na]+'
+  - '[M+Cl]-'
+  inst_type: true
+  inst_types:
+  - ORB
+  - ORB_F
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_include_cmf: true
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: jss_distance
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  ORB_F:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 60
+max_epochs: 100
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+# Independent-intensity output bundle. None of these keys exist in the parent config; they
+# come from config/*_template.yml defaults there, so they are set explicitly here.
+masster_intensity_output: independent
+masster_peak_matching: hungarian
+masster_separate_ion_h_support_head: true
+masster_ion_h_support_binary_logits: true
+masster_ion_h_support_loss_weight: 0.1
+masster_gate_independent_intensity_with_support: true
+masster_channel_support_use_intensity_prior: false

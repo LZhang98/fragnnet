@@ -156,6 +156,61 @@ CSV file indexing all processed queries.
 
 ## Running Inference
 
+### MSGYM retrieval migration
+
+Export MSGYM query-candidate records and a de-duplicated candidate list for
+fresh downstream preprocessing:
+
+```bash
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_mass.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass
+
+# Include every test-fold spectrum, not only simulation_challenge.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_mass.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass_test \
+  --subset all
+
+# Formula-constrained candidates for every test-fold spectrum.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_formula.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_test \
+  --subset all
+
+# The same export for the val fold. --fold defaults to test, so the commands
+# above are unchanged; pass --fold val (or train) to select another fold.
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py export \
+  --tsv_fp data/raw/msgym_1_5/MassSpecGym1.5.tsv \
+  --candidates_fp data/raw/msgym_1_5/MassSpecGym1.5_retrieval_candidates_formula.json \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_formula_val \
+  --subset all \
+  --fold val
+
+```
+
+The output contains `query_candidates.pkl.gz` and `candidate_smiles.csv`.
+
+Convert the exported manifest into global MS2C molecule and spectrum
+dataframes:
+
+```bash
+python preproc_scripts/msgym_ms2c/01_prepare_msgym_retrieval.py build-proc \
+  --manifest_fp data/ms2c/msgym/current/retrieval_candidates_mass/query_candidates.pkl.gz \
+  --output_dp data/ms2c/msgym/current/retrieval_candidates_mass/proc
+```
+
+This writes `mol_df.pkl`, `spec_df.pkl`, and `test_ids.csv`. Each
+query-candidate pair is one spectrum row, and candidates belonging to the same
+MSGYM spectrum share a `group_id`.
+
+`build-proc` always names the split `test_ids.csv` because that is the filename
+inference reads (`base_dataset.py`), regardless of which MSGYM fold the manifest
+came from. The fold lives in the output directory name, not in the split name.
+
 ### run_ms2c_predict_val.py
 
 Runs inference on MS2C prediction datasets using a trained FraGNNet checkpoint.
@@ -187,7 +242,7 @@ python scripts/ms2c/run_ms2c_predict_val.py \
 | `--auxiliary_scores` | list | `[cos_sim, cos_hun, true_oos_prob, true_oos_e]` | Auxiliary scores to compute |
 | `--eval_mz_bin_res` | list | `[0.01]` | m/z bin resolutions for binned metrics |
 | `--custom_fp` | str | None | Custom config file path |
-| `--template_fp` | str | `./config/template.yml` | Template config file path |
+| `--template_fp` | str | `./config` | Template config directory |
 
 ---
 

@@ -17,7 +17,6 @@ MAX_H_TRANSFER=4
 MAX_TIME=-1
 NB_FLAG=False
 ISO_FLAG=False
-USE_LMDB=False
 SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
 DSETS='nist23_hr1 nist23_hr2'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'

@@ -274,7 +274,7 @@ def main():
              "of the model's filtered prediction output.",
     )
     parser.add_argument("--n_cvs", type=int, default=9)
-    parser.add_argument("--inst_type", type=str, default="FT")
+    parser.add_argument("--inst_type", type=str, default="ORB")
     parser.add_argument("--min_intensity", type=float, default=0.05,
                         help="Min normalised true peak intensity to consider (0–1)")
     parser.add_argument("--min_spectra", type=int, default=20,

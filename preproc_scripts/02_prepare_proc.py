@@ -7,16 +7,15 @@ import numpy as np
 import pandas as pd
 from rdkit import RDLogger
 
-import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import (
+from fragnnet.utils import mol_utils, spec_parse_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import (
     par_apply_df_rows,
     par_apply_df_rows_t,
     par_apply_series,
     seq_apply_df_rows_t,
-    compute_mol_df_props,
 )
-
-from fragnnet.utils.misc_utils import booltype
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -109,10 +108,15 @@ def preprocess_spec(
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
     if skip_standardize:
-        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
+        spec_df.loc[:, "mol"] = par_apply_series(
+            spec_df["smiles"], partial(mol_utils.mol_from_smiles, ml_standardize=False)
+        )
     else:
-        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], data_utils.mol_from_smiles)
-    spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], data_utils.mol_to_smiles)
+        spec_df.loc[:, "mol"] = par_apply_series(
+            spec_df["smiles"],
+            partial(mol_utils.mol_from_smiles, canonicalize_tautomers=canonicalize_tautomers),
+        )
+    spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], mol_utils.mol_to_smiles)
     no_mol_df = spec_df[spec_df["mol"].isna() | spec_df["smiles"].isna()][["dset_spec_id"]]
     spec_df = spec_df.dropna(subset=["mol", "smiles"])
     if (spec_df["smiles"] == "").any():
@@ -131,28 +135,28 @@ def preprocess_spec(
     ann_df = spec_df[["dset_spec_id", "mol_id", "notes", "peaks", "dset"]].copy()
 
     # extract peak info (still represented as str)
-    spec_df.loc[:, "peaks"] = par_apply_series(spec_df["peaks"], data_utils.parse_peaks_str)
+    spec_df.loc[:, "peaks"] = par_apply_series(spec_df["peaks"], spec_parse_utils.parse_peaks_str)
     # get mz resolution
-    spec_df.loc[:, "res"] = par_apply_series(spec_df["peaks"], data_utils.get_res)
+    spec_df.loc[:, "res"] = par_apply_series(spec_df["peaks"], spec_parse_utils.get_res)
     # standardize the instrument type and frag_mode
-    inst_type, frag_mode = seq_apply_df_rows_t(spec_df, data_utils.parse_inst_info)
+    inst_type, frag_mode = seq_apply_df_rows_t(spec_df, spec_parse_utils.parse_inst_info)
     spec_df.loc[:, "inst_type"] = inst_type
     spec_df.loc[:, "frag_mode"] = frag_mode
     # standardize ce
     # NOTE: this assume ace will ends with eV and NCE will ends with %
-    spec_df.loc[:, "ace"] = par_apply_series(spec_df["col_energy"], data_utils.parse_ace_str)
-    spec_df.loc[:, "nce"] = par_apply_series(spec_df["col_energy"], data_utils.parse_nce_str)
+    spec_df.loc[:, "ace"] = par_apply_series(spec_df["col_energy"], spec_parse_utils.parse_ace_str)
+    spec_df.loc[:, "nce"] = par_apply_series(spec_df["col_energy"], spec_parse_utils.parse_nce_str)
     spec_df.loc[:, "ace_extra_1"] = par_apply_series(
-        spec_df["col_energy_extra_1"], data_utils.parse_ace_str
+        spec_df["col_energy_extra_1"], spec_parse_utils.parse_ace_str
     )
     spec_df.loc[:, "nce_extra_1"] = par_apply_series(
-        spec_df["col_energy_extra_1"], data_utils.parse_nce_str
+        spec_df["col_energy_extra_1"], spec_parse_utils.parse_nce_str
     )
     spec_df.loc[:, "ace_extra_2"] = par_apply_series(
-        spec_df["col_energy_extra_2"], data_utils.parse_ace_str
+        spec_df["col_energy_extra_2"], spec_parse_utils.parse_ace_str
     )
     spec_df.loc[:, "nce_extra_2"] = par_apply_series(
-        spec_df["col_energy_extra_2"], data_utils.parse_nce_str
+        spec_df["col_energy_extra_2"], spec_parse_utils.parse_nce_str
     )
     spec_df = spec_df.drop(columns=["col_energy", "col_energy_extra_1", "col_energy_extra_2"])
 
@@ -171,22 +175,22 @@ def preprocess_spec(
 
     # standardise prec_type
     spec_df.loc[:, "prec_type"] = par_apply_series(
-        spec_df["prec_type"], data_utils.parse_prec_type_str
+        spec_df["prec_type"], spec_parse_utils.parse_prec_type_str
     )
     # convert prec_mz
     spec_df.loc[:, "prec_mz"] = pd.to_numeric(spec_df["prec_mz"], errors="coerce")
     # convert ion_mode
     spec_df.loc[:, "ion_mode"] = par_apply_series(
-        spec_df["ion_mode"], data_utils.parse_ion_mode_str
+        spec_df["ion_mode"], spec_parse_utils.parse_ion_mode_str
     )
     # convert peaks to float
-    spec_df.loc[:, "peaks"] = par_apply_series(spec_df["peaks"], data_utils.convert_peaks_to_float)
+    spec_df.loc[:, "peaks"] = par_apply_series(spec_df["peaks"], spec_parse_utils.convert_peaks_to_float)
     # get retention index
-    spec_df.loc[:, "ri"] = par_apply_series(spec_df["ri"], data_utils.parse_ri_str)
+    spec_df.loc[:, "ri"] = par_apply_series(spec_df["ri"], spec_parse_utils.parse_ri_str)
     # convert exact_mass
     spec_df.loc[:, "exact_mass"] = pd.to_numeric(spec_df["exact_mass"], errors="coerce")
     if "formula" not in spec_df:
-        spec_df.loc[:, "formula"] = par_apply_series(spec_df["mol"], data_utils.mol_to_formula)
+        spec_df.loc[:, "formula"] = par_apply_series(spec_df["mol"], mol_utils.mol_to_formula)
     # remove columns from spec_df
     spec_df = spec_df[
         [
@@ -233,11 +237,18 @@ def preprocess_spec(
     mol_df = pd.DataFrame(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
-    
+
     # convert smiles to mol
     # use skip_standardize flag to control whether to apply the same standardization as in the spec_df processing step, this is to save time when we want to keep the original mols without standardization
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=not skip_standardize, canonicalize_tautomers=canonicalize_tautomers))
-    
+    mol_df.loc[:, "mol"] = par_apply_series(
+        mol_df["smiles"],
+        partial(
+            mol_utils.mol_from_smiles,
+            ml_standardize=not skip_standardize,
+            canonicalize_tautomers=canonicalize_tautomers,
+        ),
+    )
+
     compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
@@ -267,7 +278,7 @@ def preprocess_spec(
     inchikey_df["inchikey_s"] = inchikey_df["inchikey"].str[:14]
     inchikey_df = inchikey_df.drop(columns=["inchikey"])
     inchikey_df = inchikey_df.merge(mol_df[["mol_id", "inchikey_s"]], on="mol_id", how="inner")
-    
+
     diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
     logger.info("> inchikey_s inconsistencies")
     logger.info(
@@ -294,15 +305,17 @@ def preprocess_spec(
     spec_df = spec_df[~spec_df["spec_id"].isin(diff_formula_df["spec_id"])]
     spec_df = spec_df[~spec_df["spec_id"].isin(diff_mass_df["spec_id"])]
     spec_df = spec_df.merge(mol_df[["mol_id", "exact_mw"]], on="mol_id", how="inner")
-    spec_df.loc[:, "prec_mz"] = par_apply_df_rows(spec_df, data_utils.infer_prec_mz)
+    spec_df.loc[:, "prec_mz"] = par_apply_df_rows(spec_df, spec_parse_utils.infer_prec_mz)
     spec_df = spec_df.drop(columns=["exact_mw"])
 
     # extract annotation info
     ann_df = ann_df.merge(
-        spec_df[["dset_spec_id", "spec_id", "prec_type"]], on="dset_spec_id", how="inner"
+        spec_df[["dset", "dset_spec_id", "spec_id", "prec_type"]],
+        on=["dset", "dset_spec_id"],
+        how="inner",
     )
     ann_df = ann_df.merge(mol_df[["mol_id", "formula"]], on="mol_id", how="inner")
-    ann_results = par_apply_df_rows_t(ann_df, data_utils.parse_annotations)
+    ann_results = par_apply_df_rows_t(ann_df, spec_parse_utils.parse_annotations)
     ann_df.loc[:, "ann_peak_mzs"] = ann_results[0]
     ann_df.loc[:, "ann_products"] = ann_results[1]
     ann_df.loc[:, "ann_losses"] = ann_results[2]
@@ -360,9 +373,7 @@ if __name__ == "__main__":
         help="whether use NA for missing str labels (such as inst_type, frag_mode, etc.) or use np.nan",
     )
     parser.add_argument(
-        "--skip_standardize",
-        action="store_true",
-        help="whether skip standardize for mols"
+        "--skip_standardize", action="store_true", help="whether skip standardize for mols"
     )
     parser.add_argument(
         "--canonicalize_tautomers",

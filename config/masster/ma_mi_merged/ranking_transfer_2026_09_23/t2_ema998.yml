@@ -1,0 +1,256 @@
+# ARM t2_ema998 -- exponential moving average of the weights, decay 0.998, 2026-09-23.
+# Two runs of the same architecture disagree per spectrum (prediction cosine p10 0.65); averaging
+# their predictions adds +0.020 cosine and cuts the val ranking gap 0.120 -> 0.110, and averaging
+# two ADJACENT checkpoints of one run adds +0.008 (their weights: +0.003) -- optimizer noise at the
+# constant LR 1e-3 (lr_schedule: false). This arm keeps a per-step EMA of the weights; validation,
+# the best-checkpoint choice and saved state_dicts use the average (fragnnet.utils.trainer_utils.
+# ExponentialMovingAverage). The lineage runs 90 steps/epoch (c4a_base_s1, 5qws8g9x), so 0.998 gives
+# the average a mean age of ~500 steps, ~5.5 epochs. CAUTION reading the gap: train-side auxiliary
+# metrics measure the RAW training weights while val measures the average, so the logged train/val
+# gap mixes two models. Take train metrics for this arm from an offline eval of the checkpoint.
+#
+# Question: the ranking error is a generalization failure. On a 25.6k-spectrum train sample the
+# unmerged [M+H]+/FT checkpoint 6h67zps9 has ranking gap 0.011 and base-peak hit 84.5%; on val
+# 0.121 and 56.7% (docs/findings/masster/masster_ranking_decomposition_2026_09_23.md).
+# This arm tests one way of making the ranking transfer (the boundary-dropout sibling t1 was
+# dropped 2026-09-24: blocking one head input can reroute the lookup). Plan:
+# docs/plans/masster/masster_ranking_transfer_plan.md.
+#
+# CONTROL: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1_trainaux.yml (same seed 397623,
+# 128/128 epochs, compute_train_auxiliary_metrics on). This file is that control plus ONE key and
+# wandb naming; the resolved one-key diff is asserted in the plan's validation section.
+# READ at matched epoch: tail mean of val_cos_sim_0.01 over epochs 118-127 against the control
+# (standing gate +/-0.005; tail-mean reproducibility floor 0.0004), AND the ranking gap and
+# base-peak hit from an offline decomposition of the best checkpoint's val export. A narrowed
+# train/val gap without a val gain is not a pass: three arms have done that and lost.
+# PROFILE fir:h100-80gb for the train metrics (peak ~37 GiB), 3 h box.
+#
+# Control header follows.
+# ARM c4a_base_s1_trainaux -- train-metric control, 2026-09-22.
+# Identical to nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml except for
+# compute_train_auxiliary_metrics (false -> true) and wandb naming. Exists so that arms
+# carrying that key -- starting with c4d_wd10 -- have a matched TRAIN cosine to read the
+# train/val gap against; c4a_base_s1/s2 supply the matched val cosine and nothing else.
+# This is also recommendation 1 of the 2026-09-22 overfit read-out.
+# PROFILE: fir:h100-80gb, not 3g.40gb -- the key takes peak GPU from 30.4 to ~37 GiB,
+# which is 99.9% of a 3g slice. Same seed 397623 as c4a_base_s1, so the val cosine of this
+# run is also a third same-seed replicate of the control and a free check that turning the
+# metric on does not move the optimization.
+#
+# Original c4a_base_s1 header follows.
+# ARM c4a_base_s1 -- 4 h exploration campaign, 2026-09-21.
+# Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_long_control.yml. Differs from the base by exactly: (nothing but wandb naming).
+# The candidate feature list, boundary-bond-encoder and h-transfer-bound keys below
+# are PINNED, not inherited, so a later default flip cannot move this comparison underneath
+# it. boundary_bond_encoder was NOT pinned before 2026-09-21 and silently rode the template
+# default (True) in every c4 arm; that is the defect this campaign exists to avoid.
+#
+# Tier A control. Current defaults (candidate mass features, candidate charge feature,
+# h_transfer_bound: valence) at the campaign's 4 h box. No MASSter run has ever trained
+# on this architecture: all three defaults flipped on 2026-09-20, after the regularization
+# sweep read out. This arm IS the new baseline; every other arm in the campaign is a
+# single-key diff from it. Seed 397623, the seed in 81 of 83 historical runs.
+#
+# HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
+# 630-epoch schedule and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 ->
+# 0.7287@300 -> 0.7309@629, i.e. the last 529 epochs buy +0.0017, inside the 0.0016 control
+# replicate floor. 128 epochs (~1.8 h at the measured 70 ep/h) reaches the plateau, so the
+# saved wall clock is spent on n>=2 replicates instead -- which is what this family actually
+# needs at a 0.003-0.005 replicate floor.
+wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_t2_ema998
+wandb_group: nist20_mass_shatter_ranking_transfer
+wandb_tags:
+- t2_ema998
+- ranking_transfer_2026_09_23
+- ema_0.998
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_ma_mi
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- m-h
+- m+na
+- m+cl
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_64
+- microbatch_512
+- effective_batch_512
+- merged
+- merged_consensus
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+- horizon_probe_2026_09_20
+- train_aux_metrics
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+spec_params:
+  merge: true
+  merge_keep_ces: true
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  - '[M-H]-'
+  - '[M+Na]+'
+  - '[M+Cl]-'
+  inst_type: true
+  inst_types:
+  - ORB
+  - ORB_F
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  ORB_F:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 128
+max_epochs: 128
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Train-side auxiliary metrics ON (the control's reason to exist); peak GPU ~37 GiB, hence 80gb.
+compute_train_auxiliary_metrics: true
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+# Campaign override(s) not present in the base file:
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+
+# The arm key (only difference from the control besides wandb naming):
+ema_decay: 0.998

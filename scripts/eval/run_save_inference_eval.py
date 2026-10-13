@@ -14,19 +14,20 @@ import os
 import pickle
 import sys
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype, get_core_count
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
-    get_required_config_indices,
     init_model_from_ckpt,
-    list_output_subset_options,
-    prepare_output_subset,
-    run_inference_hdf5,
-    run_inference_pkl,
     setup_device,
 )
+from fragnnet.inference.export_columns import (
+    get_required_config_indices,
+    list_output_subset_options,
+    prepare_output_subset,
+)
+from fragnnet.inference.runners import run_inference_hdf5, run_inference_pkl
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
@@ -38,7 +39,7 @@ def get_args():
     parser.add_argument(
         "--template_fp",
         type=str,
-        default="config/template.yml",
+        default="config",
         help="Path to the template config file",
     )
     parser.add_argument(
@@ -86,7 +87,9 @@ def get_args():
         type=str,
         default="hdf5",
         choices=["hdf5", "pkl"],
-        help="Output file format for predictions",
+        help="Output file format for predictions. hdf5 writes per-spectrum ragged "
+        "families to predictions_<split>.hdf5; pkl writes run-wide flat arrays plus "
+        "ground truth and per-spectrum scores to predictions_<split>_raw.pkl",
     )
     parser.add_argument(
         "--list_output_options",
@@ -101,12 +104,16 @@ def get_args():
         nargs="+",
         default=[
             "cos_sim",  # Cosine similarity between predicted and true spectra
-            # "cos_hun",  # Hungarian algorithm cosine similarity
-            "cos_hun_inst_tol",  # Hungarian cosine similarity with instrument-specific tolerance
+            "cos_hun",  # Hungarian algorithm cosine similarity, global mass tolerance
+            # "cos_hun_inst_tol",  # per-instrument tolerance; opt in for QTOF-containing evals
             # "true_oos_prob",  # True out-of-scope probability
             # "true_oos_e"      # True out-of-scope energy
         ],
-        help="List of auxiliary evaluation scores to compute",
+        help="List of auxiliary evaluation scores to compute. cos_hun_inst_tol is NOT the "
+        "default: it needs inst_type_loss_tol, which most configs leave unset (and which "
+        "setup now rejects rather than silently exporting -1). For an FT-only config it "
+        "also equals cos_hun, since the table's FT entry is the global tolerance. Pass it "
+        "explicitly for a QTOF-containing eval whose config declares QTOF and the table.",
     )
     parser.add_argument(
         "--skip_extra_losses",
@@ -153,13 +160,20 @@ def get_args():
         "--return_formula_str",
         type=booltype,
         default=False,
-        help="Whether to return formula strings (FraGNNet only)",
+        help="Whether to return formula strings (FraGNNet and MASSter)",
     )
     parser.add_argument(
         "--return_cc_hash",
         type=booltype,
         default=False,
-        help="Whether to return node CC hashes (FraGNNet only)",
+        help="Whether to return node CC hashes (FraGNNet and MASSter)",
+    )
+    parser.add_argument(
+        "--return_rule_provenance",
+        type=booltype,
+        default=False,
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
+        "(requires --return_cc_hash)",
     )
     parser.add_argument(
         "--eval_mz_bin_res",
@@ -306,7 +320,11 @@ if __name__ == "__main__":
     # Show which index variables will be required for the chosen output_subset
     if output_set is not None:
         req_batch, req_node, req_formula, req_nb_node = get_required_config_indices(
-            output_set, model, nb_iso=False
+            output_set,
+            model,
+            nb_iso=False,
+            return_formula_str=args.return_formula_str or args.output_everything,
+            return_cc_hash=args.return_cc_hash or args.output_everything,
         )
         print("> Required index variables for output_subset:")
         if req_batch:
@@ -332,7 +350,9 @@ if __name__ == "__main__":
             return_formula_str=args.return_formula_str or args.output_everything,
             return_cc_hash=args.return_cc_hash or args.output_everything,
             rebase_indices=True,
+            return_rule_provenance=args.return_rule_provenance,
             save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
+            drop_none_cols=args.drop_none_cols,
         )
     else:
         results = run_inference_pkl(
@@ -343,10 +363,20 @@ if __name__ == "__main__":
             output_set=output_set,
             evaluate=True,
         )
-        out_fp = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
+        # Not `predictions_{eval_split}.pkl`: that name is already taken by the
+        # per-spectrum DataFrame the analysis scripts and notebooks read (they do
+        # `df[df["spec_id"].isin(...)]` / `.itertuples()`). `run_inference_pkl` returns
+        # something else - one dict of flat arrays concatenated over the whole run, keyed
+        # by axis, spectra identified by `unique_id`. Writing it under the DataFrame's name
+        # produced a file none of those consumers can open.
+        out_fp = os.path.join(output_save_dp, f"predictions_{eval_split}_raw.pkl")
         with open(out_fp, "wb") as f:
             pickle.dump(results, f)
-        num_predict = len(next(iter(results.values()))) if results else 0
+        # Count spectra, not rows. Every value here is a flat concatenated array and the
+        # first one is peak-level, which reported 350,761 "predictions" for 378 spectra.
+        # Any `*_batch_idxs` array ranges over spectra, whichever subset was requested.
+        spectrum_idxs = [v for k, v in results.items() if k.endswith("batch_idxs") and len(v)]
+        num_predict = max((int(v.max()) + 1 for v in spectrum_idxs), default=0)
     print(f"\n>>> Saved predictions to: {output_save_dp}")
     print(f">>> Total predictions: {num_predict}")
     print(">>> Evaluation complete!")

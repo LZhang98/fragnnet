@@ -4,18 +4,18 @@ from pprint import pprint
 import torch as th
 
 import wandb
-from fragnnet.dataset import SpecMolFragDataset
-from fragnnet.pl_model import FraGNNetPL
-from fragnnet.runner import load_config
-from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     cleanup_model,
     init_wandb_ckpt,
-    prepare_output_subset,
-    run_inference_pkl,
     save_inference_results,
 )
+from fragnnet.inference.export_columns import prepare_output_subset
+from fragnnet.inference.runners import run_inference_pkl
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
+from fragnnet.runner import load_config
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -94,11 +94,11 @@ if __name__ == "__main__":
     model_to_config = NestedDefaultDict()
 
     # find wandb checkpoints
-    template_fp = "config/template.yml"
+    template_fp = "config"
     api = wandb.Api()
     for ablation_model_type in ablation_model_types:
         model_to_config[ablation_model_type] = (
-            f"config/{ablation_dset}/{ablation_model_type}/s0.yml"
+            f"config/fragnnet/{ablation_dset}/{ablation_model_type}/s0.yml"
         )
         model_type_wandb_prefix = model_type_to_wandb_prefix[ablation_model_type]
         dset_wandb_group_prefix = dset_to_wandb_prefix[ablation_dset]

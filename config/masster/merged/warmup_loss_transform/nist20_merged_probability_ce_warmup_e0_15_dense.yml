@@ -1,0 +1,183 @@
+wandb_name: nist20_merged_probability_ce_warmup_e0_15_dense
+wandb_group: nist20_mass_shatter_warmup_loss_transform
+wandb_tags:
+  - masster
+  - vulcan_l40s
+  - nist20
+  - merged
+  - unique_fragments_256
+  - max_enumerated_masks_1024
+  - pathway_marginalization
+  - deterministic
+  - gine_gsa384
+  - bond_centric
+  - atom_layers_2
+  - bond_layers_3
+  - intensity_transformer
+  - intensity_dim_384
+  - intensity_layers_3
+  - intensity_ff_1024
+  - intensity_inducing_128
+  - probability_intensity
+  - cross_entropy
+  - ce_embed
+  - adduct_embed
+  - proposal_selection_only
+  - proposal_loss_0.1
+  - proposal_mixtures_1
+  - proposal_intensity_transform_none
+  - candidate_conditional
+  - shared_proposal_encoder
+  - proposal_warmup_epochs_0_15
+  - dense_evaluation
+  - no_forced_single_cuts
+  - charge_logsumexp
+
+seed: 397623
+
+# 1. Merge spectra within each precursor/adduct group while retaining collision
+# energies as context.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: True
+  merge_normalize_each_spectrum: True
+  merge_equal_ce_weight: True
+  preprocess: True
+mol_params:
+  preprocess: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_ring_size
+    - a_num_hs
+    - a_mass
+    - a_chiral
+    - a_charge
+  pyg_edge_feats:
+    - b_degree
+    - b_ring
+    - b_conj
+
+# 2. Share the molecular encoder and train proposal only in epochs 0-15.
+# Proposal gradients continue into the shared encoder during joint training.
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: True
+masster_ranked_mask_budget: 1024
+masster_include_single_bond_cuts: False
+masster_max_h_transfer: 4
+masster_include_cmf: True
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_proposal_num_mixtures: 1
+masster_intensity_transformer_dim: 384
+masster_intensity_transformer_num_layers: 3
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 1024
+masster_intensity_transformer_num_inducing_points: 128
+masster_intensity_transformer_dropout: 0.1
+masster_intensity_output: probability
+masster_use_mask_residuals: True
+masster_proposal_anchored: True
+masster_log_base_ce: False
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: True
+masster_proposal_selection_only: True
+masster_proposal_loss_weight: 0.1
+masster_proposal_ints_transform: none
+masster_separate_proposal_encoder: False
+masster_proposal_only_until_epoch: 15
+masster_share_proposal_across_ev: False
+masster_min_mask_relative_probability: 0.0
+masster_min_fragment_relative_probability: 0.0
+masster_min_ion_mode_relative_probability: 0.0
+masster_separate_ion_h_support_head: False
+masster_ion_h_support_binary_logits: False
+masster_gate_independent_intensity_with_support: False
+masster_min_ion_h_relative_probability: 0.0
+masster_min_ion_h_absolute_probability: 0.0
+masster_ion_h_support_loss_weight: 0.0
+masster_apply_channel_selection_in_training: False
+masster_channel_support_attribution: gaussian_posterior
+masster_channel_support_use_intensity_prior: False
+masster_channel_diagnostics: False
+
+# 3. Train probabilistic intensity with Gaussian CE and no support gate or BCE.
+# The matching selector below is inactive for Gaussian CE.
+loss_type: cross_entropy
+ints_transform: none
+masster_peak_matching: hungarian
+masster_kl_epsilon: 1.0e-4
+masster_intensity_entropy_match_weight: 0.0
+predict_oos: False
+oos_loss: False
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 8
+primary_loss_weight: 1.0
+
+dynamic_batch_sampler: False
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 64
+eval_batch_size: 64
+accumulate_grad_batches: 4
+automatic_optimization: True
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: False
+
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: True
+min_epochs: 60
+max_epochs: 200
+debug_overfit: False
+compile: False
+pl_enable_progress_bar: True
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - precision
+  - wrecall
+  - wprecision
+  - jss
+eval_mz_bin_res:
+  - 0.01
+
+# Per-instrument loss tolerance. QTOF floors at 0.015 Da to cover NIST23 floor-truncated
+# m/z; FT stays at 10 ppm. FT-only configs are numerically unaffected.
+inst_type_loss_tol:
+  ORB: {rel: 1.0e-5, min_mz: 200.0}
+  ORB_F: {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}

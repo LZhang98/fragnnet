@@ -21,14 +21,11 @@ import pytest
 import torch as th
 from rdkit.Chem import AllChem
 
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.feat_utils import get_frag_graph
-from fragnnet.utils.frag_utils import (
-    compute_dags,
-    extract_mol_info,
-    get_node_feats,
-    th_long_to_mask,
-)
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.utils.formula_utils import th_long_to_mask
+from fragnnet.utils.mol_utils import mol_from_smiles
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,7 +211,7 @@ def test_frag_q_survives_batching() -> None:
 @pytest.fixture
 def frag_q_model():
     """Smallest valid FraGNNetModel with frag_q in frag_node_feats."""
-    from fragnnet.model.fragnnet_model import FraGNNetModel
+    from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
     return FraGNNetModel(
         num_depth=4,
@@ -269,7 +266,7 @@ def frag_q_model():
         prec_types=["[M+H]+"],
         inst_insert_location="mol",
         inst_insert_size=8,
-        inst_types=["FT"],
+        inst_types=["ORB"],
         frag_mode_insert_location="mol",
         frag_mode_insert_size=8,
         frag_modes=["HCD"],

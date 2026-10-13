@@ -14,7 +14,7 @@ Never-broken bond environments = all_bonds.keys() - broken_bonds.keys()
 
 Usage:
     conda run -n FRAGNNET-GPU python preproc_scripts/no_dag_exp/04_extract_bond_smarts.py \\
-        --template_fp config/template.yml \\
+        --template_fp config \\
         --custom_fp config/debug/debug_tiny.yml \\
         --output_dp ./data/bond_smarts/debug_tiny \\
         --batch_size 10 --num_workers 0 --split_names train --env_radius 0
@@ -33,16 +33,22 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 from tqdm import tqdm
 
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.formula_utils import H_MASS, PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.formula_utils import (
+    H_MASS,
+    PREC_TYPE_TO_CMF_MASS_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+    th_long_to_mask,
+)
+from fragnnet.utils.mol_utils import mol_from_smiles
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 INST_TOL: dict[str, dict] = {
-    "FT": {"rel": 1e-5, "min_mz": 200.0},  # 10 ppm, floor 0.002 Da
+    "ORB": {"rel": 1e-5, "min_mz": 200.0},  # 10 ppm, floor 0.002 Da
+    "ORB_F": {"rel": 1e-5, "min_mz": 200.0},
     "QTOF": {"rel": 2e-5, "min_mz": 750.0},  # 20 ppm, floor 0.015 Da
-    "IT": {"rel": 1e-5, "min_mz": 200.0},  # same as FT
+    "IT": {"rel": 1e-5, "min_mz": 200.0},  # same as ORB
 }
 
 
@@ -167,7 +173,7 @@ def process_b_idx(
     mol_smiles = data["mol_smiles"][b_idx]
     b_prec_type = spec_prec_type_str[b_idx]
     b_inst_idx = spec_inst_type[b_idx].item()
-    b_inst_type = idx_to_inst_type.get(b_inst_idx, "FT")
+    b_inst_type = idx_to_inst_type.get(b_inst_idx, "ORB")
     b_mol = mol_from_smiles(mol_smiles)
 
     frag_pyg = data["frag_pyg"][b_idx]
@@ -244,7 +250,7 @@ def process_b_idx(
 
 def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract bond SMARTS for DAG cut bonds.")
-    parser.add_argument("--template_fp", type=str, default="config/template.yml")
+    parser.add_argument("--template_fp", type=str, default="config")
     parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml")
     parser.add_argument("--output_dp", type=str, default="./data/bond_smarts/debug_tiny")
     parser.add_argument("--batch_size", type=int, default=40)

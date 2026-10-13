@@ -34,7 +34,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["FT"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )
@@ -54,7 +54,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+", "[M-H]-"],
             qtof_ces=["10.0eV"],
             ft_ces=["25.0NCE"],
-            inst_types=["FT", "QTOF"],
+            inst_types=["ORB", "QTOF"],
             output_dir="/tmp/test",
             merged_spectra=True,
         )
@@ -64,7 +64,7 @@ class TestInferenceIntegration:
         config_reloaded = json.loads(config_json)
 
         assert len(config_reloaded["combinations"]) == len(config["combinations"])
-        assert config_reloaded["input_parameters"]["merged_spectra"] == True
+        assert config_reloaded["input_parameters"]["merged_spectra"]
 
     def test_json_mode_end_to_end(self):
         """Test full JSON input mode from candidates to spectrum."""
@@ -93,7 +93,7 @@ class TestInferenceIntegration:
             prec_types=["[M+H]+"],
             qtof_ces=[],
             ft_ces=["25.0NCE"],
-            inst_types=["FT"],
+            inst_types=["ORB"],
             output_dir="/tmp",
             merged_spectra=False,
         )

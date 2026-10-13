@@ -15,7 +15,6 @@ import torch as th
 
 from fragnnet.dataset.data_sampler import get_group_sampler
 
-
 # ============================================================================
 # Mock dataset
 # ============================================================================
@@ -76,7 +75,7 @@ class TestAdductInstTypeSampler:
         """9:1 imbalance → minority weight should be 9x the majority weight."""
         # 9 samples of majority ([M+H]+/FT), 1 sample of minority ([M-H]-/QTOF)
         prec_types = ["[M+H]+"] * 9 + ["[M-H]-"]
-        inst_types = ["FT"] * 9 + ["QTOF"]
+        inst_types = ["ORB"] * 9 + ["QTOF"]
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -95,7 +94,7 @@ class TestAdductInstTypeSampler:
     def test_epoch_size_equals_dataset_length(self):
         """num_samples must equal len(ds) for a stable epoch size."""
         prec_types = ["[M+H]+"] * 9 + ["[M-H]-"]
-        inst_types = ["FT"] * 9 + ["QTOF"]
+        inst_types = ["ORB"] * 9 + ["QTOF"]
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -106,7 +105,7 @@ class TestAdductInstTypeSampler:
     def test_replacement_is_true(self):
         """adduct_inst_type must use replacement=True to allow true oversampling."""
         prec_types = ["[M+H]+"] * 9 + ["[M-H]-"]
-        inst_types = ["FT"] * 9 + ["QTOF"]
+        inst_types = ["ORB"] * 9 + ["QTOF"]
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -117,7 +116,7 @@ class TestAdductInstTypeSampler:
     def test_single_class_uniform_weights(self):
         """When all samples share the same (prec_type, inst_type), weights are equal."""
         prec_types = ["[M+H]+"] * 10
-        inst_types = ["FT"] * 10
+        inst_types = ["ORB"] * 10
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -137,9 +136,9 @@ class TestAdductInstTypeSampler:
         sampler = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=gen)
 
         weights = th.tensor(list(sampler.weights))
-        w_a = weights[0].item()   # 1/6
-        w_b = weights[6].item()   # 1/3
-        w_c = weights[9].item()   # 1/1
+        w_a = weights[0].item()  # 1/6
+        w_b = weights[6].item()  # 1/3
+        w_c = weights[9].item()  # 1/1
 
         assert w_b == pytest.approx(2.0 * w_a, rel=1e-5)
         assert w_c == pytest.approx(6.0 * w_a, rel=1e-5)
@@ -153,14 +152,12 @@ class TestAdductInstTypeSampler:
         # 8 majority samples, each in own group
         # 2 minority samples sharing group_id=99
         prec_types = ["[M+H]+"] * 8 + ["[M-H]-"] * 2
-        inst_types = ["FT"] * 8 + ["QTOF"] * 2
+        inst_types = ["ORB"] * 8 + ["QTOF"] * 2
         group_ids = list(range(8)) + [99, 99]  # minority share one group
         ds = MockDataset(prec_types, inst_types, group_ids=group_ids)
 
         gen = th.Generator()
-        sampler_plain = get_group_sampler(
-            ds, "adduct_inst_type", avg_per_group=1, generator=gen
-        )
+        sampler_plain = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=gen)
         gen2 = th.Generator()
         sampler_group = get_group_sampler(
             ds, "adduct_inst_type_group", avg_per_group=1, generator=gen2
@@ -182,7 +179,7 @@ class TestAdductInstTypeSampler:
     def test_unknown_type_returns_none(self):
         """Unknown sampler_type must return None (unchanged behavior)."""
         prec_types = ["[M+H]+"] * 5
-        inst_types = ["FT"] * 5
+        inst_types = ["ORB"] * 5
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -194,7 +191,7 @@ class TestFragModeSampler:
     def test_cid_minority_gets_higher_weight(self):
         """9:1 HCD:CID imbalance → CID weight should be 9x HCD weight."""
         prec_types = ["[M+H]+"] * 10
-        inst_types = ["FT"] * 10
+        inst_types = ["ORB"] * 10
         frag_modes = ["HCD"] * 9 + ["CID"]
         ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
 
@@ -206,7 +203,7 @@ class TestFragModeSampler:
 
         assert sampler is not None
         weights = th.tensor(list(sampler.weights))
-        hcd_weight = weights[0].item()   # 1/9
+        hcd_weight = weights[0].item()  # 1/9
         cid_weight = weights[-1].item()  # 1/1
 
         assert cid_weight == pytest.approx(9.0 * hcd_weight, rel=1e-5)
@@ -214,7 +211,7 @@ class TestFragModeSampler:
     def test_unknown_frag_mode_forms_own_bucket(self):
         """Samples with unknown frag_mode are balanced separately from HCD/CID."""
         prec_types = ["[M+H]+"] * 12
-        inst_types = ["FT"] * 12
+        inst_types = ["ORB"] * 12
         # 6 HCD, 4 CID, 2 unknown → weights: 1/6, 1/4, 1/2
         frag_modes = ["HCD"] * 6 + ["CID"] * 4 + ["unknown"] * 2
         ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
@@ -225,9 +222,9 @@ class TestFragModeSampler:
         )
 
         weights = th.tensor(list(sampler.weights))
-        w_hcd = weights[0].item()    # 1/6
-        w_cid = weights[6].item()    # 1/4
-        w_unk = weights[10].item()   # 1/2
+        w_hcd = weights[0].item()  # 1/6
+        w_cid = weights[6].item()  # 1/4
+        w_unk = weights[10].item()  # 1/2
 
         assert w_cid == pytest.approx(6.0 / 4.0 * w_hcd, rel=1e-5)
         assert w_unk == pytest.approx(6.0 / 2.0 * w_hcd, rel=1e-5)
@@ -235,7 +232,7 @@ class TestFragModeSampler:
     def test_epoch_size_equals_dataset_length(self):
         """num_samples must equal len(ds)."""
         prec_types = ["[M+H]+"] * 10
-        inst_types = ["FT"] * 10
+        inst_types = ["ORB"] * 10
         frag_modes = ["HCD"] * 9 + ["CID"]
         ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
 
@@ -253,7 +250,7 @@ class TestFragModeSampler:
         adduct_inst_type_frag_mode alone.
         """
         prec_types = ["[M+H]+"] * 10
-        inst_types = ["FT"] * 10
+        inst_types = ["ORB"] * 10
         frag_modes = ["HCD"] * 8 + ["CID"] * 2
         group_ids = list(range(8)) + [99, 99]  # CID pair share one group
         ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes, group_ids=group_ids)
@@ -271,16 +268,14 @@ class TestFragModeSampler:
         weights_group = th.tensor(list(sampler_group.weights))
 
         # CID samples at idx 8, 9: group size=2 → weight /= 2
-        assert weights_group[8].item() == pytest.approx(
-            weights_plain[8].item() / 2.0, rel=1e-5
-        )
+        assert weights_group[8].item() == pytest.approx(weights_plain[8].item() / 2.0, rel=1e-5)
         # HCD samples each in own group (size=1) → unchanged
         assert weights_group[0].item() == pytest.approx(weights_plain[0].item(), rel=1e-5)
 
     def test_single_frag_mode_uniform_weights(self):
         """When all samples share the same (prec_type, inst_type, frag_mode), weights are equal."""
         prec_types = ["[M+H]+"] * 8
-        inst_types = ["FT"] * 8
+        inst_types = ["ORB"] * 8
         frag_modes = ["HCD"] * 8
         ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
 
@@ -295,7 +290,7 @@ class TestFragModeSampler:
     def test_sampler_yields_correct_length(self):
         """Iterating the sampler yields exactly num_samples indices."""
         prec_types = ["[M+H]+"] * 9 + ["[M-H]-"]
-        inst_types = ["FT"] * 9 + ["QTOF"]
+        inst_types = ["ORB"] * 9 + ["QTOF"]
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()
@@ -310,7 +305,7 @@ class TestFragModeSampler:
         in expectation across a large draw."""
         # 90% majority, 10% minority (1 sample)
         prec_types = ["[M+H]+"] * 9 + ["[M-H]-"]
-        inst_types = ["FT"] * 9 + ["QTOF"]
+        inst_types = ["ORB"] * 9 + ["QTOF"]
         ds = MockDataset(prec_types, inst_types)
 
         gen = th.Generator()

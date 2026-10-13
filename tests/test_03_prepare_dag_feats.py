@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from fragnnet.utils import frag_utils
+from fragnnet.utils import dag_format_utils
 
 
 def load_prepare_module():
@@ -98,7 +98,7 @@ def test_main_max_time_validation():
 
     # Create mock args with max_time >= JOBLIB_TIMEOUT
     args = MagicMock()
-    args.max_time = module.data_utils.JOBLIB_TIMEOUT + 100
+    args.max_time = module.parallel_utils.JOBLIB_TIMEOUT + 100
 
     # Should raise ValueError
     try:
@@ -215,7 +215,7 @@ def test_dag_generation_parameters():
 def test_get_dag_output_path_with_gzip():
     """Test DAG file naming for gzip compression."""
 
-    fp = frag_utils.get_dag_output_path(
+    fp = dag_format_utils.get_dag_output_path(
         dag_dp="/tmp/dags",
         mol_id=42,
         compress_dags=True,
@@ -227,7 +227,7 @@ def test_get_dag_output_path_with_gzip():
 def test_get_dag_output_path_with_bz2():
     """Test DAG file naming for bz2 compression."""
 
-    fp = frag_utils.get_dag_output_path(
+    fp = dag_format_utils.get_dag_output_path(
         dag_dp="/tmp/dags",
         mol_id=42,
         compress_dags=True,
@@ -243,7 +243,7 @@ def test_dump_dag_pickle_round_trip_gzip():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         fp = str(Path(tmpdir) / "1.pkl.gz")
-        frag_utils.dump_dag_pickle(fp, payload)
+        dag_format_utils.dump_dag_pickle(fp, payload)
         with gzip.open(fp, "rb") as f:
             loaded = pickle.load(f)
     assert loaded == payload
@@ -256,7 +256,7 @@ def test_dump_dag_pickle_round_trip_bz2():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         fp = str(Path(tmpdir) / "2.pkl.bz2")
-        frag_utils.dump_dag_pickle(fp, payload)
+        dag_format_utils.dump_dag_pickle(fp, payload)
         with bz2.open(fp, "rb") as f:
             loaded = pickle.load(f)
     assert loaded == payload
@@ -335,3 +335,37 @@ def test_argparse_wandb_validation():
     # just verify the args can be parsed
     assert hasattr(args, "wandb_mode")
     assert hasattr(args, "wandb_run_name")
+
+
+def test_isotopes_cli_default_is_false():
+    """``--isotopes`` must default to False.
+
+    The parser lives under ``if __name__ == "__main__"``, so it is read from the AST
+    rather than imported.  A True default silently isotope-expands every DAG built by
+    the inference preprocessing scripts (none of them pass the flag), and because
+    ``compute_dags`` sorts the peaks by abundance before truncating to
+    ``frag_params.num_isotopes`` (1 everywhere), column 0 then holds the most abundant
+    isotopologue instead of the monoisotopic mass -- M+2 for a fragment with >=3 Cl.
+    Training DAGs are built with ``ISO_FLAG=False``, so True here is a train/serve skew.
+    See ``tests/test_frag_utils_compute_dags.py`` for the measurement.
+    """
+    import ast
+
+    repo_root = Path(__file__).resolve().parent.parent
+    script_path = repo_root / "preproc_scripts" / "03_prepare_dag_feats.py"
+    tree = ast.parse(script_path.read_text())
+
+    defaults = [
+        keyword.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "attr", None) == "add_argument"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "--isotopes"
+        for keyword in node.keywords
+        if keyword.arg == "default"
+    ]
+
+    assert len(defaults) == 1, f"expected exactly one --isotopes argument, found {len(defaults)}"
+    assert ast.literal_eval(defaults[0]) is False

@@ -1,0 +1,843 @@
+"""Merge nearby spectrum peaks and filter them by molecular subformulas."""
+
+import logging
+import math
+from functools import lru_cache
+
+import numpy as np
+import pandas as pd
+
+from fragnnet.utils.formula_utils import (
+    ELECTRON_MASS,
+    ELEMENT_TO_MASS,
+    PREC_TYPE_TO_CMF_COMP_DIFF,
+    PREC_TYPE_TO_COMP_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+    VALID_ELEMENTS,
+    parse_formula,
+)
+
+logger = logging.getLogger(__name__)
+
+PRECURSOR_TYPE_ALIASES = {
+    "[M+H-H2O]+": "[M-H2O+H]+",
+    "[M+H-2H2O]+": "[M-2H2O+H]+",
+    "[M-H4O2+H]+": "[M-2H2O+H]+",
+    "[M+H3N+H]+": "[M+NH4]+",
+}
+
+# Twice-RDBE contribution per element; a subformula with negative RDBE is not a
+# feasible neutral and is rejected before the carrier mass shift is applied.
+RDBE_COEFFICIENTS = {"C": 2, "N": 1, "P": 1, "H": -1, "Cl": -1, "Br": -1, "I": -1, "F": -1}
+
+INSTRUMENT_TOLERANCES = {
+    "ORB": {"relative": 1.0e-5, "min_mz": 200.0},
+    "ORB_F": {"relative": 1.0e-5, "min_mz": 200.0},
+    "QTOF": {"relative": 2.0e-5, "min_mz": 750.0},
+}
+MERGE_METHODS = ("common_overlap", "naive_centroid")
+
+
+def merge_peaks(
+    peaks: list[tuple[float, float]],
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+    require_common_tolerance_overlap: bool = False,
+) -> list[tuple[float, float]]:
+    """Merge peaks and represent each cluster by its intensity-weighted centroid.
+
+    When ``require_common_tolerance_overlap`` is true, every peak defines a
+    ``m/z +/- tolerance`` interval and a peak joins the current cluster only if
+    all cluster intervals retain a common intersection. Otherwise, use the
+    naive-centroid method and compare each peak with the moving centroid.
+    """
+    if tolerance_ppm <= 0:
+        raise ValueError("tolerance_ppm must be positive")
+    if tolerance_min_mz < 0:
+        raise ValueError("tolerance_min_mz must be nonnegative")
+    if not peaks:
+        return []
+
+    sorted_peaks = sorted((float(mz), float(intensity)) for mz, intensity in peaks)
+    for mz, intensity in sorted_peaks:
+        if not np.isfinite(mz) or mz <= 0:
+            raise ValueError(f"Peak m/z must be finite and positive, got {mz}")
+        if not np.isfinite(intensity) or intensity < 0:
+            raise ValueError(f"Peak intensity must be finite and nonnegative, got {intensity}")
+
+    merged = []
+    cluster = [sorted_peaks[0]]
+    first_mz = sorted_peaks[0][0]
+    first_tolerance_da = tolerance_ppm * 1e-6 * max(first_mz, tolerance_min_mz)
+    overlap_lower = first_mz - first_tolerance_da
+    overlap_upper = first_mz + first_tolerance_da
+    for peak in sorted_peaks[1:]:
+        peak_tolerance_da = tolerance_ppm * 1e-6 * max(peak[0], tolerance_min_mz)
+        peak_lower = peak[0] - peak_tolerance_da
+        peak_upper = peak[0] + peak_tolerance_da
+        if require_common_tolerance_overlap:
+            should_merge = peak_lower <= overlap_upper and peak_upper >= overlap_lower
+        else:
+            centroid = _cluster_centroid(cluster)
+            centroid_tolerance_da = tolerance_ppm * 1e-6 * max(
+                centroid, tolerance_min_mz
+            )
+            should_merge = abs(peak[0] - centroid) <= centroid_tolerance_da
+
+        if should_merge:
+            cluster.append(peak)
+            if require_common_tolerance_overlap:
+                overlap_lower = max(overlap_lower, peak_lower)
+                overlap_upper = min(overlap_upper, peak_upper)
+        else:
+            merged.append((_cluster_centroid(cluster), sum(item[1] for item in cluster)))
+            cluster = [peak]
+            overlap_lower = peak_lower
+            overlap_upper = peak_upper
+    merged.append((_cluster_centroid(cluster), sum(item[1] for item in cluster)))
+    return merged
+
+
+def _cluster_centroid(cluster: list[tuple[float, float]]) -> float:
+    total_intensity = sum(intensity for _, intensity in cluster)
+    if total_intensity == 0:
+        return float(np.mean([mz for mz, _ in cluster]))
+    return sum(mz * intensity for mz, intensity in cluster) / total_intensity
+
+
+def _precursor_ion_charge(normalized_precursor_type: str) -> int:
+    """Return the precursor's charge from its adduct string, 0 when it names no polarity."""
+    if normalized_precursor_type.endswith("+"):
+        return 1
+    if normalized_precursor_type.endswith("-"):
+        return -1
+    return 0
+
+
+def _budget_ion_masses(neutral_counts: dict[str, int], comp_diff, charge: int) -> np.ndarray:
+    """Enumerate ion masses for every subformula of one precursor-ion budget.
+
+    The budget is a precursor ion, ``M`` plus an adduct delta, and a candidate is split the way
+    the chemistry splits it: a molecular part drawn from ``M`` and whatever of the carrier the ion
+    still holds. Bounding the walk by an ion rather than by the neutral is what lets one budget
+    cover several charge-carrier outcomes at once — a fragment that keeps the carrier, one that
+    gives it up, and the bare carrier are all subformulas of the same parent.
+
+    ``RDBE_COEFFICIENTS`` sums twice the ring-plus-double-bond equivalent, and the rule it bounds
+    is about a neutral: a formula whose neutral form cannot be drawn is not a formula. So the test
+    is taken on the neutral form, which means stripping the charge carrier before applying it —
+    the molecular part is what has to be drawable, and the carrier is exempt. A chloride adduct is
+    the case that makes this matter: ``[CH3OH+Cl]-`` is a real ion, but scoring RDBE across the
+    whole anion counts the chloride against a saturated molecule and rejects it.
+
+    A delta that removes atoms is the other half of the same idea. Its loss comes out of the
+    molecular part, so a deprotonated precursor is a neutral that has already given up a hydrogen
+    and needs no separate sign correction. The ion mass is the formula mass less the charge's
+    electrons.
+    """
+    required_counts = {
+        element: -count_change for element, count_change in comp_diff.items() if count_change < 0
+    }
+    if any(neutral_counts.get(element, 0) < count for element, count in required_counts.items()):
+        return np.array([], dtype=float)
+
+    masses = np.array([0.0])
+    rdbe_twice = np.array([2.0])
+    for element, max_count in neutral_counts.items():
+        min_count = required_counts.get(element, 0)
+        if min_count > max_count:
+            return np.array([], dtype=float)
+        levels = np.arange(min_count, max_count + 1)
+        masses = (masses[:, None] + levels * ELEMENT_TO_MASS[element]).ravel()
+        rdbe_twice = (rdbe_twice[:, None] + levels * RDBE_COEFFICIENTS.get(element, 0)).ravel()
+    masses = masses[rdbe_twice >= 0]
+    if masses.size == 0:
+        return np.array([], dtype=float)
+
+    masses = masses + sum(
+        count * ELEMENT_TO_MASS[element]
+        for element, count in comp_diff.items()
+        if count < 0
+    )
+    for element, count in comp_diff.items():
+        if count > 0:
+            levels = np.arange(0, count + 1)
+            masses = (masses[:, None] + levels * ELEMENT_TO_MASS[element]).ravel()
+
+    masses = masses[masses > 0]
+    ion_masses = masses - charge * ELECTRON_MASS
+    return ion_masses[ion_masses > 0]
+
+
+def _precursor_ion_budgets(normalized_precursor_type: str) -> list:
+    """Return the adduct deltas whose ions bound what a fragment of this precursor can be.
+
+    This is a chemical-feasibility test on an observed peak, not a question about what any
+    fragmentation model can enumerate. A precursor presents two parents. Direct charge retention
+    (CRF) keeps the precursor's own adduct, so its budget is the precursor ion. Charge migration
+    (CMF) swaps that carrier for the protonated or deprotonated one, which is how sodiated and
+    chloride adducts mostly fragment: ``[M+Na]+`` yields ``[frag+H]+`` and ``[M+Cl]-`` loses HCl
+    to yield ``[frag-H]-`` (see the references on ``PREC_TYPE_TO_CMF_MASS_DIFF``).
+
+    The migrated carrier is why CMF can need a budget of its own rather than a share of the CRF
+    one: ``[frag+H]+`` carries a proton, so it reaches one hydrogen beyond what ``M+Na`` holds,
+    and no subformula of the sodiated ion can express it. That second budget is added only when
+    it buys something, which rules out two cases.
+
+    An empty CMF delta means the precursor's carrier was already the proton, so there is no other
+    carrier to migrate to and no second parent: ``[M+H]+`` is bounded by ``M+H`` alone and
+    ``[M-H]-`` by ``M-H`` alone. Giving those a budget of ``M`` would let a fragment ion hold more
+    hydrogens than the precursor ion itself has, which fragmentation cannot produce.
+
+    A CMF delta contained in the CRF delta would only repeat masses the first budget already
+    covers. ``[M+Cl]-`` is that case: its products lose HCl, so every one is already a subformula
+    of ``M+Cl``. Ammonium and the iodine adducts behave the same way.
+
+    The carrier tables come from ``formula_utils`` and are shared with the fragmentation code,
+    but nothing here consults a DAG: a peak this filter cannot explain is kept or dropped on
+    chemistry alone, and a peak no DAG can explain is the model's problem to handle downstream,
+    not a reason to delete it from the target.
+    """
+    crf_diff = PREC_TYPE_TO_COMP_DIFF[normalized_precursor_type]
+    budgets = [crf_diff]
+    cmf_diff = PREC_TYPE_TO_CMF_COMP_DIFF.get(normalized_precursor_type)
+    if (
+        cmf_diff
+        and any(
+            cmf_diff.get(element, 0) > crf_diff.get(element, 0)
+            for element in set(cmf_diff) | set(crf_diff)
+        )
+    ):
+        budgets.append(cmf_diff)
+    return budgets
+
+
+def _validate_formula_and_precursor(formula: str, precursor_type: str) -> tuple[dict, str]:
+    """Return the neutral element counts and the normalized precursor type, or raise."""
+    normalized_precursor_type = PRECURSOR_TYPE_ALIASES.get(precursor_type, precursor_type)
+    if normalized_precursor_type not in PREC_TYPE_TO_MASS_DIFF:
+        supported_types = sorted(set(PREC_TYPE_TO_MASS_DIFF) | set(PRECURSOR_TYPE_ALIASES))
+        raise ValueError(
+            f"Unsupported precursor type {precursor_type!r}; supported types are "
+            f"{supported_types}"
+        )
+
+    element_counts = parse_formula(formula)
+    unsupported_elements = set(element_counts) - set(VALID_ELEMENTS)
+    if unsupported_elements:
+        raise ValueError(f"Unsupported formula elements: {sorted(unsupported_elements)}")
+    return element_counts, normalized_precursor_type
+
+
+@lru_cache(maxsize=2)
+def _subformula_masses(formula: str, precursor_type: str) -> np.ndarray:
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
+    charge = _precursor_ion_charge(normalized_precursor_type)
+    ion_masses = np.concatenate(
+        [
+            _budget_ion_masses(element_counts, comp_diff, charge)
+            for comp_diff in _precursor_ion_budgets(normalized_precursor_type)
+        ]
+    )
+    return np.unique(ion_masses)
+
+
+def filter_subformula_peaks(
+    peaks: list[tuple[float, float]],
+    formula: str,
+    precursor_type: str,
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+    tolerance_da: float | None = None,
+) -> list[tuple[float, float]]:
+    """Keep peaks matching a precursor-bounded, nonnegative-RDBE subformula.
+
+    Candidates always include charge-migration ions, so ``[M+Na]+`` accepts
+    ``[frag+H]+`` and ``[M+Cl]-`` accepts ``[frag-H]-``. Those are real ions; excluding
+    them discards most genuine peaks for those two adducts, so it is not an option.
+    """
+    if tolerance_ppm <= 0:
+        raise ValueError("tolerance_ppm must be positive")
+
+    if tolerance_da is not None and tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
+
+    candidate_masses = _subformula_masses(formula, precursor_type)
+    if candidate_masses.size == 0:
+        return []
+
+    filtered = []
+    for peak in peaks:
+        mz = float(peak[0])
+        insertion_idx = int(np.searchsorted(candidate_masses, mz))
+        candidate_idxs = [insertion_idx - 1, insertion_idx]
+        if any(
+            0 <= idx < len(candidate_masses)
+            and abs(mz - float(candidate_masses[idx]))
+            <= (
+                tolerance_da
+                if tolerance_da is not None
+                else tolerance_ppm * 1e-6 * max(mz, tolerance_min_mz)
+            )
+            for idx in candidate_idxs
+        ):
+            filtered.append((float(peak[0]), float(peak[1])))
+    return filtered
+
+
+def filter_above_precursor_peaks(
+    peaks: list[tuple[float, float]],
+    prec_mz: float,
+    tolerance_ppm: float,
+    tolerance_min_mz: float = 0.0,
+) -> list[tuple[float, float]]:
+    """Drop peaks above the precursor m/z.
+
+    Fragmentation cannot place an analyte ion above its own precursor, so everything beyond
+    the cutoff is co-isolation, background, a multiply-charged species, or the precursor's own
+    isotopologue ladder. All four are outside the support of a monoisotopic candidate set, and
+    keeping them means grading the model on intensity it structurally cannot produce.
+
+    The cutoff is ``prec_mz`` widened by one matching tolerance, which is the same rule
+    ``scripts/eval/dag_oracle_scores.py`` applies for its ``1_above_prec`` tier, so a cleaned
+    target and the oracle ceilings quoted against it are finally measured on the same peaks.
+
+    A spectrum with no usable precursor m/z is returned unchanged rather than emptied.
+
+    Args:
+        peaks: ``(m/z, intensity)`` pairs.
+        prec_mz: Precursor m/z; NaN or nonpositive leaves the spectrum untouched.
+        tolerance_ppm: Cutoff half-width in ppm, applied at the precursor m/z.
+        tolerance_min_mz: Divisor floor, so low-mass precursors get an absolute floor.
+
+    Returns:
+        The peaks at or below the cutoff, in input order.
+    """
+    if tolerance_ppm <= 0:
+        raise ValueError("tolerance_ppm must be positive")
+    if prec_mz is None or not math.isfinite(prec_mz) or prec_mz <= 0.0:
+        return [(float(peak[0]), float(peak[1])) for peak in peaks]
+
+    cutoff = prec_mz + tolerance_ppm * 1e-6 * max(prec_mz, tolerance_min_mz)
+    return [(float(peak[0]), float(peak[1])) for peak in peaks if float(peak[0]) <= cutoff]
+
+
+def _budget_ion_candidates(
+    neutral_counts: dict[str, int],
+    comp_diff,
+    charge: int,
+    mz: float,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Enumerate one budget's ion compositions whose mass is within ``tolerance_da`` of ``mz``.
+
+    This is the walk :func:`_budget_ion_masses` takes - a molecular part bounded below by what the
+    adduct delta removes and above by the precursor, then the carrier atoms the delta adds, with
+    the nonnegative-RDBE test on the molecular part - with two differences. It is pruned by mass at
+    every element instead of being materialized in full, so cost scales with how many compositions
+    land in the window rather than with the size of the grid; and it keeps the composition, which
+    is what an isotope ratio needs and a mass alone cannot give.
+
+    Args:
+        neutral_counts: Element counts of the neutral precursor molecule.
+        comp_diff: One adduct delta from :func:`_precursor_ion_budgets`.
+        charge: Precursor ion charge, used for the electron correction.
+        mz: Observed ion m/z to decompose.
+        tolerance_da: Absolute half-width of the mass window.
+
+    Returns:
+        Ion element counts, zero counts dropped. Empty when the budget cannot reach the window.
+    """
+    required_counts = {
+        element: -count_change for element, count_change in comp_diff.items() if count_change < 0
+    }
+    if any(neutral_counts.get(element, 0) < count for element, count in required_counts.items()):
+        return []
+
+    # 1. Lay out the walk: molecular atoms first, then the carrier atoms the delta adds.
+    slots: list[tuple[str, int, int, bool]] = []
+    for element, max_count in neutral_counts.items():
+        min_count = required_counts.get(element, 0)
+        if min_count > max_count:
+            return []
+        slots.append((element, min_count, max_count, True))
+    for element, count in comp_diff.items():
+        if count > 0:
+            slots.append((element, 0, count, False))
+    if not slots:
+        return []
+    # Heaviest element first: the widest mass steps prune the most.
+    slots.sort(key=lambda slot: -ELEMENT_TO_MASS[slot[0]])
+
+    # 2. Suffix mass bounds drive the pruning; the delta's removal is a constant mass shift.
+    n_slots = len(slots)
+    suffix_min = [0.0] * (n_slots + 1)
+    suffix_max = [0.0] * (n_slots + 1)
+    for idx in range(n_slots - 1, -1, -1):
+        element, min_count, max_count, _ = slots[idx]
+        suffix_min[idx] = suffix_min[idx + 1] + min_count * ELEMENT_TO_MASS[element]
+        suffix_max[idx] = suffix_max[idx + 1] + max_count * ELEMENT_TO_MASS[element]
+    removed_mass = sum(
+        count * ELEMENT_TO_MASS[element] for element, count in comp_diff.items() if count < 0
+    )
+    target = mz + charge * ELECTRON_MASS - removed_mass
+
+    # 3. Walk the slots, keeping only counts that can still reach the window.
+    results: list[dict[str, int]] = []
+    counts = [0] * n_slots
+
+    def visit_leaf() -> None:
+        rdbe_twice = 2.0 + sum(
+            counts[idx] * RDBE_COEFFICIENTS.get(slots[idx][0], 0)
+            for idx in range(n_slots)
+            if slots[idx][3]
+        )
+        if rdbe_twice < 0:
+            return
+        ion_counts: dict[str, int] = {}
+        for idx, (element, _, _, is_molecular) in enumerate(slots):
+            count = counts[idx]
+            if is_molecular:
+                count -= required_counts.get(element, 0)
+            if count:
+                ion_counts[element] = ion_counts.get(element, 0) + count
+        if not ion_counts:
+            return
+        if sum(count * ELEMENT_TO_MASS[element] for element, count in ion_counts.items()) <= 0:
+            return
+        results.append(ion_counts)
+
+    def walk(idx: int, assigned: float) -> None:
+        if idx == n_slots:
+            if abs(assigned - target) <= tolerance_da:
+                visit_leaf()
+            return
+        element, min_count, max_count, _ = slots[idx]
+        element_mass = ELEMENT_TO_MASS[element]
+        lowest = (target - tolerance_da - assigned - suffix_max[idx + 1]) / element_mass
+        highest = (target + tolerance_da - assigned - suffix_min[idx + 1]) / element_mass
+        low = max(min_count, math.ceil(lowest - 1e-9))
+        high = min(max_count, math.floor(highest + 1e-9))
+        for count in range(low, high + 1):
+            counts[idx] = count
+            walk(idx + 1, assigned + count * element_mass)
+        counts[idx] = min_count
+
+    walk(0, 0.0)
+    return results
+
+
+def subformula_candidates(
+    mz: float,
+    formula: str,
+    precursor_type: str,
+    tolerance_da: float,
+) -> list[dict[str, int]]:
+    """Return the precursor-bounded ion compositions that explain ``mz``.
+
+    Same feasibility rule as :func:`filter_subformula_peaks` - every charge-migration budget, the
+    nonnegative-RDBE test on the neutral part, the electron correction - so a peak this returns
+    candidates for is exactly a peak that filter keeps. The difference is what comes back: the
+    compositions themselves, which an isotope-ratio calculation needs and a DAG is one other way
+    to get.
+
+    Args:
+        mz: Observed ion m/z to decompose.
+        formula: Neutral molecular formula of the precursor.
+        precursor_type: Adduct string, e.g. ``"[M+H]+"``.
+        tolerance_da: Absolute half-width of the mass window, in Da.
+
+    Returns:
+        Distinct ion element counts within the window, in no particular order. Empty when the
+        peak has no feasible subformula.
+
+    Raises:
+        ValueError: If ``tolerance_da`` is not positive, the precursor type is unsupported, or
+            the formula contains an unsupported element.
+    """
+    if tolerance_da <= 0:
+        raise ValueError("tolerance_da must be positive")
+    element_counts, normalized_precursor_type = _validate_formula_and_precursor(
+        formula, precursor_type
+    )
+    charge = _precursor_ion_charge(normalized_precursor_type)
+
+    seen: set[tuple[tuple[str, int], ...]] = set()
+    candidates: list[dict[str, int]] = []
+    for comp_diff in _precursor_ion_budgets(normalized_precursor_type):
+        for ion_counts in _budget_ion_candidates(
+            element_counts, comp_diff, charge, mz, tolerance_da
+        ):
+            key = tuple(sorted(ion_counts.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(ion_counts)
+    return candidates
+
+
+def summarize_spectra(spec_df: pd.DataFrame) -> dict[str, int | float]:
+    """Summarize spectrum and peak counts for a processing stage."""
+    peak_counts = spec_df["peaks"].apply(len).to_numpy()
+    total_intensity = float(
+        sum(sum(float(intensity) for _, intensity in peaks) for peaks in spec_df["peaks"])
+    )
+    return {
+        "spectra": int(len(spec_df)),
+        "nonempty_spectra": int((peak_counts > 0).sum()),
+        "empty_spectra": int((peak_counts == 0).sum()),
+        "peaks": int(peak_counts.sum()),
+        "mean_peaks_per_spectrum": float(peak_counts.mean()) if len(peak_counts) else 0.0,
+        "median_peaks_per_spectrum": float(np.median(peak_counts)) if len(peak_counts) else 0.0,
+        "total_intensity": total_intensity,
+    }
+
+
+def _safe_fraction(numerator: float, denominator: float) -> float:
+    return float(numerator / denominator) if denominator else 0.0
+
+
+def summarize_retention(
+    before_df: pd.DataFrame,
+    after_df: pd.DataFrame,
+) -> dict[str, int | float]:
+    """Summarize per-spectrum peak and intensity retention between aligned tables."""
+    if len(before_df) != len(after_df):
+        raise ValueError("Retention statistics require aligned tables with equal row counts")
+
+    peak_fractions = []
+    intensity_fractions = []
+    spectra_with_no_retained_peaks = 0
+    spectra_with_base_peak_retained = 0
+    for before_peaks, after_peaks in zip(before_df["peaks"], after_df["peaks"], strict=True):
+        if not after_peaks:
+            spectra_with_no_retained_peaks += 1
+        if before_peaks:
+            peak_fractions.append(len(after_peaks) / len(before_peaks))
+            before_base_intensity = max(float(intensity) for _, intensity in before_peaks)
+            after_base_intensity = max(
+                (float(intensity) for _, intensity in after_peaks), default=-np.inf
+            )
+            spectra_with_base_peak_retained += after_base_intensity >= before_base_intensity
+
+        before_intensity = sum(float(intensity) for _, intensity in before_peaks)
+        after_intensity = sum(float(intensity) for _, intensity in after_peaks)
+        if before_intensity > 0:
+            intensity_fractions.append(after_intensity / before_intensity)
+
+    before_stats = summarize_spectra(before_df)
+    after_stats = summarize_spectra(after_df)
+    return {
+        "spectra": int(len(before_df)),
+        "aggregate_peak_fraction": _safe_fraction(after_stats["peaks"], before_stats["peaks"]),
+        "aggregate_intensity_fraction": _safe_fraction(
+            after_stats["total_intensity"], before_stats["total_intensity"]
+        ),
+        "mean_per_spectrum_peak_fraction": float(np.mean(peak_fractions))
+        if peak_fractions
+        else 0.0,
+        "median_per_spectrum_peak_fraction": float(np.median(peak_fractions))
+        if peak_fractions
+        else 0.0,
+        "mean_per_spectrum_intensity_fraction": float(np.mean(intensity_fractions))
+        if intensity_fractions
+        else 0.0,
+        "median_per_spectrum_intensity_fraction": float(np.median(intensity_fractions))
+        if intensity_fractions
+        else 0.0,
+        "spectra_with_no_retained_peaks": spectra_with_no_retained_peaks,
+        "spectra_with_base_peak_retained": spectra_with_base_peak_retained,
+    }
+
+
+def summarize_retention_by_column(
+    before_df: pd.DataFrame,
+    after_df: pd.DataFrame,
+    column: str,
+) -> dict[str, dict[str, int | float]]:
+    """Calculate aligned retention statistics separately for each group."""
+    summaries = {}
+    for value in sorted(before_df[column].dropna().unique()):
+        mask = before_df[column] == value
+        summaries[str(value)] = summarize_retention(before_df[mask], after_df[mask])
+    return summaries
+
+
+def summarize_retention_by_columns(
+    before_df: pd.DataFrame,
+    after_df: pd.DataFrame,
+    columns: list[str],
+) -> dict[str, dict[str, int | float]]:
+    """Calculate retention for intersections such as precursor type × instrument."""
+    summaries = {}
+    for values, indices in before_df.groupby(columns, dropna=False, sort=True).groups.items():
+        values = values if isinstance(values, tuple) else (values,)
+        group_name = " | ".join(f"{column}={value}" for column, value in zip(columns, values))
+        summaries[group_name] = summarize_retention(
+            before_df.loc[indices], after_df.loc[indices]
+        )
+    return summaries
+
+
+def clean_spectra(
+    spec_df: pd.DataFrame,
+    mol_df: pd.DataFrame,
+    merge_peak_signals: bool,
+    merge_ppm: float,
+    filter_by_subformula: bool,
+    subformula_ppm: float,
+    drop_empty_spectra: bool,
+    use_instrument_tolerance: bool = False,
+    use_merge_instrument_tolerance: bool = False,
+    merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
+) -> pd.DataFrame:
+    """Apply the selected per-spectrum cleanup operations."""
+    cleaned_df, _ = clean_spectra_with_stats(
+        spec_df,
+        mol_df,
+        merge_peak_signals,
+        merge_ppm,
+        filter_by_subformula,
+        subformula_ppm,
+        drop_empty_spectra,
+        use_instrument_tolerance,
+        use_merge_instrument_tolerance,
+        merge_method,
+        filter_above_precursor,
+        above_precursor_ppm,
+        above_precursor_use_instrument_tolerance,
+        subformula_tolerance_da,
+    )
+    return cleaned_df
+
+
+def clean_spectra_with_stats(
+    spec_df: pd.DataFrame,
+    mol_df: pd.DataFrame,
+    merge_peak_signals: bool,
+    merge_ppm: float,
+    filter_by_subformula: bool,
+    subformula_ppm: float,
+    drop_empty_spectra: bool,
+    use_instrument_tolerance: bool = False,
+    use_merge_instrument_tolerance: bool = False,
+    merge_method: str | None = None,
+    filter_above_precursor: bool = False,
+    above_precursor_ppm: float = 10.0,
+    above_precursor_use_instrument_tolerance: bool = True,
+    subformula_tolerance_da: float | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Apply cleanup and return stage-level and retention statistics."""
+    if subformula_tolerance_da is not None and subformula_tolerance_da <= 0:
+        raise ValueError("subformula_tolerance_da must be positive")
+    if subformula_tolerance_da is not None and use_instrument_tolerance:
+        raise ValueError("Absolute and instrument subformula tolerances are mutually exclusive")
+    if merge_method is None:
+        merge_method = (
+            "common_overlap" if use_merge_instrument_tolerance else "naive_centroid"
+        )
+    if merge_method not in MERGE_METHODS:
+        raise ValueError(
+            f"merge_method must be one of {MERGE_METHODS}, got {merge_method!r}"
+        )
+    required_spec_columns = {"peaks"}
+    if filter_by_subformula:
+        required_spec_columns.update({"mol_id", "prec_type"})
+    if filter_above_precursor:
+        required_spec_columns.add("prec_mz")
+    if (
+        (merge_peak_signals and use_merge_instrument_tolerance)
+        or (filter_by_subformula and use_instrument_tolerance)
+        or (filter_above_precursor and above_precursor_use_instrument_tolerance)
+    ):
+        required_spec_columns.add("inst_type")
+    missing_spec_columns = required_spec_columns - set(spec_df.columns)
+    if missing_spec_columns:
+        raise ValueError(f"spec_df is missing required columns: {sorted(missing_spec_columns)}")
+    if filter_by_subformula and not {"mol_id", "formula"}.issubset(mol_df.columns):
+        raise ValueError("mol_df must contain mol_id and formula columns for subformula filtering")
+
+    stats = {
+        "parameters": {
+            "merge_peaks": merge_peak_signals,
+            "merge_ppm": merge_ppm,
+            "merge_instrument_tolerance": use_merge_instrument_tolerance,
+            "merge_method": merge_method if merge_peak_signals else None,
+            "filter_subformula_peaks": filter_by_subformula,
+            "subformula_ppm": subformula_ppm,
+            "subformula_tolerance_da": subformula_tolerance_da,
+            "subformula_instrument_tolerance": use_instrument_tolerance,
+            "filter_above_precursor_peaks": filter_above_precursor,
+            "above_precursor_ppm": above_precursor_ppm,
+            "above_precursor_instrument_tolerance": above_precursor_use_instrument_tolerance,
+            "drop_empty_spectra": drop_empty_spectra,
+        },
+        "input": summarize_spectra(spec_df),
+    }
+
+    # 1. Attach molecular formulas only when subformula filtering is requested.
+    result = spec_df.copy()
+    if filter_by_subformula:
+        formula_by_mol_id = mol_df.set_index("mol_id")["formula"]
+        if not result["mol_id"].isin(formula_by_mol_id.index).all():
+            missing_ids = sorted(set(result["mol_id"]) - set(formula_by_mol_id.index))
+            raise ValueError(f"No molecular formula found for mol_id values: {missing_ids[:10]}")
+        formulas = result["mol_id"].map(formula_by_mol_id)
+
+    # 2. Group nearby peaks and replace each group with its intensity-weighted centroid.
+    if merge_peak_signals:
+        before_merge = result.copy()
+        if use_merge_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No merge instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            use_common_overlap = merge_method == "common_overlap"
+            tolerance_multiplier = 1.0 if use_common_overlap else 2.0
+            merged_peaks = (
+                merge_peaks(
+                    peaks,
+                    tolerance_ppm=tolerance_multiplier
+                    * INSTRUMENT_TOLERANCES[instrument_type]["relative"]
+                    * 1e6,
+                    tolerance_min_mz=INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                    require_common_tolerance_overlap=use_common_overlap,
+                )
+                for peaks, instrument_type in zip(
+                    result["peaks"], result["inst_type"], strict=True
+                )
+            )
+            result.loc[:, "peaks"] = pd.Series(
+                merged_peaks, index=result.index, dtype=object
+            )
+        else:
+            result.loc[:, "peaks"] = result["peaks"].apply(
+                merge_peaks,
+                tolerance_ppm=merge_ppm,
+                require_common_tolerance_overlap=merge_method == "common_overlap",
+            )
+        stats["after_merge"] = summarize_spectra(result)
+        stats["merge_retention"] = summarize_retention(before_merge, result)
+        if "prec_type" in result:
+            stats["merge_retention_by_prec_type"] = summarize_retention_by_column(
+                before_merge, result, "prec_type"
+            )
+        if "inst_type" in result:
+            stats["merge_retention_by_inst_type"] = summarize_retention_by_column(
+                before_merge, result, "inst_type"
+            )
+            if "prec_type" in result:
+                stats["merge_retention_by_prec_type_and_inst_type"] = (
+                    summarize_retention_by_columns(before_merge, result, ["prec_type", "inst_type"])
+                )
+
+    # 3. Drop everything above the precursor m/z.
+    if filter_above_precursor:
+        before_above_precursor_filter = result.copy()
+        if above_precursor_use_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No above-precursor instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            trimmed_peaks = (
+                filter_above_precursor_peaks(
+                    peaks,
+                    precursor_mz,
+                    INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
+                    INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, precursor_mz, instrument_type in zip(
+                    result["peaks"], result["prec_mz"], result["inst_type"], strict=True
+                )
+            )
+        else:
+            trimmed_peaks = (
+                filter_above_precursor_peaks(peaks, precursor_mz, above_precursor_ppm)
+                for peaks, precursor_mz in zip(
+                    result["peaks"], result["prec_mz"], strict=True
+                )
+            )
+        result.loc[:, "peaks"] = pd.Series(trimmed_peaks, index=result.index, dtype=object)
+        stats["after_above_precursor_filter"] = summarize_spectra(result)
+        stats["above_precursor_retention"] = summarize_retention(
+            before_above_precursor_filter, result
+        )
+        if "prec_type" in result:
+            stats["above_precursor_retention_by_prec_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "prec_type"
+            )
+        if "inst_type" in result:
+            stats["above_precursor_retention_by_inst_type"] = summarize_retention_by_column(
+                before_above_precursor_filter, result, "inst_type"
+            )
+
+    # 4. Retain only peaks explained by a feasible molecular subformula.
+    if filter_by_subformula:
+        before_subformula_filter = result.copy()
+        if use_instrument_tolerance:
+            unsupported_instruments = set(result["inst_type"]) - set(INSTRUMENT_TOLERANCES)
+            if unsupported_instruments:
+                raise ValueError(
+                    "No subformula instrument tolerance for: "
+                    f"{sorted(unsupported_instruments)}"
+                )
+            filtered_peaks = (
+                filter_subformula_peaks(
+                    peaks,
+                    formula,
+                    precursor_type,
+                    INSTRUMENT_TOLERANCES[instrument_type]["relative"] * 1e6,
+                    INSTRUMENT_TOLERANCES[instrument_type]["min_mz"],
+                )
+                for peaks, formula, precursor_type, instrument_type in zip(
+                    result["peaks"],
+                    formulas,
+                    result["prec_type"],
+                    result["inst_type"],
+                    strict=True,
+                )
+            )
+        else:
+            filtered_peaks = (
+                filter_subformula_peaks(
+                    peaks,
+                    formula,
+                    precursor_type,
+                    subformula_ppm,
+                    tolerance_da=subformula_tolerance_da,
+                )
+                for peaks, formula, precursor_type in zip(
+                    result["peaks"], formulas, result["prec_type"], strict=True
+                )
+            )
+        result.loc[:, "peaks"] = pd.Series(filtered_peaks, index=result.index, dtype=object)
+        stats["after_subformula_filter"] = summarize_spectra(result)
+        stats["subformula_retention"] = summarize_retention(before_subformula_filter, result)
+        stats["subformula_retention_by_prec_type"] = summarize_retention_by_column(
+            before_subformula_filter, result, "prec_type"
+        )
+        if "inst_type" in result:
+            stats["subformula_retention_by_inst_type"] = summarize_retention_by_column(
+                before_subformula_filter, result, "inst_type"
+            )
+            stats["subformula_retention_by_prec_type_and_inst_type"] = (
+                summarize_retention_by_columns(
+                    before_subformula_filter, result, ["prec_type", "inst_type"]
+                )
+            )
+
+    if drop_empty_spectra:
+        result = result[result["peaks"].apply(len) > 0].copy()
+    result = result.reset_index(drop=True)
+    stats["output"] = summarize_spectra(result)
+    return result, stats

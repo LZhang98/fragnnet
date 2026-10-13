@@ -1,8 +1,10 @@
-import numpy as np
+import math
 
-from fragnnet.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES
-from fragnnet.utils.formula_utils import parse_formula
-from fragnnet.utils.spec_utils import merge_sparse_specs
+import numpy as np
+import pandas as pd
+
+from fragnnet.utils.clean_spectra_utils import merge_peaks
+from fragnnet.utils.formula_utils import MAX_NUM_EDGES, MAX_NUM_NODES, parse_formula
 
 
 def element_filter(formula, elements):
@@ -10,10 +12,7 @@ def element_filter(formula, elements):
         element_counts = parse_formula(formula)
     except ValueError:
         return False
-    for k, v in element_counts.items():
-        if v > 0 and k not in elements:
-            return False
-    return True
+    return all(v <= 0 or k in elements for k, v in element_counts.items())
 
 
 def filter_spec_mol(
@@ -156,14 +155,14 @@ def filter_spec_mol(
 
     # max prec mz
     if max_prec_mz is not None:
-        print(f">> max_prec_mz {max_prec_mz}")
+        print(f">> max_prec_mz value: {max_prec_mz}")
         max_prec_mz_mask = spec_df["prec_mz"] <= max_prec_mz
         print(f">> max prec mz: {max_prec_mz_mask.mean()}")
         masks.append(max_prec_mz_mask)
 
     # min prec mz
     if min_prec_mz is not None:
-        print(f">> min_prec_mz {min_prec_mz}")
+        print(f">> min_prec_mz value: {min_prec_mz}")
         min_prec_mz_mask = spec_df["prec_mz"] >= min_prec_mz
         print(f">> min prec mz: {min_prec_mz_mask.mean()}")
         masks.append(min_prec_mz_mask)
@@ -174,6 +173,7 @@ def filter_spec_mol(
         def get_max_mz(peaks):
             return max([peak[0] for peak in peaks])
 
+        print(f">> max_peak_mz value: {max_peak_mz}")
         max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
         print(f">> max peak mz: {max_peak_mz_mask.mean()}")
         masks.append(max_peak_mz_mask)
@@ -250,17 +250,194 @@ def filter_spec_mol(
     return spec_df, mol_df
 
 
-def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
-    # merge the peaks (they are not normalized here)
+def _normalize_peak_list(peaks: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """L1-normalize one source spectrum before consensus aggregation."""
+    total_intensity = sum(float(intensity) for _, intensity in peaks)
+    if total_intensity <= 0.0:
+        raise ValueError("Cannot normalize a spectrum with nonpositive total intensity")
+    return [(float(mz), float(intensity) / total_intensity) for mz, intensity in peaks]
+
+
+def _ce_group_key(value) -> tuple[float, ...]:
+    """Return a stable key for scalar, stepped, or ramped collision energies."""
+    values = value if isinstance(value, (list, tuple, np.ndarray)) else [value]
+    return tuple(-1.0 if pd.isna(item) else round(float(item), 6) for item in values)
+
+
+def _merge_peak_lists_with_tolerance(
+    peak_lists: list[list[tuple[float, float]]],
+    *,
+    tolerance_ppm: float,
+    tolerance_min_mz: float,
+    require_common_tolerance_overlap: bool,
+) -> list[tuple[float, float]]:
+    """Tolerance-cluster peak lists and average their intensities."""
+    if not peak_lists:
+        raise ValueError("At least one peak list is required for consensus merging")
+    merged = merge_peaks(
+        [peak for peaks in peak_lists for peak in peaks],
+        tolerance_ppm=tolerance_ppm,
+        tolerance_min_mz=tolerance_min_mz,
+        require_common_tolerance_overlap=require_common_tolerance_overlap,
+    )
+    divisor = float(len(peak_lists))
+    return [(mz, intensity / divisor) for mz, intensity in merged]
+
+
+def _consensus_group_peaks(
+    group_df,
+    *,
+    ce_key: str | None,
+    tolerance_by_inst: dict,
+    require_common_tolerance_overlap: bool,
+    normalize_each_spectrum: bool,
+    equal_ce_weight: bool,
+) -> list[tuple[float, float]]:
+    """Build an equal-spectrum or equal-CE tolerance-aware group consensus."""
+    inst_types = group_df["inst_type"].drop_duplicates().tolist()
+    if len(inst_types) != 1:
+        raise ValueError(f"Merged group must have one instrument type, got {inst_types}")
+    inst_type = inst_types[0]
+    if inst_type not in tolerance_by_inst:
+        raise ValueError(f"No merge tolerance configured for instrument type {inst_type!r}")
+    tolerance = tolerance_by_inst[inst_type]
+    tolerance_ppm = float(tolerance["rel"]) * 1e6
+    tolerance_min_mz = float(tolerance["min_mz"])
+
+    # 1. Normalize source spectra so acquisition-specific intensity scales do not
+    # control their contribution to the merged target.
+    source_peak_lists = [
+        _normalize_peak_list(peaks) if normalize_each_spectrum else list(peaks)
+        for peaks in group_df["peaks"]
+    ]
+    if not equal_ce_weight:
+        return _merge_peak_lists_with_tolerance(
+            source_peak_lists,
+            tolerance_ppm=tolerance_ppm,
+            tolerance_min_mz=tolerance_min_mz,
+            require_common_tolerance_overlap=require_common_tolerance_overlap,
+        )
+    if ce_key is None:
+        raise ValueError("Equal-CE consensus merging requires nce or ace spectrum context")
+
+    # 2. Average replicate spectra within each distinct CE schedule.
+    peak_lists_by_ce: dict[tuple[float, ...], list[list[tuple[float, float]]]] = {}
+    for ce_value, peaks in zip(group_df[ce_key], source_peak_lists, strict=True):
+        peak_lists_by_ce.setdefault(_ce_group_key(ce_value), []).append(peaks)
+    ce_consensus_peak_lists = [
+        _merge_peak_lists_with_tolerance(
+            peak_lists,
+            tolerance_ppm=tolerance_ppm,
+            tolerance_min_mz=tolerance_min_mz,
+            require_common_tolerance_overlap=require_common_tolerance_overlap,
+        )
+        for peak_lists in peak_lists_by_ce.values()
+    ]
+
+    # 3. Give each distinct CE schedule equal weight in the final target.
+    return _merge_peak_lists_with_tolerance(
+        ce_consensus_peak_lists,
+        tolerance_ppm=tolerance_ppm,
+        tolerance_min_mz=tolerance_min_mz,
+        require_common_tolerance_overlap=require_common_tolerance_overlap,
+    )
+
+
+def _weighted_merge_ce_context(spec_df: pd.DataFrame, ce_key: str) -> pd.DataFrame:
+    """Preserve CE readings with equal schedule, replicate, and within-row weights.
+
+    Returns one row per group with sorted, coalesced NCE/ACE readings and matching
+    weights. For G schedules, R replicates, and L readings, each reading receives
+    weight 1/(G*R*L). Spectral targets and their grouping are not modified.
+    """
+    records = []
+    source = spec_df.assign(_merge_ce_key=spec_df[ce_key].map(_ce_group_key))
+    for group_id, group in source.groupby("group_id", sort=True):
+        schedules = list(group.groupby("_merge_ce_key", sort=True))
+        record = {"group_id": group_id}
+        for signal in ("nce", "ace"):
+            contributions: dict[float, list[float]] = {}
+            for _, schedule in schedules:
+                for value in schedule[signal]:
+                    readings = _ce_group_key(value)
+                    if not readings:
+                        raise ValueError("Weighted CE aggregation requires nonempty CE readings")
+                    weight = 1.0 / (len(schedules) * len(schedule) * len(readings))
+                    for reading in readings:
+                        contributions.setdefault(reading, []).append(weight)
+            readings = sorted(contributions)
+            record[signal] = readings
+            record[f"{signal}_weights"] = [
+                math.fsum(sorted(contributions[reading])) for reading in readings
+            ]
+        records.append(record)
+    return pd.DataFrame.from_records(
+        records, columns=["group_id", "nce", "nce_weights", "ace", "ace_weights"]
+    )
+
+
+def merge_spec_df(
+    spec_df,
+    renormalize=False,
+    sum_ints=True,
+    keep_ces=False,
+    *,
+    method="exact_sum",
+    ce_key=None,
+    tolerance_by_inst=None,
+    require_common_tolerance_overlap=True,
+    normalize_each_spectrum=False,
+    equal_ce_weight=False,
+    ce_aggregation="legacy",
+):
+    """Merge spectra by exact m/z or build a tolerance-aware consensus.
+
+    ``ce_aggregation='legacy'`` preserves historical CE context. ``'weighted'``
+    retains all CE observations and adds ``nce_weights``/``ace_weights`` with
+    equal schedule/replicate weights; it requires equal-CE consensus and does not
+    alter spectral target aggregation.
+    """
+    if method not in {"exact_sum", "tolerance_consensus"}:
+        raise ValueError(f"Unknown spectrum merge method: {method!r}")
+    if ce_aggregation not in {"legacy", "weighted"}:
+        raise ValueError(f"Unknown CE aggregation: {ce_aggregation!r}")
+    if ce_aggregation == "weighted" and not (
+        keep_ces
+        and method == "tolerance_consensus"
+        and equal_ce_weight
+        and ce_key in {"nce", "ace"}
+    ):
+        raise ValueError("Weighted CE aggregation requires retained CE and equal-CE consensus")
+
+    # Legacy exact-m/z behavior remains the default for checkpoint reproducibility.
     def m_peaks_func(peakses):
         return merge_sparse_specs(*peakses, renormalize=renormalize, sum_ints=sum_ints)
 
-    m_spec_peaks_df = (
-        spec_df[["group_id", "peaks"]]
-        .groupby("group_id")
-        .agg({"peaks": m_peaks_func})
-        .reset_index()
-    )
+    if method == "exact_sum":
+        m_spec_peaks_df = (
+            spec_df[["group_id", "peaks"]]
+            .groupby("group_id")
+            .agg({"peaks": m_peaks_func})
+            .reset_index()
+        )
+    else:
+        if tolerance_by_inst is None:
+            raise ValueError("tolerance_consensus requires tolerance_by_inst")
+        merged_groups = []
+        for group_id, group_df in spec_df.groupby("group_id", sort=False):
+            peaks = _consensus_group_peaks(
+                group_df,
+                ce_key=ce_key,
+                tolerance_by_inst=tolerance_by_inst,
+                require_common_tolerance_overlap=require_common_tolerance_overlap,
+                normalize_each_spectrum=normalize_each_spectrum,
+                equal_ce_weight=equal_ce_weight,
+            )
+            if renormalize:
+                peaks = _normalize_peak_list(peaks)
+            merged_groups.append({"group_id": group_id, "peaks": peaks})
+        m_spec_peaks_df = pd.DataFrame.from_records(merged_groups)
+
     m_spec_meta_df = spec_df.drop(columns=["peaks", "spec_id"]).drop_duplicates(subset=["group_id"])
     m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df, on=["group_id"], how="inner")
     if keep_ces:
@@ -276,15 +453,56 @@ def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
                     result.append(item)
             return result
 
-        m_spec_ce_df = (
-            spec_df[["group_id", "nce", "ace"]]
-            .groupby("group_id")
-            .agg({"nce": _flatten, "ace": _flatten})
-            .reset_index()
-        )
+        if ce_aggregation == "weighted":
+            m_spec_ce_df = _weighted_merge_ce_context(spec_df, ce_key)
+        else:
+            ce_source_df = spec_df
+            if method == "tolerance_consensus" and equal_ce_weight:
+                ce_source_df = spec_df.assign(
+                    _merge_ce_key=spec_df[ce_key].map(_ce_group_key)
+                ).drop_duplicates(subset=["group_id", "_merge_ce_key"])
+            m_spec_ce_df = (
+                ce_source_df[["group_id", "nce", "ace"]]
+                .groupby("group_id")
+                .agg({"nce": _flatten, "ace": _flatten})
+                .reset_index()
+            )
         m_spec_df = m_spec_df.drop(columns=["nce", "ace"])
         m_spec_df = m_spec_df.merge(m_spec_ce_df, on=["group_id"], how="inner")
     else:
         m_spec_df.loc[:, "nce"] = np.nan
         m_spec_df.loc[:, "ace"] = np.nan
     return m_spec_df
+
+
+def merge_sparse_specs(
+    *peakses, renormalize: bool = False, sum_ints: bool = True
+) -> list[tuple[float, float]]:
+    """
+    this will result in peaks that are really close in mass (<5ppm)
+    they are probably the same peak, but our model can handle this type of ambiguity
+    for now, let's keep them unmerged
+
+    Args:
+        renormalize (bool, optional): flag to get renormalize spectra. Defaults to False.
+        sum_ints (bool, optional): flag for sum intensities within the bin, else take max
+
+    Returns:
+        _type_: _description_
+    """
+    merged_peaks = {}
+    # total_intensity = 0.
+    for peaks in peakses:
+        for mz, intensity in peaks:
+            if mz in merged_peaks:
+                if sum_ints:
+                    merged_peaks[mz] += intensity
+                else:
+                    merged_peaks[mz] = max(merged_peaks[mz], intensity)
+            else:
+                merged_peaks[mz] = intensity
+    merged_peaks = sorted(merged_peaks.items(), key=lambda x: x[0])
+    if renormalize:
+        total_intensity = sum([intensity for mz, intensity in merged_peaks])
+        merged_peaks = [(mz, intensity / total_intensity) for mz, intensity in merged_peaks]
+    return merged_peaks

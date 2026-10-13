@@ -1,0 +1,45 @@
+entity: frag-gnn
+project: frag-gnn
+program: scripts/run_wandb_sweep.py
+method: bayes
+name: masshatter_merged_mix_mask_fragment_u_k_barcode
+description: >
+  Bayesian search over proposal mixture count, MAP-relative mask cutoff,
+  MAP-relative marginalized-fragment cutoff, unique-fragment target, and ranked
+  mask budget K. Proposal supervision uses barcode spectra. Batch size is reduced
+  while preserving effective batch size 256 so the K=4096 arms fit on an L40S.
+metric:
+  goal: maximize
+  name: val_cos_sim_0.01_epoch/mean
+
+parameters:
+  # Number of normalized Bernoulli proposal modes.
+  masster_proposal_num_mixtures:
+    values: [2, 3]
+
+  # Mask/sample cutoff relative to the molecule's MAP mask.
+  masster_min_mask_relative_probability:
+    values: [0.0, 0.001, 0.003, 0.01]
+
+  # Unique-fragment cutoff after duplicate pathways are marginalized.
+  masster_min_fragment_relative_probability:
+    values: [0.0, 0.001, 0.003, 0.01]
+
+  # Requested number of unique atom-set candidates before fragment pruning.
+  masster_unique_fragment_target:
+    values: [128, 256, 512]
+
+  # Maximum number of ranked masks/samples considered (K).
+  masster_ranked_mask_budget:
+    values: [1024, 2048, 4096]
+
+  masster_proposal_barcode_target:
+    value: true
+  train_batch_size:
+    value: 32
+  eval_batch_size:
+    value: 16
+  accumulate_grad_batches:
+    value: 8
+  max_epochs:
+    value: 200

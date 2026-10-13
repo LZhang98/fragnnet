@@ -33,11 +33,9 @@ pip install --no-index \
  joblib==1.3.2 \
  matplotlib \
  pytorch_lightning==2.4.0 \
- dgl==2.4.0 \
- omegaconf \
  cython==3.0.12 \
+ pyopenms==3.3.0 \
  pandarallel==1.6.5 \
- lmdb==1.7.5 \
  h5py
 
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
@@ -66,9 +64,6 @@ if [ -n "${SMARTS_PREPASS+x}" ]; then
 fi
 if [ -n "${USE_HDF5+x}" ]; then
     echo USE_HDF5: ${USE_HDF5}
-fi
-if [ -n "${USE_LMDB+x}" ]; then
-    echo USE_LMDB: ${USE_LMDB}
 fi
 if [ -n "${MIN_FRAG_ATOMS+x}" ]; then
     echo MIN_FRAG_ATOMS: ${MIN_FRAG_ATOMS}
@@ -105,9 +100,6 @@ PREPARE_ARGS=(
 
 if [ -n "${SMARTS_PREPASS+x}" ]; then
     PREPARE_ARGS+=(--smarts_prepass ${SMARTS_PREPASS})
-fi
-if [ -n "${USE_LMDB+x}" ]; then
-    PREPARE_ARGS+=(--use_lmdb ${USE_LMDB})
 fi
 if [ -n "${USE_HDF5+x}" ]; then
     PREPARE_ARGS+=(--use_hdf5 ${USE_HDF5})

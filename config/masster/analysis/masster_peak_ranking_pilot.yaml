@@ -1,0 +1,18 @@
+# Standalone continuation pilot; does not alter the production config schema.
+seed: 397623
+checkpoint: saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt
+custom_fp: config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml
+train_spec_fp: output/i1_worst_predictions_2026_09_30/subset_spec_df_train4k.pkl
+val_spec_fp: output/i1_worst_predictions_2026_09_30/subset_spec_df_val_all.pkl
+output: output/peak_ranking_pilot_2026_10_02
+train_molecules: 256
+val_molecules: 512
+conditions_per_molecule: 3
+batch_size: 16
+epochs: 4
+lr: 0.00003
+weight_decay: 0.01
+ranking_weights: [0.0, 0.1, 0.3]
+# Exclude near-tied measured winners from the auxiliary, never from evaluation.
+minimum_base_gap: 0.1
+bootstrap_samples: 2000

@@ -1,0 +1,16 @@
+# Standalone offline census configuration, not a runner/model configuration.
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+train_ids_fp: data/split/nist20_inchikey/train_ids.csv
+seed: 397623
+query_molecules: 2000
+conditions_per_query: 3
+neighbors: 3
+controls: 3
+mass_window_da: 10.0
+mass_window_fraction: 0.05
+control_mass_distance_tolerance_da: 2.0
+peak_tolerance_da: 0.01
+precursor_exclusion_da: 1.5
+large_loss_min_da: 50.0
+bootstrap_repeats: 1000

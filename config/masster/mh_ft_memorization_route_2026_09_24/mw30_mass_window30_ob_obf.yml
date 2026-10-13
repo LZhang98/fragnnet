@@ -1,0 +1,374 @@
+# ARM mw30_mass_window30_ob_obf -- unmerged [M+H]+, fa1 with a 30 Da mass window, 2026-09-29.
+# fa1_full_attention_ob_obf.yml plus masster_intensity_mass_window: 30.0 (one key): each candidate
+# attends only to candidates within 30 Da of its neutral mass (a -inf pair bias on the attention
+# logits; no parameters). The final softmax over the spectrum is unchanged, so candidates still
+# compete for intensity globally; the window restricts who exchanges information.
+#
+# QUESTION. Does restricting candidate exchange to mass neighbours help transfer? The window
+# reach on c0's candidate sets (median 256 candidates over 274 Da): 30 Da reaches 29% of a set in
+# one hop and 50% in two (output/local_encoder_noise_2026_09_27/mass_window_reach.py). The
+# earlier local definition (mw30_h4_mz, on c0 with 4 heads and the m/z encoding) is superseded:
+# the m/z encoding lost on Fir (mz1 -0.0017 against fa1), so this arm has none.
+#
+# CONTROL: fa1_full_attention_ob_obf (0vn8m2gr, tail 0.7651 over epochs 54-63; i1 i50ig7rf 0.7607).
+# READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against fa1 (0.0042 seed
+# spread; +0.005 to count on one seed); val_candidate_wrecall within 0.005 of fa1; minutes per
+# epoch. Then, offline on the best checkpoint, the base-peak probes
+# (scripts/debug/masster_memorization/debug_masster_base_peak_errors.py and debug_masster_base_peak_tables.py): the
+# train/val deficit on nested and overlapping pairs at novelty < 0.6, against fa1 and i1.
+# The three window arms (mw30, mw10, mlp1) are one ladder: 30 Da keeps the common neutral losses
+# (H2O, NH3, CO, C2H4) inside one hop, 10 Da excludes every common loss, and no attention is the
+# window-0 end. They are the "restricted communication without chemistry" control for any
+# chemistry-defined grouping (containment graph, CFM-like parent/child competition).
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# Base config follows: fa1_full_attention_ob_obf.yml.
+# ARM fa1_full_attention_ob_obf -- unmerged [M+H]+, i1 with full candidate attention, 2026-09-29.
+# i1_inst_ob_obf.yml plus masster_intensity_transformer_attention: full (one key). Same relabelled
+# data (see i1's DATA IDENTITY), seed 397623, 64 epochs, constant lr 1e-3, and i1's 8 heads.
+#
+# QUESTION. Does direct candidate-to-candidate attention beat i1's induced allocator, which routes
+# every exchange through 64 inducing tokens? Full attention has only run merged: a2_full_attention
+# (xyessyn1) was +0.0030 over its 128-epoch control, a hold, with 44% fewer intensity-head
+# parameters at equal speed. On the local unmerged screen (a quarter of the molecules, batch 128,
+# 24 epochs) fa_h4, full attention with 4 heads, was the best run: +0.0086 over the control mean.
+# That screen also cut the heads to 4; this arm keeps i1's 8, so it changes one key.
+# fa1 is also the control for mz1, and the full-attention arm F of the hierarchical fragment graph
+# plan (docs/plans/masster/masster_hierarchical_fragment_graph_plan.md).
+# Finding: docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md (section 3)
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# PARAMETERS AND INITIALIZATION. Full attention has no latent block and no inducing tokens: the
+# intensity head falls from 2,457,355 to 1,386,763 parameters (model 9,215,701 -> 8,145,109). At
+# seed 397623 every tensor outside the intensity head initializes bit-identically to i1's; inside
+# it the draws differ. Read the delta against the 0.0042 seed spread, not as a paired comparison.
+#
+# CONTROL: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63). This config differs from it
+# by masster_intensity_transformer_attention and W&B naming only.
+# READ: tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against i1, at least +0.005 (the
+# 0.0042 seed spread) to count on one seed; val_candidate_wrecall within 0.005 of i1; minutes per
+# epoch against i1.
+#
+# Base config follows: i1_inst_ob_obf.yml.
+# ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the ORB / ORB_F instrument labels, 2026-09-28.
+# n4_nce_fourier.yml unchanged except W&B naming. The difference is the data: data/proc/nist20/
+# spec_df.pkl relabelled FT -> ORB / ORB_F from the raw NIST20 MSP Instrument field (Elite and
+# Velos -> ORB, Orbitrap Fusion Lumos -> ORB_F). inst_types [ORB, ORB_F] and inst_type: true were
+# already in n4, but every row was FT, so n4's instrument embedding had one class and carried
+# nothing. Here it has two (ORB = 0, ORB_F = 1).
+#
+# QUESTION. Does an instrument input remove c0's Lumos under-fragmentation? c0 val, [M+H]+, raw
+# labels: Elite cosine 0.7450 / precursor-fraction bias -0.0008 (36,864 spectra); Lumos 0.6880 /
+# +0.0923 (13,710). The gap is +0.053 after matching NCE bin, novelty and m/z, and train shows no
+# bias, so for a new molecule the energy response follows the Elite majority. Relabelling the NCE
+# at inference failed (-0.006 and -0.039), so the instrument must be an input at training time.
+# Finding: docs/findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md
+#
+# DATA IDENTITY: spec_df.pkl is the only NIST20 spec_df; no FT copy is kept. It is the local
+# file after the 2026-09-28 relabel (preproc_scripts/README.md, "Relabelling existing Orbitrap
+# spectra"), uploaded over each cluster copy, md5 bdc009bbeaf6a38d126326d127630cad; renamed to
+# ORB / ORB_F on 2026-10-01, md5 ce029870badc9e9e05935a4424f44c8d: ORB 778,672
+# (712,969 by instrument field + 65,703 unnamed MoNA), ORB_F 251,326, 212,366 groups. It pairs
+# with mol_df.pkl md5 be4b5794040e68f661e6ff165dacb3b0 and data/split/nist20_inchikey
+# (train_ids.csv d8a07ccfcb7e4d80128b441bef7daca9, val_ids.csv 7c870661872e1a2c0ef80a25d2ff44da).
+# group_id is not read here (merge, group_sampler off); splits select by spec_id.
+#
+# CONTROL: n4_nce_fourier (shjgv9im), same config on FT labels; c0_control (vcpho5qm).
+# READ: (1) Lumos val cosine and precursor-fraction bias on the best checkpoint against n4 and
+# c0, by raw instrument (output/ev_ladder_census_2026_09_28/nist20_raw_labels.py re-reads c0).
+# Pass if the Lumos bias falls well below +0.09 without an Elite loss. (2) Tail mean of
+# val_cos_sim_0.01_epoch/mean over epochs 54-63 against n4; Lumos is 26% of val, so closing half
+# the gap is about +0.007, 1.7x the 0.0042 seed spread.
+#
+# Base config follows: n4_nce_fourier.yml.
+# ARM n4_nce_fourier -- unmerged [M+H]+/FT, the per-NCE code without aliasing, 2026-09-26.
+# c0_control.yml with int_embedder fourier instead of the template's abs-sines. Seed 397623, 64
+# epochs, constant lr 1e-3. ce_insert_type stays embed, so each integer NCE keeps its own code.
+# In MASSter, int_embedder reaches only the CE table (MassterContextEncoder). The table feeds the
+# existing Linear(num_dim, ce_insert_size), whose input width goes from 8 to 20.
+#
+# QUESTION. Can the abs-sines table be replaced by one that does not alias, at no cost?
+# abs-sines is |sin(pi x / 2^j)|, unchanged under x -> 256 - x at nce_max 200. fourier is sin and
+# cos at the same powers of 1/2, down to period 512. No two integers in 0-300 share a row, and the
+# nearest two occurring NCE rows are 1.41 apart; under abs-sines, 76 and 180 are 5.5e-6 apart.
+# On this split the one occurring collision is 76/180 (2.1% of val spectra). No molecule has both,
+# and feeding 76 to the NCE-180 val spectra cost nothing measurable on u2. So no gain is expected
+# here: n4 prices the table swap before it becomes the default per-NCE code for other datasets.
+# Why keep a per-NCE code at all: mid-run, n1 (qet), n2 (qet_mlp) and n3 (id) all trail c0 while
+# fitting train as well, so the code carries something that transfers.
+# fourier does not fix unseen energies: its high-frequency columns are still arbitrary there.
+# Finding: docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md
+#
+# CONTROL: c0_control (vcpho5qm, tail 0.7276 over epochs 54-63). This config differs from c0 by
+# int_embedder and W&B naming only.
+# READ: (1) tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against c0. Inside the
+# 0.0042 seed spread is a pass, since no gain is expected; a drop beyond it rules the table out.
+# (2) On the best checkpoint, val cosine at NCE 76 and at 180 against c0's: the only spectra the
+# change can reach on this split. Inputs 76 and 180 must now give different predictions.
+# upload_checkpoints is true, so the checkpoints land on W&B for the offline reads.
+#
+# Base config follows: c0_control.yml.
+# CONTROL c0 -- same-code control for the memorization-route Step 1 arms, 2026-09-24.
+# f0_mh_ft_control.yml plus wandb naming only: no model or data key changes. Submitted with the
+# arms, because the code has moved since the f0 run 3bej6fq7 (CutBondEncoder deduplication, equal
+# up to float rounding, and the Step 1 options, all off here and bit-identical at their defaults).
+# Plan: docs/plans/masster/masster_memorization_route_plan.md
+#
+# Control header follows.
+# CONTROL f0 -- [M+H]+/FT, no target cleaning
+#
+# [M+H]+ / FT only, on the CURRENT architecture (the c4a_base_s1 lineage: cuda candidate
+# backend, 2026-09-20 feature bundle, seed 397623), run UNMERGED at a 64-epoch screen. Derived from
+# config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml
+# by narrowing the scope and setting the cleanup switches. Nothing else is touched.
+#
+# SPLIT: data/split/nist20_inchikey ALREADY EXISTS and is already the [M+H]+/FT split --
+# 157,678 train / 52,020 val / 52,621 test spectra, 60.1/19.8/20.1 by 2D InChIKey. No new
+# split is needed and no new DAG: spec_fp, mol_fp and frag_dp are byte-identical to the ma_mi
+# lineage; only split_dp differs.
+#
+# inst_type_loss_tol deliberately keeps its FT *and* QTOF rows. It is a lookup table, not a
+# scope list, and a trimmed or unset table is what made cos_hun_inst_tol export -1.0.
+#
+# HORIZON, re-derived for unmerged. The 128-epoch screen was calibrated on MERGED runs. An
+# unmerged epoch sees ~18x the rows, and the two reference unmerged runs on this architecture
+# (6ks7v8ce, h0gvuf4f, same batch 512 / loss_batch 64) both plateau far earlier: at epoch 64
+# they sit 0.0043 and 0.0011 below their own best, and h0gvuf4f then DECLINES to -0.0043 by
+# epoch 99. So 64 epochs is the screen here, not 128.
+# COST: those runs measured 8.9 and 7.0 epochs/hour on ma_mi unmerged against 70.0 ep/h merged.
+# This split is 1.825x smaller (157,678 vs 287,721 spectra), giving ~12.8-16.2 ep/h, so 64
+# epochs is ~4.0-5.0 h. The job asks 6 h and passes j=<job_name>, so a requeue resumes.
+#
+# THIS PAIR IS NOT A LIKE-FOR-LIKE COSINE COMPARISON BY ITSELF. clean_spectra runs at dataset
+# load (base_dataset.py:430), so f1 is scored against its own cleaned target while f0 is scored
+# against the raw one. Removing peaks the model was failing on raises cosine by construction --
+# the same mechanism that appears as a uniform +0.026 val_candidate_wrecall in filtered vs
+# unfiltered pairs. To claim f1 is a real improvement, evaluate the f1 CHECKPOINT against f0's
+# UNFILTERED target. That cross-eval is the acceptance criterion, not this pair's delta.
+#
+# CONTROL: filters off. Prices the scope change separately from the cleaning.
+wandb_name: mw30_mass_window30_ob_obf
+wandb_group: nist20_mh_ft_memorization_route_2026_09_24
+wandb_tags:
+- no_filters
+- mw30_mass_window30_ob_obf
+- mass_window_30
+- intensity_full_attention
+- inst_ob_obf
+- nist20_raw_inst_labels
+- mh_ft_memorization_route_2026_09_24
+- nce_fourier
+- masster
+- cuda_candidates
+- fir_h100_mig
+- nist20_mh_ft
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- deterministic
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- int_embedder_fourier
+- adduct_embed
+- inst_type_embed
+- m+h
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- loss_batch_64
+- microbatch_512
+- effective_batch_512
+- unmerged
+- nce_only
+- no_cmf
+- exposure_matched_epochs
+seed: 397623
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+spec_params:
+  # UNMERGED: one row per spectrum, not one per molecule-group. The other merge_* keys below are
+  # inert while this is false; they are kept because they are part of the required key group.
+  # merge_keep_ces is NOT inert: _check_ce_params asserts it is false when merge is off and
+  # nce/ace is on (merge_keep_ces: true crashed flf0ako1 at model setup).
+  # Consequence: NOTHING here is comparable to a merged cosine. The merged/unmerged split is
+  # the confound docs record as "never like-for-like" (1.01 vs 18.55 rows per molecule), and
+  # the unmerged family has its own recorded ceiling near 0.688-0.693.
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: false
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - ORB
+  - ORB_F
+  frag_mode: false
+  frag_modes: []
+  preprocess: true
+  merge_method: tolerance_consensus
+  merge_tolerance_common_overlap: true
+  merge_normalize_each_spectrum: true
+  merge_equal_ce_weight: true
+  # --- target cleaning: OFF. Matched control for f1. ---
+  # Same scope, split, seed and architecture; only these switches differ.
+  centroid_peaks: false
+  centroid_ppm: 20.0
+  centroid_use_instrument_tolerance: false
+  centroid_method: common_overlap
+  filter_subformula_peaks: false
+  subformula_ppm: 5.0
+  subformula_use_instrument_tolerance: true
+  filter_above_precursor_peaks: false
+  above_precursor_ppm: 10.0
+  above_precursor_use_instrument_tolerance: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+# n4: sin + cos table instead of the template abs-sines; no NCE pair aliases (see header).
+int_embedder: fourier
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 64
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  ORB_F:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: false
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 64
+max_epochs: 64
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+# Upload the checkpoints to W&B artifacts. Needed here because the acceptance criterion for
+# this pair is a CROSS-EVAL -- scoring the f1 checkpoint against f0's unfiltered target -- so
+# both checkpoints have to outlive their job's scratch directory and be fetchable from
+# somewhere other than the cluster checkout. Requires the run to be online (w=online, which the
+# submitter passes). Retrieve with scripts/wandb_scripts/wandb_download_ckpts.py.
+# User, 2026-09-29: no upload for now. The checkpoints stay in the job's Fir checkpoint
+# directory; the offline reads (base-peak probes) need them copied from there.
+upload_checkpoints: false
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+
+# Train-side auxiliary metrics off: see the header. This keeps peak GPU near 26.8 GiB so the run
+# fits a 3g.40gb slice, at the cost of the train cosine (and therefore the train/val gap).
+compute_train_auxiliary_metrics: false
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+# Campaign override(s) not present in the base file:
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+
+# MONITORING (every Step 1 config, c0 included; not in f0): log val/train
+# candidate_wrecall, the candidate set's intensity ceiling, so acceptance criterion 5
+# (coverage within 0.005 of c0) reads off W&B. Monitoring only; the loss is unchanged.
+masster_candidate_coverage_metrics: true
+
+# ARM KEY (control i1: induced), a2_full_attention's value. num_inducing_points is ignored.
+masster_intensity_transformer_attention: full
+masster_intensity_mass_window: 30.0

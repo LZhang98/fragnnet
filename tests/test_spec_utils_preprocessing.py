@@ -2,11 +2,11 @@
 
 Tests for:
 - get_ints_transform_func / get_ints_untransform_func (intensity transforms)
-- transform_ce, transform_nce_to_ace (collision energy transforms)
-- filter_func, bin_func, batch_func (single-spectrum operations)
+- transform_ce (collision energy transform)
+- batch_func (single-spectrum operations)
 - batched_filter_func, batched_bin_func (batched operations)
-- merge_sparse_specs, calculate_spectrum_entropy (spectrum utilities)
-- round_aggregate_peaks (peak deduplication and aggregation)
+- merge_sparse_specs (spectrum utilities)
+- round_aggregate_peaks (peak deduplication and aggregation, incl. loop-reference equivalence)
 """
 
 import math
@@ -15,19 +15,16 @@ import numpy as np
 import pytest
 import torch as th
 
+from fragnnet.utils.proc_utils import merge_sparse_specs
+from fragnnet.utils.scatter_utils import scatter_logsumexp, scatter_reduce
 from fragnnet.utils.spec_utils import (
     batch_func,
     batched_bin_func,
     batched_filter_func,
-    bin_func,
-    calculate_spectrum_entropy,
-    filter_func,
     get_ints_transform_func,
     get_ints_untransform_func,
-    merge_sparse_specs,
     round_aggregate_peaks,
     transform_ce,
-    transform_nce_to_ace,
 )
 
 
@@ -59,6 +56,11 @@ class TestGetIntsTransformFunc:
         f = get_ints_transform_func("sqrt")
         assert f(th.tensor([4.0])).item() == pytest.approx(2.0)
 
+    def test_pow075_known_value(self):
+        """16**0.75 == 8.0."""
+        f = get_ints_transform_func("pow0.75")
+        assert f(th.tensor([16.0])).item() == pytest.approx(8.0)
+
     def test_none_is_identity(self):
         """'none' transform returns the input unchanged."""
         f = get_ints_transform_func("none")
@@ -73,7 +75,7 @@ class TestGetIntsTransformFunc:
     def test_all_transforms_monotonically_increasing(self):
         """All valid transforms are monotonically non-decreasing on positive inputs."""
         x = th.tensor([1.0, 10.0, 100.0, 1000.0])
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             f = get_ints_transform_func(name)
             y = f(x)
             assert (y[1:] >= y[:-1]).all(), f"Transform '{name}' is not monotone"
@@ -91,13 +93,13 @@ class TestGetIntsUntransformFunc:
 
     def test_output_non_negative_all_transforms(self):
         """Untransformed values are always >= 0 for all valid transforms."""
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             result = self._call(name, [0.5, 1.0, 2.0])
             assert (result >= 0).all(), f"Negative output for '{name}'"
 
     def test_monotonic_order_preserved(self):
         """Higher input → higher untransformed output (monotone increasing)."""
-        for name in ["log10", "log10t3", "loge", "sqrt", "none"]:
+        for name in ["log10", "log10t3", "loge", "sqrt", "pow0.75", "none"]:
             result = self._call(name, [0.1, 0.5, 1.0])
             assert result[0] <= result[1] <= result[2], f"Not monotone for '{name}'"
 
@@ -120,6 +122,13 @@ class TestGetIntsUntransformFunc:
         max_ints_log10 = float(np.log10(1000.0 + 1.0))
         result = self._call("log10", [max_ints_log10])
         assert result.item() == pytest.approx(1000.0, abs=1.0)
+
+    def test_pow075_round_trip(self):
+        """Untransform inverts pow0.75 up to the per-spectrum max-1000 rescaling."""
+        raw = th.tensor([1000.0, 125.0, 8.0])
+        transformed = get_ints_transform_func("pow0.75")(raw)
+        result = self._call("pow0.75", transformed.tolist())
+        assert th.allclose(result, raw, rtol=1e-4)
 
 
 class TestTransformCe:
@@ -155,141 +164,6 @@ class TestTransformCe:
         assert result[1].item() == pytest.approx(1.0)
 
 
-class TestTransformNceToAce:
-    """Tests for transform_nce_to_ace — converts normalized to absolute collision energy."""
-
-    def test_known_value_charge1(self):
-        """ACE = NCE * mw / 500 * charge_factor for charge_factor=1."""
-        assert transform_nce_to_ace(20.0, 500.0, charge_factor=1) == pytest.approx(20.0)
-
-    def test_double_mw_doubles_ace(self):
-        """Doubling molecular weight doubles the ACE."""
-        ace_500 = transform_nce_to_ace(20.0, 500.0)
-        ace_1000 = transform_nce_to_ace(20.0, 1000.0)
-        assert ace_1000 == pytest.approx(2 * ace_500)
-
-    def test_charge_factor_scales_linearly(self):
-        """charge_factor=2 doubles ACE relative to charge_factor=1."""
-        ace_1 = transform_nce_to_ace(20.0, 500.0, charge_factor=1)
-        ace_2 = transform_nce_to_ace(20.0, 500.0, charge_factor=2)
-        assert ace_2 == pytest.approx(2 * ace_1)
-
-    def test_zero_nce_gives_zero(self):
-        """NCE=0 always gives ACE=0 regardless of mw."""
-        assert transform_nce_to_ace(0.0, 1000.0) == pytest.approx(0.0)
-
-
-
-class TestFilterFunc:
-    """Tests for filter_func — intensity threshold and m/z upper bound filtering."""
-
-    def test_tensor_filters_by_thresh_and_mz_max(self):
-        """Peaks with ints <= thresh or mzs >= mz_max are removed."""
-        mzs = th.tensor([100.0, 200.0, 300.0])
-        ints = th.tensor([0.5, 1.5, 2.5])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=250.0)
-        assert th.equal(out_mzs, th.tensor([200.0]))
-        assert th.equal(out_ints, th.tensor([1.5]))
-
-    def test_ndarray_same_result(self):
-        """Works identically with numpy arrays."""
-        mzs = np.array([100.0, 200.0, 300.0])
-        ints = np.array([0.5, 1.5, 2.5])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=250.0)
-        np.testing.assert_array_equal(out_mzs, [200.0])
-        np.testing.assert_array_equal(out_ints, [1.5])
-
-    def test_mixed_types_raises_type_error(self):
-        """Tensor mzs + ndarray ints raises TypeError."""
-        with pytest.raises(TypeError):
-            filter_func(th.tensor([100.0]), np.array([1.0]), ints_thresh=0.0, mz_max=1000.0)
-
-    def test_mz_max_zero_disables_mz_filter(self):
-        """mz_max <= 0 skips the m/z upper bound check."""
-        mzs = th.tensor([100.0, 5000.0])
-        ints = th.tensor([2.0, 3.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=0.0, mz_max=0.0)
-        assert out_mzs.shape[0] == 2
-
-    def test_all_filtered_returns_empty(self):
-        """If all peaks fail the filter, empty tensors are returned."""
-        mzs = th.tensor([100.0, 200.0])
-        ints = th.tensor([0.1, 0.2])
-        out_mzs, out_ints = filter_func(mzs, ints, ints_thresh=1.0, mz_max=1000.0)
-        assert out_mzs.shape[0] == 0
-        assert out_ints.shape[0] == 0
-
-    def test_thresh_is_exclusive(self):
-        """Intensity exactly at threshold is excluded (strict >)."""
-        mzs = th.tensor([100.0])
-        ints = th.tensor([1.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=1.0, mz_max=1000.0)
-        assert out_mzs.shape[0] == 0
-
-    def test_mz_max_is_exclusive(self):
-        """m/z exactly at mz_max is excluded (strict <)."""
-        mzs = th.tensor([250.0])
-        ints = th.tensor([2.0])
-        out_mzs, _ = filter_func(mzs, ints, ints_thresh=0.0, mz_max=250.0)
-        assert out_mzs.shape[0] == 0
-
-
-class TestBinFunc:
-    """Tests for bin_func — histogram binning of a single spectrum.
-
-    Uses mz_max=10.0, mz_bin_res=1.0 → 10 bins with edges [1,2,...,10].
-    A peak at mz x lands in bin searchsorted(edges, x, right=True).
-    """
-
-    def test_single_peak_one_nonzero_bin(self):
-        """A single peak produces exactly one non-zero bin."""
-        mzs = th.tensor([2.5])
-        ints = th.tensor([3.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert out.shape[0] == 10
-        assert out.sum().item() == pytest.approx(3.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_sum_ints_two_peaks_same_bin(self):
-        """Two peaks in the same bin are summed when sum_ints=True."""
-        mzs = th.tensor([2.3, 2.7])  # both map to bin for (2, 3]
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert out.sum().item() == pytest.approx(3.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_amax_two_peaks_same_bin(self):
-        """Two peaks in the same bin take the max when sum_ints=False."""
-        mzs = th.tensor([2.3, 2.7])
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=False)
-        assert out.max().item() == pytest.approx(2.0)
-        assert (out > 0).sum().item() == 1
-
-    def test_two_peaks_different_bins(self):
-        """Peaks at well-separated m/zs land in two distinct non-zero bins."""
-        mzs = th.tensor([2.5, 7.5])
-        ints = th.tensor([1.0, 2.0])
-        out = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=False, sum_ints=True)
-        assert (out > 0).sum().item() == 2
-        assert out.sum().item() == pytest.approx(3.0)
-
-    def test_return_index_shape_and_uniqueness(self):
-        """return_index=True returns per-peak bin indices, one per input peak."""
-        mzs = th.tensor([2.5, 7.5])
-        ints = th.tensor([1.0, 2.0])
-        idx = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=True, sum_ints=True)
-        assert idx.shape == (2,)
-        assert idx[0].item() != idx[1].item()  # different bins
-
-    def test_return_index_same_bin_for_close_peaks(self):
-        """Peaks in the same bin return the same index."""
-        mzs = th.tensor([2.3, 2.7])
-        ints = th.tensor([1.0, 1.0])
-        idx = bin_func(mzs, ints, mz_max=10.0, mz_bin_res=1.0, return_index=True, sum_ints=True)
-        assert idx[0].item() == idx[1].item()
-
-
 class TestBatchFunc:
     """Tests for batch_func — concatenates per-item tensor lists with batch indices."""
 
@@ -315,7 +189,7 @@ class TestBatchFunc:
     def test_single_spectrum_all_zeros_batch_idx(self):
         """Single spectrum → all batch indices are 0."""
         mzs = [th.tensor([5.0, 6.0, 7.0])]
-        (b_mzs,), batch_idxs = batch_func(mzs)[:1], batch_func(mzs)[1]
+        batch_idxs = batch_func(mzs)[1]
         assert th.equal(batch_idxs, th.zeros(3, dtype=th.long))
 
 
@@ -499,8 +373,14 @@ class TestBatchedBinFunc:
         ints = th.tensor([1.0])
         batch_idxs = th.tensor([0])
         out_mzs, out_ints, _ = batched_bin_func(
-            mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0,
-            agg="sum", sparse=True, return_mzs=True,
+            mzs,
+            ints,
+            batch_idxs,
+            mz_max=10.0,
+            mz_bin_res=1.0,
+            agg="sum",
+            sparse=True,
+            return_mzs=True,
         )
         # Bin for 2.5 has right edge 3.0 and center 3.0 - 0.5 = 2.5
         assert out_mzs.item() == pytest.approx(2.5)
@@ -513,8 +393,14 @@ class TestBatchedBinFunc:
         batch_idxs = th.tensor([0, 0])
         prec_mzs = th.tensor([2.5])  # one precursor per batch item
         out = batched_bin_func(
-            mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0, agg="sum",
-            remove_prec_peaks=True, prec_mzs=prec_mzs,
+            mzs,
+            ints,
+            batch_idxs,
+            mz_max=10.0,
+            mz_bin_res=1.0,
+            agg="sum",
+            remove_prec_peaks=True,
+            prec_mzs=prec_mzs,
         )
         # Peak at 2.5 → bin index 2; should be zeroed
         assert out[0, 2].item() == pytest.approx(0.0)
@@ -525,8 +411,12 @@ class TestBatchedBinFunc:
         """Empty input tensor raises ValueError."""
         with pytest.raises(ValueError, match="empty"):
             batched_bin_func(
-                th.tensor([]), th.tensor([]), th.tensor([], dtype=th.long),
-                mz_max=10.0, mz_bin_res=1.0, agg="sum",
+                th.tensor([]),
+                th.tensor([]),
+                th.tensor([], dtype=th.long),
+                mz_max=10.0,
+                mz_bin_res=1.0,
+                agg="sum",
             )
 
 
@@ -581,50 +471,6 @@ class TestMergeSparseSpecs:
         merged_dict = dict(merged)
         assert merged_dict[100.0] == pytest.approx(2.0)
         assert merged_dict[200.0] == pytest.approx(5.0)
-
-
-class TestCalculateSpectrumEntropy:
-    """Tests for calculate_spectrum_entropy — entropy over log-intensity distribution.
-
-    Note: this computes H = -sum(p * log(p)) where p = softmax(log_ints).
-    """
-
-    def test_single_peak_zero_entropy(self):
-        """Single peak has H = 0 (the distribution is a point mass)."""
-        log_ints = th.tensor([0.0])
-        batch_idxs = th.tensor([0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(0.0, abs=1e-6)
-
-    def test_two_equal_peaks_log2_entropy(self):
-        """Two equal peaks → H = log(2) ≈ 0.6931."""
-        log_ints = th.tensor([0.0, 0.0])
-        batch_idxs = th.tensor([0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(math.log(2), abs=1e-5)
-
-    def test_three_equal_peaks_log3_entropy(self):
-        """Three equal peaks → H = log(3)."""
-        log_ints = th.tensor([0.0, 0.0, 0.0])
-        batch_idxs = th.tensor([0, 0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() == pytest.approx(math.log(3), abs=1e-5)
-
-    def test_entropy_non_negative(self):
-        """Entropy is always >= 0 for any valid input."""
-        log_ints = th.tensor([1.0, 2.0, 0.5])
-        batch_idxs = th.tensor([0, 0, 0])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy.item() >= 0.0
-
-    def test_multi_batch_independent(self):
-        """Entropy is computed independently per batch item."""
-        # Batch 0: two equal peaks → H = log(2); Batch 1: one peak → H = 0
-        log_ints = th.tensor([0.0, 0.0, 0.0])
-        batch_idxs = th.tensor([0, 0, 1])
-        entropy = calculate_spectrum_entropy(log_ints, batch_idxs)
-        assert entropy[0].item() == pytest.approx(math.log(2), abs=1e-5)
-        assert entropy[1].item() == pytest.approx(0.0, abs=1e-6)
 
 
 class TestRoundAggregatePeaks:
@@ -695,3 +541,123 @@ class TestRoundAggregatePeaks:
         # At 4 decimals: 1.001→1.001, 1.002→1.002 → 2 peaks
         assert out_2dec.shape[0] == 1
         assert out_4dec.shape[0] == 2
+
+
+def _round_aggregate_peaks_loop_reference(
+    mzs: th.Tensor,
+    ints: th.Tensor,
+    batch_idxs: th.Tensor,
+    decimals: int = 4,
+    agg: str = "sum",
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Per-spectrum reference for round_aggregate_peaks, kept for equivalence testing.
+
+    This is the implementation that the batched segment reduction replaced. It is
+    retained here only so the batched version can be checked against it; production
+    code must not call it.
+    """
+    batch_size = th.max(batch_idxs) + 1
+    round_mzs, round_ints, round_batch_idxs = [], [], []
+    for b in range(batch_size):
+        b_mask = batch_idxs == b
+        b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
+        b_ints = ints[b_mask]
+        b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
+        if agg in ["sum", "amax"]:
+            b_round_ints = scatter_reduce(
+                src=b_ints,
+                index=b_round_mzs_inv,
+                reduce=agg,
+                dim_size=b_round_mzs_un.shape[0],
+            )
+        else:
+            assert agg == "lse", agg
+            b_round_ints = scatter_logsumexp(
+                logits=b_ints,
+                subset_idxs=b_round_mzs_inv,
+                dim_size=b_round_mzs_un.shape[0],
+            )
+        round_mzs.append(b_round_mzs_un)
+        round_ints.append(b_round_ints)
+        round_batch_idxs.append(th.full_like(b_round_mzs_un, b, dtype=batch_idxs.dtype))
+    return (
+        th.cat(round_mzs, dim=0),
+        th.cat(round_ints, dim=0),
+        th.cat(round_batch_idxs, dim=0),
+    )
+
+
+class TestRoundAggregatePeaksMatchesLoopReference:
+    """Batched round_aggregate_peaks must agree with the per-spectrum implementation."""
+
+    @staticmethod
+    def _random_case(seed: int, decimals: int) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Build a batch with heavy m/z collisions, ties, and uneven spectrum sizes."""
+        g = th.Generator().manual_seed(seed)
+        batch_size = int(th.randint(1, 6, (1,), generator=g).item())
+        mzs, ints, batch_idxs = [], [], []
+        for b in range(batch_size):
+            # Include empty-after-the-first spectra only via count 0 on later batches,
+            # since the reference indexes batches 0..max inclusive.
+            count = int(th.randint(1, 40, (1,), generator=g).item())
+            # Draw from a small pool of m/z values so rounding produces real collisions.
+            pool = th.round(th.rand(8, generator=g) * 3.0 + 100.0, decimals=decimals)
+            picks = th.randint(0, pool.numel(), (count,), generator=g)
+            mzs.append(pool[picks])
+            ints.append(th.rand(count, generator=g) + 1e-3)
+            batch_idxs.append(th.full((count,), b, dtype=th.long))
+        return th.cat(mzs), th.cat(ints), th.cat(batch_idxs)
+
+    @pytest.mark.parametrize("agg", ["sum", "amax", "lse"])
+    @pytest.mark.parametrize("seed", range(12))
+    def test_matches_reference(self, agg: str, seed: int):
+        """Grouping, order, and aggregated values match the per-spectrum loop."""
+        mzs, ints, batch_idxs = self._random_case(seed, decimals=4)
+        got_mzs, got_ints, got_batch = round_aggregate_peaks(mzs, ints, batch_idxs, agg=agg)
+        ref_mzs, ref_ints, ref_batch = _round_aggregate_peaks_loop_reference(
+            mzs, ints, batch_idxs, agg=agg
+        )
+        assert th.equal(got_mzs, ref_mzs)
+        assert th.equal(got_batch, ref_batch)
+        if agg == "lse":
+            # index_add reassociates float32 sums inside scatter_logsumexp.
+            assert th.allclose(got_ints, ref_ints, atol=1e-6, rtol=1e-6)
+        else:
+            assert th.equal(got_ints, ref_ints)
+
+    def test_single_peak_and_exact_ties(self):
+        """A one-peak batch and an all-identical-m/z batch both match the reference."""
+        mzs = th.tensor([100.0, 200.0, 200.0, 200.0])
+        ints = th.tensor([1.0, 2.0, 3.0, 4.0])
+        batch_idxs = th.tensor([0, 1, 1, 1])
+        got = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        ref = _round_aggregate_peaks_loop_reference(mzs, ints, batch_idxs, agg="sum")
+        for got_tensor, ref_tensor in zip(got, ref):
+            assert th.equal(got_tensor, ref_tensor)
+
+    def test_gradient_flows_to_intensities(self):
+        """Summed groups backpropagate to every contributing input intensity."""
+        mzs = th.tensor([100.0, 100.0, 300.0])
+        ints = th.tensor([1.0, 2.0, 5.0], requires_grad=True)
+        batch_idxs = th.tensor([0, 0, 0])
+        _, round_ints, _ = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        round_ints.sum().backward()
+        assert th.equal(ints.grad, th.ones(3))
+
+    def test_dtypes_are_preserved(self):
+        """Output m/z and batch-index dtypes follow their inputs."""
+        mzs = th.tensor([100.0, 100.0], dtype=th.float64)
+        ints = th.tensor([1.0, 2.0], dtype=th.float64)
+        batch_idxs = th.tensor([0, 0], dtype=th.int32)
+        round_mzs, round_ints, round_batch_idxs = round_aggregate_peaks(mzs, ints, batch_idxs)
+        assert round_mzs.dtype == th.float64
+        assert round_ints.dtype == th.float64
+        assert round_batch_idxs.dtype == th.int32
+
+    def test_batch_with_no_peaks_is_skipped(self):
+        """A batch index carrying no peaks contributes no output rows."""
+        mzs = th.tensor([100.0, 300.0])
+        ints = th.tensor([1.0, 2.0])
+        batch_idxs = th.tensor([0, 2])
+        _, _, round_batch_idxs = round_aggregate_peaks(mzs, ints, batch_idxs, agg="sum")
+        assert th.equal(round_batch_idxs, th.tensor([0, 2]))

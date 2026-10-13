@@ -11,16 +11,16 @@ import time
 
 import pandas as pd
 
-from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import booltype, get_core_count
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     get_config_from_ckpt,
     init_model_from_ckpt,
-    run_inference_tabular,
     setup_device,
 )
+from fragnnet.inference.runners import run_inference_tabular
+from fragnnet.runner import init_dataloader
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 
@@ -57,8 +57,14 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--model_ckpt", type=str, default=None)
     parser.add_argument("--wandb_run_id", type=str, default="wf1zkb7n")
     parser.add_argument("--custom_fp", type=str, required=False)
-    parser.add_argument("--template_fp", type=str, default="./config/template.yml")
+    parser.add_argument("--template_fp", type=str, default="./config")
     parser.add_argument("--num_workers", type=int, default=get_core_count())
+    parser.add_argument(
+        "--evaluate",
+        type=booltype,
+        default=True,
+        help="Compute observed-spectrum metrics. Set False for MSGYM candidate prediction.",
+    )
     parser.add_argument(
         "--auxiliary_scores",
         type=str,
@@ -99,6 +105,7 @@ if __name__ == "__main__":
 
     # Load datasets
     print(f"> Loading datasets from {args.proc_dp}")
+
     def _find_pkl(dp, stem):
         for ext in ("pkl", "pkl.gz"):
             fp = os.path.join(dp, f"{stem}.{ext}")
@@ -137,7 +144,7 @@ if __name__ == "__main__":
     )
 
     # Set fragmentation directory (only for DAG-based models)
-    if config_d["model_type"] in ("frag_gnn", "fraggnet"):
+    if config_d["model_type"] in ("frag_gnn", "fragnnet"):
         config_d["frag_dp"] = args.frag_dp
 
     # Auto-detect sqrt options based on _sqrt suffix in auxiliary_scores
@@ -170,7 +177,7 @@ if __name__ == "__main__":
         model=model,
         dataloader=dl,
         device=device,
-        evaluate=True,
+        evaluate=args.evaluate,
     )
 
     # Save results

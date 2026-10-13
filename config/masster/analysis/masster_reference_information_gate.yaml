@@ -1,0 +1,26 @@
+# Frozen bounded validation diagnostic; no MASSter weight updates and no test labels.
+census_dir: output/cross_molecule_gate_2026_09_29/checked
+checkpoint: saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt
+model_config: config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml
+seed: 397623
+queries_per_novelty_group: 120
+batch_size: 16
+threads: 2
+precursor_exclusion_da: 1.5
+reliable_intensity_fraction: 0.01
+condition_selection: lowest_spec_id
+nce_min: 40
+nce_max: 100
+preferred_nce: 60
+mass_window_da: 10.0
+mass_window_fraction: 0.05
+control_mass_distance_tolerance_da: 2.0
+hidden_dim: 32
+epochs: 60
+patience: 10
+learning_rate: 0.001
+weight_decay: 0.001
+inner_fraction: 0.15
+batch_spectra: 16
+bootstrap_repeats: 2000
+log_floor: 0.000001

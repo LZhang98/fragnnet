@@ -18,14 +18,10 @@ from __future__ import annotations
 import pytest
 import torch as th
 
-from fragnnet.utils.feat_utils import get_frag_graph
-from fragnnet.utils.frag_utils import (
-    ELEMENT_TO_IDX,
-    NODE_FEAT_TO_IDX,
-    compute_dags,
-    extract_mol_info,
-    get_node_feats,
-)
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX, get_node_feats
+from fragnnet.utils.formula_utils import ELEMENT_TO_IDX
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -220,7 +216,7 @@ def test_feature_non_negative() -> None:
 @pytest.fixture
 def minimal_model():
     """Instantiate the smallest valid FraGNNetModel with the 3 new frag features."""
-    from fragnnet.model.fragnnet_model import FraGNNetModel
+    from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
 
     return FraGNNetModel(
         num_depth=4,
@@ -283,7 +279,7 @@ def minimal_model():
         prec_types=["[M+H]+"],
         inst_insert_location="mol",
         inst_insert_size=8,
-        inst_types=["FT"],
+        inst_types=["ORB"],
         frag_mode_insert_location="mol",
         frag_mode_insert_size=8,
         frag_modes=["HCD"],
@@ -307,8 +303,8 @@ def test_model_forward_with_new_frag_feats(minimal_model) -> None:
     """Forward pass must complete without error and produce finite output."""
     import torch_geometric as pyg
 
-    from fragnnet.utils.data_utils import mol_from_smiles
     from fragnnet.utils.feat_utils import get_mol_graph
+    from fragnnet.utils.mol_utils import mol_from_smiles
 
     smiles = "CCO"
     mol = mol_from_smiles(smiles)

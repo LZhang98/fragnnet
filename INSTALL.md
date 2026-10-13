@@ -30,7 +30,13 @@ Choose based on your CUDA version and Python preference:
 
 - **CUDA 12.1, Python 3.11 (Recommended)**: `env/env_setup_gpu_py311_cu121_250602.sh`
 - **CUDA 12.1, Python 3.12**: `env/env_setup_gpu_py312_cu121_251105.sh`
-- **CUDA 11.8, Python 3.10 (Legacy)**: `env/env_setup_gpu_py310_cu118.sh`
+- **CUDA 11.8, Python 3.10 (Legacy)**: no maintained script; `env/env_setup_gpu_py310_cu118.sh` was
+  removed in commit `f91a8ded` and can be recovered from git history.
+
+`env/fragnnet_gpu_py311.lock.txt` pins the exact package versions of the reference
+`FRAGNNET-GPU` environment (Python 3.11, CUDA 12.1). To reproduce it, install the lock into a
+fresh Python 3.11 environment with `pip install -r env/fragnnet_gpu_py311.lock.txt`, then
+install the package with `pip install --no-deps -e .`.
 
 ### HPC/SLURM Cluster Setup (Compute Canada)
 
@@ -72,7 +78,12 @@ For development with testing tools:
 pip install -e ".[dev]"
 ```
 
-This includes pytest, ruff, black, mypy, and other development tools.
+This includes pytest, ruff, black, mypy, and other development tools, plus scikit-learn,
+which the analysis and evaluation scripts under `scripts/` import (six tests load those
+scripts). To run the scripts without the development tools:
+```bash
+pip install -e ".[scripts]"
+```
 
 ## Verify Installation
 
@@ -86,7 +97,7 @@ conda activate FRAGNNET-GPU
 python -c "import fragnnet; print('fragnnet imported successfully')"
 
 # Test GPU dependencies
-python -c "import torch; import lightning; import dgl; print(f'GPU available: {torch.cuda.is_available()}')"
+python -c "import torch; import lightning; print(f'GPU available: {torch.cuda.is_available()}')"
 
 # Run tests
 pytest tests/ -v
@@ -109,16 +120,15 @@ nvcc --version
 
 # For CUDA 12.1, use:
 bash env/env_setup_gpu_py311_cu121_250602.sh
-
-# For CUDA 11.8, use:
-bash env/env_setup_gpu_py310_cu118.sh
 ```
 
 ### Cython Build Issues
 If you see compilation errors during installation:
 ```bash
-# Clean previous builds
-rm -rf build/ src/fragnnet/*.so src/fragnnet.egg-info
+# Clean previous builds (the compiled modules sit in subpackages such as
+# src/fragnnet/models/fragnnet/, so search the whole tree)
+rm -rf build/ src/fragnnet.egg-info
+find src/fragnnet -name '*.so' -delete
 
 # Ensure build dependencies are installed
 pip install cython==3.0.12 numpy>=1.24,<2
@@ -142,7 +152,6 @@ pip install --no-deps -I -e .
 | Use Case | Recommended Method |
 |----------|-------------------|
 | GPU training on local machine (CUDA 12.1) | Run: `bash env/env_setup_gpu_py311_cu121_250602.sh` |
-| GPU training on local machine (CUDA 11.8) | Run: `bash env/env_setup_gpu_py310_cu118.sh` |
 | Manual pip installation | `pip install -e .` (after installing PyTorch manually) |
 | Development + testing (local) | After conda setup, run `pip install -e ".[dev]"` |
 | Training on Compute Canada (Python 3.11) | Run: `bash env/env_cc_setup_py311.sh` |
@@ -150,26 +159,9 @@ pip install --no-deps -I -e .
 
 ## Compute Canada / HPC Workflows
 
-### Using setup_job_cc.py for SLURM Job Submission
-
-For submitting training jobs on Compute Canada clusters, use the `setup_job_cc.py` script:
-
-```bash
-python scripts/setup_job_cc.py \
-  --python_script_fp scripts/run_pl_model_fit.py \
-  --frag_gnn_dp /path/to/frag-gnn \
-  --job_name my_training_job \
-  --gpu_profile narval:a100-40gb \
-  --script_kwargs config=config/my_config.yml
-```
-
-**Available GPU profiles** (use `--gpu_profile` or `--list_gpu_profiles`):
-
-- **Narval (A100)**: `narval:a100-40gb`, `narval:a100-3g.20gb`, `narval:a100-2g.10gb`, `narval:a100-1g.5gb`
-- **Fir (H100)**: `fir:h100-80gb`, `fir:h100-3g.40gb`, `fir:h100-2g.20gb`, `fir:h100-1g.10gb`
-- **Vulcan (L40S)**: `vulcan:l40s` (free tier)
-
-See `scripts/setup_job_cc.py` for all available options and profiles.
+For generating and submitting Fir and Vulcan training jobs, see the canonical
+[cluster submission guide](docs/guides/submit_cluster_runs.md). It covers resource profiles,
+cluster setup requirements, single runs, CV arrays, staging, and persistent outputs.
 
 ## Environment Variables
 
@@ -208,14 +200,14 @@ For contributors and developers:
 ## Dependencies
 
 ### Core Dependencies
-- Python 3.10-3.13
+- Python 3.10-3.12 (the pinned PyTorch and RDKit, and the compiled extensions, do not
+  support 3.13)
 - PyTorch 2.4.1
 - PyTorch Lightning 2.4.0
-- DGL 2.0.0+ (graph deep learning)
 - RDKit 2022.09-2023.09 (cheminformatics)
 - NumPy <2.0
 - Pandas 2.2.3
-- scikit-learn 1.15.2
+- PyYAML, NetworkX, Pillow
 - Cython 3.0.12 (for building fragmentation modules)
 
 ### Development Dependencies (optional)
@@ -224,12 +216,13 @@ For contributors and developers:
 - mypy (type checking)
 - wandb (experiment tracking)
 - Jupyter notebook
+- scikit-learn (also the `scripts` extra)
 
 See [pyproject.toml](pyproject.toml) for the complete dependency list.
 
 ## Next Steps
 
-- See [docs/finetune_fragnnet.md](docs/finetune_fragnnet.md) for model fine-tuning
-- See [docs/run_inference.md](docs/run_inference.md) for inference pipelines
+- See [docs/guides/finetune_fragnnet.md](docs/guides/finetune_fragnnet.md) for model fine-tuning
+- See [docs/guides/run_inference.md](docs/guides/run_inference.md) for inference pipelines
 - Run tests: `pytest tests/ -v`
 - Check configs: See `config/template.yml` for experiment configuration

@@ -1,0 +1,28 @@
+entity: frag-gnn
+project: frag-gnn
+program: ~/fragnnet/scripts/run_wandb_sweep.py
+method: grid
+name: nist20_d3_ma_mi_frag_competition
+description: >
+  Thirty-epoch head-only screen for fragment-level competition on the ce_perfrag_feats
+  control. Shared encoder inputs remain detached so the sweep isolates residual capacity.
+metric:
+  goal: maximize
+  name: val_cos_sim_0.01_best/mean
+parameters:
+  frag_competition_top_k:
+    values: [64, 96, 128]
+  frag_competition_hidden_dim:
+    values: [64, 128]
+  frag_competition_dropout:
+    values: [0.0, 0.1]
+  min_epochs:
+    value: 30
+  max_epochs:
+    value: 30
+  upload_checkpoints:
+    value: False
+  disable_checkpoints:
+    value: True
+  compute_train_auxiliary_metrics:
+    value: False

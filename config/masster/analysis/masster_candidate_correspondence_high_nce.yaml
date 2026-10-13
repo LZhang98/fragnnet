@@ -1,0 +1,11 @@
+# Offline training-only coverage audit; no fitting or trainer changes.
+census_dir: output/cross_molecule_gate_2026_09_29/checked
+checkpoint: saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt
+model_config: config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml
+seed: 397623
+queries_per_novelty_group: 60
+batch_size: 16
+threads: 2
+precursor_exclusion_da: 1.5
+reliable_intensity_fraction: 0.01
+condition_selection: highest_nce

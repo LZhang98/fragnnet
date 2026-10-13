@@ -14,10 +14,10 @@ metric:
   # Secondary tracking in W&B UI: val_cos_sim_0.01_best/mean for cross-sweep comparison;
   # val_pred_spec_ne_epoch/mean vs val_true_spec_ne_epoch/mean for peak-count quality.
 parameters:
-  # GINE_EFA adds per-graph linear global attention on top of GINE.
+  # GINE_GSA adds exact per-graph global self-attention on top of GINE.
   # mol_num_heads is ignored by plain GINE; fixed at 4 to isolate the comparison.
   mol_gnn_type:
-    values: [GINE, GINE_EFA]
+    values: [GINE, GINE_GSA]
 
   # Test whether JSS+sqrt benefits from more mol encoder capacity.
   mol_hidden_size:

@@ -1,4 +1,4 @@
-"""Unit tests for the CEScaler class in fragnnet.model.base_model.
+"""Unit tests for the CEScaler class in fragnnet.models.fragnnet.fragnnet_conditioning.
 
 Tests:
 - Identity at initialization (all-zero last layer → log_scale=0, bias=0 → passthrough).
@@ -13,7 +13,7 @@ import pytest
 import torch as th
 
 from fragnnet.dataset.base_dataset import _ce_list_to_stats
-from fragnnet.model.base_model import CEScaler
+from fragnnet.models.fragnnet.fragnnet_conditioning import CEScaler
 
 NCE_MEAN = 60.0
 NCE_STD = 40.0
