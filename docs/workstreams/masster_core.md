@@ -7,7 +7,7 @@
 
 - **Shared codebase audit:** [repairs](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) implemented in the working tree for all six findings and the three rechecked config runtime defects. Focused regressions and the unfiltered CPU suite pass. Next: review; GPU and real-checkpoint evaluation remain unverified.
 
-- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) 1–3 repaired; 4–7 remain open. Next: malformed/duplicate YAML and historical config migration decisions.
+- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) 1–3 repaired; 6 resolved for MASSter by [retiring 97 configs](../findings/config_audit_2026_10_12.md#masster-config-retirement-2026-10-13) (2026-10-13, recover from `e180f2c2`); 4, 5 and 7 remain open. Next: malformed/duplicate YAML.
 
 - **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated with unique cells preserved; repair reporting errors next.
 
@@ -31,7 +31,7 @@
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | REPAIRED, uncommitted | Review; CPU validation complete, GPU/real-checkpoint evaluation unverified |
-| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; resolve malformed/duplicate YAML and legacy settings next |
+| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; 6 resolved for MASSter (configs retired 2026-10-13); resolve malformed/duplicate YAML next |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | CPU suite passed; GPU validation remains open |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
