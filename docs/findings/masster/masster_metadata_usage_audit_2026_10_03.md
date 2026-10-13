@@ -92,7 +92,7 @@ embedding therefore also separates two largely disjoint sets of molecules.
   predictable (R² ≤ 0). [Residual structure](masster_i1_residual_structure_2026_09_28.md)
 - **FraGNNet, for contrast.** Per-fragment CE at the node MLP was null (−0.0007). FraGNNet
   conditions through per-field `*_insert_location` embeddings and optional output scalers; see
-  [conditioning refactor plan](../../plans/conditioning_refactor_plan.md). That plan's
+  conditioning refactor plan (removed 2026-10-13; `git show e65339ed:docs/plans/conditioning_refactor_plan.md`). That plan's
   "three overlapping mechanisms" describes FraGNNet. MASSter has one.
 
 ## 4. Comparison with published forward models

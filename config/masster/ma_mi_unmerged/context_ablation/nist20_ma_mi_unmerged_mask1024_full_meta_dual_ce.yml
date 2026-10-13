@@ -1,4 +1,4 @@
-# Selected full-metadata conditioning baseline; see docs/plans/conditioning_refactor_plan.md.
+# Selected full-metadata conditioning baseline; see `git show e65339ed:docs/plans/conditioning_refactor_plan.md`.
 # Keep global loss tolerance and CE-specific proposals fixed.
 wandb_name: nist20_ma_mi_unmerged_mask1024_full_meta_dual_ce
 wandb_group: nist20_mass_shatter_l40s

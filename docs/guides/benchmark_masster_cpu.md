@@ -109,8 +109,11 @@ latencies default to host enqueue timings. NVML utilization can be unavailable; 
 
 Sweep `candidate-threads=1/2/4` on the current snapshot with new labels/output paths to measure
 thread scaling under the same six-worker/six-CPU allocation. Threads=1 still uses current code,
-so it is not the historical baseline. Apply the [CPU plan's gates](../plans/masster/masster_candidate_backend_plan.md#stage-0-establish-the-acceptance-benchmark)
-and record regressions/OOMs as well as improvements; higher GPU utilization alone is insufficient.
+so it is not the historical baseline. Apply the acceptance gates: convert candidate-local savings to end-to-end optimizer-step
+throughput (candidate fraction `c` of step time, stage removes fraction `r`, gain
+`1 / (1 - c*r) - 1`); implement a stage only if its projected gain is at least 5%, retain it only
+with at least 5% measured gain, and require at least 10% aggregate gain for the retained CPU
+follow-up. Record regressions/OOMs as well as improvements; higher GPU utilization alone is insufficient.
 
 ## Select the optional CUDA backend
 
@@ -151,8 +154,8 @@ Both CUDA variants require FP32, one proposal mixture, unique-fragment mode, zer
 floors and SMARTS disabled; the fast configs satisfy these restrictions. Unsupported inputs and
 workspace limits raise errors. They do not silently switch to CPU. The harness resolves CPU
 for `cpu`/`cuda_topology` and CUDA for `cuda_full`, overriding the YAML backend to match the
-benchmark label. Keep target-hardware promotion gated against the improved CPU under the
-[backend plan](../plans/masster/masster_candidate_backend_plan.md#phase-b-develop-the-optional-gpu-solution).
+benchmark label. Keep target-hardware promotion gated against the improved CPU baseline, not the slower original
+configuration, and confirm retained stages on L40S (local GPU numbers are diagnostic).
 
 Current native bounds are 512 atoms and 2,048 bonds per molecule, 65,536 masks after forced
 merging, and a 512 MiB scratch limit per native stage. The full selector additionally limits

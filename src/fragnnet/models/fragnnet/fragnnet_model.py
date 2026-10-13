@@ -313,7 +313,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # combined into ONE learned vector injected at context_insert_location; the individual
         # *_insert paths are subsumed (their embeddings feed the context and are NOT injected
         # separately, so their mol/mlp input contributions are zeroed here). See
-        # docs/plans/conditioning_refactor_plan.md. Gated: off (default) leaves existing behavior intact.
+        # `git show e65339ed:docs/plans/conditioning_refactor_plan.md`. Gated: off (default) leaves existing behavior intact.
         self.context_embedding = context_embedding
         if context_embedding:
             active_dims = [

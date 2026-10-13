@@ -27,7 +27,6 @@
 | [Energy-based reranking](../plans/energy_based_spectrum_reranking_plan.md) | PROPOSED | Pick checkpoint, unfiltered export, pass Gate A over matched random pools; MASSter bond-cut EBM first |
 | [Sibling-ranking target on P(n)](../plans/fragnnet/sibling_ranking_target_plan.md) | DEFERRED | Implement the ranking loss (coverage gate already passed) |
 | [Bond-set representation](../plans/fragnnet/fragment_bond_set_representation.md) | DEFERRED | Run `cc_atom_dropout_p{00,01,02}` (never run: no checkpoint, `output/` file or doc result as of 2026-10-06; configs `p00`-`p03` exist) |
-| [Conditioning refactor](../plans/conditioning_refactor_plan.md) | DEFERRED | Decide which of 3 mechanisms survives; see MASSter metadata audit |
 | [DAG full-recall tractability](../plans/fragnnet/dag_full_recall_tractability_plan.md) | DEFERRED | Steps 5-7 (trained scorer) paused; static priority lost to random |
 
 ## Settled — read before re-proposing
@@ -72,7 +71,6 @@
 | [missing_peak_findings_m-h](../findings/fragnnet/missing_peak_findings_m-h.md) | CURATED ANALYSIS (2026-06-30) | Per-subclass DAG misses `[M-H]-`; append-only |
 | [oracle_recall_wrecall_by_ce](../findings/fragnnet/oracle_recall_wrecall_by_ce.md) | FINDING (2026-07-18) | DAG recall/wrecall by CE and adduct |
 | [unexplainable_spectra_analysis](../findings/fragnnet/unexplainable_spectra_analysis.md) | REFERENCE (2026-07-21) | Workflow for spectra the DAG cannot explain |
-| [conditioning_refactor_plan](../plans/conditioning_refactor_plan.md) | DEFERRED (2026-10-06) | Audit of 3 conditioning mechanisms; MASSter GNN context |
 | [energy_based_spectrum_reranking_plan](../plans/energy_based_spectrum_reranking_plan.md) | PROPOSED (2026-09-13) | Energy head reranking, oracle-vs-null Gate A |
 | [repo_reorg_plan](../plans/repo_reorg_plan.md) | ACTIVE (2026-10-12) | Cross-model reorg: registry and hooks, `fragmentation/`, `frag_utils` split, `models/` and `baselines/` packages, external ICEBERG via ms-pred, DGL-free env; Phases 0–7 committed on `refactor/fragnnet-masster-reorg`, awaiting merge |
 | [bond_breakability_mask_plan](../plans/fragnnet/bond_breakability_mask_plan.md) | STOPPED (2026-07-03) | Hard bond mask; bucket table source |

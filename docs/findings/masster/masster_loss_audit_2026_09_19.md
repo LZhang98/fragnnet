@@ -20,7 +20,7 @@ The objective-level semantics (JSS vs KL gradient behaviour, matching and suppor
 unmatched-intensity invariance) were already reviewed in
 [loss_setup_review_2026_09_13.md](../loss_setup_review_2026_09_13.md) and are not repeated.
 Throughput context is in
-[masster_direct_loss_batching_plan.md](../../plans/masster/masster_direct_loss_batching_plan.md).
+masster_direct_loss_batching_plan.md (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_direct_loss_batching_plan.md`).
 
 Tests run: `tests/test_masster_peak_list_distance.py` and
 `tests/test_spec_utils_preprocessing.py` (298 passed), `tests/test_masster_pl.py`

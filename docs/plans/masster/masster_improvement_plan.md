@@ -18,7 +18,7 @@ now [available only in Git history](../../README.md#removed-historical-plans). U
 [intensity plan](masster_nonprobabilistic_intensity_plan.md) for output and loss contracts,
 the [channel-selection findings](../../findings/masster/masster_channel_selection_findings.md) for support
 semantics and pruning evidence, and the
-[performance plan](masster_topology_assembly_performance_plan.md) for throughput gates.
+performance plan (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_topology_assembly_performance_plan.md`) for throughput gates.
 For this task, the sequence below replaces the older intensity plan's initial cosine-first queue.
 It does not declare a winning output parameterization or supersede compatibility requirements.
 
@@ -171,7 +171,7 @@ same finding for its config and pending L40S memory/throughput check.
   (+9.3%) on the local RTX 2070 SUPER at batch 128 with accumulation 2. Candidate identities,
   ordering, chemistry, and live probability gradients are preserved. See the
   [canonical measurements](../../findings/masster/masster_training_speed_2026_09_17.md) and
-  [CPU-first, optional-GPU implementation plan](masster_candidate_backend_plan.md).
+  CPU-first, optional-GPU implementation plan (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_candidate_backend_plan.md`).
 - **Optional GPU backend — implemented and validated locally:** select
   `masster_candidate_backend: cuda` for supported configurations. CPU remains the
   correctness reference; L40S acceptance is pending in the implementation plan.

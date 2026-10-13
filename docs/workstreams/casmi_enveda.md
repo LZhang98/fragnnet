@@ -29,7 +29,6 @@
 | [Enveda-180 baseline](../findings/enveda_180_dataset_2026_09_25.md#10-baseline-config-and-run-state-2026-09-2728-from-project-state-handoff) | PREPARED | Second seed, then submit; re-check SMARTS rules on Enveda-180 (see generalization hub) |
 | [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED | Bounded-memory multi-source loader and model-specific filters |
 | [NIST20 data-quality validation](../plans/nist_data_quality_plan.md) | DEFERRED | Independent contaminant false-removal check before any peak stripping; precursor-mass sanity filter |
-| [Subformula-source isotope cleanup](../plans/subformula_isotope_detection_plan.md) | LANDED, off by default | Optional: enable `remove_isotope_formula_source: subformula` in a training run; Step 6 soft output not started |
 
 ## Settled — read before re-proposing
 
@@ -45,7 +44,7 @@
 - **Shared data quality**
   - [NIST20 zero-coverage](../plans/nist_data_quality_plan.md) — only 255 spectra (0.069%); 16 are lipid precursor-annotation errors; UWPR flags are a sensitivity label, not ground truth.
   - [5 ppm subformula filter](../findings/subformula_filter_ft_qtof.md) — NIST20-HR census by FT/QTOF; the Cl/Na budget fix reaches MASSter.
-  - [Subformula isotope source](../plans/subformula_isotope_detection_plan.md) — matches the DAG source (F1 0.808 vs 0.805; 99.2% identical decisions); no DAG or `frag_dp` needed.
+  - Subformula isotope source (removed 2026-10-13; `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md`) — matches the DAG source (F1 0.808 vs 0.805; 99.2% identical decisions); no DAG or `frag_dp` needed.
 
 ## All documents
 
@@ -57,7 +56,6 @@
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |
 | [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED (2026-10-06) | Shared split manifest and loader gap |
 | [NIST20 data-quality plan](../plans/nist_data_quality_plan.md) | DEFERRED (2026-10-06) | Zero-coverage and contaminant diagnostics |
-| [Subformula isotope detection plan](../plans/subformula_isotope_detection_plan.md) | LANDED (2026-10-06) | Pluggable formula source for isotope cleanup |
 | [5 ppm subformula filtering, NIST20-HR](../findings/subformula_filter_ft_qtof.md) | FINDING (2026-10-06) | Census, instrument tolerance, Cl/Na fix |
 | [NIST human review guide](../guides/nist_human_review.md) | GUIDE (linked only) | Manual spectral review procedure |
 | [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`utils/isotope_cleanup_utils.py`: `detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |

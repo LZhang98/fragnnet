@@ -862,7 +862,7 @@ signal more readily than CE's normalized log penalty.
 
 - [masster_plan.md](masster_plan.md) — current MASSter architecture and historical
   probability semantics.
-- [masster_candidate_pathway_refactor.md](masster_candidate_pathway_refactor.md) — separate
+- masster_candidate_pathway_refactor.md (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_candidate_pathway_refactor.md`) — separate
   candidate-generation simplification.
 - [global_fragment_intensity_ranking_experiment_plan.md](../fragnnet/global_fragment_intensity_ranking_experiment_plan.md)
   — broader FraGNNet intensity-ranking work; it does not define this MASSter output change.
