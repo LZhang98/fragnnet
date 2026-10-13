@@ -74,26 +74,26 @@ from fragnnet.models.masster.candidate_features import (
     element_counts_by_group,
     resolve_candidate_features,
 )
-from fragnnet.models.masster.masster_isotopes import (
-    nominal_isotope_distribution,
-    nominal_isotope_pattern,
-    nominal_isotope_power_table,
-)
-from fragnnet.models.masster.path_selection.candidate_builder import (
+from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
     MassterStaticGraph,
     build_masster_candidates,
 )
-from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+from fragnnet.models.masster.candidates.connected_fragment_beam import (
     build_connected_fragment_beam_candidates,
 )
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAME_HASHES,
     MassterTemplate,
     filter_masster_templates,
 )
-from fragnnet.models.masster.rt_ccs import CCSHead, RTHead, pool_property_atoms
+from fragnnet.models.masster.nominal_isotopes import (
+    nominal_isotope_distribution,
+    nominal_isotope_pattern,
+    nominal_isotope_power_table,
+)
+from fragnnet.models.masster.rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
     CANONICAL_ELEMENT_ORDER,
     H_MASS,
@@ -4105,7 +4105,7 @@ class MassterModel(nn.Module):
                 num_fragments,
                 precursor_type_indices,
                 # `component_cut_counts` carries the whole mask's cut count on every one of
-                # its components (`build_component_arrays_raw` in `path_selection/core.pyx`),
+                # its components (`build_component_arrays_raw` in `candidates/cut_mask_kernels.pyx`),
                 # so for a mask that yields three or more pieces this over-counts an end
                 # piece's own boundary. It is an upper bound, so the valence bound stays
                 # conservative here: it can leave an unreachable channel in place, never

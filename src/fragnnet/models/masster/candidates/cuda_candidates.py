@@ -17,19 +17,19 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidate_builder import (
+from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     MassterStaticGraph,
     _packed_long_chunk_tensors,
     _score_mask_log_probabilities,
 )
-from fragnnet.models.masster.path_selection.cuda_topology import (
+from fragnnet.models.masster.candidates.cuda_topology import (
     CudaTopologyBatch,
     CudaTopologyCounts,
     CudaTopologyGraph,
 )
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
     _connected_piece_count,
 )
@@ -653,8 +653,8 @@ def build_masster_candidates_cuda(
     input_ms = (perf_counter() - total_start) * 1000.0
 
     # 2. Select exact forced-prefix CSR on GPU, then feed it directly to GPU topology.
-    from fragnnet.models.masster.path_selection.cuda_selection import rank_batch_cuda
-    from fragnnet.models.masster.path_selection.cuda_topology import (
+    from fragnnet.models.masster.candidates.cuda_mask_ranking import rank_batch_cuda
+    from fragnnet.models.masster.candidates.cuda_topology import (
         build_cuda_topology_device_masks,
     )
 

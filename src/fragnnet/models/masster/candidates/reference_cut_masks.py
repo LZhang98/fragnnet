@@ -201,7 +201,7 @@ def top_k_cut_masks(
             f"got {min_relative_probability}"
         )
 
-    from fragnnet.models.masster.path_selection.core import top_k_cut_masks_raw
+    from fragnnet.models.masster.candidates.cut_mask_kernels import top_k_cut_masks_raw
 
     return tuple(
         RankedCutMask(
@@ -237,7 +237,9 @@ def _connected_component_atom_masks_many(
     broken_bond_sets: list[tuple[int, ...]],
 ) -> list[tuple[int, ...]]:
     """Translate many masks in one compiled call."""
-    from fragnnet.models.masster.path_selection.core import connected_component_atom_masks_many
+    from fragnnet.models.masster.candidates.cut_mask_kernels import (
+        connected_component_atom_masks_many,
+    )
 
     endpoint_array = np.asarray(endpoints, dtype=np.int64).reshape(-1, 2)
     return connected_component_atom_masks_many(

@@ -9,8 +9,8 @@ import torch as th
 from rdkit import Chem
 
 from fragnnet.fragmentation.smarts_prepass import FRAG_RULES, NL_RULES, NeutralLossRule
-from fragnnet.models.masster.path_selection.candidate_builder import build_masster_candidates
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.builder import build_masster_candidates
+from fragnnet.models.masster.candidates.smarts_templates import (
     MASSTER_FRAG_RULE_NAMES,
     MASSTER_FRAG_RULES,
     MASSTER_NL_RULE_NAMES,
@@ -26,7 +26,7 @@ from fragnnet.utils import mol_utils
 
 _CUT_COUNT_WEIGHTS = (0.0, 0.0, 1.0)
 _NEW_RULE_EXAMPLES = (
-    # DISABLED 2026-09-29 with their rules in path_selection/smarts_templates.py.
+    # DISABLED 2026-09-29 with their rules in candidates/smarts_templates.py.
     # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1"),
     ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1"),
     # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
@@ -89,7 +89,7 @@ def test_all_masster_smarts_compile() -> None:
     [
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1"),
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccc(F)cc1)c1ccccc1"),
-        # DISABLED 2026-09-29 with their rules in path_selection/smarts_templates.py.
+        # DISABLED 2026-09-29 with their rules in candidates/smarts_templates.py.
         # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1"),
         # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccc(Cl)cc1"),
         # ("anisoyl_fluoride_co_f_transfer", "COc1ccccc1C(=O)F"),
@@ -124,7 +124,7 @@ def test_new_rules_match_supported_precursor_structures(
     [
         ("n_phenylbenzamide_co_smiles", "O=C(N(C)c1ccccc1)c1ccccc1"),
         ("n_phenylbenzamide_co_smiles", "O=C(c1ccccc1)c1ccccc1"),
-        # DISABLED 2026-09-29 with their rules in path_selection/smarts_templates.py.
+        # DISABLED 2026-09-29 with their rules in candidates/smarts_templates.py.
         # ("methyl_benzoate_co2_transfer", "CCOC(=O)c1ccccc1"),
         # ("methyl_benzoate_co2_transfer", "COC(C)=O"),
         # ("anisoyl_fluoride_co_f_transfer", "O=C(F)c1ccccc1"),
@@ -159,7 +159,7 @@ def test_new_rules_reject_close_negative_structures(
             "O=C(Nc1ccccc1)c1ccccc1",
             Counter({"C": 1, "O": 1}),
         ),
-        # DISABLED 2026-09-29 with their rules in path_selection/smarts_templates.py.
+        # DISABLED 2026-09-29 with their rules in candidates/smarts_templates.py.
         # (
         #     "methyl_benzoate_co2_transfer",
         #     "COC(=O)c1ccccc1",
@@ -201,7 +201,7 @@ def test_new_neutral_loss_rules_build_the_intended_atom_component(
     assert expected_component in component_counts
 
 
-# DISABLED 2026-09-29 with pyridyl_carbamate_alkyl_transfer in path_selection/smarts_templates.py.
+# DISABLED 2026-09-29 with pyridyl_carbamate_alkyl_transfer in candidates/smarts_templates.py.
 # @pytest.mark.parametrize(
 #     ("smiles", "expected_transferred_component"),
 #     [
@@ -233,7 +233,7 @@ def test_new_neutral_loss_rules_build_the_intended_atom_component(
         ("n_phenylbenzamide_co_smiles", "O=C(Nc1ccccc1)c1ccccc1", "[M-H]-", None),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr", "[M+H]+", None),
         ("short_haloalkyl_ammonium_c2_transfer", "CN(C)CCBr", "[M]+", None),
-        # DISABLED 2026-09-29 with their rules in path_selection/smarts_templates.py.
+        # DISABLED 2026-09-29 with their rules in candidates/smarts_templates.py.
         # ("pyridyl_carbamate_alkyl_transfer", "CN(C)C(=O)Oc1ccncc1", "[M+H]+", None),
         # ("methyl_benzoate_co2_transfer", "COC(=O)c1ccccc1", "[M+H]+", None),
         # ("anisoyl_fluoride_co_f_transfer", "COc1ccc(C(=O)F)cc1", "[M]+", "EI"),

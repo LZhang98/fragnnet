@@ -40,15 +40,15 @@ from fragnnet.loss.cross_entropy import (
 )
 from fragnnet.loss.spectrum_distance import sparse_peak_list_distance
 from fragnnet.models.masster.candidate_features import describe_candidate_features
-from fragnnet.models.masster.masster_export import masster_annotation_tables
-from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
-from fragnnet.models.masster.masster_model import MassterModel
-from fragnnet.models.masster.path_selection.candidate_builder import MassterStaticGraph
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
     build_masster_templates,
 )
-from fragnnet.models.masster.rt_ccs import property_regression_terms
+from fragnnet.models.masster.masster_export import masster_annotation_tables
+from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.rt_ccs_heads import property_regression_terms
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes

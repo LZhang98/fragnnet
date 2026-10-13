@@ -22,7 +22,7 @@ formula alone cannot establish its atom mapping or reaction mechanism.
 The current implementation represents **precursor atom partitions**, including disconnected
 retained assemblies, rather than newly bonded product graphs with sequential fragmentation.
 See the [implementation audit](../findings/masster/masster_smarts_review_2026_09_13.md) and
-[registry](../../src/fragnnet/models/masster/path_selection/smarts_templates.py). Thus adding candidate support and
+[registry](../../src/fragnnet/models/masster/candidates/smarts_templates.py). Thus adding candidate support and
 learning the actual rearranged connectivity are different implementation scopes.
 
 ## Papers and implications

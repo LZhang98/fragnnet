@@ -18,7 +18,7 @@ from time import perf_counter
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.cuda_build import (
+from fragnnet.models.masster.candidates.cuda_build import (
     build_cuda_library,
     default_cuda_cache_dir,
     resolve_cuda_home,

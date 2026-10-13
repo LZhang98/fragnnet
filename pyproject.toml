@@ -68,7 +68,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
 fragnnet = ["*.pyx", "*.pxd", "*.c", "*.h"]
-"fragnnet.models.masster.path_selection" = ["*.cu"]
+"fragnnet.models.masster.candidates" = ["*.cu"]
 
 [tool.ruff]
 line-length = 100

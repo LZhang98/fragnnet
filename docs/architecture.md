@@ -114,11 +114,11 @@ src/fragnnet/
   `compute_frags.pyx` and `multi_cut_bfs.pyx`, the DAG layout the model reads (`layout.py`),
   formulas, hashing, statistics, the PyG graph (`graph.py`) and the packed `dags.h5` storage
   (`storage.py`);
-  MASSter's candidate construction (the builder `candidate_builder.py`, Cython `core.pyx` and its
-  pure-Python reference `cut_masks.py`, the `connected_fragment_beam.py` proposal, SMARTS
-  templates `smarts_templates.py`, the CUDA builder `cuda_candidates.py`, and the CUDA `.cu`
-  kernels next to the modules that load them) in
-  [models/masster/path_selection/](../src/fragnnet/models/masster/path_selection/); the shared
+  MASSter's candidate construction (the builder `builder.py`, Cython `cut_mask_kernels.pyx` and
+  its pure-Python reference `reference_cut_masks.py`, the `connected_fragment_beam.py`
+  proposal, SMARTS templates `smarts_templates.py`, the CUDA builder `cuda_candidates.py`, and
+  the CUDA `.cu` kernels next to the modules that load them) in
+  [models/masster/candidates/](../src/fragnnet/models/masster/candidates/); the shared
   SMARTS prepass and hydrogen capping in [fragmentation/](../src/fragnnet/fragmentation/). The
   shared cut-bond encoder is a layer (`layers/cut_bond_encoder.py`), and the candidate-support
   targets and loss are in `loss/channel_support.py`. The

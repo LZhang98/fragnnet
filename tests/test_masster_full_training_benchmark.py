@@ -110,32 +110,29 @@ def test_repeated_loader_preserves_equal_samples_and_loading_settings():
     assert len(second) == 14
 
 
-def test_reference_import_uses_frozen_python_and_extension_and_records_adapter(tmp_path):
-    core_spec = importlib.util.find_spec("fragnnet.models.masster.path_selection.core")
-    core_path = Path(core_spec.origin)
-    (tmp_path / core_path.name).symlink_to(core_path)
-    (tmp_path / "candidate_builder.py").write_text(
-        "from dataclasses import dataclass\n"
-        "MARKER = 'frozen reference'\n"
-        "@dataclass(frozen=True)\n"
-        "class MassterCandidateTimings:\n"
-        "    topology_ms: float\n"
-        "    assembly_ms: float\n"
-        "def build_masster_candidates(value):\n"
-        "    return value\n"
-    )
-    code = """
+_FAKE_BUILDER = (
+    "from dataclasses import dataclass\n"
+    "MARKER = 'frozen reference'\n"
+    "@dataclass(frozen=True)\n"
+    "class MassterCandidateTimings:\n"
+    "    topology_ms: float\n"
+    "    assembly_ms: float\n"
+    "def build_masster_candidates(value):\n"
+    "    return value\n"
+)
+_INSTALL_CODE = """
 import importlib.util, json, sys
 from pathlib import Path
 spec = importlib.util.spec_from_file_location('benchmark', sys.argv[1])
 benchmark = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(benchmark)
 report = benchmark._install_reference(Path(sys.argv[2]))
-from fragnnet.models.masster.path_selection import core, candidate_builder
+from fragnnet.models.masster.candidates import cut_mask_kernels as core, builder as candidate_builder
 report['marker'] = candidate_builder.MARKER
 report['combined_ms'] = candidate_builder.MassterCandidateTimings(2, 3).topology_assembly_ms
 report['core_file'] = core.__file__
 report['python_file'] = candidate_builder.__file__
+report['cuda_candidates_loaded'] = any(m.endswith('.cuda_candidates') for m in sys.modules)
 report['candidate_identity'] = candidate_builder.build_masster_candidates(
     [1, 2, 3], candidate_backend='cpu')
 try:
@@ -148,8 +145,48 @@ except RuntimeError:
     report['late_import_rejected'] = True
 print(json.dumps(report))
 """
+
+
+def _build_legacy_core(directory: Path) -> Path:
+    """Compile a stub extension named ``core``, as in the path_selection layout."""
+    pytest.importorskip("Cython")
+    (directory / "core.pyx").write_text("def build_component_arrays_raw():\n    return 1\n")
+    (directory / "setup_core.py").write_text(
+        "from Cython.Build import cythonize\nfrom setuptools import setup\n"
+        "setup(ext_modules=cythonize('core.pyx'))\n"
+    )
+    build = subprocess.run(
+        [sys.executable, "setup_core.py", "build_ext", "--inplace"],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+    )
+    if build.returncode:
+        pytest.skip(f"cannot build stub extension: {build.stderr[-200:]}")
+    (extension,) = directory.glob("core.*.so")
+    return extension
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_reference_import_uses_frozen_python_and_extension_and_records_adapter(tmp_path, legacy):
+    if legacy:
+        # Previous layout: core*.so + candidate_builder.py, installed under the synthetic
+        # path_selection package and aliased onto the current module names.
+        work = tmp_path / "build"
+        work.mkdir()
+        core_path = _build_legacy_core(work)
+        directory = tmp_path / "reference"
+        directory.mkdir()
+        (directory / core_path.name).symlink_to(core_path)
+        (directory / "candidate_builder.py").write_text(_FAKE_BUILDER)
+    else:
+        core_spec = importlib.util.find_spec("fragnnet.models.masster.candidates.cut_mask_kernels")
+        core_path = Path(core_spec.origin)
+        directory = tmp_path
+        (directory / core_path.name).symlink_to(core_path)
+        (directory / "builder.py").write_text(_FAKE_BUILDER)
     result = subprocess.run(
-        [sys.executable, "-c", code, str(SCRIPT), str(tmp_path)],
+        [sys.executable, "-c", _INSTALL_CODE, str(SCRIPT), str(directory)],
         text=True,
         capture_output=True,
         check=True,
@@ -158,12 +195,13 @@ print(json.dumps(report))
     assert report["marker"] == "frozen reference"
     assert report["combined_ms"] == 5
     assert report["timing_adapter"] is not None
-    assert Path(report["python_file"]).parent == tmp_path
+    assert Path(report["python_file"]).parent == directory
     assert Path(report["core_file"]) == core_path.resolve()
     assert report["late_import_rejected"] is True
     assert report["candidate_identity"] == [1, 2, 3]
     assert report["cuda_reference_rejected"] is True
     assert report["backend_adapter"] is not None
+    assert report["cuda_candidates_loaded"] is False
 
 
 def test_staged_source_requires_explicit_provenance_without_git(tmp_path):

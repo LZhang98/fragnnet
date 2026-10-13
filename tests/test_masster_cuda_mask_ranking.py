@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidate_builder import _merge_forced_masks
-from fragnnet.models.masster.path_selection.core import (
-    build_component_arrays_raw,
-    top_mixture_bond_sets_raw,
-)
-from fragnnet.models.masster.path_selection.cuda_selection import (
+from fragnnet.models.masster.candidates.builder import _merge_forced_masks
+from fragnnet.models.masster.candidates.cuda_mask_ranking import (
     _extra_forced_words,
     _prepare_layout,
     rank_batch_cuda,
+)
+from fragnnet.models.masster.candidates.cut_mask_kernels import (
+    build_component_arrays_raw,
+    top_mixture_bond_sets_raw,
 )
 
 _CUDA = pytest.mark.skipif(not th.cuda.is_available(), reason="CUDA device unavailable")
@@ -101,14 +101,14 @@ def _compare(
         ([1], 2, 0, "positive"),
     ],
 )
-def test_cuda_selection_layout_rejects_unsupported_bounds(
+def test_cuda_mask_ranking_layout_rejects_unsupported_bounds(
     counts: list[int], budget: int, scratch: int, message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
         _prepare_layout(counts, budget, True, scratch)
 
 
-def test_cuda_selection_reachable_state_and_memory_bounds() -> None:
+def test_cuda_mask_ranking_reachable_state_and_memory_bounds() -> None:
     meta, _, scratch = _prepare_layout([0, 1, 30, 129], 4096, True, 512 * 1024**2)
     assert meta[:, 2].tolist() == [1, 2, 4096, 4096]
     assert meta[:, 4].tolist() == [1, 1, 1, 3]
@@ -134,14 +134,14 @@ def test_cuda_selection_reachable_state_and_memory_bounds() -> None:
         ([[], []], "one sequence per representative"),
     ],
 )
-def test_cuda_selection_rejects_invalid_extra_forced_masks(
+def test_cuda_mask_ranking_rejects_invalid_extra_forced_masks(
     extra: list[list[tuple[int, ...]]], message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
         _extra_forced_words([5], extra, True)
 
 
-def test_cuda_selection_packs_extra_forced_masks_into_bit_words() -> None:
+def test_cuda_mask_ranking_packs_extra_forced_masks_into_bit_words() -> None:
     counts, words = _extra_forced_words([3, 70, 0], [[(0, 2)], [(1, 64), (0,)], []], False)
     assert counts == [1, 2, 0]
     assert words.view(np.uint64).tolist() == [0b101, 0b10, 1, 1, 0]
@@ -154,7 +154,7 @@ def test_cuda_selection_packs_extra_forced_masks_into_bit_words() -> None:
 @_CUDA
 @pytest.mark.parametrize("force_single", [False, True])
 @pytest.mark.parametrize("limit", [1, 17, 257])
-def test_cuda_selection_extra_forced_masks_match_cpu_forced_merge(
+def test_cuda_mask_ranking_extra_forced_masks_match_cpu_forced_merge(
     force_single: bool, limit: int
 ) -> None:
     rng = np.random.default_rng(907)
@@ -184,7 +184,7 @@ def test_cuda_selection_extra_forced_masks_match_cpu_forced_merge(
 @_CUDA
 @pytest.mark.parametrize("force_single", [False, True])
 @pytest.mark.parametrize("limit", [1, 17, 257])
-def test_cuda_selection_exact_random_signed_zero_and_multiword_masks(
+def test_cuda_mask_ranking_exact_random_signed_zero_and_multiword_masks(
     force_single: bool, limit: int
 ) -> None:
     rng = np.random.default_rng(5711)
@@ -197,7 +197,7 @@ def test_cuda_selection_exact_random_signed_zero_and_multiword_masks(
 
 @_CUDA
 @pytest.mark.parametrize("force_single", [False, True])
-def test_cuda_selection_exhaustive_small_heap_ties(force_single: bool) -> None:
+def test_cuda_mask_ranking_exhaustive_small_heap_ties(force_single: bool) -> None:
     # Enumerate every signed-zero/equal-magnitude case through five bonds. The
     # reference is the CPU heap, not another copy of the new bitset comparator.
     rows = [
@@ -209,7 +209,7 @@ def test_cuda_selection_exhaustive_small_heap_ties(force_single: bool) -> None:
 
 
 @_CUDA
-def test_cuda_selection_extreme_finite_fp32_and_full_production_budget() -> None:
+def test_cuda_mask_ranking_extreme_finite_fp32_and_full_production_budget() -> None:
     rng = np.random.default_rng(20260917)
     values = np.asarray(
         [
@@ -233,14 +233,14 @@ def test_cuda_selection_extreme_finite_fp32_and_full_production_budget() -> None
 
 @_CUDA
 @pytest.mark.parametrize("invalid", [float("inf"), -float("inf"), float("nan")])
-def test_cuda_selection_rejects_nonfinite_logits(invalid: float) -> None:
+def test_cuda_mask_ranking_rejects_nonfinite_logits(invalid: float) -> None:
     logits = th.tensor([1.0, invalid, 0.0], device="cuda")
     with pytest.raises(ValueError, match="finite FP32 logits"):
         rank_batch_cuda(logits, [1, 2], ranked_mask_budget=16, include_single_bond_cuts=True)
 
 
 @_CUDA
-def test_cuda_selection_rejects_float64_mixtures_floors_and_wrong_partition() -> None:
+def test_cuda_mask_ranking_rejects_float64_mixtures_floors_and_wrong_partition() -> None:
     with pytest.raises(ValueError, match="FP32 single-mixture"):
         rank_batch_cuda(
             th.zeros(2, dtype=th.float64, device="cuda"),
@@ -274,7 +274,7 @@ def test_cuda_selection_rejects_float64_mixtures_floors_and_wrong_partition() ->
 
 
 @_CUDA
-def test_cuda_selection_nondefault_stream_and_noncontiguous_logits() -> None:
+def test_cuda_mask_ranking_nondefault_stream_and_noncontiguous_logits() -> None:
     stream = th.cuda.Stream()
     with th.cuda.stream(stream):
         _compare([np.zeros(65, dtype=np.float32), np.asarray([0.5, -0.1])], 257, True)
@@ -289,8 +289,8 @@ def test_cuda_selection_nondefault_stream_and_noncontiguous_logits() -> None:
 
 @_CUDA
 @pytest.mark.parametrize("target", [1, 6, 256])
-def test_cuda_selection_connects_directly_to_gpu_topology(target: int) -> None:
-    from fragnnet.models.masster.path_selection.cuda_topology import (
+def test_cuda_mask_ranking_connects_directly_to_gpu_topology(target: int) -> None:
+    from fragnnet.models.masster.candidates.cuda_topology import (
         CudaTopologyGraph,
         build_cuda_topology_device_masks,
     )

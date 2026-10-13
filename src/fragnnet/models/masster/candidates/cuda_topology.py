@@ -20,14 +20,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.cuda_build import (
+from fragnnet.models.masster.candidates.cuda_build import (
     build_cuda_library,
     default_cuda_cache_dir,
     resolve_cuda_home,
 )
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.candidate_builder import _TopologyInput
+    from fragnnet.models.masster.candidates.builder import _TopologyInput
 
 _BUILD_LOCK = Lock()
 _META_WIDTH = 15

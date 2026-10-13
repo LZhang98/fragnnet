@@ -33,7 +33,7 @@ import pandas as pd
 import torch as th
 from torch_geometric.data import Batch
 
-from fragnnet.models.masster.path_selection.candidate_builder import build_masster_candidates
+from fragnnet.models.masster.candidates.builder import build_masster_candidates
 from fragnnet.utils.feat_utils import get_mol_graph
 
 # The c4a_base_s1 bond feature set, which is what the `c_cut_bonds` candidate feature

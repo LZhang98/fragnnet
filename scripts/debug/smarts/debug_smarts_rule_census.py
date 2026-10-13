@@ -39,7 +39,7 @@ from fragnnet.fragmentation.smarts_prepass import (
     _apply_nl_prepass,
     _apply_smarts_prepass,
 )
-from fragnnet.models.masster.path_selection import smarts_templates as mst
+from fragnnet.models.masster.candidates import smarts_templates as mst
 
 RDLogger.DisableLog("rdApp.*")
 

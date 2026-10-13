@@ -8,7 +8,7 @@ heavy-atom composition can reach (within 4 H) count. Null: random disconnected a
 the same size, scored the same way. Summaries give molecule-bootstrap 95% CIs.
 
 The candidate list records the 2026-09-27 admissions; admitted rules now live in
-``path_selection/smarts_templates.py``. Uses the MASSter test factory for the channel function.
+``candidates/smarts_templates.py``. Uses the MASSter test factory for the channel function.
 
 Run from the repository root:
     python scripts/debug/smarts/debug_masster_smarts_rule_gate.py
@@ -37,7 +37,7 @@ from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     _apply_nl_prepass,
     _apply_smarts_prepass,
 )
-from fragnnet.models.masster.path_selection.smarts_templates import (  # noqa: E402
+from fragnnet.models.masster.candidates.smarts_templates import (  # noqa: E402
     _MASSTER_PRECURSOR_TYPES,
     MASSTER_FRAG_RULES,
     MASSTER_NL_RULES,

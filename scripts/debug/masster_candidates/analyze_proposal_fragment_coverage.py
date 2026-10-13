@@ -14,7 +14,8 @@ objective differs. Three scans are available:
 - ``implementations``: exact emitted-set comparison against an alternative beam module supplied
   with ``--beam-implementation``, for example a historical revision extracted with
   ``git show <rev>:src/fragnnet/frag/masster_fast_gnn.py`` (``src/fragnnet/models/masster/`` for
-  revisions after reorg Phase 6; ``path_selection/connected_fragment_beam.py`` after the rename).
+  revisions after reorg Phase 6; ``path_selection/connected_fragment_beam.py`` after the rename,
+  ``candidates/connected_fragment_beam.py`` after the package rename).
 
 Bond logits are synthetic by default, so the sweep tests whether *any* learned logits could
 remove the effect. Pass ``--checkpoint`` to capture **trained** bond logits from a MASSter
@@ -41,15 +42,15 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.masster_model import MassterModel
-from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.models.masster.path_selection.candidate_builder import (
+from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
     build_masster_candidates,
 )
-from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+from fragnnet.models.masster.candidates.connected_fragment_beam import (
     build_connected_fragment_beam_candidates,
 )
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.migrations import migrate_legacy_masster_name
 

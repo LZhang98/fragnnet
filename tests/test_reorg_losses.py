@@ -79,7 +79,8 @@ ION_MODE_HEAD: dict[str, Any] = {
 }
 
 # RT (seconds) and CCS labels per spec_id. Spectrum 2 has no RT, spectrum 4 has no CCS and
-# spectrum 5 has a non-positive CCS; both count as missing (rt_ccs.py, property_regression_terms).
+# spectrum 5 has a non-positive CCS; both count as missing
+# (rt_ccs_heads.py, property_regression_terms).
 RT_LABELS = {0: 120.5, 1: 133.25, 2: np.nan, 3: 301.0, 4: 310.5, 5: 45.75, 6: 52.0}
 CCS_LABELS = {0: 131.2, 1: 133.9, 2: 150.4, 3: 160.0, 4: np.nan, 5: -1.0, 6: 171.3}
 PROPERTY_HEADS: dict[str, Any] = {

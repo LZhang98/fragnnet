@@ -9,7 +9,7 @@ import torch as th
 from rdkit import Chem
 
 import scripts.debug.smarts.debug_masster_smarts_g0_ceiling as G0
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     build_masster_templates,
     filter_masster_templates,
     formed_bond_count,

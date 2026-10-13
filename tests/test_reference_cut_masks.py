@@ -8,7 +8,7 @@ import math
 import numpy as np
 import pytest
 
-from fragnnet.models.masster.path_selection.cut_masks import (
+from fragnnet.models.masster.candidates.reference_cut_masks import (
     aggregate_fragment_marginals,
     connected_component_atom_masks,
     generate_fragment_marginals,

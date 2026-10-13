@@ -45,8 +45,8 @@ from tqdm import tqdm
 
 import fragnnet.models.masster.masster_model as masster_model
 from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt, setup_device
-from fragnnet.models.masster.path_selection.core import top_mixture_bond_sets_raw
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.cut_mask_kernels import top_mixture_bond_sets_raw
+from fragnnet.models.masster.candidates.smarts_templates import (
     _is_connected,
     build_masster_templates,
     filter_masster_templates,

@@ -7,7 +7,7 @@ import torch as th
 import torch.nn.functional as F
 from test_masster_model import _build_batch, _build_model
 
-from fragnnet.models.masster.path_selection.connected_fragment_beam import (
+from fragnnet.models.masster.candidates.connected_fragment_beam import (
     build_connected_fragment_beam_candidates,
 )
 from fragnnet.runner import load_config

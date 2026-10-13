@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -55,14 +56,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-_CURRENT_PACKAGE = "fragnnet.models.masster.path_selection"
-# (package, extension stem, candidate module) of the current layout, of the layout before the
-# candidate_builder rename and of the layout before the path_selection move. A compiled extension
-# only loads under the name it was built with, so an older reference installs under its own
-# names and the current names alias it.
+_CURRENT_PACKAGE = "fragnnet.models.masster.candidates"
+_LEGACY_PACKAGE = "fragnnet.models.masster.path_selection"
+# (package, extension stem, candidate module) of the current layout and of older layouts: before
+# the candidates package rename, before the candidate_builder rename and before the
+# path_selection move. A compiled extension only loads under the name it was built with, so an
+# older reference installs under its own names and the current names alias it.
 _REFERENCE_LAYOUTS = (
-    (_CURRENT_PACKAGE, "core", "candidate_builder"),
-    (_CURRENT_PACKAGE, "core", "candidates"),
+    (_CURRENT_PACKAGE, "cut_mask_kernels", "builder"),
+    (_LEGACY_PACKAGE, "core", "candidate_builder"),
+    (_LEGACY_PACKAGE, "core", "candidates"),
     ("fragnnet.models.masster", "masster_core", "masster_candidates"),
 )
 
@@ -83,22 +86,32 @@ def _install_reference(directory: Path) -> dict:
     ]
     if len(layouts) != 1 or len(layouts[0][3]) != 1:
         raise ValueError(
-            "reference directory must contain exactly one core*.so or masster_core*.so and one "
-            "candidate_builder.py, candidates.py or masster_candidates.py"
+            "reference directory must contain exactly one cut_mask_kernels*.so, core*.so or "
+            "masster_core*.so and one builder.py, candidate_builder.py, candidates.py or "
+            "masster_candidates.py"
         )
     package_name, core, candidates_name, extensions = layouts[0]
     paths = (extensions[0], directory / f"{candidates_name}.py")
-    # Older candidate builders import their templates under the old names.
+    # Older candidate builders import their siblings under the old names.
     templates = importlib.import_module(f"{_CURRENT_PACKAGE}.smarts_templates")
-    if package_name != _CURRENT_PACKAGE:
+    if package_name == _LEGACY_PACKAGE:
+        # The legacy package no longer exists on disk; a synthetic parent lets the extension
+        # load under its PyInit name. Its other submodules (cuda_candidates) load lazily from the
+        # current directory, so they bind the installed reference builder, as before the rename.
+        legacy = types.ModuleType(_LEGACY_PACKAGE)
+        legacy.__path__ = list(importlib.import_module(_CURRENT_PACKAGE).__path__)
+        sys.modules[_LEGACY_PACKAGE] = legacy
+        sys.modules[f"{_LEGACY_PACKAGE}.smarts_templates"] = templates
+        legacy.smarts_templates = templates
+        if candidates_name == "candidates":
+            sys.modules[f"{_LEGACY_PACKAGE}.templates"] = templates
+    elif package_name != _CURRENT_PACKAGE:
         sys.modules["fragnnet.models.masster.masster_templates"] = templates
-    elif candidates_name == "candidates":
-        sys.modules[f"{_CURRENT_PACKAGE}.templates"] = templates
     package = importlib.import_module(package_name)
     current_package = importlib.import_module(_CURRENT_PACKAGE)
     installed = {}
     for name, current_name, path in zip(
-        (core, candidates_name), ("core", "candidate_builder"), paths, strict=True
+        (core, candidates_name), ("cut_mask_kernels", "builder"), paths, strict=True
     ):
         module_name = f"{package_name}.{name}"
         spec = importlib.util.spec_from_file_location(module_name, path.resolve())
@@ -111,7 +124,7 @@ def _install_reference(directory: Path) -> dict:
         sys.modules[f"{_CURRENT_PACKAGE}.{current_name}"] = module
         setattr(current_package, current_name, module)
         installed[module_name] = str(path.resolve())
-    candidates = sys.modules[f"{_CURRENT_PACKAGE}.candidate_builder"]
+    candidates = sys.modules[f"{_CURRENT_PACKAGE}.builder"]
     timings = candidates.MassterCandidateTimings
     adapter = None
     if "topology_assembly_ms" not in timings.__dataclass_fields__:
@@ -146,7 +159,7 @@ def _enable_cuda_prototype(statistics: list[dict], backend: str) -> None:
         if backend == "cuda_topology":
             del kwargs["candidate_backend"]
             entry = importlib.import_module(
-                "fragnnet.models.masster.path_selection.cuda_topology_prototype"
+                "fragnnet.models.masster.candidates.cuda_topology_hybrid"
             ).build_masster_candidates_cuda_topology
             return entry(*args, **kwargs, statistics=statistics)
         kwargs["_cuda_full_stats"] = statistics
@@ -523,8 +536,8 @@ def main() -> None:
         "config": Path(args.config),
     }
     for name in (
-        "fragnnet.models.masster.path_selection.core",
-        "fragnnet.models.masster.path_selection.candidate_builder",
+        "fragnnet.models.masster.candidates.cut_mask_kernels",
+        "fragnnet.models.masster.candidates.builder",
         "fragnnet.models.masster.masster_model",
         "fragnnet.models.masster.masster_pl",
         "fragnnet.utils.migrations",
@@ -532,17 +545,17 @@ def main() -> None:
     ):
         source_paths[name] = Path(importlib.import_module(name).__file__)
     if args.candidate_backend != "cpu":
-        for name in ("cuda_topology_prototype", "cuda_topology", "cuda_build"):
-            module = importlib.import_module(f"fragnnet.models.masster.path_selection.{name}")
+        for name in ("cuda_topology_hybrid", "cuda_topology", "cuda_build"):
+            module = importlib.import_module(f"{_CURRENT_PACKAGE}.{name}")
             source_paths[name] = Path(module.__file__)
         source_paths["cuda_topology_kernel"] = source_paths["cuda_topology"].with_suffix(".cu")
         if args.candidate_backend == "cuda_full":
-            for name in ("cuda_candidates", "cuda_selection"):
-                module = importlib.import_module(f"fragnnet.models.masster.path_selection.{name}")
+            for name in ("cuda_candidates", "cuda_mask_ranking"):
+                module = importlib.import_module(f"{_CURRENT_PACKAGE}.{name}")
                 source_paths[name] = Path(module.__file__)
-            source_paths["cuda_selection_kernel"] = source_paths["cuda_selection"].with_suffix(
-                ".cu"
-            )
+            source_paths["cuda_mask_ranking_kernel"] = source_paths[
+                "cuda_mask_ranking"
+            ].with_suffix(".cu")
     report = {
         "label": args.label,
         "reference": reference,

@@ -29,7 +29,11 @@ git archive "$FRAGNNET_BASE" | tar -x -C "$FRAGNNET_RUN_ROOT/baseline"
 # $FRAGNNET_BASE predates reorg Phase 6, so its MASSter sources are under src/fragnnet/frag/
 # (src/fragnnet/models/masster/ in later revisions, and path_selection/core.pyx and
 # path_selection/candidates.py since 2026-10-12; candidates.py became candidate_builder.py the
-# same day).
+# same day; the next commit on refactor/fragnnet-masster-reorg renamed path_selection/ to
+# candidates/, core.pyx to candidates/cut_mask_kernels.pyx and candidate_builder.py to
+# candidates/builder.py. The benchmark installs any of these layouts: a directory with
+# cut_mask_kernels*.so + builder.py, core*.so + candidate_builder.py or candidates.py, or
+# masster_core*.so + masster_candidates.py).
 for file in masster_core.pyx masster_candidates.py; do
   git show "$FRAGNNET_BASE:src/fragnnet/frag/$file" \
     > "$FRAGNNET_RUN_ROOT/baseline/src/fragnnet/frag/$file"

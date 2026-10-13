@@ -7,7 +7,7 @@
 """Compiled CPU kernels for MASSter candidate generation.
 
 Each kernel here is the hot-path equivalent of a pure-Python routine in
-``cut_masks.py`` / ``candidate_builder.py``. They exist because
+``reference_cut_masks.py`` / ``builder.py``. They exist because
 candidate generation runs per molecule per training step, so the Python-level
 per-mask overhead (Torch ops, dataclasses, set churn) dominates the actual work.
 Compatibility entrypoints return tuples/lists, while hot-path entrypoints keep

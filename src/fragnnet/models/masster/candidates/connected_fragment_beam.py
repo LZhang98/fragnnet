@@ -13,7 +13,7 @@ from time import perf_counter
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.path_selection.candidate_builder import (
+from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
 )

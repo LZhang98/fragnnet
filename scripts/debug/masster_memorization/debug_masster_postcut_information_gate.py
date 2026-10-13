@@ -84,7 +84,7 @@ from rdkit import Chem, RDLogger
 from torch.utils.data import DataLoader
 
 from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     MASSTER_RULE_NAMES,
     build_masster_templates,
     filter_masster_templates,
@@ -461,7 +461,7 @@ def template_sides(mol: Chem.Mol, precursor_type: str) -> tuple[TemplateSide, ..
 
     Templates come from ``filter_masster_templates`` directly (a templates-off checkpoint has no
     rule-hash buffer for the model's own eligibility method), with the production values for
-    each side's cut count and formed-bond count (``path_selection/candidate_builder.py``).
+    each side's cut count and formed-bond count (``candidates/builder.py``).
 
     Args:
         mol: The molecule as ``Chem.MolFromSmiles`` builds it, which is what training matches.

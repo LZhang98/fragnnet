@@ -18,6 +18,11 @@ from fragnnet.models.fragnnet.dag import compute_frags
 from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs
 from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
+from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.smarts_templates import (
+    MassterTemplate,
+    build_masster_templates,
+)
 from fragnnet.models.masster.masster_model import (
     MassterModel,
     _absolute_binary_channel_keep_mask,
@@ -32,11 +37,6 @@ from fragnnet.models.masster.masster_model import (
     _top_k_fragment_keep_mask,
 )
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
-from fragnnet.models.masster.path_selection.candidate_builder import MassterStaticGraph
-from fragnnet.models.masster.path_selection.smarts_templates import (
-    MassterTemplate,
-    build_masster_templates,
-)
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS
 
@@ -994,7 +994,7 @@ def test_absolute_support_floor_is_evaluation_only_and_keeps_each_spectrum_nonem
 def test_masster_shares_one_ce_independent_proposal_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fragnnet.models.masster.path_selection import core as masster_core
+    from fragnnet.models.masster.candidates import cut_mask_kernels
 
     batch = _build_batch(("CCCO",) * 5)
     model = _build_model(
@@ -1011,7 +1011,7 @@ def test_masster_shares_one_ce_independent_proposal_pass(
     proposal_batch_sizes = []
     topology_call_count = 0
 
-    original_build_component_arrays = masster_core.build_component_arrays_raw
+    original_build_component_arrays = cut_mask_kernels.build_component_arrays_raw
 
     def record_topology_call(*args, **kwargs):
         nonlocal topology_call_count
@@ -1019,7 +1019,7 @@ def test_masster_shares_one_ce_independent_proposal_pass(
         return original_build_component_arrays(*args, **kwargs)
 
     monkeypatch.setattr(
-        masster_core,
+        cut_mask_kernels,
         "build_component_arrays_raw",
         record_topology_call,
     )

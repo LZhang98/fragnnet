@@ -61,7 +61,7 @@ from fragnnet.inference.checkpoint import (
     get_config_from_ckpt,
     init_model_from_ckpt,
 )
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     MASSTER_RULE_NAMES,
     _is_connected,
     build_masster_templates,

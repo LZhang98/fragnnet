@@ -26,8 +26,8 @@ import torch
 from rdkit import Chem, RDLogger, rdBase
 
 from fragnnet.fragmentation.smarts_prepass import NeutralLossRule, SmartsFragRule
-from fragnnet.models.masster.masster_isotopes import nominal_isotope_pattern
-from fragnnet.models.masster.path_selection.smarts_templates import _is_connected, formed_bond_count
+from fragnnet.models.masster.candidates.smarts_templates import _is_connected, formed_bond_count
+from fragnnet.models.masster.nominal_isotopes import nominal_isotope_pattern
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from scripts.debug.ei.debug_masster_ei_nominal_coverage import (  # noqa: E402

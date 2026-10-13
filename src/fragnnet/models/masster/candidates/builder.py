@@ -17,7 +17,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.smarts_templates import MassterTemplate
+    from fragnnet.models.masster.candidates.smarts_templates import MassterTemplate
 
 
 _CPU_POOL: ThreadPoolExecutor | None = None
@@ -183,7 +183,7 @@ class _TopologyInput:
 
 
 def _build_local_topology(request: _TopologyInput) -> _TopologyCache:
-    from fragnnet.models.masster.path_selection.core import build_component_arrays_raw
+    from fragnnet.models.masster.candidates.cut_mask_kernels import build_component_arrays_raw
 
     (
         cut_counts, component_mask_indices, component_cut_counts, atom_indices,
@@ -287,7 +287,7 @@ def _top_mixture_bond_sets(
         concatenated cut bond indices. Bond sets are ordered by descending mixture
         probability, ties broken by ascending lexicographic bond order.
     """
-    from fragnnet.models.masster.path_selection.core import top_mixture_bond_sets_raw
+    from fragnnet.models.masster.candidates.cut_mask_kernels import top_mixture_bond_sets_raw
 
     return top_mixture_bond_sets_raw(
         np.ascontiguousarray(logits, dtype=np.float64),
@@ -581,7 +581,7 @@ def build_masster_candidates(
     if candidate_backend not in ("cpu", "cuda"):
         raise ValueError(f"unknown candidate_backend: {candidate_backend!r}; use cpu or cuda")
     if candidate_backend == "cuda":
-        from fragnnet.models.masster.path_selection.cuda_candidates import (
+        from fragnnet.models.masster.candidates.cuda_candidates import (
             build_masster_candidates_cuda,
         )
 
@@ -1051,7 +1051,7 @@ def _build_cpu_candidates(
 
         smarts_start = perf_counter()
         if molecule_templates:
-            from fragnnet.models.masster.path_selection.smarts_templates import formed_bond_count
+            from fragnnet.models.masster.candidates.smarts_templates import formed_bond_count
 
             smarts_lookup = (
                 None

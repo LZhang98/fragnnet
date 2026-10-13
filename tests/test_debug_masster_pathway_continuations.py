@@ -10,7 +10,7 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.fragmentation.smarts_prepass import _apply_nl_prepass
-from fragnnet.models.masster.path_selection.smarts_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     MASSTER_NL_RULES,
     formed_bond_count,
 )

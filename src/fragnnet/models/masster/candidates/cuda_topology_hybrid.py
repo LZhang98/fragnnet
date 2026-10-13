@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch as th
 
-from fragnnet.models.masster.path_selection.candidate_builder import (
+from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
     MassterCandidateTimings,
     _build_cpu_candidates,
     _score_mask_log_probabilities,
 )
-from fragnnet.models.masster.path_selection.cuda_candidates import _expand_topology_views
+from fragnnet.models.masster.candidates.cuda_candidates import _expand_topology_views
 
 if TYPE_CHECKING:
-    from fragnnet.models.masster.path_selection.candidate_builder import _TopologyInput
+    from fragnnet.models.masster.candidates.builder import _TopologyInput
 
 
 def _validate_grouped_topology(
@@ -69,7 +69,7 @@ def _build_cuda_candidates(
     statistics: list[dict] | None = None,
 ) -> MassterCandidateBatch:
     """Build the standard candidate batch without detaching mask probabilities."""
-    from fragnnet.models.masster.path_selection.cuda_topology import build_cuda_topology
+    from fragnnet.models.masster.candidates.cuda_topology import build_cuda_topology
 
     device = bond_logits.device
     topology_start = perf_counter()
