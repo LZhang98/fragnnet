@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from fragnnet.utils import data_utils
+from fragnnet.utils import mol_utils, parallel_utils, spec_parse_utils
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ REQUIRED_MANIFEST_COLUMNS = {
 
 def canonicalize_smiles(smiles: str) -> str:
     """Return the same canonical SMILES representation used by DAG preparation."""
-    mol = data_utils.mol_from_smiles(smiles, ml_standardize=False)
-    canonical_smiles = data_utils.mol_to_smiles(mol)
+    mol = mol_utils.mol_from_smiles(smiles, ml_standardize=False)
+    canonical_smiles = mol_utils.mol_to_smiles(mol)
     if not canonical_smiles:
         raise ValueError(f"Could not canonicalize candidate SMILES: {smiles}")
     return canonical_smiles
@@ -109,7 +109,7 @@ def export_msgym_json(
         if candidates is None:
             missing_queries.append(query_smiles)
             continue
-        inst_type, frag_mode = data_utils.parse_inst_info(
+        inst_type, frag_mode = spec_parse_utils.parse_inst_info(
             pd.Series(
                 {"inst_type": spectrum["instrument_type"], "col_energy": spectrum["collision_energy"]}
             )
@@ -188,9 +188,9 @@ def build_proc_from_manifest(
             "mol_id": range(len(candidate_smiles)),
         }
     )
-    mol_df["mol"] = data_utils.par_apply_series(
+    mol_df["mol"] = parallel_utils.par_apply_series(
         mol_df["smiles"],
-        partial(data_utils.mol_from_smiles, canonicalize_tautomers=False),
+        partial(mol_utils.mol_from_smiles, canonicalize_tautomers=False),
     )
     invalid_smiles = mol_df.loc[mol_df["mol"].isna(), "smiles"].tolist()
     if invalid_smiles:
@@ -198,7 +198,7 @@ def build_proc_from_manifest(
             f"Could not build molecules for {len(invalid_smiles)} candidate SMILES: "
             f"{invalid_smiles[:5]}"
         )
-    data_utils.compute_mol_df_props(mol_df)
+    mol_utils.compute_mol_df_props(mol_df)
 
     # 2. Expand query metadata over candidates and align every row to mol_df.
     smiles_to_mol_id = mol_df.set_index("smiles")["mol_id"]
@@ -318,7 +318,7 @@ def export_and_build_proc_chunked(
         raw_candidates.update(candidates_by_smiles[s])
     raw_candidates = sorted(raw_candidates)
     logger.info("Canonicalizing %d unique candidate SMILES", len(raw_candidates))
-    canonical = data_utils.par_apply_series(pd.Series(raw_candidates), canonicalize_smiles)
+    canonical = parallel_utils.par_apply_series(pd.Series(raw_candidates), canonicalize_smiles)
     # `canonicalize_smiles` can silently return np.nan for a handful of raw
     # SMILES RDKit fails to parse (np.nan is truthy, so its own `if not
     # canonical_smiles` guard doesn't catch it). Drop those rather than let a
@@ -366,7 +366,7 @@ def export_and_build_proc_chunked(
     for chunk_idx, start in enumerate(range(0, len(spec_df), chunk_size)):
         chunk = spec_df.iloc[start : start + chunk_size]
         inst_frag = chunk.apply(
-            lambda row: data_utils.parse_inst_info(
+            lambda row: spec_parse_utils.parse_inst_info(
                 pd.Series(
                     {"inst_type": row["instrument_type"], "col_energy": row["collision_energy"]}
                 )
@@ -467,9 +467,9 @@ def export_and_build_proc_chunked(
         batch_df = pd.DataFrame(
             {"smiles": batch_smiles, "mol_id": range(start, start + len(batch_smiles))}
         )
-        batch_df["mol"] = data_utils.par_apply_series(
+        batch_df["mol"] = parallel_utils.par_apply_series(
             batch_df["smiles"],
-            partial(data_utils.mol_from_smiles, canonicalize_tautomers=False),
+            partial(mol_utils.mol_from_smiles, canonicalize_tautomers=False),
             use_tqdm=False,
         )
         invalid_smiles = batch_df.loc[batch_df["mol"].isna(), "smiles"].tolist()
@@ -478,7 +478,7 @@ def export_and_build_proc_chunked(
                 f"Could not build molecules for {len(invalid_smiles)} candidate SMILES "
                 f"that canonicalized cleanly: {invalid_smiles[:5]}"
             )
-        data_utils.compute_mol_df_props(batch_df, use_tqdm=False)
+        mol_utils.compute_mol_df_props(batch_df, use_tqdm=False)
         batch_df.to_pickle(shard_fp)
         logger.info(
             "Built mol_df shard %d/%d (%d molecules) -> %s",

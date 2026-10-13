@@ -5,13 +5,11 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.loss import _build_loss_chunks, sparse_peak_list_distance
+from fragnnet.loss.padding import build_loss_chunks
+from fragnnet.loss.spectrum_distance import sparse_peak_list_distance
 from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ
-from fragnnet.utils.spec_utils import (
-    calculate_match_mzs,
-    linear_sum_assignment,
-    round_aggregate_peaks,
-)
+from fragnnet.utils.spec_similarity import calculate_match_mzs, linear_sum_assignment
+from fragnnet.utils.spec_utils import round_aggregate_peaks
 
 
 @pytest.mark.parametrize(
@@ -834,7 +832,7 @@ def test_matches_reference_on_cuda(objective: str, matching: str) -> None:
 def test_wildly_uneven_spectra_match_reference(objective: str, matching: str) -> None:
     """Chunks narrowed by the padding guard still agree with the loop reference.
 
-    Peak counts spanning 1 to 1500 force ``_build_loss_chunks`` to split below the
+    Peak counts spanning 1 to 1500 force ``build_loss_chunks`` to split below the
     ``loss_batch_size`` ceiling, so large spectra are padded alone instead of against
     small ones.
     """
@@ -860,7 +858,7 @@ def test_wildly_uneven_spectra_match_reference(objective: str, matching: str) ->
         th.cat(pred_idxs),
     )
 
-    chunks = _build_loss_chunks(
+    chunks = build_loss_chunks(
         [0] + th.bincount(tensors[2]).cumsum(0).tolist(),
         [0] + th.bincount(tensors[5]).cumsum(0).tolist(),
         32,

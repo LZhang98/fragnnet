@@ -1,7 +1,9 @@
 # Minimal FT contender-pair training plan
 
-> **Status:** PREPARED · **Updated:** 2026-09-26
-> Stage A (four Fir arms `c0`/`c1`/`p1`/`p2`) configs and generator verified locally; no job submitted. `ce_context` sampler packing fixed 2026-09-26 (committed; no `src/` changes in the 2026-10-06 working tree): the 709-step / ~236-spectrum budget below is pre-fix, re-measure before submitting.
+> **Status:** STOPPED · **Updated:** 2026-10-12
+> User retired precursor and CE-switch BCE. Stage A configs and generator were removed;
+> the record below is historical and must not be submitted. See the
+> [loss retirement](../loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 
 ## Goal
 

@@ -2,6 +2,24 @@
 
 ## Layout
 
+Experiment configs are grouped by model, with dataset and experiment folders underneath:
+
+```text
+config/
+  template.yml
+  fragnnet/      # FraGNNet (model_type: frag_gnn or fragnnet)
+  masster/       # MASSter, including its standalone analysis configs
+  neims/
+  massformer/
+  graff/
+  precursor/
+```
+
+Debug configs and sweep training configs live under their model too. W&B search definitions
+remain in `sweep/`. The shared template and its schema are unchanged. The
+[model grouping record](../docs/plans/config_model_grouping.md) explains the path migration;
+use the new paths in commands and regenerate previously generated cluster jobs.
+
 A run's configuration resolves in three steps, each overriding the previous:
 
 ```
@@ -39,8 +57,8 @@ model (`magma_params`, `magma_dp`, `ann_params`, `ann_fp`, `spectrum_encoder_par
 `retrieval_eval_size`) are declared there by name. Adding an unprefixed key to a model's block
 means editing that list, which is the moment to ask whether it should be prefixed instead.
 
-Ownership follows the reader, not the prefix, when the two disagree: `precursor_pair_*` is the
-`SpectrumPL` loss rather than `model_type: precursor`, so it lives in the shared core.
+Precursor BCE and CE-switch BCE are retired. Legacy disabled `precursor_pair_*` and
+`ce_pair_*` settings are discarded on load; nonzero loss weights raise an error.
 
 Custom configs are validated against the template, **recursively**: a typo inside `spec_params`
 fails as loudly as one at the top level. Mappings whose sub-keys are data rather than schema
@@ -75,24 +93,24 @@ different vocabularies that share a key name. A model only ever reads the block 
 To train a model, you can use the following command:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/${DATASET}_${SPLIT}/${MODEL}/s${SEED}.yml
+python scripts/run_pl_model_fit.py -c config/${MODEL}/${DATASET}_${SPLIT}/s${SEED}.yml
 ```
 
 For example, to train a model on the NIST 2020 dataset using the InChIKey split and the NEIMS model with seed 0, you can use the following command:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml
+python scripts/run_pl_model_fit.py -c config/neims/nist20_merged_inchikey/s0.yml
 ```
 
 If you installed the package with Weights and Biases (i.e. using the `dev` option), you can enable logging with a flag:
 
 ```bash
-python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml -w online
+python scripts/run_pl_model_fit.py -c config/neims/nist20_merged_inchikey/s0.yml -w online
 ```
 
 ## Available Configs
 
-All provided configs use the NIST 2020 dataset.
+Configs cover NIST20, MassSpecGym, Spectraverse, NIST23 and other datasets.
 
 ### Main Experiment Configs
 
@@ -103,21 +121,20 @@ The following seeds are used:
 - SEED=3: 103976
 - SEED=4: 132548
 
-FraGNNet-D3: [inchikey configs](./nist20_inchikey/fragnnet_d3/), [scaffold configs](./nist20_scaffold/fragnnet_d3/)
+FraGNNet-D3: [inchikey configs](./fragnnet/nist20_merged_inchikey/fragnnet_d3/), [scaffold configs](./fragnnet/nist20_merged_scaffold/fragnnet_d3/)
 
-FraGNNet-D4: [inchikey configs](./nist20_inchikey/fragnnet_d4/), [scaffold configs](./nist20_scaffold/fragnnet_d4/)
+FraGNNet-D4: [inchikey configs](./fragnnet/nist20_merged_inchikey/fragnnet_d4/), [scaffold configs](./fragnnet/nist20_merged_scaffold/fragnnet_d4/)
 
-NEIMS: [inchikey configs](./nist20_inchikey/neims/), [scaffold configs](./nist20_scaffold/neims/)
+NEIMS: [inchikey configs](./neims/nist20_merged_inchikey/), [scaffold configs](./neims/nist20_merged_scaffold/)
 
-MassFormer: [inchikey configs](./nist20_inchikey/massformer/), [scaffold configs](./nist20_scaffold/massformer/)
+MassFormer: [inchikey configs](./massformer/nist20_merged_inchikey/), [scaffold configs](./massformer/nist20_merged_scaffold/)
 
-ICEBERG (Generator model): [inchikey configs](./nist20_inchikey/iceberg_gen/), [scaffold configs](./nist20_scaffold/iceberg_gen/)
-
-ICEBERG (Intensity model): [inchikey configs](./nist20_inchikey/iceberg/), [scaffold configs](./nist20_scaffold/iceberg/)
-
-ICEBERG (Optimal Intensity model): [inchikey configs](./nist20_inchikey/iceberg_opt/), [scaffold configs](./nist20_scaffold/iceberg_opt/)
-
-Note: the ICEBERG Optimal Intensity model is presented in the ablations section in the paper as ICEBERG (+Opt).
+ICEBERG (generator, intensity and optimal-intensity models): retired on 2026-10-11. The local
+fork and its configs were removed; run ICEBERG through external
+[ms-pred](https://github.com/coleygroup/ms-pred). The configs remain at revision `13b1599d`
+(`config/*_merged/iceberg_*`), see the
+[reorganization plan](../docs/plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
+The `iceberg_*`, `magma_params` and `magma_dp` template keys stay inert.
 
 ### Ablation Experiment Configs
 
@@ -130,9 +147,9 @@ The following seeds are used:
 - SEED=3: 103976
 - SEED=4: 132548
 
-FraGNNet-D3 (+Edges) [configs](./ablations/fraggnn_d3_edges/)
-FraGNNet-D3 (-CE) [configs](./ablations/fraggnn_d3_noce/)
-FraGNNet-D4 (-CE) [configs](./ablations/fraggnn_d4_noce/)
+FraGNNet-D3 (+Edges) [configs](./fragnnet/ablations_merged/fraggnn_d3_edges/)
+FraGNNet-D3 (-CE) [configs](./fragnnet/ablations_merged/fraggnn_d3_noce/)
+FraGNNet-D4 (-CE) [configs](./fragnnet/ablations_merged/fraggnn_d4_noce/)
 
 ### Entropy Experiment Configs
 
@@ -156,11 +173,11 @@ The following seeds are used:
 - SEED=14: 623677
 
 
-Baseline Ensemble: [configs](./entropy/d4_baseline_ens/)
+Baseline Ensemble: [configs](./fragnnet/entropy/d4_baseline_ens/)
 
-Low Entropy Ensemble: [configs](./entropy/d4_low_ens/)
+Low Entropy Ensemble: [configs](./fragnnet/entropy/d4_low_ens/)
 
-High Entropy Ensemble: [configs](./entropy/d4_high_ens/)
+High Entropy Ensemble: [configs](./fragnnet/entropy/d4_high_ens/)
 
 ## Configuration Parameters
 

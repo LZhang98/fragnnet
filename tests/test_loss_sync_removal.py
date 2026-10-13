@@ -15,8 +15,9 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_cross_entropy_vec
-from fragnnet.utils.misc_utils import LOG_ZERO, scatter_logsumexp
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn, sparse_cross_entropy_vec
+from fragnnet.utils.misc_utils import LOG_ZERO
+from fragnnet.utils.scatter_utils import scatter_logsumexp
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,10 +63,10 @@ def _reference_sparse_ce_vec(
     """Old implementation with th.any / th.all branches — used as correctness reference."""
     import math as _math
 
-    from fragnnet.model.loss import scatter_reduce as _sr
     from fragnnet.utils.misc_utils import LOG_ZERO as _LZ
-    from fragnnet.utils.misc_utils import scatter_logsumexp as _sle
-    from fragnnet.utils.spec_utils import calculate_match_mzs as _cmm
+    from fragnnet.utils.scatter_utils import scatter_logsumexp as _sle
+    from fragnnet.utils.scatter_utils import scatter_reduce as _sr
+    from fragnnet.utils.spec_similarity import calculate_match_mzs as _cmm
 
     float_dtype = true_logprobs.dtype
     device = true_logprobs.device
@@ -484,7 +485,7 @@ class TestSparseCEMatchesReference:
 
     def test_peak_matching_is_padded_per_spectrum(self, batch_data, monkeypatch):
         """Peak matching receives [batch, peaks] tensors, not flattened cross-spectrum peaks."""
-        import fragnnet.model.loss as loss_module
+        import fragnnet.loss.cross_entropy as loss_module
 
         (batch_size, true_mzs, true_lp, true_bidxs, pred_mzs, pred_lp, pred_bidxs, pred_oos) = (
             batch_data
@@ -521,7 +522,7 @@ class TestSparseCEMatchesReference:
 
     def test_peak_rich_spectrum_is_split_from_small_spectra(self, monkeypatch):
         """Padded chunks never exceed the corresponding flat Cartesian pair count."""
-        import fragnnet.model.loss as loss_module
+        import fragnnet.loss.cross_entropy as loss_module
 
         peaks_true = [20, 1, 1, 1]
         peaks_pred = [20, 1, 1, 1]
@@ -581,7 +582,7 @@ class TestSparseCEMatchesReference:
 
     def test_padded_layout_supplies_repeat_interleave_output_size(self, monkeypatch):
         """Known output size avoids synchronizing CUDA counts inside repeat_interleave."""
-        import fragnnet.model.loss as loss_module
+        import fragnnet.loss.padding as padding_module
 
         original_repeat_interleave = th.repeat_interleave
         output_sizes = []
@@ -592,7 +593,7 @@ class TestSparseCEMatchesReference:
 
         monkeypatch.setattr(th, "repeat_interleave", record_output_size)
         batch_idxs = th.tensor([0, 0, 2, 2, 2])
-        loss_module._build_padded_batch_layout(batch_idxs, batch_size=3)
+        padding_module.build_padded_batch_layout(batch_idxs, batch_size=3)
 
         assert output_sizes == [batch_idxs.numel()]
 

@@ -3,7 +3,8 @@
 import pytest
 import torch as th
 
-from fragnnet.model.nn_blocks import GNN, GINEGraphormer, Graphormer
+from fragnnet.layers.gnn import GNN
+from fragnnet.layers.graphormer import GINEGraphormer, Graphormer
 
 
 def _encoder() -> GNN:

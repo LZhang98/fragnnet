@@ -12,8 +12,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from fragnnet.utils.data_utils import par_apply, parse_mass_gym_ce_str, rdkit_import, seq_apply
 from fragnnet.utils.misc_utils import flatten_lol
+from fragnnet.utils.mol_utils import rdkit_import
+from fragnnet.utils.parallel_utils import par_apply, seq_apply
+from fragnnet.utils.spec_parse_utils import parse_mass_gym_ce_str
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +266,7 @@ def preproc_ms_files(ms_dp: str, ms_meta_fp: str, keys: set, num_entries: int) -
         columns={"ionization": "prec_type", "spec": "dset_spec_id_base"}
     ).drop(columns=["name"])
     assert not ms_meta_df.isna().any().any(), ms_meta_df.isna().any()
+    ms_fp_list = sorted(glob.glob(os.path.join(ms_dp, "*.ms")))
     if num_entries > -1:
         ms_fp_list = ms_fp_list[:num_entries]
 

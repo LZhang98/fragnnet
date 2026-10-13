@@ -5,11 +5,8 @@ import pandas as pd
 import pytest
 import torch as th
 
-from fragnnet.utils.spec_utils import (
-    batch_cos_hun_helper,
-    calculate_match_mzs,
-    round_aggregate_peaks,
-)
+from fragnnet.utils.spec_similarity import batch_cos_hun_helper, calculate_match_mzs
+from fragnnet.utils.spec_utils import round_aggregate_peaks
 from scripts.debug.masster_memorization.debug_masster_cut_intensity_probe import (
     bond_features,
     bootstrap_delta,

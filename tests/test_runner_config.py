@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from fragnnet.dataset import MassterCEContextDynamicBatchSampler
+from fragnnet.models.masster.masster_data_sampler import MassterCEContextDynamicBatchSampler
 from fragnnet.runner import init_dataloader, validate_sampler_config
 
 
@@ -35,23 +35,11 @@ def _base_config(**overrides) -> dict:
         "simple_group_sampler": False,
         "simple_group_sampler_type": "adduct_inst_type",
         "formula_prec_type_group_sampler": False,
-        "ce_pair_loss_weight": 0.0,
-        "ce_pair_min_endpoint_confidence": None,
-        "ce_pair_min_endpoint_reliability": None,
-        "ce_pair_subset": "switches",
-        "ce_pair_eligible_inst_types": ["ORB"],
-        "ce_pair_eligible_prec_types": ["[M+H]+"],
         "cross_ev_fragment_loss_weight": 0.0,
         "masster_share_proposal_across_ev": False,
         "masster_unique_fragment_mode": False,
         "masster_batch_sampler": False,
         "masster_batch_sampler_max": None,
-        "precursor_pair_loss_weight": 0.0,
-        "precursor_pair_nce_min": 0.0,
-        "precursor_pair_nce_max": 20.0,
-        "precursor_pair_absent_intensity_floor": 0.01,
-        "precursor_pair_eligible_inst_types": ["ORB"],
-        "precursor_pair_eligible_prec_types": ["[M+H]+"],
         "target_rel_ints_thresh": 0.01,
         "train_sample_weight": "none",
         "inst_type_loss_tol": {"ORB": {"rel": 1.0e-5, "min_mz": 200.0}},
@@ -343,153 +331,6 @@ class TestValidateSamplerConfig:
         with pytest.raises(ValueError, match="batch_sampler_type"):
             validate_sampler_config(_base_config(batch_sampler_type="invalid"))
 
-    def test_ce_pair_loss_valid_config_passes(self):
-        validate_sampler_config(
-            _base_config(
-                batch_sampler_type="ce_context",
-                dynamic_batch_sampler_mode="frag_edge",
-                ce_pair_loss_weight=0.1,
-                ce_pair_min_endpoint_confidence=0.2,
-            )
-        )
-
-    def test_ce_pair_loss_requires_context_sampler(self):
-        with pytest.raises(ValueError, match="CE-context batch sampler"):
-            validate_sampler_config(
-                _base_config(
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=0.2,
-                )
-            )
-
-    def test_ce_pair_loss_requires_confidence_threshold(self):
-        with pytest.raises(ValueError, match="ce_pair_min_endpoint_confidence"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                )
-            )
-
-    @pytest.mark.parametrize("contender_floor", [0.0, -0.1, 1.0, None])
-    def test_ce_pair_loss_requires_positive_contender_floor(self, contender_floor):
-        with pytest.raises(ValueError, match="target_rel_ints_thresh"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=0.2,
-                    target_rel_ints_thresh=contender_floor,
-                )
-            )
-
-    @pytest.mark.parametrize("confidence", [0.0, -0.1, 1.1])
-    def test_ce_pair_loss_rejects_invalid_confidence(self, confidence):
-        with pytest.raises(ValueError, match="ce_pair_min_endpoint_confidence"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=confidence,
-                )
-            )
-
-    def test_ce_pair_loss_rejects_unimplemented_reliability_threshold(self):
-        with pytest.raises(ValueError, match="reliability table is implemented"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=0.2,
-                    ce_pair_min_endpoint_reliability=0.7,
-                )
-            )
-
-    @pytest.mark.parametrize("tolerance_by_inst", [None, {}, {"QTOF": {}}])
-    def test_ce_pair_loss_requires_eligible_instrument_tolerance(self, tolerance_by_inst):
-        with pytest.raises(ValueError, match="define every ce_pair_eligible_inst_type"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=0.2,
-                    inst_type_loss_tol=tolerance_by_inst,
-                )
-            )
-
-    @pytest.mark.parametrize(
-        "tolerance",
-        [{}, {"rel": 1.0e-5}, {"rel": 0.0, "min_mz": 200.0}],
-    )
-    def test_ce_pair_loss_rejects_invalid_eligible_tolerance(self, tolerance):
-        with pytest.raises(ValueError, match="inst_type_loss_tol"):
-            validate_sampler_config(
-                _base_config(
-                    batch_sampler_type="ce_context",
-                    dynamic_batch_sampler_mode="frag_edge",
-                    ce_pair_loss_weight=0.1,
-                    ce_pair_min_endpoint_confidence=0.2,
-                    inst_type_loss_tol={"ORB": tolerance},
-                )
-            )
-
-    def test_precursor_pair_loss_valid_config_passes(self):
-        validate_sampler_config(_base_config(precursor_pair_loss_weight=0.1))
-
-    @pytest.mark.parametrize(
-        "spec_params_override, error",
-        [
-            ({"nce": False, "ace": False}, "requires spec_params.nce or spec_params.ace"),
-            ({"merge": True}, "requires unmerged spectra"),
-        ],
-    )
-    def test_precursor_pair_loss_rejects_missing_per_spectrum_nce(
-        self, spec_params_override, error
-    ):
-        config = _base_config(precursor_pair_loss_weight=0.1)
-        config["spec_params"].update(spec_params_override)
-
-        with pytest.raises(ValueError, match=error):
-            validate_sampler_config(config)
-
-    @pytest.mark.parametrize("nce_interval", [(-1.0, 20.0), (20.0, 20.0), (30.0, 20.0)])
-    def test_precursor_pair_loss_rejects_invalid_nce_interval(self, nce_interval):
-        with pytest.raises(ValueError, match="precursor_pair_nce_min/max"):
-            validate_sampler_config(
-                _base_config(
-                    precursor_pair_loss_weight=0.1,
-                    precursor_pair_nce_min=nce_interval[0],
-                    precursor_pair_nce_max=nce_interval[1],
-                )
-            )
-
-    @pytest.mark.parametrize("absent_floor", [-0.1, 1.0, None])
-    def test_precursor_pair_loss_rejects_invalid_absent_floor(self, absent_floor):
-        with pytest.raises(ValueError, match="precursor_pair_absent_intensity_floor"):
-            validate_sampler_config(
-                _base_config(
-                    precursor_pair_loss_weight=0.1,
-                    precursor_pair_absent_intensity_floor=absent_floor,
-                )
-            )
-
-    @pytest.mark.parametrize(
-        "tolerance",
-        [{}, {"rel": 1.0e-5}, {"rel": 0.0, "min_mz": 200.0}],
-    )
-    def test_precursor_pair_loss_rejects_invalid_tolerance(self, tolerance):
-        with pytest.raises(ValueError, match="tolerance"):
-            validate_sampler_config(
-                _base_config(
-                    precursor_pair_loss_weight=0.1,
-                    inst_type_loss_tol={"ORB": tolerance},
-                )
-            )
 
     def test_dag_size_curriculum_valid_config_passes(self):
         validate_sampler_config(_base_config(dag_size_curriculum=True))
@@ -702,3 +543,59 @@ def test_merge_wandb_config_keeps_integral_floats() -> None:
     # Real differences (a sweep or resumed run) are still taken from W&B.
     assert config["lr"] == 0.002
     assert config["spec_params"]["nce"] is True
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ("group_sampler", "simple_group_sampler"),
+        ("group_sampler", "formula_prec_type_group_sampler"),
+        ("simple_group_sampler", "formula_prec_type_group_sampler"),
+    ],
+)
+def test_group_samplers_are_mutually_exclusive(first: str, second: str) -> None:
+    """``init_dataloader`` would silently use only the first group sampler set."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        validate_sampler_config(
+            _base_config(dynamic_batch_sampler=False, **{first: True, second: True})
+        )
+
+
+class TestMergeWandbConfigChecks:
+    """A W&B config is checked like a custom config before it reaches the run."""
+
+    @staticmethod
+    def _config() -> dict:
+        return {"model_type": "masster", "lr": 0.001, "spec_params": {"inst_types": ["ORB"]}}
+
+    def test_undeclared_sweep_key_raises_on_a_new_run(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match=r"\['lr_typo', 'spec_params.typo'\]"):
+            merge_wandb_config(self._config(), {"lr_typo": 1, "spec_params": {"typo": 1}})
+
+    def test_resumed_run_skips_keys_the_template_dropped(self, caplog) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        config = self._config()
+        merge_wandb_config(config, {"dropped_key": 1, "lr": 0.002}, resumed=True)
+        assert config == {**self._config(), "lr": 0.002}
+        assert "dropped_key" in caplog.text
+
+    def test_model_type_cannot_change(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match="model_type 'frag_gnn'"):
+            merge_wandb_config(self._config(), {"model_type": "frag_gnn"})
+
+    def test_retired_instrument_type_raises(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match=r"retired instrument type at \['spec_params"):
+            merge_wandb_config(self._config(), {"spec_params": {"inst_types": ["FT"]}})
+
+    def test_section_must_stay_a_mapping(self) -> None:
+        from fragnnet.runner import merge_wandb_config
+
+        with pytest.raises(ValueError, match="non-mapping"):
+            merge_wandb_config(self._config(), {"spec_params": 1})

@@ -4,7 +4,7 @@
 # only to task-related changes; do not run broad automatic fixes on unrelated code." A repo
 # -wide `black .` would rewrite most of the tree, so it is deliberately not configured here.
 #
-# The vendored baselines under src/fragnnet/{iceberg,graff,massformer} are third-party ports
+# The vendored baselines under src/fragnnet/baselines/ are third-party ports
 # kept close to upstream, so they are excluded rather than reformatted.
 #
 # Install once per checkout:
@@ -12,7 +12,7 @@
 # Run against everything on demand (not automatic):
 #   /home/feiw/miniconda3/envs/FRAGNNET-GPU/bin/pre-commit run --all-files
 
-exclude: '^(src/fragnnet/(iceberg|graff|massformer)/|notebooks/|wandb/)'
+exclude: '^(src/fragnnet/baselines/|notebooks/|wandb/)'
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit

@@ -12,15 +12,14 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils.spec_utils import (
-    batched_l1_normalize,
-    batched_mf1000_normalize,
+from fragnnet.utils.spec_similarity import (
     calculate_match_mz_reductions,
     calculate_match_mzs,
     cos_sim_helper,
     opt_cos_sim_helper,
     scipy_linear_sum_assignment,
 )
+from fragnnet.utils.spec_utils import batched_l1_normalize, batched_mf1000_normalize
 
 
 class TestCalculateMatchMzs:

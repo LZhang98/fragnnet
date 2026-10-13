@@ -70,8 +70,8 @@ from torch import nn
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt, setup_device
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt, setup_device
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

@@ -25,7 +25,7 @@ Related records:
 - [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md):
   earlier eligibility checks and positive-ion expansion priorities.
 - Paper URLs are attached to every MASSter-only rule definition in
-  [`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), disabled ones
+  [`candidates/smarts_templates.py`](../../src/fragnnet/models/masster/candidates/smarts_templates.py), disabled ones
   included, except `tertiary_aryl_sulfonamide_so2`.
 
 ## Scope and admission rule
@@ -69,9 +69,9 @@ template's cut mask into the candidate pool and adds its assembly under that mas
 recorded trained run has turned it on.
 
 The curated registry is
-[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py).
+[`candidates/smarts_templates.py`](../../src/fragnnet/models/masster/candidates/smarts_templates.py).
 It selects shared definitions from
-[`smarts_prepass.py`](../../src/fragnnet/frag/smarts_prepass.py) but owns a separate
+[`smarts_prepass.py`](../../src/fragnnet/fragmentation/smarts_prepass.py) but owns a separate
 allowlist.
 
 - Rule index `0` is the ordinary connected-component mechanism.
@@ -156,14 +156,14 @@ mass. This distinction is essential when the retained atoms require a new assemb
 | `pfas_sulfonate_f_transfer` | Perfluoroalkyl sulfonate | FSO3- with an alpha F transferred | Variable (product mapped) | `[M-H]-` |
 
 New rules must match the standardized molecules the model sees, i.e.
-`data_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
+`mol_utils.mol_from_smiles` output. The standardizer writes sulfoxides as `[S+][O-]` and
 hydroxamic acids as the hydroximic tautomer `ON=C(O)R`. The old `S=O`-only sulfoxide
 pattern matched no NIST20 molecule for that reason.
 
 ### Disabled rules (2026-09-29)
 
 User decision: these eight are commented out in
-[`masster_templates.py`](../../src/fragnnet/frag/masster_templates.py), to re-check on
+[`candidates/smarts_templates.py`](../../src/fragnnet/models/masster/candidates/smarts_templates.py), to re-check on
 Enveda-180. Evidence is in
 [Existing rules under the gate](#existing-rules-under-the-gate).
 - Their names keep their `MASSTER_RULE_VOCABULARY` slots, so uncommenting a rule restores its

@@ -212,9 +212,9 @@ mol_params:
 # ============================================================================
 # Model Architecture
 # ============================================================================
-# Model type. Full list: TEMPLATE_STEM_BY_MODEL_TYPE in src/fragnnet/runner.py -- frag_gnn (aliases
-# fraggnet, fragnnet), masster, neims, chemlm, massformer, iceberg_gen, iceberg_inten, graff,
-# precursor, gnn, mces_pretraining, clip, spec_mol_clip_pretraining.
+# Model type. Full list: MODEL_REGISTRY in src/fragnnet/registry.py -- frag_gnn (alias fragnnet),
+# masster, neims, massformer, graff, precursor, gnn. iceberg_gen, iceberg_inten,
+# mces_pretraining, chemlm, clip and spec_mol_clip_pretraining are retired (RETIRED_MODEL_TYPES).
 model_type: frag_gnn
 num_hs: 4  # Number of hydrogen transfer options
 int_embedder: abs-sines  # Integer embedder: ["abs-sines", "fourier-sines", "fourier", "rbf", "one-hot", "learnt"]
@@ -223,14 +223,13 @@ output_formula_str: False  # Output formula as string (slower but useful for deb
 
 # ============================================================================
 # Molecular GNN Configuration
-# NOTE: If using MCES pre-training, these MUST match the pre-training config
 # ============================================================================
 mol_hidden_size: 256  # Hidden dimension for molecular GNN
 mol_num_layers: 4  # Number of GNN layers for molecular encoding
-mol_gnn_type: GINE  # GNN architecture: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GAT", "GATv2", "GGNN", "MPNN", "NodeMLP"]
+mol_gnn_type: GINE  # GNN architecture: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "MPNN", "NodeMLP"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]; Graphormer requires "layer"
-mol_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "set_transformer", "equilibrium", "mean_max_sum", "mean_std_softmax", "none"]
+mol_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "mean_max_sum", "mean_std_softmax", "none"]
 mol_num_heads: 4  # Attention heads (GINE_GSA/GINE_GRAPHORMER/Graphormer); must divide mol_hidden_size
 mol_max_degree: 64  # Graphormer: largest atom degree the degree embedding distinguishes
 mol_max_spatial_distance: 128  # Graphormer: largest shortest-path distance the spatial embedding distinguishes
@@ -258,7 +257,7 @@ weight_decay: 0.01
 weight_decay_exclude_norm_bias: False
 # Exponential moving average of the weights, per optimizer step (null = off). Validation, the
 # best-checkpoint choice and every saved checkpoint's state_dict use the AVERAGE; the training
-# weights are stored beside it and restored on resume (fragnnet.utils.pl_utils.
+# weights are stored beside it and restored on resume (fragnnet.utils.trainer_utils.
 # ExponentialMovingAverage). Mean age of the average is decay/(1-decay) steps, so pick decay
 # from the run's steps per epoch: the merged ma_mi batch-512 lineage runs 90 steps/epoch, where
 # 0.998 averages over ~5.5 epochs. Train-side auxiliary metrics still measure the raw weights.
@@ -359,16 +358,6 @@ primary_loss_weight: 1.0
 # tolerance window; CE is the historical coverage-weighted sparse Gaussian score.
 spectral_leak_loss_weight: 0.0
 spectral_ce_auxiliary_weight: 0.0
-# Online adjacent-CE base-winner supervision. The v1 loss is training-only and, when enabled,
-# requires batch_sampler_type: ce_context, plus ce_pair_min_endpoint_confidence set and
-# target_rel_ints_thresh in (0, 1).
-ce_pair_loss_weight: 0.0
-ce_pair_min_endpoint_confidence: null
-# Reserved for the replicate audit; non-null values fail until the table is wired.
-ce_pair_min_endpoint_reliability: null
-ce_pair_subset: switches
-ce_pair_eligible_inst_types: [ORB, ORB_F]
-ce_pair_eligible_prec_types: ["[M+H]+", "[M-H]-"]
 # Same-fragment adjacent-eV delta supervision for MASSter. Requires shared
 # proposals, unique-fragment mode, and CE-context batches.
 cross_ev_fragment_loss_weight: 0.0
@@ -408,7 +397,7 @@ ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin","
 # See docs/findings/masster/masster_qet_projection_candidate_union_2026_09_26.md.
 ce_insert_location: none # FraGNNet: none, mol, mlp, or mol,mlp (frag insertion unsupported)
 ce_insert_merge: False # FraGNNet: mean-pool CE-reading embeddings within each spectrum
-ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
+ce_insert_size: 32 # Dimension of CE embedding
 context_insert_location: mol,mlp  # where to inject the context vector (mol and/or mlp)
 # Rough approximations from NIST20 Orbitrap/FT MS
 nce_max: 200  # Maximum NCE value for normalization/binning
@@ -428,11 +417,11 @@ ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
 # -- Precursor Type Configuration --
 
 prec_insert_location: none  # Where precursor type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
-prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES config if using pre-training)
+prec_insert_size: 32  # Dimension of precursor type embedding
 # -- Instrument Type Configuration --
 
 inst_insert_location: none  # Where instrument type is inserted: ["none", "mol", "mlp"]; "frag" is rejected
-inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
+inst_insert_size: 32  # Dimension of instrument type embedding
 # -- Fragmentation Mode Configuration --
 
 frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
@@ -544,19 +533,6 @@ share_memory: False
 log_min: 0.000000001 # 1e-9
 eval_test_split: False
 
-# ============================================================================
-# Precursor-pair loss
-# ============================================================================
-# Read by SpectrumPL/FraGNNetPL, not by `model_type: precursor`, so every template carries it.
-# Within-spectrum low-CE precursor-versus-strongest-supported-fragment supervision.
-precursor_pair_loss_weight: 0.0
-precursor_pair_nce_min: 0.0
-precursor_pair_nce_max: 20.0
-# Relative to the observed base peak; used when no precursor peak is observed.
-precursor_pair_absent_intensity_floor: 0.01
-precursor_pair_eligible_inst_types: [ORB, ORB_F]
-precursor_pair_eligible_prec_types: ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+Cl]-"]
-
 # ==========================================================================
 # FraGNNet only
 # model_type: frag_gnn (aliases fraggnet, fragnnet)
@@ -649,10 +625,10 @@ cc_atom_dropout: 0.0
 # ============================================================================
 frag_hidden_size: 256  # Hidden dimension for fragment GNN
 frag_num_layers: 4  # Number of GNN layers for fragment encoding
-frag_gnn_type: GINE  # GNN architecture for fragments: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "GAT", "GATv2", "GGNN", "MPNN", "NodeMLP"]
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GINE", "GINE_GSA", "GINE_GRAPHORMER", "GINE_GATED", "Graphormer", "MPNN", "NodeMLP"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
 frag_normalization: batch  # Normalization: ["batch", "layer", "graph", "none"]
-frag_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "set_transformer", "equilibrium", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
+frag_pool_type: none  # Pooling: ["sum", "mean", "max", "attention", "softmax", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
 frag_embed_combine: cat  # How to combine fragment embeddings: ["cat", "avg"]
 frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "concat", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
 
@@ -869,7 +845,7 @@ masster_rule_pathway_token: False
 # this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
 masster_boundary_bond_encoder: True
 # Descriptor columns appended to each candidate's intensity token, concatenated in registry
-# order regardless of the order listed here. `src/fragnnet/model/candidate_features.py` holds
+# order regardless of the order listed here. `src/fragnnet/models/masster/candidate_features.py` holds
 # the specs and documents what each one measures and why. An unknown or duplicated name raises
 # at model construction, which is also where the resolved layout is logged.
 #   c_cut_count       1                                bonds severed
@@ -1223,7 +1199,8 @@ masster_batch_sampler_max: null
 
 # ==========================================================================
 # ICEBERG only
-# model_type: iceberg_gen, iceberg_inten
+# Retired 2026-10-11 (run ICEBERG through external ms-pred). These keys are inert and stay so
+# older configs and checkpoints still resolve.
 # ==========================================================================
 magma_params:
   pe_embed_k: 0
@@ -1277,19 +1254,14 @@ neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 
 
 # ==========================================================================
 # ChemLM only
-# model_type: chemlm
+# model_type: chemlm (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
-# A pretrained SMILES language model (ChemBERTa-3) trained end to end with the NEIMS binned
-# head, which also reads neims_bottleneck_factor. Needs `transformers`, and
-# weight_decay_exclude_norm_bias: True; compile and activation_checkpointing are rejected.
-# docs/plans/chemberta3_msgym_plan.md
-chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM  # local HF checkpoint dir; never downloaded
-chemlm_num_layers: 6  # encoder layers kept from the input side (the checkpoint has 12)
-chemlm_encoder_lr: 0.00003  # encoder LR, embeddings included; the head uses `lr`
-# Probability that a training SMILES is replaced by one unrestricted random SMILES of the same
-# molecule, seeded from `seed`. Evaluation always reads the canonical string. 0 = off.
+# Inert: nothing reads these keys. They stay because every checkpoint saved while ChemLM
+# existed carries them in its hparams, and such a config must still resolve.
+chemlm_ckpt_dp: data/pretrained/ChemBERTa-100M-MLM
+chemlm_num_layers: 6
+chemlm_encoder_lr: 0.00003
 chemlm_p_trav: 0.0
-# Recompute each encoder layer in backward: same gradients, less activation memory.
 chemlm_gradient_checkpointing: False
 
 # ==========================================================================
@@ -1332,12 +1304,14 @@ ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
 
 # ==========================================================================
 # CLIP pretraining only
-# model_type: clip, spec_mol_clip_pretraining
+# model_type: clip, spec_mol_clip_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while CLIP existed
+# carries them in its hparams, and such a config must still resolve.
 clip_temperature: 0.07
 clip_embed_dim: 256
-clip_intensity_transform: sqrt  # ["sqrt", "log1p", "none"]
-clip_loss_type: clip  # ["clip", "siglip", "soft_clip"]; soft_clip requires mol_params.fingerprint=True
+clip_intensity_transform: sqrt
+clip_loss_type: clip
 spectrum_encoder_params:
   encoder_type: set_transformer
   input_dim: 2
@@ -1349,18 +1323,18 @@ spectrum_encoder_params:
   dropout: 0.1
   normalization: layer
 
-retrieval_eval_size:  # max spectra for retrieval eval; null = disabled (CLIP models only)
+retrieval_eval_size:
 
 # ==========================================================================
 # MCES pretraining only
-# model_type: mces_pretraining
+# model_type: mces_pretraining (retired 2026-10-12, RETIRED_MODEL_TYPES)
 # ==========================================================================
+# Inert: nothing reads these keys. They stay because every checkpoint saved while MCES
+# pretraining existed carries them in its hparams, and such a config must still resolve.
 mces_min: 1
 mces_max: 15
 mces_mean: 12
 mces_std: 2
-mces_normalization: zscore  # options: none, zscore, minmax
-mces_embed_combine: concat_avg  # options: ["concat_avg", "concat", "abs_diff", "signed_diff", "cross_attn"]
-
-# A data path, but only the MCES dataset reads it, so it stays with the other mces keys.
-mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
+mces_normalization: zscore
+mces_embed_combine: concat_avg
+mces_fp: data/proc/mces/mces_pairs.pkl

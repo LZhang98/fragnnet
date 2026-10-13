@@ -143,9 +143,9 @@ left on the true mask, no training. nist20 test, ~2,400 spectra, 17-element DAG 
 | 0.20 | 0.7563 |
 | 0.40 | 0.7189 |
 | 0.80 | 0.6511 |
-| 1.00 (fully random) | 0.6106 |
+| 1.00 (all bits inverted, padding included) | 0.6106 |
 
-Monotonic; full randomization costs **−0.21 cos (−26% relative)**, visible even at 5%. So the model
+Monotonic; full inversion costs **−0.21 cos (−26% relative; magnitude unverified, see below)**, visible even at 5%. So the model
 **uses** precise fragment atom identity — this rules out the "coasts on formula/size, ignores
 structure" failure mode. The inputs to the fragment-vs-fragment comparison are already good; what is
 missing is the comparison itself.
@@ -156,6 +156,10 @@ scored by an independent per-node MLP, and nothing relates same-size siblings ex
 global-softmax normalizer. This closes the "more features / richer encoder" branch and green-lights
 `FragmentCompetitionHead` as the correctly-aimed bet. Full detail and reproduce steps:
 `docs/findings/fragnnet/cc_corruption_probe_finding.md`.
+
+**Caveat (2026-10-12):** the probe's flips also hit padding bits that indexed atoms of other
+molecules in the batch, so the magnitudes above are unverified; see the
+[probe finding's caveats](cc_corruption_probe_finding.md#caveats).
 
 ## Caveats
 

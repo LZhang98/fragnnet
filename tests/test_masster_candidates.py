@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag import masster_candidates, masster_core
+from fragnnet.models.masster.candidates import builder as masster_candidates
+from fragnnet.models.masster.candidates import cut_mask_kernels
 
 MassterStaticGraph = masster_candidates.MassterStaticGraph
 _packed_long_chunk_tensors = masster_candidates._packed_long_chunk_tensors
@@ -178,7 +179,7 @@ def _full_build_then_slice_reference(*args: object) -> tuple[object, ...]:
     )
 
 
-_ORIGINAL_BUILD_COMPONENT_ARRAYS = masster_core.build_component_arrays_raw
+_ORIGINAL_BUILD_COMPONENT_ARRAYS = cut_mask_kernels.build_component_arrays_raw
 
 
 @pytest.mark.parametrize("seed", range(12))
@@ -577,7 +578,7 @@ def test_early_topology_candidate_fields_and_gradients_match_full_slice(
 
     optimized = build_masster_candidates(optimized_logits, **kwargs)
     monkeypatch.setattr(
-        masster_core,
+        cut_mask_kernels,
         "build_component_arrays_raw",
         _full_build_then_slice_reference,
     )
@@ -805,7 +806,7 @@ def test_parallel_topology_fields_and_gradients(
     threads: int, unique: bool, mixtures: int, smarts: bool
 ) -> None:
     """Concurrent representatives preserve every pathway, including grouped SMARTS."""
-    from fragnnet.frag.masster_templates import MassterTemplate
+    from fragnnet.models.masster.candidates.smarts_templates import MassterTemplate
 
     # Two distinct groups with two views each; one ring plus one disconnected atom.
     endpoints = [(0, 1), (1, 2), (2, 0), (2, 3)]

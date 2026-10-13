@@ -1,16 +1,23 @@
 import argparse
 import os
+import sys
 from pprint import pprint
 
 import pandas as pd
 import torch as th
 
 import wandb
-from fragnnet.model.loss import sparse_conditional_entropy_fn
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.inference.checkpoint import init_wandb_ckpt
+from fragnnet.inference.runners import run_inference
+from fragnnet.loss.cross_entropy import sparse_conditional_entropy
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.misc_utils import booltype, scatter_logsumexp
-from fragnnet.utils.script_utils import init_wandb_ckpt, log_mean, run_inference, select_model_vals
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.scatter_utils import scatter_logsumexp
+
+# The stats helpers live with the statistics scripts.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stats_scripts"))
+from stats_helpers import log_mean, select_model_vals  # noqa: E402
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -45,7 +52,9 @@ if __name__ == "__main__":
     # load configs
     print(">>> Loading configs")
     template_fp = "config"
-    custom_fp = os.path.join("config", entropy_exp, split_type, f"{depth}_script_config.yml")
+    custom_fp = os.path.join(
+        "config", "fragnnet", entropy_exp, split_type, f"{depth}_script_config.yml"
+    )
     assert os.path.isfile(custom_fp)
     config_d = load_config(template_fp, custom_fp)
     # modify config to record relevant metrics
@@ -255,7 +264,7 @@ if __name__ == "__main__":
             nb_joint_formula_idxs = select_d["pred_nb_joint_formula_idxs"][i]
             nb_joint_batch_idxs = select_d["pred_joint_batch_idxs"][i]
 
-            formula_node_e, formula_node_ne = sparse_conditional_entropy_fn(
+            formula_node_e, formula_node_ne = sparse_conditional_entropy(
                 formula_logprobs,
                 formula_batch_idxs,
                 formula_node_logprobs,
@@ -263,7 +272,7 @@ if __name__ == "__main__":
                 joint_batch_idxs,
             )
 
-            nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
+            nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy(
                 formula_logprobs,
                 formula_batch_idxs,
                 nb_node_formula_logprobs,
@@ -300,7 +309,7 @@ if __name__ == "__main__":
         )
         # print(ens_formula_node_lse.max(), ens_formula_node_lse.min())
 
-        ens_formula_node_e, ens_formula_node_ne = sparse_conditional_entropy_fn(
+        ens_formula_node_e, ens_formula_node_ne = sparse_conditional_entropy(
             ens_formula_logprobs,
             ens_formula_batch_idxs,
             ens_formula_node_logprobs,
@@ -321,7 +330,7 @@ if __name__ == "__main__":
             dim_size=ens_formula_formula_idxs.shape[0],
         )
 
-        ens_nb_formula_node_e, ens_nb_formula_node_ne = sparse_conditional_entropy_fn(
+        ens_nb_formula_node_e, ens_nb_formula_node_ne = sparse_conditional_entropy(
             ens_formula_logprobs,
             ens_formula_batch_idxs,
             ens_nb_formula_node_logprobs,

@@ -23,8 +23,11 @@ from typing import Any
 
 import pandas as pd
 
-from fragnnet.utils import data_utils
-from fragnnet.utils import frag_utils
+from fragnnet.utils import parallel_utils
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.utils import dag_format_utils
+from fragnnet.utils import formula_utils
 from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.proc_utils import filter_spec_mol
 
@@ -57,8 +60,8 @@ def _load_filtered_mol_df(args: argparse.Namespace) -> pd.DataFrame:
 def _get_cc_mask_rows(dag_d: dict[str, Any]) -> list[tuple[int, ...]]:
     dag = dag_d["dag"]
     node_feat_idxs = dag.node_feat_idxs[0].tolist()
-    cc_long = frag_utils.get_node_feats(dag.x, node_feat_idxs, "cc")
-    cc_mask = frag_utils.th_long_to_mask(cc_long).cpu().numpy()
+    cc_long = get_node_feats(dag.x, node_feat_idxs, "cc")
+    cc_mask = formula_utils.th_long_to_mask(cc_long).cpu().numpy()
     node_count = int(cc_mask.shape[0])
     mol_atoms = int(cc_mask[0].sum()) if node_count else 0
     return [tuple(int(v) for v in row[:mol_atoms]) for row in cc_mask]
@@ -191,9 +194,9 @@ def generate_dags(
         ]
         for _, row in mol_df.iterrows()
     )
-    frag_results = data_utils.par_apply(
+    frag_results = parallel_utils.par_apply(
         mol_input_rows,
-        frag_utils.timed_get_dags,
+        timed_get_dags,
         need_unpack=True,
         return_as_generator=False,
     )
@@ -202,13 +205,13 @@ def generate_dags(
         mol_id = int(mol_id)
         results[mol_id] = dag_d
         if dag_d:
-            fp = frag_utils.get_dag_output_path(
+            fp = dag_format_utils.get_dag_output_path(
                 str(dag_dp),
                 mol_id,
                 compress_dags=compress_dags,
                 compress_format=compress_format,
             )
-            frag_utils.dump_dag_pickle(fp, dag_d)
+            dag_format_utils.dump_dag_pickle(fp, dag_d)
     return results
 
 
@@ -366,7 +369,7 @@ def main() -> None:
     parser.add_argument("--compress_dags", type=booltype, default=False)
     parser.add_argument("--compress_format", type=str, default="bz2", choices=["gz", "bz2"])
     parser.add_argument("--detail_limit", type=int, default=20)
-    parser.add_argument("--elements", nargs="+", default=frag_utils.ELEMENTS)
+    parser.add_argument("--elements", nargs="+", default=formula_utils.ELEMENTS)
     parser.add_argument("--dsets", nargs="+", default=None)
     parser.add_argument("--prec_types", nargs="+", default=None)
     parser.add_argument("--inst_types", nargs="+", default=None)

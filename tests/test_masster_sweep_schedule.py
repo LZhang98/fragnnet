@@ -23,7 +23,18 @@ def test_sampled_batch_schedule(batch, accumulation, total, warmup):
     assert config["max_epochs"] == 128
 
 
-@pytest.mark.parametrize("override", [{"drop_last": True}, {"masster_batch_sampler": True}])
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"drop_last": True},
+        {"masster_batch_sampler": True},
+        # Curriculum epochs train on a growing subset, so they have fewer batches.
+        {"bond_size_curriculum": True},
+        {"group_sampler": True},
+        {"model_type": "frag_gnn", "dynamic_batch_sampler": True},
+        {"model_type": "frag_gnn", "batch_sampler_type": "ce_context"},
+    ],
+)
 def test_schedule_rejects_incompatible_loaders(override):
     config = load_config("config", "config/masster/massspecgym/msgym_val_loss_sweep_40gb.yml", None)
     config.update(override)

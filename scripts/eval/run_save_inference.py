@@ -4,23 +4,25 @@ from pprint import pprint
 import torch as th
 
 import wandb
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
-from fragnnet.graff.dataset import SpecMolAnnDataset
-from fragnnet.graff.pl_model import GrAFFPL
-from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
-from fragnnet.iceberg.pl_model import IcebergIntenPL
-from fragnnet.massformer.pl_model import MassFormerPL
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
-from fragnnet.utils.script_utils import (
+from fragnnet.baselines.graff.dataset import SpecMolAnnDataset
+from fragnnet.baselines.graff.pl_model import GrAFFPL
+from fragnnet.baselines.massformer.dataset import SpecMolMFDataset
+from fragnnet.baselines.massformer.pl_model import MassFormerPL
+from fragnnet.dataset import SpecMolDataset
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     cleanup_model,
     init_wandb_ckpt,
-    prepare_output_subset,
-    run_inference_tabular,
     save_inference_results,
 )
+from fragnnet.inference.export_columns import prepare_output_subset
+from fragnnet.inference.runners import run_inference_tabular
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
+from fragnnet.models.neims.neims_pl import NeimsPL
+from fragnnet.models.precursor.precursor_pl import PrecursorPL
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -32,8 +34,6 @@ if __name__ == "__main__":
         default=[
             "fragnnet_d3",
             "fragnnet_d4",
-            "iceberg_inten",
-            "iceberg_inten_opt",
             "neims",
             "massformer",
             "graff",
@@ -106,19 +106,15 @@ if __name__ == "__main__":
         "massformer": MassFormerPL,
         "fragnnet_d3": FraGNNetPL,
         "fragnnet_d4": FraGNNetPL,
-        "iceberg_inten": IcebergIntenPL,
-        "iceberg_inten_opt": IcebergIntenPL,
         "graff": GrAFFPL,
         "precursor": PrecursorPL,
     }
 
     model_type_to_ds_cls = {
         "neims": SpecMolDataset,
-        "massformer": SpecMolDataset,
+        "massformer": SpecMolMFDataset,
         "fragnnet_d3": SpecMolFragDataset,
         "fragnnet_d4": SpecMolFragDataset,
-        "iceberg_inten": SpecMolMagmaIntenDataset,
-        "iceberg_inten_opt": SpecMolMagmaIntenDataset,
         "graff": SpecMolAnnDataset,
         "precursor": SpecMolDataset,
     }
@@ -128,8 +124,6 @@ if __name__ == "__main__":
         "massformer": "massformer_long",
         "fragnnet_d3": "fraggnn_d3_long",
         "fragnnet_d4": "fraggnn_d4_long",
-        "iceberg_inten": "iceberg_inten3_100_long",
-        "iceberg_inten_opt": "iceberg_inten3_all_long",
         "graff": "graff3_long",
         "precursor": "precursor",
     }
@@ -148,8 +142,10 @@ if __name__ == "__main__":
         for model_type in wandb_model_types:
             model_type_wandb_prefix = model_type_to_wandb_prefix[model_type]
             dset_wandb_group_prefix = dset_to_wandb_prefix[dset]
+            model_dir = "fragnnet" if model_type.startswith("fragnnet") else model_type
+            config_variant = f"/{model_type}" if model_dir == "fragnnet" else ""
             model_to_config[split_type][model_type] = (
-                f"config/{dset}_{split_type}/{model_type}/s0.yml"
+                f"config/{model_dir}/{dset}_{split_type}{config_variant}/s0.yml"
             )
             if model_type != "precursor":
                 group_name = f"{dset_wandb_group_prefix}_{split_type}_{model_type_wandb_prefix}"

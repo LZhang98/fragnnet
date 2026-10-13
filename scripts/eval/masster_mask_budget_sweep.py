@@ -29,13 +29,13 @@ import torch as th
 from lightning import seed_everything
 from tqdm import tqdm
 
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -129,7 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template_fp", default="config")
     parser.add_argument(
         "--custom_fp",
-        default="config/nist20_merged_inchikey/masster/s0.yml",
+        default="config/masster/nist20_merged_inchikey/s0.yml",
     )
     checkpoint_group = parser.add_mutually_exclusive_group(required=True)
     checkpoint_group.add_argument("--model_ckpt", help="Local checkpoint path.")

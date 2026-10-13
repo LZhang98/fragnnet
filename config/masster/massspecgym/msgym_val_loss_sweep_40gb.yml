@@ -111,7 +111,6 @@ loss_vectorized: true
 # docs/plans/masster/masster_regularization_sweep_plan.md#slice-sizing-is-a-measured-open-question-not-a-settled-choice
 loss_batch_size: 16
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

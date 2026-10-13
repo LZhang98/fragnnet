@@ -8,8 +8,8 @@
 # ~232 unique fragments the intensity head actually sees).  The remaining suspect is the
 # sparse cross-entropy chunk loop.
 #
-# `loss_batch_size` is a CEILING on chunk width in `_build_loss_chunks`
-# (src/fragnnet/model/loss.py), so lb=8 at train_batch_size=128 gives >=16 sequential
+# `loss_batch_size` is a CEILING on chunk width in `build_loss_chunks`
+# (src/fragnnet/loss/padding.py), so lb=8 at train_batch_size=128 gives >=16 sequential
 # padded-Cartesian chunks per step.  The inner guard breaks a chunk as soon as
 # `padded_pairs > flat_pairs`, so raising the ceiling only merges chunks where padding
 # stays favourable -- it cannot blow memory up the way a naive increase would.

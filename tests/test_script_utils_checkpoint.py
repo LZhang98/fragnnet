@@ -5,14 +5,14 @@ import copy
 import pytest
 import torch as th
 
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
-from fragnnet.runner import load_config
-from fragnnet.utils import script_utils
-from fragnnet.utils.script_utils import (
+from fragnnet.inference import checkpoint
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_config_from_ckpt,
     init_model_from_ckpt,
 )
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
+from fragnnet.runner import load_config
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def test_get_ckpt_path_uses_existing_local_checkpoint(tmp_path) -> None:
     checkpoint_fp.touch()
 
     assert (
-        script_utils.get_ckpt_path(None, str(checkpoint_fp), str(tmp_path / "downloads"))
+        checkpoint.get_ckpt_path(None, str(checkpoint_fp), str(tmp_path / "downloads"))
         == str(checkpoint_fp)
     )
 
@@ -76,13 +76,13 @@ def test_get_ckpt_path_rejects_missing_local_checkpoint(tmp_path, monkeypatch) -
     def fail_if_called(*args, **kwargs):
         raise AssertionError("W&B fallback must not run for a supplied local checkpoint")
 
-    monkeypatch.setattr(script_utils, "get_best_ckpt_from_wandb", fail_if_called)
+    monkeypatch.setattr(checkpoint, "get_best_ckpt_from_wandb", fail_if_called)
     checkpoint_fp = tmp_path / "missing.ckpt"
 
     with pytest.raises(FileNotFoundError, match=str(checkpoint_fp)):
-        script_utils.get_ckpt_path(None, str(checkpoint_fp), str(tmp_path / "downloads"))
+        checkpoint.get_ckpt_path(None, str(checkpoint_fp), str(tmp_path / "downloads"))
 
 
 def test_get_ckpt_path_requires_a_checkpoint_source(tmp_path) -> None:
     with pytest.raises(ValueError, match="Either wandb_run_id or model_ckpt"):
-        script_utils.get_ckpt_path(None, None, str(tmp_path / "downloads"))
+        checkpoint.get_ckpt_path(None, None, str(tmp_path / "downloads"))

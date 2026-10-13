@@ -32,14 +32,14 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem, RDLogger
 
-from fragnnet.frag import masster_templates as mst
-from fragnnet.frag.smarts_prepass import (
+from fragnnet.fragmentation.smarts_prepass import (
     FRAG_RULES,
     NL_RULES,
     NeutralLossRule,
     _apply_nl_prepass,
     _apply_smarts_prepass,
 )
+from fragnnet.models.masster.candidates import smarts_templates as mst
 
 RDLogger.DisableLog("rdApp.*")
 

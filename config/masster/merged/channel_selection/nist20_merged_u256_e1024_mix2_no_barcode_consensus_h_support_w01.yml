@@ -110,7 +110,6 @@ loss_vectorized: True
 loss_batch_size: 8
 target_rel_ints_thresh: 0.001
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 dynamic_batch_sampler: False
 group_sampler: False

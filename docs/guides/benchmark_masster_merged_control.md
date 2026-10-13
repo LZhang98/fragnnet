@@ -62,7 +62,7 @@ or fragmentation modes, so each merged row keeps a single well-defined adduct.
 
 A merged row carries the whole acquisition ladder rather than one energy: median 4 readings,
 max 86. MASSter's context encoder embeds each reading and **mean-pools per spectrum**
-(`_embed_ce_values` in `src/fragnnet/model/masster_model.py`). So the merged arms condition
+(`_embed_ce_values` in `src/fragnnet/models/masster/masster_model.py`). So the merged arms condition
 on a pooled NCE ladder. This is inherent to merging, not a config choice, and it is a further
 reason the merged and unmerged arms are not a clean A/B on merging alone.
 

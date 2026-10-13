@@ -13,9 +13,10 @@ And the 2026-09-22 refactor that replaced the five independent
 ``candidate_mass_features``/``candidate_charge_feature``/``candidate_composition_features``/
 ``candidate_cut_bond_features``/``candidate_cut_adjacency_features`` booleans with the single
 ``candidate_features`` list resolved against
-:mod:`fragnnet.model.candidate_features`. Most of this file builds a
-:class:`~fragnnet.model.candidate_features.CandidateFeatureInputs` directly and calls a spec's
-``build`` (or :func:`~fragnnet.model.candidate_features.build_candidate_features`) instead of the
+:mod:`fragnnet.models.masster.candidate_features`. Most of this file builds a
+:class:`~fragnnet.models.masster.candidate_features.CandidateFeatureInputs` directly and
+calls a spec's ``build`` (or
+:func:`~fragnnet.models.masster.candidate_features.build_candidate_features`) instead of the
 deleted private model methods; the asserted values are unchanged from before the refactor.
 """
 
@@ -25,15 +26,9 @@ from rdkit import Chem
 from rdkit.Chem.Descriptors import ExactMolWt
 from torch_geometric.data import Batch
 
-import fragnnet.model.masster_model as masster_model_module
-from fragnnet.model.base_model import CutBondEncoder
-from fragnnet.model.bond_fragment_heads import (
-    CandidateIntensityTransformerHead,
-    boundary_bond_endpoint_orientation,
-    pool_boundary_bond_embeddings,
-    pool_component_and_complement_embeddings,
-)
-from fragnnet.model.candidate_features import (
+import fragnnet.models.masster.masster_model as masster_model_module
+from fragnnet.layers.cut_bond_encoder import CutBondEncoder
+from fragnnet.models.masster.candidate_features import (
     CANDIDATE_FEATURES_BY_NAME,
     COMPOSITION_FEATURE_DIM,
     CandidateFeatureInputs,
@@ -43,8 +38,14 @@ from fragnnet.model.candidate_features import (
     describe_candidate_features,
     resolve_candidate_features,
 )
-from fragnnet.model.masster_model import MassterModel
-from fragnnet.utils.frag_utils import CANONICAL_ELEMENT_ORDER
+from fragnnet.models.masster.candidate_transformer import CandidateIntensityTransformerHead
+from fragnnet.models.masster.component_pooling import (
+    boundary_bond_endpoint_orientation,
+    pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
+)
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER
 from tests.test_masster_model import _build_batch, _build_model
 
 

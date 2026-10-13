@@ -26,33 +26,33 @@ def load_prepare_module():
 
 def _setup_stubs(monkeypatch, module):
     """Common stub setup for all tests."""
-    monkeypatch.setattr(module.data_utils, "mol_from_smiles", lambda s, **kwargs: f"mol({s})")
+    monkeypatch.setattr(module.mol_utils, "mol_from_smiles", lambda s, **kwargs: f"mol({s})")
     monkeypatch.setattr(
-        module.data_utils, "mol_to_smiles", lambda m: str(m).removeprefix("mol(").removesuffix(")")
+        module.mol_utils, "mol_to_smiles", lambda m: str(m).removeprefix("mol(").removesuffix(")")
     )
-    monkeypatch.setattr(module.data_utils, "parse_peaks_str", lambda s: [(100.0, 1.0)])
-    monkeypatch.setattr(module.data_utils, "get_res", lambda peaks: None)
-    monkeypatch.setattr(module.data_utils, "parse_inst_info", lambda row: ("LCMS", "HCD"))
-    monkeypatch.setattr(module.data_utils, "parse_ace_str", lambda s: None)
-    monkeypatch.setattr(module.data_utils, "parse_nce_str", lambda s: None)
-    monkeypatch.setattr(module.data_utils, "parse_prec_type_str", lambda s: s)
-    monkeypatch.setattr(module.data_utils, "parse_ion_mode_str", lambda s: s)
-    monkeypatch.setattr(module.data_utils, "convert_peaks_to_float", lambda peaks: peaks)
-    monkeypatch.setattr(module.data_utils, "parse_ri_str", lambda s: None)
-    monkeypatch.setattr(module.data_utils, "mol_to_inchikey_s", lambda m: "AAAAAAAAAAAAAA")
-    monkeypatch.setattr(module.data_utils, "get_murcko_scaffold", lambda m: "CC")
-    monkeypatch.setattr(module.data_utils, "mol_to_formula", lambda m: "C2H6")
-    monkeypatch.setattr(module.data_utils, "mol_to_inchi", lambda m: "InChI=1S/C2H6/h1H3,2H3")
+    monkeypatch.setattr(module.spec_parse_utils, "parse_peaks_str", lambda s: [(100.0, 1.0)])
+    monkeypatch.setattr(module.spec_parse_utils, "get_res", lambda peaks: None)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_inst_info", lambda row: ("LCMS", "HCD"))
+    monkeypatch.setattr(module.spec_parse_utils, "parse_ace_str", lambda s: None)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_nce_str", lambda s: None)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_prec_type_str", lambda s: s)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_ion_mode_str", lambda s: s)
+    monkeypatch.setattr(module.spec_parse_utils, "convert_peaks_to_float", lambda peaks: peaks)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_ri_str", lambda s: None)
+    monkeypatch.setattr(module.mol_utils, "mol_to_inchikey_s", lambda m: "AAAAAAAAAAAAAA")
+    monkeypatch.setattr(module.mol_utils, "get_murcko_scaffold", lambda m: "CC")
+    monkeypatch.setattr(module.mol_utils, "mol_to_formula", lambda m: "C2H6")
+    monkeypatch.setattr(module.mol_utils, "mol_to_inchi", lambda m: "InChI=1S/C2H6/h1H3,2H3")
     monkeypatch.setattr(
-        module.data_utils, "mol_to_mol_weight", lambda m, exact: 30.0 if exact else 30.1
+        module.mol_utils, "mol_to_mol_weight", lambda m, exact: 30.0 if exact else 30.1
     )
-    monkeypatch.setattr(module.data_utils, "mol_to_num_atoms", lambda m: 8)
-    monkeypatch.setattr(module.data_utils, "mol_to_num_bonds", lambda m: 7)
-    monkeypatch.setattr(module.data_utils, "mol_to_charge", lambda m: 0)
-    monkeypatch.setattr(module.data_utils, "check_single_mol", lambda m: True)
-    monkeypatch.setattr(module.data_utils, "mol_to_num_radicals", lambda m: 0)
-    monkeypatch.setattr(module.data_utils, "infer_prec_mz", lambda row: 31.0)
-    monkeypatch.setattr(module.data_utils, "parse_annotations", lambda row: ([], [], [], [], []))
+    monkeypatch.setattr(module.mol_utils, "mol_to_num_atoms", lambda m: 8)
+    monkeypatch.setattr(module.mol_utils, "mol_to_num_bonds", lambda m: 7)
+    monkeypatch.setattr(module.mol_utils, "mol_to_charge", lambda m: 0)
+    monkeypatch.setattr(module.mol_utils, "check_single_mol", lambda m: True)
+    monkeypatch.setattr(module.mol_utils, "mol_to_num_radicals", lambda m: 0)
+    monkeypatch.setattr(module.spec_parse_utils, "infer_prec_mz", lambda row: 31.0)
+    monkeypatch.setattr(module.spec_parse_utils, "parse_annotations", lambda row: ([], [], [], [], []))
 
 
 def test_group_id_uses_documented_trio(monkeypatch):
@@ -193,7 +193,7 @@ def test_annotation_merge_uses_dataset_with_dset_spec_id(monkeypatch):
     module = load_prepare_module()
     _setup_stubs(monkeypatch, module)
     monkeypatch.setattr(
-        module.data_utils,
+        module.spec_parse_utils,
         "parse_annotations",
         lambda row: ([100.0], ["C2H6"], [], [], [100.0]),
     )
@@ -246,3 +246,43 @@ def test_annotation_merge_uses_dataset_with_dset_spec_id(monkeypatch):
     assert len(spec_df) == 2
     assert len(ann_df) == 2
     assert set(ann_df["spec_id"]) == set(spec_df["spec_id"])
+
+
+def test_canonicalize_tautomers_flag_reaches_every_conversion(monkeypatch):
+    """canonicalize_tautomers=False must reach the initial standardization pass too."""
+    module = load_prepare_module()
+    _setup_stubs(monkeypatch, module)
+    calls = []
+
+    def recording_mol_from_smiles(s, **kwargs):
+        calls.append(kwargs)
+        return f"mol({s})"
+
+    monkeypatch.setattr(module.mol_utils, "mol_from_smiles", recording_mol_from_smiles)
+    # Run in-process so the recorded calls are visible here
+    monkeypatch.setattr(module, "par_apply_series", lambda series, func, **kwargs: series.apply(func))
+    row = {
+        "spec_id": 0,
+        "smiles": "CC",
+        "dset": "A",
+        "dset_spec_id": "1",
+        "col_energy": "10 eV",
+        "col_energy_extra_1": None,
+        "col_energy_extra_2": None,
+        "peaks": "[(100,1.0)]",
+        "prec_type": "M+H",
+        "spec_type": "MS2",
+        "ion_mode": "P",
+        "col_gas": "N2",
+        "ri": "",
+        "formula": "",
+        "inchikey": None,
+        "exact_mass": None,
+        "prec_mz": None,
+        "notes": "",
+    }
+
+    module.preprocess_spec(pd.DataFrame([row]), canonicalize_tautomers=False)
+
+    assert len(calls) >= 2
+    assert all(kwargs.get("canonicalize_tautomers") is False for kwargs in calls)

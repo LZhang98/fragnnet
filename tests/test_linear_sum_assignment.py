@@ -1,4 +1,4 @@
-"""Unit tests for fragnnet.utils.spec_utils.linear_sum_assignment.
+"""Unit tests for fragnnet.utils.spec_similarity.linear_sum_assignment.
 
 Tests cover:
 - Correctness against scipy reference on known matrices
@@ -13,7 +13,7 @@ import pytest
 import torch as th
 from scipy.optimize import linear_sum_assignment as scipy_lsa
 
-from fragnnet.utils.spec_utils import linear_sum_assignment
+from fragnnet.utils.spec_similarity import linear_sum_assignment
 
 
 def _reference(matrix: th.Tensor, maximize: bool) -> tuple[th.Tensor, th.Tensor]:

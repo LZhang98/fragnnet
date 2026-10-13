@@ -45,9 +45,9 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from scipy.stats import entropy as scipy_entropy
 from scipy.stats import spearmanr
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # Reuse the per-instrument tolerance convention from the oracle script (FT 10ppm/200Da,
 # QTOF 20ppm/750Da, else global 10ppm/200Da) so this diagnostic matches the cos_hun_inst_tol
@@ -222,7 +222,7 @@ def main() -> None:
     )
     parser.add_argument("--limit_mols", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional per-spectrum CSV.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -279,7 +279,7 @@ def main() -> None:
     n_chunks = max(1, args.n_jobs * 4)
     # par_apply calls par_func(*item), so each item is a 1-tuple wrapping one chunk (list).
     chunks = [(recs[i::n_chunks],) for i in range(n_chunks)]
-    per_chunk = data_utils.par_apply(chunks, _diagnose_chunk, need_unpack=True, n_jobs=args.n_jobs)
+    per_chunk = parallel_utils.par_apply(chunks, _diagnose_chunk, need_unpack=True, n_jobs=args.n_jobs)
     rows = [r for chunk in per_chunk for r in chunk]
     df = pd.DataFrame(rows)
 

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import torch
 
-from fragnnet.pl_model import MassterPL
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.utils.migrations import get_pl_hparams
 
 
 def summarize_checkpoint(checkpoint_path: str) -> dict:

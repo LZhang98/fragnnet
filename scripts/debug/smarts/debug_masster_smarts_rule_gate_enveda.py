@@ -44,17 +44,17 @@ from debug_masster_smarts_rule_gate import (  # noqa: E402
     summarize,
 )
 
-from fragnnet.frag.masster_templates import (  # noqa: E402
-    _MASSTER_PRECURSOR_TYPES,
-    MASSTER_FRAG_RULES,
-    MASSTER_NL_RULES,
-    _is_connected,
-)
-from fragnnet.frag.smarts_prepass import (  # noqa: E402
+from fragnnet.fragmentation.smarts_prepass import (  # noqa: E402
     FRAG_RULES,
     NL_RULES,
     NeutralLossRule,
     SmartsFragRule,
+)
+from fragnnet.models.masster.candidates.smarts_templates import (  # noqa: E402
+    _MASSTER_PRECURSOR_TYPES,
+    MASSTER_FRAG_RULES,
+    MASSTER_NL_RULES,
+    _is_connected,
 )
 
 RDLogger.DisableLog("rdApp.*")
@@ -62,7 +62,7 @@ BOTH = ("[M+H]+", "[M-H]-")
 RELATIVE_TOLERANCE, MZ_FLOOR = 1e-5, 200.0
 
 # MASSter-only rules disabled on 2026-09-29, copied from the commented-out definitions in
-# masster_templates.py with their former precursor guards.
+# candidates/smarts_templates.py with their former precursor guards.
 DISABLED_MASSTER_ONLY = [
     (
         SmartsFragRule(

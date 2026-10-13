@@ -1,0 +1,201 @@
+"""Model-type registry: which Lightning module and dataset class serve each ``model_type``.
+
+Core code reaches the models only through this module. It holds import paths as strings and
+imports a class only when that model type is requested, so importing core does not load any
+model, baseline or optional dependency (see docs/plans/repo_reorg_plan.md, "Target layout").
+"""
+
+from __future__ import annotations
+
+import importlib
+from dataclasses import dataclass
+from functools import cache
+
+
+@dataclass(frozen=True)
+class ModelEntry:
+    """Import paths (``"package.module:QualName"``) of one model type's classes.
+
+    Attributes:
+        model_cls: The Lightning module.
+        dataset_cls: The dataset class that produces its batches.
+        hooks: The ``fragnnet.hooks.ModelHooks`` subclass with its model-specific steps.
+    """
+
+    model_cls: str
+    dataset_cls: str
+    hooks: str = "fragnnet.hooks:ModelHooks"
+
+
+_SPEC_MOL_DATASET = "fragnnet.dataset.spec_mol_dataset:SpecMolDataset"
+_FRAGNNET = ModelEntry(
+    "fragnnet.models.fragnnet.fragnnet_pl:FraGNNetPL",
+    "fragnnet.models.fragnnet.fragnnet_dataset:SpecMolFragDataset",
+    hooks="fragnnet.models.fragnnet.fragnnet_hooks:FraGNNetHooks",
+)
+
+MODEL_REGISTRY: dict[str, ModelEntry] = {
+    "frag_gnn": _FRAGNNET,
+    "fragnnet": _FRAGNNET,
+    "masster": ModelEntry(
+        "fragnnet.models.masster.masster_pl:MassterPL",
+        _SPEC_MOL_DATASET,
+        hooks="fragnnet.models.masster.masster_hooks:MassterHooks",
+    ),
+    "neims": ModelEntry("fragnnet.models.neims.neims_pl:NeimsPL", _SPEC_MOL_DATASET),
+    "massformer": ModelEntry(
+        "fragnnet.baselines.massformer.pl_model:MassFormerPL",
+        "fragnnet.baselines.massformer.dataset:SpecMolMFDataset",
+    ),
+    "graff": ModelEntry(
+        "fragnnet.baselines.graff.pl_model:GrAFFPL",
+        "fragnnet.baselines.graff.dataset:SpecMolAnnDataset",
+        hooks="fragnnet.baselines.graff.hooks:GrAFFHooks",
+    ),
+    "precursor": ModelEntry(
+        "fragnnet.models.precursor.precursor_pl:PrecursorPL", _SPEC_MOL_DATASET
+    ),
+    "gnn": ModelEntry("fragnnet.models.gnn.gnn_pl:GNNPL", _SPEC_MOL_DATASET),
+}
+
+# Every model type a config may declare. Shared code reads any template key regardless of the
+# model type, so this only guards against a typo in ``model_type`` itself.
+VALID_MODEL_TYPES = frozenset(MODEL_REGISTRY)
+
+# Last revision that contains the local ICEBERG fork (reachable from origin/masster).
+ICEBERG_ARCHIVE_SHA = "13b1599d3cd85ef8f214799894e527adaf3ddd0a"
+_ICEBERG_RETIRED = (
+    "model_type {model_type!r} is retired: this repository's ICEBERG fork was removed on "
+    "2026-10-11 (docs/plans/repo_reorg_plan.md). Run ICEBERG with external ms-pred "
+    "(https://github.com/coleygroup/ms-pred) and score its prediction files with this "
+    "repository's evaluation tools. The local fork, its configs and its checkpoints belong to "
+    f"revision {ICEBERG_ARCHIVE_SHA}."
+)
+
+# MCES pretraining (a Siamese molecule encoder trained on MCES distances, meant to initialize
+# FraGNNet fine-tuning) was removed on 2026-10-12. The same revision holds its code and configs.
+MCES_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_MCES_RETIRED = (
+    "model_type {model_type!r} is retired: MCES pretraining, and fine-tuning FraGNNet from its "
+    "weights, did not help and was removed on 2026-10-12. Its model, dataset, configs and "
+    f"preprocessing belong to revision {MCES_ARCHIVE_SHA}. FraGNNet fine-tuning from a FraGNNet "
+    "checkpoint (finetune_* keys) is unaffected."
+)
+
+# ChemLM (a pretrained ChemBERTa-3 SMILES encoder with the NEIMS binned head) was removed on
+# 2026-10-12: it did not beat the structure-blind prior (docs/plans/chemberta3_msgym_plan.md).
+CHEMLM_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_CHEMLM_RETIRED = (
+    "model_type {model_type!r} is retired: ChemLM (ChemBERTa-3 encoder with the NEIMS head) did "
+    "not help and was removed on 2026-10-12 (docs/plans/chemberta3_msgym_plan.md). Its model, "
+    f"configs and tests belong to revision {CHEMLM_ARCHIVE_SHA}. NEIMS is unaffected."
+)
+
+# CLIP spectrum-molecule contrastive pretraining (SpectrumEncoder + MolEncoder) was removed on
+# 2026-10-12: it is no longer used.
+CLIP_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
+_CLIP_RETIRED = (
+    "model_type {model_type!r} is retired: CLIP spectrum-molecule contrastive pretraining is no "
+    "longer used and was removed on 2026-10-12. Its model, losses, configs and tests belong to "
+    f"revision {CLIP_ARCHIVE_SHA}."
+)
+
+# Model types that were removed; selecting one raises an actionable error instead of the generic
+# unknown-type error.
+RETIRED_MODEL_TYPES: dict[str, str] = {
+    "iceberg_gen": _ICEBERG_RETIRED,
+    "iceberg_inten": _ICEBERG_RETIRED,
+    "mces_pretraining": _MCES_RETIRED,
+    "chemlm": _CHEMLM_RETIRED,
+    "clip": _CLIP_RETIRED,
+    "spec_mol_clip_pretraining": _CLIP_RETIRED,
+}
+
+
+def raise_if_retired(model_type: str) -> None:
+    """Raise the retirement message for a removed model type; do nothing otherwise.
+
+    Args:
+        model_type: Model type from a config, checkpoint or caller.
+
+    Raises:
+        ValueError: If ``model_type`` was retired.
+    """
+    if model_type in RETIRED_MODEL_TYPES:
+        raise ValueError(RETIRED_MODEL_TYPES[model_type].format(model_type=model_type))
+
+
+def _resolve(path: str) -> type:
+    module_name, _, qualname = path.partition(":")
+    obj = importlib.import_module(module_name)
+    for attr in qualname.split("."):
+        obj = getattr(obj, attr)
+    return obj
+
+
+def _entry(model_type: str) -> ModelEntry:
+    raise_if_retired(model_type)
+    if model_type not in MODEL_REGISTRY:
+        raise ValueError(f"Unknown model type: {model_type}")
+    return MODEL_REGISTRY[model_type]
+
+
+def get_model_cls(model_type: str) -> type:
+    """Return the Lightning module class for ``model_type``, importing it on first use.
+
+    Args:
+        model_type: A registered model type.
+
+    Returns:
+        The model class.
+
+    Raises:
+        ValueError: If the model type is unknown or retired.
+    """
+    return _resolve(_entry(model_type).model_cls)
+
+
+@cache
+def _hooks_instance(path: str):
+    return _resolve(path)()
+
+
+def get_model_hooks(model_type: str | None, *, strict: bool = True):
+    """Return the hooks for ``model_type``, importing its hooks module on first use.
+
+    Args:
+        model_type: A model type, already alias-resolved.
+        strict: Raise for an unknown or retired type. With ``strict=False`` such a type (or
+            None) gets the default no-op hooks, for callers such as checkpoint migration that
+            must not fail before the type is validated elsewhere.
+
+    Returns:
+        A ``fragnnet.hooks.ModelHooks`` instance (shared per hooks class).
+
+    Raises:
+        ValueError: If ``strict`` and the model type is unknown or retired.
+    """
+    if not strict and model_type not in MODEL_REGISTRY:
+        return _hooks_instance("fragnnet.hooks:ModelHooks")
+    return _hooks_instance(_entry(model_type).hooks)
+
+
+def all_model_hooks() -> list:
+    """The hooks of every registered model type, one per hooks class, in registry order."""
+    paths = dict.fromkeys(entry.hooks for entry in MODEL_REGISTRY.values())
+    return [_hooks_instance(path) for path in paths]
+
+
+def get_dataset_cls(model_type: str) -> type:
+    """Return the dataset class for ``model_type``, importing it on first use.
+
+    Args:
+        model_type: A registered model type.
+
+    Returns:
+        The dataset class.
+
+    Raises:
+        ValueError: If the model type is unknown or retired.
+    """
+    return _resolve(_entry(model_type).dataset_cls)

@@ -1,6 +1,7 @@
 """Step 4 of docs/plans/fragnnet/dag_full_recall_tractability_plan.md: test whether the MECHANISM change
 alone -- global (not per-parent) cutoff with max-over-redundant-routes, modeled on
-src/fragnnet/iceberg/pl_model.py's autoregressive generation loop -- recovers the recall
+the ICEBERG fork's autoregressive generation loop (src/fragnnet/iceberg/pl_model.py, removed
+2026-10-11; see revision 13b1599d) -- recovers the recall
 that Step 3 (debug_fanout_cap_recall_eval.py) found lost when hand-mined/learned priority
 was applied via an independent per-parent top-K cap (both lost to random tie-break there).
 

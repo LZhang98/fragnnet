@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import mol_utils
 import numpy as np
 import os
 from multiprocessing import Pool
@@ -69,22 +69,22 @@ def validate_columns(df: pd.DataFrame, required_cols: list[str], df_name: str) -
 
 
 def get_mol_feat(smi: str):
-    mol = data_utils.mol_from_smiles(smi)
+    mol = mol_utils.mol_from_smiles(smi)
     assert not mol is None, smi
     save_e = {
         "smiles": smi,
         "mol": mol,
-        "inchikey_s": data_utils.mol_to_inchikey_s(mol),
-        "scaffold": data_utils.get_murcko_scaffold(mol),
-        "formula": data_utils.mol_to_formula(mol),
-        "inchi": data_utils.mol_to_inchi(mol),
-        "mw": data_utils.mol_to_mol_weight(mol),
-        "exact_mw": data_utils.mol_to_mol_weight(mol),
-        "num_atoms": data_utils.mol_to_num_atoms(mol),
-        "num_bonds": data_utils.mol_to_num_bonds(mol),
-        "charge": data_utils.mol_to_charge(mol),
-        "single_mol": data_utils.check_single_mol(mol),
-        "num_radicals": data_utils.mol_to_num_radicals(mol),
+        "inchikey_s": mol_utils.mol_to_inchikey_s(mol),
+        "scaffold": mol_utils.get_murcko_scaffold(mol),
+        "formula": mol_utils.mol_to_formula(mol),
+        "inchi": mol_utils.mol_to_inchi(mol),
+        "mw": mol_utils.mol_to_mol_weight(mol),
+        "exact_mw": mol_utils.mol_to_mol_weight(mol),
+        "num_atoms": mol_utils.mol_to_num_atoms(mol),
+        "num_bonds": mol_utils.mol_to_num_bonds(mol),
+        "charge": mol_utils.mol_to_charge(mol),
+        "single_mol": mol_utils.check_single_mol(mol),
+        "num_radicals": mol_utils.mol_to_num_radicals(mol),
     }
     # check validity
     skip = False

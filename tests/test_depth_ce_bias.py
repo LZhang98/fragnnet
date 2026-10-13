@@ -12,7 +12,7 @@ Tests cover:
 import torch
 import torch.nn as nn
 
-from fragnnet.model.base_model import CEModel
+from fragnnet.layers.metadata_embedding import CEModel
 
 # ---------------------------------------------------------------------------
 # Constants

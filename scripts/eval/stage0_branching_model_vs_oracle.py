@@ -58,7 +58,7 @@ import pandas as pd
 
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import parallel_utils
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from branching_headroom import (  # noqa: E402
@@ -118,9 +118,9 @@ def _process_mol_group(
     over this molecule's DAG nodes (aligned so ``pn[k]`` == P(DAG node k)). Returns a dict of
     running sums over NCE bins and alias brackets, or None if no competable parent is explained.
     """
-    import fragnnet.utils.frag_utils as frag_utils
+    from fragnnet.utils import dag_format_utils
 
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]
@@ -288,7 +288,7 @@ def main() -> None:
     parser.add_argument("--split_dp", default="data/split/nist20_ma_mi_inchikey")
     parser.add_argument("--split", choices=["train", "val", "test", "all"], default="val")
     parser.add_argument("--max_h_transfer", type=int, default=None)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-mol accumulators.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)
@@ -318,7 +318,7 @@ def main() -> None:
         max_h_transfer=args.max_h_transfer,
     )
     log.info("Processing %d mols (%d spectra)", len(mol_inputs), len(spec_df))
-    per_mol = data_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
+    per_mol = parallel_utils.par_apply(mol_inputs, worker, need_unpack=True, n_jobs=args.n_jobs)
 
     rows = [r for r in per_mol if r is not None]
     if not rows:

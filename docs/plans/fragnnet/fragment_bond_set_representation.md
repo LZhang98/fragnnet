@@ -46,7 +46,7 @@ Two measured facts motivate revisiting this:
   (3.00 edges/node avg). See `docs/plans/fragnnet/bond_breakability_mask_plan.md`. Any real D4/D5 extension needs
   cheaper nodes, not fewer edges.
 - **The representation is load-bearing.** The cc-corruption probe drops cos 0.82 → 0.61 under mask
-  randomization (`docs/findings/fragnnet/cc_corruption_probe_finding.md`), so whatever replaces cc has to carry
+  corruption (`docs/findings/fragnnet/cc_corruption_probe_finding.md`; magnitude unverified since 2026-10-12, the corruption leaked atoms across molecules), so whatever replaces cc has to carry
   comparable information.
 
 ## 2. The proposal
@@ -371,7 +371,7 @@ The motivation recorded in §1–§2.2 — cheaper nodes — was the wrong objec
 Point 2 makes this a *regularization* proposal, which lines it up with the largest unclaimed number
 in the project ([capacity finding](../../findings/feature_headroom_2026_09_22.md#overfit-diagnostic-a6s5it2m-vs-baseline-zhjgd01n-from-local-memory-verified-2026-10-06): capacity is not the bottleneck, regularization
 is worth ~+0.18 val and is unswept), and with the [cc-corruption probe](../../findings/fragnnet/cc_corruption_probe_finding.md) (cos 0.82 → 0.61 under
-mask randomization = the model **does** lean on exact fragment identity). Under this objective the
+mask corruption, magnitude unverified = the model **does** lean on exact fragment identity). Under this objective the
 right metric is the train→val gap, not fit quality — which §6.4 never measured.
 
 ### 7.1 How identifying is each descriptor

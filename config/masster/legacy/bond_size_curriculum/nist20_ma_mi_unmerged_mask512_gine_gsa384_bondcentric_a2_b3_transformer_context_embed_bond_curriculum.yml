@@ -93,7 +93,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 1
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 # 4. Start near the smallest 5% by bond count and expand to all training data.
 dynamic_batch_sampler: False

@@ -68,7 +68,7 @@ and spectra (no auxiliary data), and report across **all ten** CV folds.
 ## Reading our own Spectraverse results
 
 - The spurious-evaluation critique applies to **retrieval / annotation** (candidate ranking), not
-  to **forward spectrum prediction**. Our `config/spectraverse/fragnnet_*` configs are forward
+  to **forward spectrum prediction**. Our `config/fragnnet/spectraverse_*` configs are forward
   prediction (cosine), where there are no candidate sets and the confound cannot operate.
 - So a strong FraGNNet *retrieval* result on Spectraverse is **more** trustworthy than one on
   MassSpecGym or PubChem sets, not less — the shortcut is gone.

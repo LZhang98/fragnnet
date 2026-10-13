@@ -8,7 +8,7 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.model.nn_blocks import GINE_GSA, _graph_softmax_attn
+from fragnnet.layers.gine_gsa import GINE_GSA, _graph_softmax_attn
 
 
 def _reference_attention(

@@ -21,10 +21,12 @@ from __future__ import annotations
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS, FraGNNetModel
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.feat_utils import get_frag_graph, get_mol_graph
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
+from fragnnet.pl_model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.utils.feat_utils import get_mol_graph
+from fragnnet.utils.mol_utils import mol_from_smiles
 
 MOL_NODE_FEATS = ["a_onehot", "a_degree", "a_ring", "a_mass"]
 MOL_EDGE_FEATS = ["b_degree"]

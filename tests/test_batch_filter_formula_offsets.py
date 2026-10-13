@@ -10,7 +10,7 @@ either way, so batch_size=1 cannot catch this.
 
 import torch as th
 
-from fragnnet.utils.script_utils import PredArrays, batch_filter_by_peak_intensity
+from fragnnet.inference.batch_rows import PredArrays, batch_filter_by_peak_intensity
 
 # Two spectra, each with 3 peaks and 4 formula rows, so the peak offset (3) and the
 # formula-row offset (4) disagree for spectrum 1.

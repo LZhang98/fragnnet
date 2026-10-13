@@ -13,8 +13,8 @@ import torch as th
 import yaml
 
 import fragnnet.runner as runner
-from fragnnet.pl_model import MassterPL
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.utils.migrations import get_pl_hparams
 
 _BACKEND_KEY = "masster_candidate_backend"
 _MISSING = object()

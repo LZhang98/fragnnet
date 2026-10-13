@@ -81,8 +81,6 @@ def install_all(cuda_version):
         pip_install(
             ["torch_scatter==2.1.2"], find_links="https://data.pyg.org/whl/torch-2.1.0+cu121.html"
         )
-        # pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
-        pip_install(["dgl==1.1.3+cu121"], find_links="https://data.dgl.ai/wheels/cu121/repo.html")
     elif cuda_version == "118":
         print("Installing PyTorch 2.1.0 with CUDA 11.8...")
         pip_install(["torch==2.1.0"], index_url="https://download.pytorch.org/whl/cu118")
@@ -96,12 +94,10 @@ def install_all(cuda_version):
         pip_install(
             ["torch_scatter==2.1.2"], find_links="https://data.pyg.org/whl/torch-2.1.0+cu118.html"
         )
-        # pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html
-        pip_install(["dgl==1.0.4+cu118"], find_links="https://data.dgl.ai/wheels/cu118/repo.html")
     else:
         print("Installing CPU version of PyTorch 2.1.2...")
         pip_install(["torch==2.1.0"], index_url="https://download.pytorch.org/whl/cpu")
-        pip_install(["lightning==2.1.2", "torch_geometric==2.4.0", "dgl==1.0.4"])
+        pip_install(["lightning==2.1.2", "torch_geometric==2.4.0"])
         # pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.2+cpu.html
         pip_install(
             ["torch_scatter==2.1.2"], index_url="https://data.pyg.org/whl/torch-2.1.2+cpu.html"

@@ -1,9 +1,10 @@
 # SMILES + ChemBERTa-3 spectrum prediction on MassSpecGym
 
-> **Status:** DEFERRED · **Updated:** 2026-10-06
+> **Status:** CLOSED NULL · **Updated:** 2026-10-12
 > E1 and T2 finished on Fir (100 epochs, 2026-09-28): both peak after epoch 0 at val `cos_sim_0.01`
 > 0.199 / 0.194, end at 0.169 / 0.152, and barely beat a structure-blind 0.194; random SMILES hurt.
-> No next run is scheduled (the user decides; E4 NEIMS baseline is the matched check). See
+> The user retired `chemlm` on 2026-10-12 (E4 never ran); its model, configs and tests are at
+> revision `13b1599d`, and selecting it raises the retirement error. See
 > [Results](#results-2026-09-28-runs-finished). Cut to a basic model on 2026-09-26 at the user's
 > request; the earlier design and its [Review](#review-2026-09-26) are kept.
 >

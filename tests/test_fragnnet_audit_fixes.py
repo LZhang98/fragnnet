@@ -1,7 +1,7 @@
 """Regression tests for FraGNNet probability and auxiliary-loss contracts."""
 
 from pathlib import Path
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
 import pytest
 import torch as th
@@ -9,10 +9,22 @@ from test_cc_atom_dropout import _forward_kwargs
 from test_ce_multi_location import _build
 from torch_geometric.data import Batch
 
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
+from fragnnet.models.fragnnet.dag.graph import get_frag_graph
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import load_config
-from fragnnet.utils.feat_utils import get_frag_graph, get_node_feats
-from fragnnet.utils.frag_utils import compute_dags, extract_mol_info
+
+
+def _bind_shared_objectives(pl):
+    """Give a stand-in ``self`` the inherited SpectrumPL loss helpers ``_setup_loss_fn`` calls."""
+    for name in (
+        "_validate_spectral_auxiliary_weights",
+        "_spectral_leak_loss",
+    ):
+        setattr(pl, name, MethodType(getattr(FraGNNetPL, name), pl))
+    pl._spectral_ce_auxiliary = FraGNNetPL._spectral_ce_auxiliary
+    return pl
 
 
 @pytest.fixture
@@ -100,6 +112,7 @@ def test_edge_hydrogen_pairs_and_loss_match_explicit_enumeration(loss_config, in
         tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
     )
     pl._setup_loss_names = lambda: FraGNNetPL._setup_loss_names(pl)
+    _bind_shared_objectives(pl)
     FraGNNetPL._setup_loss_fn(pl)
     losses = pl.loss_fn(
         true_mzs=output["pred_mzs"][:1].detach(), true_logprobs=th.zeros(1),
@@ -150,6 +163,7 @@ def test_hellinger_distance_configures_fragnnet_sparse_loss(loss_config):
         tolerance_min_mz=200.0,
     )
     pl._setup_loss_names = lambda: FraGNNetPL._setup_loss_names(pl)
+    _bind_shared_objectives(pl)
 
     FraGNNetPL._setup_loss_fn(pl)
 
@@ -177,6 +191,7 @@ def test_fragnnet_hellinger_auxiliaries_contribute_to_total_loss(loss_config):
         tolerance_min_mz=200.0,
     )
     pl._setup_loss_names = lambda: FraGNNetPL._setup_loss_names(pl)
+    _bind_shared_objectives(pl)
     FraGNNetPL._setup_loss_fn(pl)
 
     losses = pl.loss_fn(
@@ -208,6 +223,7 @@ def test_hellinger_auxiliary_weights_reject_other_fragnnet_losses(loss_config, w
         relative=True,
         tolerance_min_mz=200.0,
     )
+    _bind_shared_objectives(pl)
 
     with pytest.raises(ValueError, match="supported only with hellinger_distance"):
         FraGNNetPL._setup_loss_fn(pl)

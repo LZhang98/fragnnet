@@ -1,6 +1,6 @@
 # FraGNNet Documentation Index
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-12
 > Map of the docs tree. Plans and findings are indexed in the workstream hubs, not here.
 
 Start with [current project state](project-state.md), the [architecture map](architecture.md),
@@ -29,7 +29,7 @@ Each hub has "Where it stands", "Open threads", "Settled — read before re-prop
 | --- | --- |
 | [masster_generalization.md](workstreams/masster_generalization.md) | MASSter train/val gap on NIST20 (`i1`→`i4`): memorization routes, error analyses, intensity displacement, SMARTS pathway, QET/NCE input, ORB instruments, closed nulls (isotope envelope, JEPA) |
 | [masster_core.md](workstreams/masster_core.md) | MASSter design, architecture and regularization screens, losses, candidate/proposal machinery, ion-H channels, speed/GPU, feature and information audits |
-| [msgym.md](workstreams/msgym.md) | MassSpecGym training, formula-track retrieval, GLACIER comparisons, ChemBERTa-3, annotation-aware retrieval |
+| [msgym.md](workstreams/msgym.md) | MassSpecGym training, formula-track retrieval, GLACIER comparisons, ChemBERTa-3 (retired), annotation-aware retrieval |
 | [spectraverse.md](workstreams/spectraverse.md) | Spectraverse v1.0.2 pipeline, folds, data audits, oracle ceiling, prepared arms |
 | [nist23_ei.md](workstreams/nist23_ei.md) | MASSter on nominal NIST23 EI |
 | [casmi_enveda.md](workstreams/casmi_enveda.md) | CASMI 2026 data, Enveda-180, combined PCDL/NIST23/Enveda split, shared NIST data quality and isotope/subformula detection |
@@ -56,6 +56,7 @@ Data preprocessing commands (including Spectraverse folds) are in
 | Doc | What it covers |
 |-----|----------------|
 | [dataloader_data.md](reference/dataloader_data.md) | Batch dictionary schema. Oldest doc here; verify against the code. |
+| [baselines.md](reference/baselines.md) | Retained GRAFF and MassFormer baselines, and running ICEBERG externally through ms-pred (archive revision, evaluation-file contract). |
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
 | [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |
@@ -95,6 +96,7 @@ these are records, not current guidance.
 | [masster_plan_log.md](history/masster_plan_log.md) | [MASSter plan](plans/masster/masster_plan.md) |
 | [masster_ion_h_channel_selection_plan_log.md](history/masster_ion_h_channel_selection_plan_log.md) | [ion-H channel selection plan](plans/masster/masster_ion_h_channel_selection_plan.md) |
 | [global_fragment_intensity_ranking_experiment_plan_log.md](history/global_fragment_intensity_ranking_experiment_plan_log.md) | [global intensity ranking plan](plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) |
+| [repo_reorg_plan_log.md](history/repo_reorg_plan_log.md) | [repository reorganization plan](plans/repo_reorg_plan.md) |
 
 ### Removed historical plans
 
@@ -108,7 +110,7 @@ history only; do not treat references to them as current guidance.
 [missing_peak_findings_m-h.md](findings/fragnnet/missing_peak_findings_m-h.md) (FT `[M-H]-`)
 are append-only. Add sections with `/analyze-subclass` and `/analyze-subclass-mh`; the
 measurement comes from `scripts/eval/find_missing_peaks.py`.
-`src/fragnnet/frag/smarts_prepass.py` cites the first one by path.
+`src/fragnnet/fragmentation/smarts_prepass.py` cites the first one by path.
 
 Spectrum cleanup is implemented in
 [`clean_spectra_utils.py`](../src/fragnnet/utils/clean_spectra_utils.py); measured effects are in

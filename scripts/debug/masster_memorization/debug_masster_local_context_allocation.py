@@ -46,19 +46,18 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch_geometric.nn import GINEConv
 
-from fragnnet.model.bond_fragment_heads import (
-    boundary_bond_endpoint_orientation,
-    masked_ion_hydrogen_log_probabilities,
-)
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
-from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_config_from_ckpt,
     init_model_from_ckpt,
 )
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
+from fragnnet.models.masster.component_pooling import boundary_bond_endpoint_orientation
+from fragnnet.models.masster.pathway_probabilities import masked_ion_hydrogen_log_probabilities
+from fragnnet.runner import load_config
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper
+from fragnnet.utils.spec_similarity import cos_sim_helper
+from fragnnet.utils.spec_utils import batched_bin_func
 
 try:
     from .debug_masster_base_peak_errors import (
@@ -682,6 +681,14 @@ def extract(args: argparse.Namespace) -> None:
                 batch = model.transfer_batch_to_device(batch, device, dataloader_idx=0)
                 capture.reset()
                 out = model(**batch, return_explainability_tensors=True)
+                if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                    out = {
+                        **out,
+                        "pred_mzs": out["pred_pathway_mzs"],
+                        "pred_ints": out["pred_pathway_scores"],
+                        "pred_logprobs": out["pred_pathway_scores"].log(),
+                        "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                    }
                 got = capture.take()
 
                 # 2-3. Pre-filter fragments, the validity filter and the rebuilt prediction.

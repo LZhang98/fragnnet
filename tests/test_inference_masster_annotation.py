@@ -13,12 +13,12 @@ from pyteomics.mass import Composition
 from rdkit import Chem
 from test_masster_model import _build_batch, _build_model
 
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import build_masster_templates
-from fragnnet.pl_model import MassterPL
-from fragnnet.utils import script_utils
-from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE
-from fragnnet.utils.frag_utils import th_long_to_mask
+from fragnnet.inference import batch_rows, export_columns
+from fragnnet.models.masster import masster_export
+from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
+from fragnnet.models.masster.masster_pl import MassterPL
+from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE, th_long_to_mask
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz
 
 
@@ -55,7 +55,7 @@ def _tables(pathway_peaks, peak_batch, ints, fragments, h_shifts, **overrides):
         "precursor_types": ["[M+H]+", "[M+H]+"],
         "return_node_ccs": True,
     }
-    return script_utils.masster_annotation_tables(**(kwargs | overrides))
+    return masster_export.masster_annotation_tables(**(kwargs | overrides))
 
 
 def test_tables_group_pathways_into_formulas_and_atom_set_nodes():
@@ -118,7 +118,7 @@ def test_unique_rows_matches_torch_unique(shape):
     rows = th.randint(-3, 4, shape, generator=th.Generator().manual_seed(7))
     rows[:, 1] = 5  # a constant column
     expected_rows, expected_inverse = th.unique(rows, dim=0, return_inverse=True)
-    unique_rows, inverse = script_utils._unique_rows(rows)
+    unique_rows, inverse = masster_export._unique_rows(rows)
     assert th.equal(unique_rows, expected_rows)
     assert th.equal(inverse, expected_inverse)
 
@@ -168,7 +168,7 @@ def test_real_pathways_reproduce_their_mz_from_formula_and_adduct(
     peak_mzs, _, peak_batch, pathway_peaks = aggregate_peaks_exact_mz(
         output["pred_mzs"], output["pred_ints"], output["pred_batch_idxs"], return_inverse=True
     )
-    tables = script_utils.masster_annotation_tables(
+    tables = masster_export.masster_annotation_tables(
         pathway_peak_idxs=pathway_peaks,
         peak_batch_idxs=peak_batch,
         pathway_ints=output["pred_ints"],
@@ -268,13 +268,13 @@ def test_exporter_writes_resolvable_masster_annotation(min_peak_int: float):
         "spec_prec_type": th.tensor([0, 0]),
     }
     output_set = {"pred_mzs", "pred_ints", "pred_formula_probs", "pred_formula_node_probs"}
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False, return_formula_str=True, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         model.hparams, return_formula_str=True, return_cc_hash=True, output_subset=output_set
     )
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),
@@ -384,16 +384,16 @@ def test_exporter_writes_the_smarts_rules_behind_each_node():
         "spec_prec_type": th.tensor([0, 0]),
     }
     output_set = {"pred_mzs", "pred_ints", "pred_node_probs"}
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, stub, nb_iso=False, return_formula_str=False, return_cc_hash=True
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         stub.hparams,
         return_cc_hash=True,
         output_subset=output_set,
         return_rule_provenance=True,
     )
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch_input,
         model=stub,
         device=th.device("cpu"),

@@ -12,12 +12,17 @@ from rdkit import Chem
 from rdkit.Chem.rdMolDescriptors import CalcExactMolWt
 from torch_geometric.data import Batch
 
-import fragnnet.model.masster_model as masster_model_module
-from fragnnet.frag import compute_frags
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import MassterTemplate, build_masster_templates
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.masster_model import (
+import fragnnet.models.masster.masster_model as masster_model_module
+from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
+from fragnnet.models.fragnnet.dag import compute_frags
+from fragnnet.models.fragnnet.dag.builder import extract_mol_info
+from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs
+from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.smarts_templates import (
+    MassterTemplate,
+    build_masster_templates,
+)
+from fragnnet.models.masster.masster_model import (
     MassterModel,
     _absolute_binary_channel_keep_mask,
     _cmf_duplicate_crf_shift,
@@ -30,10 +35,10 @@ from fragnnet.model.masster_model import (
     _relative_joint_channel_keep_mask,
     _top_k_fragment_keep_mask,
 )
-from fragnnet.pl_model.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.formula_utils import H_MASS, formula_to_peak_mzs
-from fragnnet.utils.frag_utils import compute_cc_h_cap, extract_mol_info
+from fragnnet.utils.formula_utils import H_MASS
 
 
 def _build_batch(smiles: tuple[str, ...] = ("CCO", "CO")) -> Batch:
@@ -989,7 +994,7 @@ def test_absolute_support_floor_is_evaluation_only_and_keeps_each_spectrum_nonem
 def test_masster_shares_one_ce_independent_proposal_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from fragnnet.frag import masster_core
+    from fragnnet.models.masster.candidates import cut_mask_kernels
 
     batch = _build_batch(("CCCO",) * 5)
     model = _build_model(
@@ -1006,7 +1011,7 @@ def test_masster_shares_one_ce_independent_proposal_pass(
     proposal_batch_sizes = []
     topology_call_count = 0
 
-    original_build_component_arrays = masster_core.build_component_arrays_raw
+    original_build_component_arrays = cut_mask_kernels.build_component_arrays_raw
 
     def record_topology_call(*args, **kwargs):
         nonlocal topology_call_count
@@ -1014,7 +1019,7 @@ def test_masster_shares_one_ce_independent_proposal_pass(
         return original_build_component_arrays(*args, **kwargs)
 
     monkeypatch.setattr(
-        masster_core,
+        cut_mask_kernels,
         "build_component_arrays_raw",
         record_topology_call,
     )
@@ -2657,7 +2662,7 @@ def test_hydrogen_transfer_bounds(
 
     FraGNNet has always bounded a fragment's post-transfer hydrogen count by
     ``min(compute_cc_h_cap(...), num_hs_prior + max_h_transfer, num_hs)``
-    (``frag_utils``). MASSter only required nonnegative element counts, which bounds
+    (``dag.formula``). MASSter only required nonnegative element counts, which bounds
     losses but not gains. ``complement`` adds the ``num_hs`` term, ``valence`` adds the
     free-valence cap as well, and ``none`` keeps the original unbounded ladder because those
     unreachable channels also serve as negatives in the candidate softmax.

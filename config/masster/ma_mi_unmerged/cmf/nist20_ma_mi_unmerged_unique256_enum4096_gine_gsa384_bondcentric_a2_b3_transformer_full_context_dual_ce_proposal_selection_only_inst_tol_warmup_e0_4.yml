@@ -165,7 +165,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 8
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 # Match FT/QTOF peaks at acquisition-aware tolerances. The split holds no other
 # instrument, so every spectrum is covered by this table.

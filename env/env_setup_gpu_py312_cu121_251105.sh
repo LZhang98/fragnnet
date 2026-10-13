@@ -21,7 +21,6 @@ pip install  \
  joblib==1.3.2 \
  matplotlib \
  lightning==2.5.0 \
- omegaconf \
  cython==3.0.12 \
  pyteomics \
  pyopenms \
@@ -29,6 +28,4 @@ pip install  \
  scikit-learn \
  h5py
 
- # dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html \
- # dgl==1.0.4 -f https://data.dgl.ai/wheels/repo.html \
 pip install --no-deps -I -e .

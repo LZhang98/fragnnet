@@ -54,9 +54,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from fragnnet.utils.frag_utils import load_frag_d
+from fragnnet.utils.dag_format_utils import load_frag_d
 from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
-from fragnnet.utils.isotope_utils import (
+from fragnnet.utils.isotope_cleanup_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
     dag_formula_source,

@@ -32,14 +32,11 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.linear_model import LogisticRegression
 from torch.utils.data import DataLoader, Subset
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
 from fragnnet.runner import load_config
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import (
-    batch_cos_hun_helper,
-    calculate_match_mzs,
-    round_aggregate_peaks,
-)
+from fragnnet.utils.spec_similarity import batch_cos_hun_helper, calculate_match_mzs
+from fragnnet.utils.spec_utils import round_aggregate_peaks
 
 LOGGER = logging.getLogger(__name__)
 HAND_COLUMNS = (
@@ -458,6 +455,14 @@ def score(cfg: dict, output: Path, device_name: str, limit: int) -> None:
                 if k in batch
             }
             out = model.model(**kwargs, return_annotation=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             arrays = {
                 k: out[k].cpu().numpy()
                 for k in (
@@ -710,7 +715,7 @@ def report(cfg: dict, output: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/analysis/masster_cut_intensity_probe.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_cut_intensity_probe.yaml")
     parser.add_argument("--stage", choices=("fit", "score", "report"), required=True)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(

@@ -25,11 +25,12 @@ import pandas as pd
 import torch as th
 from torch.utils.data import DataLoader
 
+from fragnnet.inference.checkpoint import init_model_from_ckpt
 from fragnnet.runner import load_config
 from fragnnet.utils.clean_spectra_utils import _subformula_masses
-from fragnnet.utils.script_utils import init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
-from fragnnet.utils.spec_utils import batched_bin_func, cos_sim_helper, opt_cos_sim_helper
+from fragnnet.utils.spec_similarity import cos_sim_helper, opt_cos_sim_helper
+from fragnnet.utils.spec_utils import batched_bin_func
 
 C13 = 1.003355
 BATCH = 4
@@ -70,7 +71,7 @@ def main():
     parser.add_argument("--split", default="val", choices=["train", "val"])
     parser.add_argument("--config", help="custom config (default: the SPV fold config)")
     args = parser.parse_args()
-    custom = args.config or f"config/spectraverse/masster/cv{args.fold}.yml"
+    custom = args.config or f"config/masster/spectraverse/cv{args.fold}.yml"
     config = load_config("config/template.yml", custom, [])
     config["num_workers"] = 0
     config["masster_candidate_backend"] = "cpu"

@@ -114,6 +114,10 @@ the CE support used in the trajectory denominator.
 
 ### V1.3 — Shipped precursor contender; change only its reduction
 
+> **Retired 2026-10-12:** user removed precursor and CE-switch BCE. The implementation
+> and configs described below are historical; V1.3 must not be resumed as written.
+
+
 This objective is already implemented as `precursor_contender_bce` in
 [`loss.py`](../../../src/fragnnet/model/loss.py), wired through
 [`fragnnet_pl.py`](../../../src/fragnnet/pl_model/fragnnet_pl.py), exposed by the

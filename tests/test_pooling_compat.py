@@ -2,7 +2,7 @@
 
 import torch as th
 
-from fragnnet.model.nn_blocks import build_pool_module
+from fragnnet.layers.pooling import build_pool_module
 
 
 def test_pool_module_supports_none_pool_with_dim_size():

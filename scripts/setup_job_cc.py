@@ -4,7 +4,7 @@ import re
 import subprocess
 
 # Kept local so this script runs on a login node without the fragnnet package installed.
-# Mirrors ``fragnnet.runner.TEMPLATE_FILENAME``.
+# Mirrors ``fragnnet.config.TEMPLATE_FILENAME``.
 TEMPLATE_FILENAME = "template.yml"
 
 
@@ -392,8 +392,6 @@ def main(args):
             "    joblib==1.3.2 \\",
             "    matplotlib \\",
             "    lightning==2.4.0 \\",
-            "    dgl==2.4.0 \\",
-            "    omegaconf \\",
             "    cython==3.0.12 \\",
             "    pandarallel==1.6.5 \\",
             "    h5py\\",
@@ -494,7 +492,6 @@ def main(args):
         "spec_fp",
         "mol_fp",
         "ann_fp",
-        "mces_fp",
         "config",
         "config_template",
         "split_dp",
@@ -503,7 +500,6 @@ def main(args):
         "model_type",
         "finetune",
         "finetune_pretrained_ckpt",
-        "chemlm_ckpt_dp",
     ]
     config_d["config_template"] = config_template_fp
     if custom_config_fp is not None:
@@ -535,14 +531,8 @@ def main(args):
 
     if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
         data_keyword.append("frag_dp")
-    elif config_d["model_type"] in ["iceberg_gen", "iceberg_inten"]:
-        data_keyword.append("magma_dp")
     elif config_d["model_type"] == "graff":
         data_keyword.append("ann_fp")
-    elif config_d["model_type"] == "mces_pretraining":
-        data_keyword.append("mces_fp")
-    elif config_d["model_type"] == "chemlm":
-        data_keyword.append("chemlm_ckpt_dp")
     if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):
         data_keyword.append("model_ckpt")
     # copy fp if pretraining
@@ -554,20 +544,6 @@ def main(args):
         print(f"> running wandb sweep script with model_type: {config_d['model_type']}")
     else:
         print(f"> model type: {config_d['model_type']}")
-
-    if config_d["model_type"] == "chemlm":
-        # Only chemlm imports these, so every other job keeps the base install. All are in the
-        # Fir wheelhouse (avail_wheels, 2026-09-27). tokenizers 0.20.3, as in FRAGNNET-GPU, is not;
-        # 0.20.0 gives identical token ids on every MSGYM SMILES, canonical and random.
-        script_lines.extend(
-            [
-                "# Hugging Face packages for model_type chemlm",
-                "pip install --no-index transformers==4.46.3 tokenizers==0.20.0 \\",
-                "    huggingface_hub==0.36.2 safetensors==0.8.0 regex || exit 1",
-                "# the tokenizer runs in the main process; this silences its warning on each fork",
-                "export TOKENIZERS_PARALLELISM=false",
-            ]
-        )
 
     # copy data files
     script_lines.extend(["#copy files"])
@@ -710,18 +686,6 @@ def main(args):
                     f"rsync -avL --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
                     f"if [[ ! -f ${{WORKING_DIR}}/{path_value} ]]; then",
                     f'    echo "ERROR: checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
-                    "    exit 1",
-                    "fi",
-                ]
-            )
-        elif name == "chemlm_ckpt_dp":
-            print(f"> adding cmd to copy {name} directory from {path_value} to slurm tmp dir")
-            script_lines.extend(
-                [
-                    f"# copy {name} directory from {path_value} to slurm tmp dir",
-                    f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
-                    f"if [[ ! -f ${{WORKING_DIR}}/{path_value}/config.json ]]; then",
-                    f'    echo "ERROR: chemlm checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
                     "    exit 1",
                     "fi",
                 ]
@@ -968,7 +932,7 @@ if __name__ == "__main__":
         help=(
             "Directory containing cv{n}.yml config files for cross-validation array jobs. "
             "Creates a SLURM array job with one task per CV fold (--cv_start to --cv_end). "
-            "Example: --cv_config_dp config/spectraverse/neims --cv_start 0 --cv_end 9"
+            "Example: --cv_config_dp config/neims/spectraverse --cv_start 0 --cv_end 9"
         ),
     )
     parser.add_argument(

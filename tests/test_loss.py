@@ -1,4 +1,4 @@
-"""Unit tests for fragnnet.model.loss module.
+"""Unit tests for the fragnnet.loss modules.
 
 Tests for pairwise similarity and distance metrics:
 - Cosine similarity
@@ -11,16 +11,13 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.loss import (
-    _compute_pair_ce_hun,
-    _compute_pair_jss_hun,
-    ce_switch_pair_bce,
-    conditional_in_support_cross_entropy,
-    get_pairwise_cossim,
-    get_pairwise_cross_entropy,
-    get_pairwise_jss_sim,
-    get_pairwise_jss_sim_hun,
-    precursor_contender_bce,
+from fragnnet.loss.cross_entropy import conditional_in_support_cross_entropy
+from fragnnet.loss.pairwise import (
+    pairwise_cosine_similarity,
+    pairwise_cross_entropy,
+    pairwise_jss_similarity,
+)
+from fragnnet.loss.spectrum_distance import (
     sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
@@ -28,7 +25,8 @@ from fragnnet.model.loss import (
     sparse_outside_window_intensity_fraction,
     sparse_peak_list_distance,
 )
-from fragnnet.utils.spec_utils import batched_bin_func, calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
+from fragnnet.utils.spec_utils import batched_bin_func
 
 
 def test_sparse_hellinger_distance_matches_known_value_and_backward() -> None:
@@ -194,221 +192,6 @@ def test_peak_list_distances_normalize_intensity_scale(objective: str) -> None:
     assert th.allclose(distance, scaled_distance)
 
 
-def _precursor_pair_inputs() -> dict:
-    return {
-        "true_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
-        "true_ints": th.tensor([0.8, 0.2, 0.3, 0.7]),
-        "true_batch_idxs": th.tensor([0, 0, 1, 1]),
-        "pred_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
-        "pred_logprobs": th.log(th.tensor([0.6, 0.4, 0.4, 0.6])).requires_grad_(),
-        "pred_batch_idxs": th.tensor([0, 0, 1, 1]),
-        "precursor_mzs": th.tensor([200.0, 200.0]),
-        "nce_values": th.tensor([10.0, 15.0]),
-        "eligible_samples": th.tensor([True, True]),
-        "batch_size": 2,
-        "nce_min": 0.0,
-        "nce_max": 20.0,
-        "absent_intensity_floor": 0.01,
-        "tol_per_sample": th.tensor([1.0e-5, 1.0e-5]),
-        "min_mz_per_sample": th.tensor([200.0, 200.0]),
-    }
-
-
-class TestPrecursorContenderBCE:
-    def test_includes_fragment_and_precursor_winners_with_soft_targets(self):
-        inputs = _precursor_pair_inputs()
-
-        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
-
-        expected_first = th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.2)
-        )
-        expected_second = th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.7)
-        )
-        assert eligible.tolist() == [1.0, 1.0]
-        assert precursor_wins.tolist() == [0.0, 1.0]
-        assert th.allclose(loss, th.stack([expected_first, expected_second]))
-
-        loss.sum().backward()
-        assert inputs["pred_logprobs"].grad is not None
-
-    def test_uses_floor_for_unobserved_precursor(self):
-        inputs = _precursor_pair_inputs()
-        inputs["true_mzs"] = th.tensor([100.0, 100.0, 200.0])
-        inputs["true_ints"] = th.tensor([1.0, 0.3, 0.7])
-        inputs["true_batch_idxs"] = th.tensor([0, 1, 1])
-
-        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
-
-        expected = th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.01 / 1.01)
-        )
-        assert eligible.tolist() == [1.0, 1.0]
-        assert precursor_wins.tolist() == [0.0, 1.0]
-        assert th.allclose(loss[0], expected)
-
-    def test_skips_high_ce_and_unsupported_contenders(self):
-        inputs = _precursor_pair_inputs()
-        inputs["nce_values"] = th.tensor([20.0, 15.0])
-        inputs["pred_mzs"] = th.tensor([100.0, 200.0, 200.0])
-        inputs["pred_logprobs"] = th.log(th.tensor([0.6, 0.4, 1.0])).requires_grad_()
-        inputs["pred_batch_idxs"] = th.tensor([0, 0, 1])
-
-        loss, eligible, precursor_wins = precursor_contender_bce(**inputs)
-
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-        assert th.equal(precursor_wins, th.zeros_like(precursor_wins))
-
-    def test_selects_strongest_supported_nonprecursor(self):
-        inputs = _precursor_pair_inputs()
-        inputs["true_mzs"] = th.tensor([50.0, 100.0, 200.0, 100.0, 200.0])
-        inputs["true_ints"] = th.tensor([0.7, 0.2, 0.1, 0.3, 0.7])
-        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
-        # Sample 0 has no predicted support at the strongest non-precursor (50 Da),
-        # so the supported 100-Da peak is the contender.
-
-        loss, eligible, _ = precursor_contender_bce(**inputs)
-
-        expected = th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.1 / 0.3)
-        )
-        assert eligible.tolist() == [1.0, 1.0]
-        assert th.allclose(loss[0], expected)
-
-
-def _ce_switch_inputs() -> dict:
-    return {
-        "true_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
-        "true_ints": th.tensor([0.8, 0.2, 0.3, 0.7]),
-        "true_batch_idxs": th.tensor([0, 0, 1, 1]),
-        "pred_mzs": th.tensor([100.0, 200.0, 100.0, 200.0]),
-        "pred_logprobs": th.log(th.tensor([0.6, 0.4, 0.4, 0.6])).requires_grad_(),
-        "pred_batch_idxs": th.tensor([0, 0, 1, 1]),
-        "group_ids": th.tensor([7, 7]),
-        "ce_values": th.tensor([20.0, 30.0]),
-        "eligible_samples": th.tensor([True, True]),
-        "batch_size": 2,
-        "min_endpoint_confidence": 0.2,
-        "min_contender_relative_intensity": 0.01,
-        "tol_per_sample": th.tensor([1.0e-5, 1.0e-5]),
-        "min_mz_per_sample": th.tensor([200.0, 200.0]),
-    }
-
-
-class TestCESwitchPairBCE:
-    def test_soft_targets_and_gradients(self):
-        inputs = _ce_switch_inputs()
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        expected_low = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.8)
-        )
-        expected_high = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.4 / 0.6)), th.tensor(0.3)
-        )
-        assert eligible.tolist() == [1.0, 1.0]
-        assert th.allclose(loss, th.stack([expected_low, expected_high]))
-
-        loss.sum().backward()
-        gradients = inputs["pred_logprobs"].grad
-        assert gradients is not None
-        assert gradients[0] < 0 < gradients[1]
-        assert gradients[2] > 0 > gradients[3]
-
-    def test_prediction_aliases_are_aggregated(self):
-        inputs = _ce_switch_inputs()
-        inputs["pred_mzs"] = th.tensor([100.0, 100.001, 200.0, 100.0, 200.0])
-        inputs["pred_logprobs"] = th.log(th.tensor([0.3, 0.3, 0.4, 0.4, 0.6])).requires_grad_()
-        inputs["pred_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
-
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        expected_low = 0.5 * th.nn.functional.binary_cross_entropy_with_logits(
-            th.log(th.tensor(0.6 / 0.4)), th.tensor(0.8)
-        )
-        assert eligible.tolist() == [1.0, 1.0]
-        assert th.allclose(loss[0], expected_low)
-
-    def test_non_switch_and_missing_support_return_zero(self):
-        inputs = _ce_switch_inputs()
-        inputs["true_ints"] = th.tensor([0.8, 0.2, 0.7, 0.3])
-        loss, eligible = ce_switch_pair_bce(**inputs)
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-        inputs = _ce_switch_inputs()
-        inputs["pred_mzs"] = th.tensor([100.0, 200.0, 100.0])
-        inputs["pred_logprobs"] = th.log(th.tensor([0.6, 0.4, 1.0])).requires_grad_()
-        inputs["pred_batch_idxs"] = th.tensor([0, 0, 1])
-        loss, eligible = ce_switch_pair_bce(**inputs)
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-    def test_confidence_floor_filters_transition(self):
-        inputs = _ce_switch_inputs()
-        inputs["min_endpoint_confidence"] = 0.8
-        loss, eligible = ce_switch_pair_bce(**inputs)
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-    def test_unobserved_contender_is_not_hardened(self):
-        inputs = _ce_switch_inputs()
-        inputs["true_mzs"] = th.tensor([100.0, 100.0, 200.0])
-        inputs["true_ints"] = th.tensor([1.0, 0.3, 0.7])
-        inputs["true_batch_idxs"] = th.tensor([0, 1, 1])
-        loss, eligible = ce_switch_pair_bce(**inputs)
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-    def test_trace_contender_below_relative_floor_is_not_hardened(self):
-        inputs = _ce_switch_inputs()
-        inputs["true_ints"] = th.tensor([1.0, 5.0e-4, 5.0e-4, 1.0])
-
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-    def test_observed_aliases_are_merged_before_winner_selection(self):
-        inputs = _ce_switch_inputs()
-        inputs["true_mzs"] = th.tensor([100.0, 100.001, 200.0, 100.0, 200.0])
-        inputs["true_ints"] = th.tensor([0.3, 0.3, 0.4, 0.3, 0.7])
-        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 1, 1])
-
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        assert eligible.tolist() == [1.0, 1.0]
-        assert loss.sum() > 0
-
-    def test_non_disjoint_observed_aliases_skip_transition(self):
-        inputs = _ce_switch_inputs()
-        inputs["true_mzs"] = th.tensor([100.0, 100.0015, 100.003, 200.0, 100.0, 200.0])
-        inputs["true_ints"] = th.tensor([0.4, 0.3, 0.2, 0.1, 0.3, 0.7])
-        inputs["true_batch_idxs"] = th.tensor([0, 0, 0, 0, 1, 1])
-
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        assert eligible.sum() == 0
-        assert th.equal(loss, th.zeros_like(loss))
-
-    def test_sparse_rows_need_not_be_contiguous_by_sample(self):
-        inputs = _ce_switch_inputs()
-        true_order = th.tensor([0, 2, 1, 3])
-        pred_order = th.tensor([0, 2, 1, 3])
-        for key in ("true_mzs", "true_ints", "true_batch_idxs"):
-            inputs[key] = inputs[key][true_order]
-        for key in ("pred_mzs", "pred_logprobs", "pred_batch_idxs"):
-            inputs[key] = inputs[key][pred_order]
-        inputs["pred_logprobs"].retain_grad()
-
-        loss, eligible = ce_switch_pair_bce(**inputs)
-
-        assert eligible.tolist() == [1.0, 1.0]
-        assert loss.sum() > 0
-
-
 class TestPairwiseCossim:
     """Tests for cosine similarity computation."""
 
@@ -421,7 +204,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Diagonal should be 1 (self-similarity)
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -439,7 +222,7 @@ class TestPairwiseCossim:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert S.shape == (batch_size, batch_size)
         assert th.allclose(S, th.zeros_like(S))
 
@@ -452,7 +235,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Check symmetry
         assert th.allclose(S, S.t(), atol=1e-6), "Matrix should be symmetric"
@@ -471,12 +254,12 @@ class TestPairwiseCossim:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        S_no_chunk = get_pairwise_cossim(
+        S_no_chunk = pairwise_cosine_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        S_chunk = get_pairwise_cossim(
+        S_chunk = pairwise_cosine_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -493,7 +276,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert S.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {S.shape}"
         )
@@ -514,7 +297,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
         assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -543,7 +326,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
         assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -574,10 +357,10 @@ class TestPairwiseCossim:
         mzs_pred = th.tensor([50.0, 150.0])
         logprobs_pred = th.tensor([0.0, 0.0])
 
-        true_sim = get_pairwise_cossim(
+        true_sim = pairwise_cosine_similarity(
             mzs_true, logprobs_true, batch_idxs, batch_size, mz_max, mz_bin_res
         )
-        pred_sim = get_pairwise_cossim(
+        pred_sim = pairwise_cosine_similarity(
             mzs_pred, logprobs_pred, batch_idxs, batch_size, mz_max, mz_bin_res
         )
 
@@ -600,7 +383,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         # Diagonal should be 0 (CE between identical distributions)
         assert th.allclose(th.diag(CE), th.zeros(batch_size), atol=1e-6), "Diagonal should be 0"
         # Off-diagonal for completely disjoint spectra should be high
@@ -616,7 +399,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert CE.shape == (batch_size, batch_size)
         assert th.allclose(CE, th.zeros_like(CE))
 
@@ -629,7 +412,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Diagonal should be 0
         assert th.allclose(th.diag(CE), th.zeros(batch_size), atol=1e-6), "Diagonal should be 0"
@@ -644,12 +427,12 @@ class TestPairwiseCrossEntropy:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        CE_no_chunk = get_pairwise_cross_entropy(
+        CE_no_chunk = pairwise_cross_entropy(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        CE_chunk = get_pairwise_cross_entropy(
+        CE_chunk = pairwise_cross_entropy(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -666,7 +449,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert CE.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {CE.shape}"
         )
@@ -680,7 +463,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Cross-entropy should be non-negative
         assert th.all(CE >= -1e-6), "Cross-entropy should be non-negative"
@@ -696,7 +479,7 @@ class TestPairwiseCrossEntropy:
 
         # Test with various chunk sizes
         for chunk_size in [1, 2, 4, None]:
-            CE = get_pairwise_cross_entropy(
+            CE = pairwise_cross_entropy(
                 mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=chunk_size
             )
             assert CE.shape == (batch_size, batch_size)
@@ -714,7 +497,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         # Diagonal should be 1 (self-similarity)
         assert th.allclose(th.diag(JSS), th.ones(batch_size), atol=1e-6), "Diagonal should be 1"
         # Off-diagonal for different peaks should be small
@@ -732,7 +515,7 @@ class TestPairwiseJssSim:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert JSS.shape == (batch_size, batch_size)
         assert th.allclose(JSS, th.zeros_like(JSS))
 
@@ -745,7 +528,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Check symmetry
         assert th.allclose(JSS, JSS.t(), atol=1e-6), "Matrix should be symmetric"
@@ -764,12 +547,12 @@ class TestPairwiseJssSim:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        JSS_no_chunk = get_pairwise_jss_sim(
+        JSS_no_chunk = pairwise_jss_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        JSS_chunk = get_pairwise_jss_sim(
+        JSS_chunk = pairwise_jss_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -786,7 +569,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert JSS.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {JSS.shape}"
         )
@@ -800,7 +583,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Off-diagonal should be 0 (no overlap)
         assert th.allclose(JSS[0, 1], th.tensor(0.0), atol=1e-6), (
@@ -821,72 +604,14 @@ class TestPairwiseJssSim:
 
         # Test with various chunk sizes
         for chunk_size in [1, 2, 4, None]:
-            JSS = get_pairwise_jss_sim(
+            JSS = pairwise_jss_similarity(
                 mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=chunk_size
             )
             assert JSS.shape == (batch_size, batch_size)
 
 
 class TestHungarianJSS:
-    """Tests for JSS computation using Hungarian matching."""
-
-    def test_compute_pair_jss_hun_identical(self):
-        """Test JSS for identical spectra is 1.0."""
-        mzs = th.tensor([100.0, 200.0])
-        logprobs = th.tensor([0.0, 0.0])  # Equal intensities
-
-        sim = _compute_pair_jss_hun(
-            mzs, logprobs, mzs, logprobs, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(1.0), atol=1e-6)
-
-    def test_compute_pair_jss_hun_orthogonal(self):
-        """Test JSS for orthogonal spectra is 0.0."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([200.0])
-        logprobs2 = th.tensor([0.0])
-
-        sim = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(0.0), atol=1e-6)
-
-    def test_compute_pair_jss_hun_tolerance(self):
-        """Test spectra matching within tolerance."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([100.0001])
-        logprobs2 = th.tensor([0.0])
-
-        # Within tolerance
-        sim = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=0.01, relative=False, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim, th.tensor(1.0), atol=1e-6)
-
-        # Outside tolerance
-        sim_out = _compute_pair_jss_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-6, relative=False, tolerance_min_mz=1.0
-        )
-        assert th.allclose(sim_out, th.tensor(0.0), atol=1e-6)
-
-    def test_get_pairwise_jss_sim_hun(self):
-        """Test the pairwise wrapper for Hungarian JSS."""
-        mzs = th.tensor([100.0, 200.0])
-        logprobs = th.tensor([0.0, 0.0])
-        batch_idxs = th.tensor([0, 1], dtype=th.long)
-        batch_size = 2
-
-        S = get_pairwise_jss_sim_hun(
-            mzs, logprobs, batch_idxs, batch_size, tolerance=1e-5, relative=True
-        )
-
-        assert S.shape == (2, 2)
-        assert th.allclose(S[0, 0], th.tensor(1.0))
-        assert th.allclose(S[1, 1], th.tensor(1.0))
-        assert th.allclose(S[0, 1], th.tensor(0.0), atol=1e-6)
-        assert th.allclose(S[1, 0], th.tensor(0.0), atol=1e-6)
+    """Tests for the vectorized JSS loss with Hungarian matching."""
 
     def test_sparse_jss_hun_vec_matches_sequential(self):
         """Vectorized training JSS-Hungarian should match the sequential loss."""
@@ -944,40 +669,6 @@ class TestHungarianJSS:
 
         assert vec[0].item() > vec[1].item()
         assert vec[1].item() == pytest.approx(0.0, abs=1e-5)
-
-
-class TestHungarianCE:
-    """Tests for Cross-Entropy computation using Hungarian matching."""
-
-    def test_compute_pair_ce_hun_identical(self):
-        """Test CE for identical spectra is low (minimizing CE)."""
-        mzs = th.tensor([100.0])
-        logprobs = th.tensor([0.0])
-
-        ce = _compute_pair_ce_hun(
-            mzs, logprobs, mzs, logprobs, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        # For P=Q=[1], CE = -sum(1 * log(1)) = 0.
-        # However, we use log(1+eps) for stability, so it should be close to 0.
-        assert ce < 1e-3
-
-    def test_compute_pair_ce_hun_orthogonal(self):
-        """Test CE for orthogonal spectra is high."""
-        mzs1 = th.tensor([100.0])
-        logprobs1 = th.tensor([0.0])
-        mzs2 = th.tensor([200.0])
-        logprobs2 = th.tensor([0.0])
-
-        ce = _compute_pair_ce_hun(
-            mzs1, logprobs1, mzs2, logprobs2, tolerance=1e-5, relative=True, tolerance_min_mz=1.0
-        )
-        # For orthogonal, it should mismatch and use log_eps.
-        # CE = -log(eps)
-
-        from fragnnet.model.loss import EPS
-
-        expected = -math.log(EPS)
-        assert th.allclose(ce, th.tensor(expected), atol=1e-3)
 
 
 class TestSparseJensenShannonDivergence:
@@ -1166,9 +857,11 @@ class TestPairwiseBinningGeometry:
         mz_max = 200.0
         mz_bin_res = 0.5  # 400 bins, valid integer grid
 
-        cossim = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
-        jss = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
-        ce = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        cossim = pairwise_cosine_similarity(
+            mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res
+        )
+        jss = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        ce = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(cossim[0, 1], th.tensor(1.0), atol=1e-6)
         assert th.allclose(jss[0, 1], th.tensor(1.0), atol=1e-6)
@@ -1176,7 +869,7 @@ class TestPairwiseBinningGeometry:
 
     @pytest.mark.parametrize(
         "fn",
-        [get_pairwise_cossim, get_pairwise_jss_sim, get_pairwise_cross_entropy],
+        [pairwise_cosine_similarity, pairwise_jss_similarity, pairwise_cross_entropy],
     )
     def test_pairwise_losses_raise_on_non_integer_bin_geometry(self, fn):
         """Fail fast when mz_max / mz_bin_res does not define an integer bin count."""

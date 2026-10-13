@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import checkpoint
 
 
 class _ConfigurationResolved(Exception):
@@ -26,8 +26,8 @@ def test_cli_backend_override_changes_only_the_resolved_backend(monkeypatch, ove
     expected = dict(config)
     if override is not None:
         expected["masster_candidate_backend"] = override
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_: "checkpoint.ckpt")
-    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_: config)
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_: "checkpoint.ckpt")
+    monkeypatch.setattr(checkpoint, "get_config_from_ckpt", lambda **_: config)
 
     def stop_before_data_loading(*_args, **_kwargs):
         raise _ConfigurationResolved
@@ -45,9 +45,9 @@ def test_cli_backend_override_changes_only_the_resolved_backend(monkeypatch, ove
 
 
 def test_cli_rejects_candidate_backend_override_for_other_models(monkeypatch, capsys):
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_: "checkpoint.ckpt")
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_: "checkpoint.ckpt")
     monkeypatch.setattr(
-        script_utils, "get_config_from_ckpt", lambda **_: {"model_type": "frag_gnn"}
+        checkpoint, "get_config_from_ckpt", lambda **_: {"model_type": "frag_gnn"}
     )
     monkeypatch.setattr(
         sys,

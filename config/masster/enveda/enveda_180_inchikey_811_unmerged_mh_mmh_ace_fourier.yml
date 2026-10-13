@@ -22,7 +22,7 @@
 #    from prec_types raises KeyError in base_dataset. masster_include_cmf stays false: both kept
 #    adducts' CMF ions duplicate a CRF hydrogen shift, so the channel is masked anyway.
 # 2. ce_insert_type embed with int_embedder fourier (MSGYM arm: embed on the template's
-#    abs-sines), 2026-09-27, as in config/spectraverse/masster/cv*.yml. fourier gives every
+#    abs-sines), 2026-09-27, as in config/masster/spectraverse/cv*.yml. fourier gives every
 #    integer 0-300 its own row; abs-sines gives x and 2**k - x the same code. Not qet (this
 #    config's 2026-09-26 setting): on NIST20 [M+H]+/FT, n1 (qet), n2 and n3 trail c0 by
 #    0.012 / 0.010 / 0.009, and n4 (c0 + fourier) runs ahead of c0
@@ -187,7 +187,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 64
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

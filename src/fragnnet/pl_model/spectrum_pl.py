@@ -8,8 +8,9 @@ It is intended to be subclassed for specific model architectures and tasks.
 
 import inspect
 import logging
+import math
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 import lightning as L
@@ -20,196 +21,26 @@ import torch as th
 from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
-from fragnnet.model.fragnnet_model import EXPLAINABILITY_OUTPUT_KEYS
-from fragnnet.model.loss import sparse_entropy_fn
-from fragnnet.utils.misc_utils import (
-    TOLERANCE_MIN_MZ,
-    flatten_lol,
-    safelog,
-    scatter_l1normalize,
-    to_cpu,
-)
+from fragnnet import registry
+from fragnnet.loss.spectrum_distance import sparse_outside_window_intensity_fraction
+from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
+from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
+from fragnnet.utils.migrations import migrate_legacy_hparams
+from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ, flatten_lol, to_cpu
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
-from fragnnet.utils.pl_utils import migrate_legacy_hparams
+from fragnnet.utils.scatter_utils import safelog
 from fragnnet.utils.spec_utils import (
-    batch_cos_hun_helper,
-    batch_jss_hun_helper,
     batched_bin_func,
     batched_filter_func,
     batched_l1_normalize,
     batched_mf1000_normalize,
     batched_rel_filter_func,
-    calculate_match_mz_reductions,
-    calculate_match_mzs,
-    cos_sim_helper,
     get_ints_transform_func,
     get_ints_untransform_func,
-    jss_helper,
-    ndcg_helper,
-    opt_cos_sim_helper,
-    round_aggregate_peaks,
-    scatter_reduce,
+    primary_ce_to_batch,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def get_split_fn(bs_idx: th.Tensor) -> Callable[[th.Tensor], tuple[th.Tensor, ...]]:
-    """Return a function that splits a packed tensor into its per-batch-element pieces.
-
-    Args:
-        bs_idx: Non-decreasing batch index per row, shape ``[N]``.
-
-    Returns:
-        Callable mapping a tensor of shape ``[N, ...]`` to one tuple entry per batch element.
-    """
-    # check the validity of bs idx
-    diffs = bs_idx[1:] - bs_idx[:-1]
-    assert len(diffs) == 0 or diffs.min() >= 0
-    batch_counts = th.bincount(bs_idx)
-    batch_counts = batch_counts.tolist()
-
-    def split_fn(inp_tensor: th.Tensor) -> tuple[th.Tensor, ...]:
-        return th.split(inp_tensor, batch_counts)
-
-    return split_fn
-
-
-def list_to_batch_tensor(inp: Sequence[th.Tensor], pad: float) -> th.Tensor:
-    """Right-pad a list of 1-D tensors to equal length and stack them.
-
-    Args:
-        inp: Tensors of shape ``[L_i]``.
-        pad: Fill value for positions past each tensor's length.
-
-    Returns:
-        Tensor of shape ``[len(inp), max_i L_i]``.
-    """
-    max_l = max([len(_) for _ in inp])
-
-    def padv(v: th.Tensor) -> th.Tensor:
-        if len(v) < max_l:
-            return th.cat([v, v.new_zeros(max_l - len(v)) + pad], 0)
-        return v
-
-    return th.stack([padv(_) for _ in inp], 0)
-
-
-def ragged_to_batch(
-    feat: th.Tensor, batch_idx: th.Tensor, pad_value: float = 0
-) -> tuple[th.Tensor, th.Tensor]:
-    assert batch_idx.ndim == 1
-    assert feat.size(0) == batch_idx.size(0)
-
-    device = feat.device
-    N = batch_idx.size(0)
-
-    lengths = th.bincount(batch_idx)
-    B = lengths.size(0)
-    max_len = lengths.max()
-
-    offsets = th.cumsum(lengths, dim=0)
-    offsets = th.cat([th.zeros(1, device=device, dtype=offsets.dtype), offsets[:-1]])
-    local_idx = th.arange(N, device=device) - offsets[batch_idx]
-    assert feat.ndim == 1
-
-    out = th.full((B, max_len), pad_value, device=device, dtype=feat.dtype)
-    out[batch_idx, local_idx] = feat
-    return out
-
-
-def primary_ce_to_batch(
-    spec_ce: th.Tensor, spec_ce_batch_idxs: th.Tensor | None, batch_size: int
-) -> th.Tensor:
-    """Extract one collision energy value per batch element.
-
-    Args:
-        spec_ce: Collision energy tensor. This is typically flattened by collation and has
-            shape (num_ce_values,) or (batch_size, num_ce_values_per_sample).
-        spec_ce_batch_idxs: Batch indices for flattened CE values of shape (num_ce_values,).
-        batch_size: Number of samples in the batch.
-
-    Returns:
-        Collision energy tensor of shape (batch_size,).
-    """
-    if spec_ce.ndim == 2:
-        if spec_ce.size(1) == 1:
-            # batch_func produced (total_ces, 1) — squeeze trailing dim and
-            # fall through to the sparse batch_idxs path below.
-            spec_ce = spec_ce.squeeze(-1)
-        elif spec_ce.size(0) == batch_size:
-            # Dense layout (batch_size, num_ces) — take first CE per sample.
-            return spec_ce[:, 0].detach().cpu()
-        else:
-            raise ValueError(
-                "Expected spec_ce to have batch_size rows when it is 2D, "
-                f"got shape {tuple(spec_ce.shape)} and batch_size={batch_size}"
-            )
-
-    flat_spec_ce = spec_ce.reshape(-1).detach().cpu()
-    if spec_ce_batch_idxs is None:
-        if flat_spec_ce.numel() != batch_size:
-            raise ValueError(
-                "spec_ce_batch_idxs is required when spec_ce is flattened and does not "
-                f"already have one value per batch item; got {flat_spec_ce.numel()} values "
-                f"for batch_size={batch_size}"
-            )
-        return flat_spec_ce
-
-    flat_batch_idxs = spec_ce_batch_idxs.reshape(-1).detach().cpu().long()
-    if flat_batch_idxs.numel() != flat_spec_ce.numel():
-        raise ValueError(
-            "spec_ce and spec_ce_batch_idxs must have the same number of elements; "
-            f"got {flat_spec_ce.numel()} and {flat_batch_idxs.numel()}"
-        )
-
-    ce_primary = th.full((batch_size,), float("nan"), dtype=flat_spec_ce.dtype)
-    for batch_idx in range(batch_size):
-        batch_mask = flat_batch_idxs == batch_idx
-        if batch_mask.any():
-            ce_primary[batch_idx] = flat_spec_ce[batch_mask][0]
-    return ce_primary
-
-
-def select_context_ce_values(
-    batch: dict,
-    batch_size: int,
-    inst_types: list[str],
-    ce_key_by_inst: dict[str, str],
-) -> th.Tensor:
-    """Select the sampler's configured CE axis for every spectrum."""
-    ce_by_key = {}
-    for ce_key in set(ce_key_by_inst.values()):
-        values = batch[f"spec_{ce_key}"]
-        batch_idxs = batch[f"spec_{ce_key}_batch_idxs"]
-        valid = th.isfinite(values) & (values >= 0)
-        value_sums = scatter_reduce(
-            th.where(valid, values, 0.0),
-            batch_idxs,
-            reduce="sum",
-            dim_size=batch_size,
-            include_self=False,
-        )
-        valid_counts = scatter_reduce(
-            valid.to(values.dtype),
-            batch_idxs,
-            reduce="sum",
-            dim_size=batch_size,
-            include_self=False,
-        )
-        mean_values = value_sums / valid_counts.clamp(min=1)
-        mean_values = th.where(
-            valid_counts > 0,
-            th.round(mean_values * 1.0e6) / 1.0e6,
-            th.full_like(mean_values, float("nan")),
-        )
-        ce_by_key[ce_key] = mean_values
-    inst_idxs = batch["spec_inst_type"].reshape(-1)
-    ce_values = ce_by_key[next(iter(ce_by_key))].new_full((batch_size,), float("nan"))
-    for inst_idx, inst_type in enumerate(sorted(inst_types)):
-        ce_key = ce_key_by_inst[inst_type]
-        ce_values[inst_idxs == inst_idx] = ce_by_key[ce_key][inst_idxs == inst_idx]
-    return ce_values
 
 
 class SpectrumPL(L.LightningModule):
@@ -316,6 +147,108 @@ class SpectrumPL(L.LightningModule):
         """
         raise NotImplementedError
 
+    # Shared spectrum objectives. FraGNNet and MASSter prepare the inputs, call these where their
+    # loss functions evaluate each term, and weight, add and log the results themselves; nothing
+    # here touches the total loss.
+
+    def _validate_spectral_auxiliary_weights(self) -> None:
+        """Check the spectral-leak and spectral-CE-auxiliary weights.
+
+        Raises:
+            ValueError: If a weight is not finite and nonnegative, or if a positive weight is
+                paired with a ``loss_type`` other than ``hellinger_distance``.
+        """
+        weights = {
+            "spectral_leak_loss_weight": self.hparams.spectral_leak_loss_weight,
+            "spectral_ce_auxiliary_weight": self.hparams.spectral_ce_auxiliary_weight,
+        }
+        for name, weight in weights.items():
+            if not math.isfinite(weight) or weight < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+            if weight > 0.0 and self.hparams.loss_type != "hellinger_distance":
+                raise ValueError(f"{name} is supported only with hellinger_distance")
+
+    def _spectral_leak_loss(
+        self,
+        true_mzs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_ints: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        *,
+        batch_size: int,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample share of predicted intensity outside every target peak's window.
+
+        Args:
+            true_mzs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_batch_idxs: Predicted peaks.
+            pred_ints: Predicted probabilities or intensities, as the caller defines them.
+            batch_size: Number of spectra.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Spectral leak per spectrum.
+        """
+        return sparse_outside_window_intensity_fraction(
+            true_mzs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_ints,
+            pred_batch_idxs,
+            batch_size=batch_size,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+            loss_batch_size=self.hparams.loss_batch_size,
+        )
+
+    @staticmethod
+    def _spectral_ce_auxiliary(
+        sparse_ce_fn: Callable[..., tuple[th.Tensor, ...]],
+        true_mzs: th.Tensor,
+        true_logprobs: th.Tensor,
+        true_batch_idxs: th.Tensor,
+        pred_mzs: th.Tensor,
+        pred_logprobs: th.Tensor,
+        pred_batch_idxs: th.Tensor,
+        pred_oos_logprobs: th.Tensor,
+        *,
+        include_oos: bool,
+        tol_per_sample: th.Tensor | None,
+        min_mz_per_sample: th.Tensor | None,
+    ) -> th.Tensor:
+        """Per-sample spectral cross-entropy used as an auxiliary to the primary loss.
+
+        Args:
+            sparse_ce_fn: The caller's ``get_sparse_cross_entropy_fn`` result.
+            true_mzs, true_logprobs, true_batch_idxs: Target peaks.
+            pred_mzs, pred_logprobs, pred_batch_idxs: Predicted peaks.
+            pred_oos_logprobs: Predicted out-of-support log-probability per spectrum.
+            include_oos: Add the out-of-support CE to the in-support CE.
+            tol_per_sample, min_mz_per_sample: Per-sample instrument tolerances, if any.
+
+        Returns:
+            Auxiliary CE per spectrum.
+        """
+        ios_ce, oos_ce, _, _ = sparse_ce_fn(
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_oos_logprobs,
+            tol_per_sample=tol_per_sample,
+            min_mz_per_sample=min_mz_per_sample,
+        )
+        return ios_ce + oos_ce if include_oos else ios_ce
+
+
     def _setup_spec_fns(self):
         """
         Setup spectrum preprocessing functions: filtering, binning, intensity transforms, and normalization.
@@ -365,740 +298,8 @@ class SpectrumPL(L.LightningModule):
         self.ints_normalize_func = batched_l1_normalize
 
     def _setup_metric_fns(self):
-        """
-        Setup all auxiliary and main metric functions, including configuration for different evaluation modes.
-        """
-
-        # setup metrics
-        self.metric_min_max = {"loss": "min"}
-        self.metric_bests = ["loss"]
-        if "primary_loss" in self.metric_names:
-            self.metric_min_max["primary_loss"] = "min"
-            self.metric_bests.append("primary_loss")
-        for k in self.metric_names:
-            if k not in self.metric_min_max:
-                self.metric_min_max[k] = None
-        self.auxiliary_metric_names = set()
-
-        bin_sqrt_flags = [False]
-        if self.hparams.eval_bin_sqrt:
-            bin_sqrt_flags.append(True)
-        bin_remove_prec_peak_flags = [False]
-        if self.hparams.eval_bin_remove_prec_peaks:
-            bin_remove_prec_peak_flags.append(True)
-        hun_sqrt_flags = [False]
-        if self.hparams.eval_hun_sqrt:
-            hun_sqrt_flags.append(True)
-        hun_remove_prec_peak_flags = [False]
-        if self.hparams.eval_hun_remove_prec_peaks:
-            hun_remove_prec_peak_flags.append(True)
-        nb_flags = [False]
-        if self.hparams.nb_iso:
-            nb_flags.append(True)
-        self.extra_metric_args = []
-
-        eval_mz_bin_reses = self.hparams.eval_mz_bin_res
-
-        if len(self.hparams.auxiliary_scores) > 0 and not self.hparams.sparse_cosine_similarity:
-            raise ValueError("auxiliary_scores require sparse_cosine_similarity")
-        compute_match_mzs = False
-        compute_full_match_mzs = False
-        compute_rounded_match_mzs = False
-        compute_bin_specs = False
-        compute_entropies = False
-        compute_pred_entropies = False
-        compute_inst_tol_match_mzs = False
-        self.batch_metric_args: set[str] = set()
-
-        for metric_name in self.hparams.auxiliary_scores:
-            if metric_name == "cos_sim":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "cos_sim"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = "max"
-                            self.metric_bests.append(fname)
-                            self.auxiliary_metric_names.add(fname)
-                    compute_bin_specs = True
-            elif metric_name == "jss":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "jss"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = "max"
-                            self.metric_bests.append(fname)
-                            self.auxiliary_metric_names.add(fname)
-            elif metric_name == "recall":
-                self.metric_min_max["recall"] = "max"
-                self.auxiliary_metric_names.add("recall")
-                compute_match_mzs = True
-                if self.inst_tol_lookup is not None:
-                    self.batch_metric_args.add("spec_inst_type")
-            elif metric_name == "wrecall":
-                self.metric_min_max["wrecall"] = "max"
-                self.auxiliary_metric_names.add("wrecall")
-                compute_match_mzs = True
-                if self.inst_tol_lookup is not None:
-                    self.batch_metric_args.add("spec_inst_type")
-            elif metric_name == "opt_cos_sim":
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        for mz_bin_res in eval_mz_bin_reses:
-                            fname_base = "opt_cos_sim"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}_{mz_bin_res}"
-                            self.metric_min_max[fname] = None
-                            self.auxiliary_metric_names.add(fname)
-                    compute_bin_specs = True
-            elif metric_name == "true_spec_e":
-                self.metric_min_max["true_spec_e"] = None
-                self.auxiliary_metric_names.add("true_spec_e")
-                compute_entropies = True
-            elif metric_name == "true_spec_ne":
-                self.metric_min_max["true_spec_ne"] = None
-                self.auxiliary_metric_names.add("true_spec_ne")
-                compute_entropies = True
-            elif metric_name == "pred_spec_e":
-                self.metric_min_max["pred_spec_e"] = None
-                self.auxiliary_metric_names.add("pred_spec_e")
-                compute_pred_entropies = True
-            elif metric_name == "pred_spec_ne":
-                self.metric_min_max["pred_spec_ne"] = None
-                self.auxiliary_metric_names.add("pred_spec_ne")
-                compute_pred_entropies = True
-            elif metric_name == "cos_hun":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-            elif metric_name == "precision":
-                self.metric_min_max["precision"] = "max"
-                self.metric_bests.append("precision")
-                self.auxiliary_metric_names.add("precision")
-                compute_match_mzs = True
-            elif metric_name == "wprecision":
-                self.metric_min_max["wprecision"] = "max"
-                self.metric_bests.append("wprecision")
-                self.auxiliary_metric_names.add("wprecision")
-                compute_match_mzs = True
-            # elif metric_name == "dice":
-            #   self.metric_min_max["dice"] = "max"
-            #   self.metric_bests.append("dice")
-            #   compute_match_mzs = True
-            elif metric_name == "ndcg":
-                for union in [True, False]:
-                    if union:
-                        fname_base = "ndcg_un"
-                        tie_break_flags = [True, False]
-                    else:
-                        fname_base = "ndcg_int"
-                        tie_break_flags = [True]
-                    for optimistic in tie_break_flags:
-                        if union:
-                            suffix = "_opt" if optimistic else "_pess"
-                        else:
-                            suffix = ""
-                        fname = f"{fname_base}{suffix}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-                compute_match_mzs = True
-                compute_full_match_mzs = True
-            elif metric_name == "jss_hun":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_rounded_match_mzs = True
-            elif metric_name == "true_oos_prob":
-                self.metric_min_max["true_oos_prob"] = None
-                self.auxiliary_metric_names.add("true_oos_prob")
-                compute_match_mzs = True
-            elif metric_name == "true_oos_e":
-                self.metric_min_max["true_oos_e"] = None
-                self.auxiliary_metric_names.add("true_oos_e")
-                compute_match_mzs = True
-            elif metric_name == "pred_node_count":
-                for nb_flag in nb_flags:
-                    if nb_flag:
-                        fname = "pred_nb_node_count"
-                        self.extra_metric_args.extend(["pred_nb_node_batch_idxs"])
-                    else:
-                        fname = "pred_node_count"
-                        self.extra_metric_args.extend(["pred_node_batch_idxs"])
-                    self.metric_min_max[fname] = None
-                    self.auxiliary_metric_names.add(fname)
-            elif metric_name == "pred_formula_count":
-                fname = "pred_formula_count"
-                self.extra_metric_args.extend(["pred_formula_batch_idxs"])
-                self.metric_min_max[fname] = None
-                self.auxiliary_metric_names.add(fname)
-            elif metric_name == "pred_edge_count":
-                fname = "pred_edge_count"
-                self.extra_metric_args.extend(["pred_edge_batch_idxs"])
-                self.metric_min_max[fname] = None
-                self.auxiliary_metric_names.add(fname)
-            elif metric_name == "cos_hun_inst_tol":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun_inst_tol"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = fname_base
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_inst_tol_match_mzs = True
-                compute_rounded_match_mzs = True
-                self.batch_metric_args.add("spec_inst_type")
-            elif metric_name == "jss_hun_inst_tol":
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun_inst_tol"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = fname_base
-                        self.metric_min_max[fname] = "max"
-                        self.metric_bests.append(fname)
-                        self.auxiliary_metric_names.add(fname)
-                compute_inst_tol_match_mzs = True
-                compute_rounded_match_mzs = True
-                self.batch_metric_args.add("spec_inst_type")
-            else:
-                raise ValueError(f"metric_name {metric_name} not recognized")
-
-        self.metric_names.update(self.auxiliary_metric_names)
-        # Metric inputs that only exist on an explainability forward. Metrics reach
-        # `metric_fn` only through `extra_metric_args`, so this intersection is the complete
-        # set of metric inputs a `return_explainability_tensors=False` forward would hand
-        # back as None (e.g. `pred_nb_node_batch_idxs`, which `pred_node_count` needs under
-        # nb_iso). `inference_step` ORs its own demand on when this is non-empty.
-        self.expl_metric_args = EXPLAINABILITY_OUTPUT_KEYS.intersection(self.extra_metric_args)
-
-        def calculate_all_auxiliary_metrics(
-            true_mzs: th.Tensor,
-            true_ints: th.Tensor,
-            true_batch_idxs: th.Tensor,
-            pred_mzs: th.Tensor,
-            pred_ints: th.Tensor,
-            pred_batch_idxs: th.Tensor,
-            true_prec_mzs: th.Tensor,
-            split: str = "test",
-            **kwargs: Any,
-        ) -> dict[str, th.Tensor]:
-            # assumes both true/pred spectra are already L1-normalized
-
-            batch_size = th.max(true_batch_idxs) + 1
-            assert batch_size == th.max(pred_batch_idxs) + 1, (
-                batch_size,
-                th.max(pred_batch_idxs) + 1,
-            )
-
-            # Per-spectrum metrics assign by batch index in test/predict as well.
-            metric_d = {
-                k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
-                for k in self.auxiliary_metric_names
-            }
-            # define aggregation
-            agg = "sum" if self.hparams.sum_ints else "amax"
-
-            # global calculations
-            if compute_rounded_match_mzs:
-                true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
-                    true_mzs, true_ints, true_batch_idxs, agg=agg
-                )
-                pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
-                    pred_mzs, pred_ints, pred_batch_idxs, agg=agg
-                )
-
-            if compute_bin_specs:
-                # Predicted m/z are not range-limited upstream: preproc_spec's (eval, pred)
-                # branch only untransforms and normalizes intensities, while true peaks pass
-                # through rel_filter_func with this same mz_max. A predicted candidate at or
-                # above mz_max -- the precursor of a ~1500 Da molecule, say -- therefore reached
-                # batched_bin_func and tripped its range assert. Drop those peaks so both sides
-                # are binned over the same [0, mz_max) window. Peaks in range are untouched, so
-                # this changes no metric that did not previously crash.
-                bin_pred_mzs = pred_mzs
-                bin_pred_ints = pred_ints
-                bin_pred_batch_idxs = pred_batch_idxs
-                if self.hparams.mz_max > 0.0:
-                    in_bin_range = bin_pred_mzs < self.hparams.mz_max
-                    bin_pred_mzs = bin_pred_mzs[in_bin_range]
-                    bin_pred_ints = bin_pred_ints[in_bin_range]
-                    bin_pred_batch_idxs = bin_pred_batch_idxs[in_bin_range]
-                for remove_prec_peak in bin_remove_prec_peak_flags:
-                    for sqrt in bin_sqrt_flags:
-                        if sqrt:
-                            ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            ints_transform = get_ints_transform_func("none")
-                        for mz_bin_res in eval_mz_bin_reses:
-                            # bin, transform, normalize
-                            true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
-                                true_mzs,
-                                true_ints,
-                                true_batch_idxs,
-                                mz_max=self.hparams.mz_max,
-                                mz_bin_res=mz_bin_res,
-                                agg=agg,
-                                sparse=True,
-                                remove_prec_peaks=remove_prec_peak,
-                                prec_mzs=true_prec_mzs,
-                            )
-                            pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
-                                bin_pred_mzs,
-                                bin_pred_ints,
-                                bin_pred_batch_idxs,
-                                mz_max=self.hparams.mz_max,
-                                mz_bin_res=mz_bin_res,
-                                agg=agg,
-                                sparse=True,
-                                remove_prec_peaks=remove_prec_peak,
-                                prec_mzs=true_prec_mzs,
-                            )
-                            # apply intensity transform (e.g. sqrt); helpers normalize internally
-                            true_bin_ints = ints_transform(true_bin_ints)
-                            pred_bin_ints = ints_transform(pred_bin_ints)
-                            if "cos_sim" in self.hparams.auxiliary_scores:
-                                fname_base = "cos_sim"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                cos_sim = cos_sim_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                )
-                                # print(cos_sim)
-                                metric_d[fname] = cos_sim
-                            if "opt_cos_sim" in self.hparams.auxiliary_scores:
-                                fname_base = "opt_cos_sim"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                opt_cos_sim = opt_cos_sim_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                )
-                                metric_d[fname] = opt_cos_sim
-                            if "jss" in self.hparams.auxiliary_scores:
-                                fname_base = "jss"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                fname = f"{fname_base}_{mz_bin_res}"
-                                jss = jss_helper(
-                                    true_bin_idxs,
-                                    true_bin_ints,
-                                    true_bin_batch_idxs,
-                                    pred_bin_idxs,
-                                    pred_bin_ints,
-                                    pred_bin_batch_idxs,
-                                    log_min=self.hparams.log_min,
-                                )
-                                metric_d[fname] = jss
-
-            if compute_entropies:
-                true_log_probs = kwargs.get("true_logprobs")
-                if true_log_probs is None:
-                    true_log_probs = safelog(
-                        scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
-                    )
-                true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs, true_batch_idxs)
-                if "true_spec_e" in self.hparams.auxiliary_scores:
-                    metric_d["true_spec_e"] = true_spec_e
-                if "true_spec_ne" in self.hparams.auxiliary_scores:
-                    metric_d["true_spec_ne"] = true_spec_ne
-
-            if compute_pred_entropies:
-                pred_log_probs = kwargs.get("pred_logprobs")
-                if pred_log_probs is None:
-                    pred_log_probs = safelog(
-                        scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
-                    )
-                pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
-                if "pred_spec_e" in self.hparams.auxiliary_scores:
-                    metric_d["pred_spec_e"] = pred_spec_e
-                if "pred_spec_ne" in self.hparams.auxiliary_scores:
-                    metric_d["pred_spec_ne"] = pred_spec_ne
-
-            true_ion_num = th.bincount(true_batch_idxs)
-            pred_ion_num = th.bincount(pred_batch_idxs)
-            if compute_rounded_match_mzs:
-                batched_true_ints_r = ragged_to_batch(true_ints_r, true_batch_idxs_r, pad_value=0)
-                batched_pred_ints_r = ragged_to_batch(pred_ints_r, pred_batch_idxs_r, pad_value=0)
-                sqrt_batched_true_ints_r = get_ints_transform_func("sqrt")(batched_true_ints_r)
-                sqrt_batched_pred_ints_r = get_ints_transform_func("sqrt")(batched_pred_ints_r)
-
-            if compute_match_mzs:
-                batch_true_ints = ragged_to_batch(true_ints, true_batch_idxs, pad_value=0)
-                batch_pred_ints = ragged_to_batch(pred_ints, pred_batch_idxs, pad_value=0)
-                batch_true_mzs = ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
-                batch_pred_mzs = ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
-                if compute_full_match_mzs:
-                    batch_match_mask = calculate_match_mzs(
-                        batch_true_mzs,
-                        batch_pred_mzs,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    )
-                    batch_true_match_mask = batch_match_mask.max(-1).values
-                    batch_pred_match_mask = batch_match_mask.max(-2).values
-                else:
-                    batch_true_match_mask, batch_pred_match_mask = calculate_match_mz_reductions(
-                        batch_true_mzs,
-                        batch_pred_mzs,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    )
-            if compute_rounded_match_mzs:
-                batch_true_mzs_r = ragged_to_batch(
-                    true_mzs_r, true_batch_idxs_r, pad_value=float("inf")
-                )
-                batch_pred_mzs_r = ragged_to_batch(
-                    pred_mzs_r, pred_batch_idxs_r, pad_value=float("inf")
-                )
-                batch_true_prec_mask_r = calculate_match_mzs(
-                    batch_true_mzs_r,
-                    true_prec_mzs[..., None],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                ).squeeze(-1)
-                batch_pred_prec_mask_r = calculate_match_mzs(
-                    batch_pred_mzs_r,
-                    true_prec_mzs[..., None],
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                ).squeeze(-1)
-                # match
-                batch_match_mask_r = calculate_match_mzs(
-                    batch_true_mzs_r,
-                    batch_pred_mzs_r,
-                    tolerance=self.tolerance,
-                    relative=self.relative,
-                    tolerance_min_mz=self.tolerance_min_mz,
-                )
-                batch_true_match_mask_r = batch_match_mask_r.max(
-                    -1
-                ).values  # th.any(b_match_mask_r, dim=1)
-                batch_pred_match_mask_r = batch_match_mask_r.max(
-                    -2
-                ).values  # th.any(b_match_mask_r, dim=0)
-
-            # calculate batched cosine and batched jss
-            batched_metric = {}
-            if "cos_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        if sqrt:
-                            inp_true = sqrt_batched_true_ints_r
-                            inp_pred = sqrt_batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            inp_true = batched_true_ints_r
-                            inp_pred = batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("none")
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        # metric_d[fname][b_idx] = b_cos_hun
-                        batched_metric[fname] = batch_cos_hun_helper(
-                            inp_true,
-                            inp_pred,
-                            batch_match_mask_r,
-                            batch_true_match_mask_r,
-                            batch_pred_match_mask_r,
-                            remove_prec_peak,
-                            batch_true_prec_mask_r,
-                            batch_pred_prec_mask_r,
-                        )
-            if "jss_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        if sqrt:
-                            inp_true = sqrt_batched_true_ints_r
-                            inp_pred = sqrt_batched_pred_ints_r
-                            # ints_transform = get_ints_transform_func("sqrt")
-                        else:
-                            inp_true = batched_true_ints_r
-                            inp_pred = batched_pred_ints_r
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-
-                        batched_metric[fname] = batch_jss_hun_helper(
-                            inp_true,
-                            inp_pred,
-                            batch_match_mask_r,
-                            batch_true_match_mask_r,
-                            batch_pred_match_mask_r,
-                            remove_prec_peak,
-                            batch_true_prec_mask_r,
-                            batch_pred_prec_mask_r,
-                            log_min=self.hparams.log_min,
-                        )
-
-            if {"recall", "wrecall"}.intersection(self.hparams.auxiliary_scores):
-                recall_match_mask = batch_true_match_mask
-                if self.inst_tol_lookup is not None:
-                    inst_idxs = kwargs["spec_inst_type"].reshape(-1)
-                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=true_mzs.dtype)
-                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
-                        dtype=true_mzs.dtype
-                    )
-                    recall_match_mask, _ = calculate_match_mz_reductions(
-                        batch_true_mzs,
-                        batch_pred_mzs,
-                        tol_per_true=tol_per_sample[:, None],
-                        min_mz_per_true=min_mz_per_sample[:, None],
-                    )
-                if "recall" in self.hparams.auxiliary_scores:
-                    metric_d["recall"] = recall_match_mask.float().sum(-1) / true_ion_num.float()
-                if "wrecall" in self.hparams.auxiliary_scores:
-                    metric_d["wrecall"] = (batch_true_ints * recall_match_mask.float()).sum(-1)
-            if "precision" in self.hparams.auxiliary_scores:
-                metric_d["precision"] = batch_pred_match_mask.float().sum(-1) / pred_ion_num.float()
-            if "wprecision" in self.hparams.auxiliary_scores:
-                metric_d["wprecision"] = (batch_pred_ints * batch_pred_match_mask.float()).sum(-1)
-            if "cos_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "cos_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        metric_d[fname] = batched_metric[fname]
-            if "jss_hun" in self.hparams.auxiliary_scores:
-                for remove_prec_peak in hun_remove_prec_peak_flags:
-                    for sqrt in hun_sqrt_flags:
-                        fname_base = "jss_hun"
-                        if sqrt:
-                            fname_base += "_sqrt"
-                        if remove_prec_peak:
-                            fname_base += "_np"
-                        fname = f"{fname_base}"
-                        metric_d[fname] = batched_metric[fname]
-            if compute_inst_tol_match_mzs and (
-                "cos_hun_inst_tol" in self.hparams.auxiliary_scores
-                or "jss_hun_inst_tol" in self.hparams.auxiliary_scores
-            ):
-                spec_inst_type = kwargs.get("spec_inst_type")
-                if spec_inst_type is not None and self.inst_tol_lookup is not None:
-                    inst_idxs = spec_inst_type.reshape(-1)
-                    dtype = true_ints.dtype
-                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(dtype=dtype)
-                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(dtype=dtype)
-                    # Build per-peak effective absolute tolerance: (B, N_true).
-                    # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
-                    safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
-                    tol_per_peak = tol_per_sample[:, None] * th.maximum(
-                        safe_mzs, min_mz_per_sample[:, None]
-                    )
-                    batch_match_mask_it = calculate_match_mzs(
-                        batch_true_mzs_r,
-                        batch_pred_mzs_r,
-                        tolerance=0.0,
-                        relative=False,
-                        tol_per_true=tol_per_peak,
-                    )
-                    batch_true_match_mask_it = batch_match_mask_it.max(-1).values
-                    batch_pred_match_mask_it = batch_match_mask_it.max(-2).values
-                    if "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
-                        for remove_prec_peak in hun_remove_prec_peak_flags:
-                            for sqrt in hun_sqrt_flags:
-                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
-                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
-                                fname_base = "cos_hun_inst_tol"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                metric_d[fname_base] = batch_cos_hun_helper(
-                                    inp_true,
-                                    inp_pred,
-                                    batch_match_mask_it,
-                                    batch_true_match_mask_it,
-                                    batch_pred_match_mask_it,
-                                    remove_prec_peak,
-                                    batch_true_prec_mask_r,
-                                    batch_pred_prec_mask_r,
-                                )
-                    if "jss_hun_inst_tol" in self.hparams.auxiliary_scores:
-                        for remove_prec_peak in hun_remove_prec_peak_flags:
-                            for sqrt in hun_sqrt_flags:
-                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
-                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
-                                fname_base = "jss_hun_inst_tol"
-                                if sqrt:
-                                    fname_base += "_sqrt"
-                                if remove_prec_peak:
-                                    fname_base += "_np"
-                                metric_d[fname_base] = batch_jss_hun_helper(
-                                    inp_true,
-                                    inp_pred,
-                                    batch_match_mask_it,
-                                    batch_true_match_mask_it,
-                                    batch_pred_match_mask_it,
-                                    remove_prec_peak,
-                                    batch_true_prec_mask_r,
-                                    batch_pred_prec_mask_r,
-                                    log_min=self.hparams.log_min,
-                                )
-            if (
-                "ndcg" in self.hparams.auxiliary_scores
-                or "true_oos_prob" in self.hparams.auxiliary_scores
-                or "true_oos_e" in self.hparams.auxiliary_scores
-            ):
-                pred_split_fn = get_split_fn(pred_batch_idxs)
-                true_split_fn = get_split_fn(true_batch_idxs)
-                split_true_ints = true_split_fn(true_ints)
-                split_pred_ints = pred_split_fn(pred_ints)
-                for b_idx in range(batch_size):  # the followings are not speed up yet
-                    b_true_ints = split_true_ints[b_idx]
-                    b_pred_ints = split_pred_ints[b_idx]
-
-                    if compute_match_mzs:
-                        b_true_match_mask = batch_true_match_mask[b_idx][: b_true_ints.shape[0]]
-                        b_pred_match_mask = batch_pred_match_mask[b_idx][: b_pred_ints.shape[0]]
-
-                    if "ndcg" in self.hparams.auxiliary_scores:
-                        for union in [True, False]:
-                            if union:
-                                fname_base = "ndcg_un"
-                                tie_break_flags = [True, False]
-                            else:
-                                fname_base = "ndcg_int"
-                                tie_break_flags = [True]
-                            for optimistic in tie_break_flags:
-                                if union:
-                                    suffix = "_opt" if optimistic else "_pess"
-                                else:
-                                    suffix = ""
-                                b_ndcg = ndcg_helper(
-                                    b_true_ints,
-                                    b_pred_ints,
-                                    batch_match_mask[b_idx][
-                                        : b_true_ints.shape[0], : b_pred_ints.shape[0]
-                                    ],
-                                    b_true_match_mask,
-                                    b_pred_match_mask,
-                                    optimistic,
-                                    union,
-                                )
-                                fname = f"{fname_base}{suffix}"
-                                metric_d[fname][b_idx] = b_ndcg
-
-                    if "true_oos_prob" in self.hparams.auxiliary_scores:
-                        b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(
-                            b_true_ints
-                        )
-                        metric_d["true_oos_prob"][b_idx] = b_true_oos_prob
-
-                    if "true_oos_e" in self.hparams.auxiliary_scores:
-                        b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(
-                            b_true_ints[~b_true_match_mask]
-                        )
-                        b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
-                        b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
-                        metric_d["true_oos_e"][b_idx] = b_true_oos_e
-
-            if "pred_node_count" in self.hparams.auxiliary_scores:
-                for nb_flag in nb_flags:
-                    if nb_flag:
-                        key = "nb_node"
-                    else:
-                        key = "node"
-                    b_pred_node_count = scatter_reduce(
-                        th.ones_like(kwargs[f"pred_{key}_batch_idxs"]),
-                        kwargs[f"pred_{key}_batch_idxs"],
-                        reduce="sum",
-                        dim=0,
-                    )
-                    assert th.min(b_pred_node_count) > 0, b_pred_node_count
-                    metric_d[f"pred_{key}_count"] = b_pred_node_count
-
-            if "pred_formula_count" in self.hparams.auxiliary_scores:
-                b_pred_formula_count = scatter_reduce(
-                    th.ones_like(kwargs["pred_formula_batch_idxs"]),
-                    kwargs["pred_formula_batch_idxs"],
-                    reduce="sum",
-                    dim=0,
-                )
-                b_pred_formula_count = b_pred_formula_count - 1  # -1 for OOS!
-                assert th.min(b_pred_formula_count) > 0, b_pred_formula_count
-                metric_d["pred_formula_count"] = b_pred_formula_count
-
-            if "pred_edge_count" in self.hparams.auxiliary_scores:
-                b_pred_edge_count = scatter_reduce(
-                    th.ones_like(kwargs["pred_edge_batch_idxs"]),
-                    kwargs["pred_edge_batch_idxs"],
-                    reduce="sum",
-                    dim=0,
-                )
-                assert th.min(b_pred_edge_count) > 0, b_pred_edge_count
-                metric_d["pred_edge_count"] = b_pred_edge_count
-
-            return metric_d
-
-        self.metric_fn = calculate_all_auxiliary_metrics
+        """Set up the auxiliary metric functions (see ``pl_model/spectrum_metrics.py``)."""
+        setup_metric_fns(self)
 
     def _get_batch_metric_reduce_fn(self, sample_weight):
         # All four share one signature so `_batch_metric_reduce` can call them uniformly.
@@ -1457,50 +658,6 @@ class SpectrumPL(L.LightningModule):
         if tol_per_sample is not None:
             train_d["tol_per_sample"] = tol_per_sample
             train_d["min_mz_per_sample"] = min_mz_per_sample
-        if self.hparams.ce_pair_loss_weight != 0.0:
-            if pred_logprobs is None:
-                raise ValueError("ce_pair_loss_weight requires probability output")
-            ce_values = select_context_ce_values(
-                batch=batch,
-                batch_size=int(batch_size),
-                inst_types=self.hparams.spec_params["inst_types"],
-                ce_key_by_inst=self.hparams.ce_context_ce_key_by_inst,
-            )
-            train_d.update(
-                {
-                    "ce_pair_enabled": split == "train",
-                    "ce_pair_true_mzs": true_mzs,
-                    "ce_pair_true_ints": true_ints,
-                    "ce_pair_true_batch_idxs": true_batch_idxs,
-                    "ce_pair_pred_mzs": pred_mzs,
-                    "ce_pair_pred_logprobs": pred_logprobs,
-                    "ce_pair_pred_batch_idxs": pred_batch_idxs,
-                    "ce_pair_ce_values": ce_values,
-                    "group_id": batch["group_id"],
-                    "spec_inst_type": batch["spec_inst_type"],
-                    "spec_prec_type": batch["spec_prec_type"],
-                }
-            )
-        if self.hparams.precursor_pair_loss_weight != 0.0:
-            if pred_logprobs is None:
-                raise ValueError("precursor_pair_loss_weight requires probability output")
-            nce_values = primary_ce_to_batch(
-                batch["spec_nce"], batch.get("spec_nce_batch_idxs"), int(batch_size)
-            )
-            train_d.update(
-                {
-                    "precursor_pair_true_mzs": true_mzs,
-                    "precursor_pair_true_ints": true_ints,
-                    "precursor_pair_true_batch_idxs": true_batch_idxs,
-                    "precursor_pair_pred_mzs": pred_mzs,
-                    "precursor_pair_pred_logprobs": pred_logprobs,
-                    "precursor_pair_pred_batch_idxs": pred_batch_idxs,
-                    "precursor_pair_nce_values": nce_values,
-                    "spec_prec_mz": batch["spec_prec_mz"],
-                    "spec_inst_type": batch["spec_inst_type"],
-                    "spec_prec_type": batch["spec_prec_type"],
-                }
-            )
 
         loss_d = self.loss_fn(**train_d)
         loss = loss_d["loss"]
@@ -1717,7 +874,9 @@ class SpectrumPL(L.LightningModule):
         if (
             metrics is not None
             and self.expl_metric_args
-            and not batch.get("return_explainability_tensors", True)
+            and not batch.get(
+                "return_explainability_tensors", RETURN_EXPLAINABILITY_TENSORS_DEFAULT["fragnnet"]
+            )
         ):
             batch = {**batch, "return_explainability_tensors": True}
 
@@ -2395,7 +1554,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.train_results = None
         self._reset_running_metrics("train")
-        self.train_counter = 0
 
     def on_validation_epoch_end(self) -> None:
         if not self.trainer.sanity_checking:
@@ -2404,7 +1562,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.val_results = None
         self._reset_running_metrics("val")
-        self.val_counter = 0
 
     def on_test_epoch_end(self) -> None:
         # consolidate results
@@ -2412,7 +1569,6 @@ class SpectrumPL(L.LightningModule):
         # reset
         self.test_results = None
         self._reset_running_metrics("test")
-        self.test_counter = 0
 
     def _print_grad_norm(self, prefix=None, total_num_params=5):
         if prefix is None:
@@ -2465,16 +1621,10 @@ class SpectrumPL(L.LightningModule):
             if hasattr(obj, "generator"):
                 obj.generator = generator
 
-        if (
-            self.hparams.dag_size_curriculum
-            or self.hparams.bond_size_curriculum
-            or self.hparams.batch_sampler_type == "ce_context"
-            # Declared only by the MASSter template; other model templates omit it.
-            or (
-                hasattr(self.hparams, "masster_batch_sampler")
-                and self.hparams.masster_batch_sampler
-            )
-        ):
+        model_hooks = registry.get_model_hooks(
+            getattr(self.hparams, "model_type", None), strict=False
+        )
+        if model_hooks.advances_sampler_each_epoch(self.hparams):
             # Advance the sampler owning curriculum or CE-window state before Lightning
             # reads the epoch's batch count.
             epoch_sampler = batch_sampler if hasattr(batch_sampler, "set_epoch") else inner

@@ -44,8 +44,12 @@ from fragnnet.utils.clean_spectra_utils import (
     _subformula_masses,
     filter_subformula_peaks,
 )
-from fragnnet.utils.data_utils import ELEMENT_TO_MASS, VALID_ELEMENTS
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, parse_formula
+from fragnnet.utils.formula_utils import (
+    ELEMENT_TO_MASS,
+    PREC_TYPE_TO_MASS_DIFF,
+    VALID_ELEMENTS,
+    parse_formula,
+)
 
 logger = logging.getLogger(__name__)
 

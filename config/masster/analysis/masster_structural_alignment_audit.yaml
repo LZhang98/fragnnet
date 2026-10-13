@@ -1,0 +1,13 @@
+# Training-only structural screen; no fitting, no query-label-dependent mapping.
+source_pairs: output/candidate_correspondence_2026_09_29/nce_bands/selected_pairs.csv
+extraction_config: config/masster/analysis/masster_candidate_correspondence_nce.yaml
+nce_min: 40
+nce_max: 100
+seed: 397623
+bootstrap_repeats: 2000
+control_repeats: 20
+reliable_intensity_fraction: 0.01
+# Exact retained heavy-atom connectivity, formal charges and aromatic bonds;
+# boundary adds radius-one neighborhoods on both sides and channel/H-shift agreement.
+boundary_radius: 1
+minimum_novel_identities: 20

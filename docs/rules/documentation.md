@@ -1,6 +1,6 @@
 # Documentation rules
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-12
 > Placement and maintenance conventions for project documentation. The 2026-10-06 consolidation
 > added workstream hubs, the project-state size cap, and `docs/history/`.
 
@@ -45,6 +45,10 @@
   plan, and repoint inbound anchor links. Keep heading text identical so anchors survive the move.
 - **Findings** hold measurements and conclusions; one canonical location per fact. Link to it
   instead of restating numbers elsewhere.
+- **Paths in frozen records** (findings, plans, `docs/history/`) are as of `13b1599d`, before
+  the reorganization moved FraGNNet, MASSter and the baselines into `src/fragnnet/models/` and
+  `src/fragnnet/baselines/`; use git history to resolve them. Repoint links only in live
+  documents (the architecture map, README files, `docs/reference/`, `docs/guides/`, hubs, notes).
 
 ## Status banners
 

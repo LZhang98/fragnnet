@@ -184,12 +184,12 @@ class Test02InfPrepareSpecDf:
 
         spec_df = spec_df_module.create_spec_df(test_mol_df, config)
 
-        # Group IDs should be grouped by prec_type and inst_type
-        groups = spec_df.groupby(["prec_type", "inst_type"])
-        for (prec, inst), group in groups:
-            unique_group_ids = group["group_id"].unique()
-            # All entries with same (prec, inst) should have same group_id
-            assert len(unique_group_ids) == 1
+        # Each (mol_id, prec_type, inst_type) maps to exactly one group, and no
+        # group spans more than one molecule
+        trio = spec_df.groupby(["mol_id", "prec_type", "inst_type"])["group_id"].nunique()
+        assert (trio == 1).all()
+        assert (spec_df.groupby("group_id")["mol_id"].nunique() == 1).all()
+        assert spec_df["group_id"].nunique() == len(test_mol_df) * 2
 
     def test_collision_energy_parsing(self):
         """Test parsing of various collision energy formats."""
@@ -207,6 +207,58 @@ class Test02InfPrepareSpecDf:
 
         # Should parse all formats successfully
         assert len(config["combinations"]) == 3
+
+    @pytest.mark.parametrize("ce_str", ["20nce", "20Nce", "20%nce", "20%"])
+    def test_ft_ce_nce_parsing_is_case_insensitive(self, ce_str):
+        """NCE units in any case are classified as NCE, not eV."""
+        spec_df_module = _load_script_module("02_inf_prepare_spec_df.py")
+        config = spec_df_module.get_config(
+            prec_types=["[M+H]+"],
+            qtof_ces=[],
+            ft_ces=[ce_str],
+            inst_types=["ORB"],
+            output_dir="/tmp",
+        )
+        assert config["combinations"][0]["ce_unit"] == "NCE"
+
+    @pytest.mark.parametrize("ce_str", ["20ev", "20 EV"])
+    def test_ft_ce_ev_parsing_is_case_insensitive(self, ce_str):
+        spec_df_module = _load_script_module("02_inf_prepare_spec_df.py")
+        config = spec_df_module.get_config(
+            prec_types=["[M+H]+"],
+            qtof_ces=[ce_str],
+            ft_ces=[ce_str],
+            inst_types=["ORB", "QTOF"],
+            output_dir="/tmp",
+        )
+        assert [c["ce_unit"] for c in config["combinations"]] == ["eV", "eV"]
+
+    @pytest.mark.parametrize("ce_str", ["20NCEx", "20eV5", "20%abc"])
+    def test_ce_parsing_rejects_trailing_text(self, ce_str):
+        spec_df_module = _load_script_module("02_inf_prepare_spec_df.py")
+        with pytest.raises(ValueError):
+            spec_df_module.get_config(
+                prec_types=["[M+H]+"],
+                qtof_ces=[ce_str] if "eV" in ce_str else [],
+                ft_ces=[] if "eV" in ce_str else [ce_str],
+                inst_types=["QTOF"] if "eV" in ce_str else ["ORB"],
+                output_dir="/tmp",
+            )
+
+    @pytest.mark.parametrize("inst_types", [["IT"], ["ORB", "QQQ"], ["QTOF", "TOF"]])
+    def test_unsupported_instruments_are_rejected(self, inst_types):
+        """Instruments without a CE unit policy raise instead of crashing or reusing energies."""
+        spec_df_module = _load_script_module("02_inf_prepare_spec_df.py")
+        with pytest.raises(ValueError, match="Unsupported instrument type"):
+            spec_df_module.get_config(
+                prec_types=["[M+H]+"],
+                qtof_ces=["20eV"],
+                ft_ces=["25NCE"],
+                inst_types=inst_types,
+                output_dir="/tmp",
+            )
+        with pytest.raises(ValueError, match="Unsupported instrument type"):
+            spec_df_module.validate_inputs(["[M+H]+"], ["20eV"], ["25NCE"], inst_types)
 
     def test_validate_inputs_errors(self):
         """Test that validate_inputs raises errors for invalid inputs."""

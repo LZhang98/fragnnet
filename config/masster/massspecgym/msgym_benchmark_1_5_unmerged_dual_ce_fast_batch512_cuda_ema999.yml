@@ -7,7 +7,7 @@
 # docs/plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24
 # At 194 steps/epoch, 0.999 gives a mean weight age of ~1,000 steps (~5.2 epochs), the same
 # step age as u2. Validation, best-checkpoint selection, the post-fit test and saved state_dicts
-# all use the average (fragnnet.utils.pl_utils.ExponentialMovingAverage).
+# all use the average (fragnnet.utils.trainer_utils.ExponentialMovingAverage).
 # NOT a replay of the NIST result: both NIST wins trained at CONSTANT LR, and this recipe anneals
 # (cosine to 1% after a 1000-step warmup). Annealing also damps late-training weight noise, so
 # the two may overlap; this arm is also the first EMA x LR-decay measurement.
@@ -81,7 +81,7 @@
 # written (2026-09-24) and is the _ema999 arm.
 #
 # frag_modes keeps HCD next to CID although msgym is 100% CID, matching
-# config/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
+# config/fragnnet/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
 # No frag_dp: MASSter enumerates cut masks from the molecular graph and reads no DAG files.
 wandb_name: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_ema999
 wandb_group: msgym_mass_shatter
@@ -207,7 +207,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 16
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

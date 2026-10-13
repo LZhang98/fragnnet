@@ -30,13 +30,13 @@ import sys
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model import MassterModel, bond_fragment_heads
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.masster_model import MassterContextEncoder
-from fragnnet.model.nn_blocks import GNN
+from fragnnet.layers.gnn import GNN
+from fragnnet.models.masster import candidate_transformer
+from fragnnet.models.masster.masster_model import MassterContextEncoder, MassterModel
+from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.utils.migrations import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name
 from fragnnet.utils.nn_utils import build_lr_scheduler
-from fragnnet.utils.pl_utils import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name
 
 # The production molecular feature set used by the merged MASSter configs.
 NODE_FEATS = [
@@ -447,8 +447,8 @@ class _PreLayerNormCandidateLayer(nn.Module):
         self.latent_feedforward_norm = nn.LayerNorm(model_dim)
         self.candidate_attention_norm = nn.LayerNorm(model_dim)
         self.candidate_feedforward_norm = nn.LayerNorm(model_dim)
-        self.latent_feedforward = bond_fragment_heads._build_feedforward(model_dim, feedforward_dim, dropout)
-        self.candidate_feedforward = bond_fragment_heads._build_feedforward(model_dim, feedforward_dim, dropout)
+        self.latent_feedforward = candidate_transformer._build_feedforward(model_dim, feedforward_dim, dropout)
+        self.candidate_feedforward = candidate_transformer._build_feedforward(model_dim, feedforward_dim, dropout)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, candidates, inducing, padding_mask):
@@ -498,7 +498,7 @@ def probe_post_layer_norm_gradients() -> None:
 
     print()
     for depth in (2, 3, 6, 12):
-        post = profile(bond_fragment_heads._InducedCandidateAttentionLayer, depth)
+        post = profile(candidate_transformer._InducedCandidateAttentionLayer, depth)
         pre = profile(_PreLayerNormCandidateLayer, depth, final_norm=True)
         print(f"  depth {depth:2d}  post-LN max/min = {max(post) / min(post):.2f}"
               f"   pre-LN max/min = {max(pre) / min(pre):.2f}")

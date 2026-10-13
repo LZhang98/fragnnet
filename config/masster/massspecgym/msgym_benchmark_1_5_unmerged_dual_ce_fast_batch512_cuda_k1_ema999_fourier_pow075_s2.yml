@@ -134,7 +134,7 @@
 # written (2026-09-24) and is the _ema999 arm.
 #
 # frag_modes keeps HCD next to CID although msgym is 100% CID, matching
-# config/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
+# config/fragnnet/massspecgym/ms_gym_all_1_5.yml, so a checkpoint stays usable on HCD data.
 # No frag_dp: MASSter enumerates cut masks from the molecular graph and reads no DAG files.
 wandb_name: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_k1_ema999_fourier_pow075_s2
 wandb_group: msgym_mass_shatter
@@ -267,7 +267,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 16
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

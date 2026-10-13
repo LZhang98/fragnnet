@@ -13,7 +13,7 @@ from rdkit import Chem
 
 import scripts.debug.masster_memorization.debug_masster_base_peak_tables as TABLES
 import scripts.debug.masster_memorization.debug_masster_postcut_information_gate as GATE
-from fragnnet.frag.masster_templates import MASSTER_RULE_NAMES
+from fragnnet.models.masster.candidates.smarts_templates import MASSTER_RULE_NAMES
 from scripts.debug.smarts.debug_masster_smarts_rule_gate import ChannelScorer
 from tests.test_masster_model import _build_batch, _build_model
 
@@ -109,10 +109,18 @@ ROUND = 6
 
 @pytest.fixture(scope="module")
 def sulfonamide_channels() -> dict:
-    """Sides of N-methylbenzenesulfonamide ([M+H]+) and their production channels."""
+    """The SO2-loss sides of N-methylbenzenesulfonamide ([M+H]+) and their production channels.
+
+    The molecule also matches ``substituted_aryl_sulfonamide_o_transfer``; only the SO2 rule's
+    two sides are kept so the tests can name them.
+    """
     batch = _build_batch((SULFONAMIDE,))
     model = _build_model(batch, include_cmf=False, max_h_transfer=4, h_transfer_bound="valence")
-    sides = GATE.template_sides(Chem.MolFromSmiles(SULFONAMIDE), "[M+H]+")
+    sides = tuple(
+        s
+        for s in GATE.template_sides(Chem.MolFromSmiles(SULFONAMIDE), "[M+H]+")
+        if s.rule_name == "aryl_sulfonamide_so2"
+    )
     mzs, valid, shifts = GATE.side_channel_table(
         model, batch, sides, [0] * len(sides), th.tensor([0])
     )
@@ -138,6 +146,13 @@ def test_template_sides_follow_the_builder(sulfonamide_channels: dict) -> None:
     assert not disconnected.connected and disconnected.formed_bonds == 1
     # Each side carries ALL of the template's broken bonds (N-S and S-c), not its own crossings.
     assert disconnected.cut_count == sulfonyl.cut_count == 2
+    # The secondary sulfonamide also matches the substituted O-transfer rule, in [M+H]+ only.
+    assert {
+        s.rule_name for s in GATE.template_sides(Chem.MolFromSmiles(SULFONAMIDE), "[M+H]+")
+    } == {
+        "aryl_sulfonamide_so2",
+        "substituted_aryl_sulfonamide_o_transfer",
+    }
     # A primary sulfonamide has a polarity-guarded rule per adduct.
     primary = Chem.MolFromSmiles("NS(=O)(=O)c1ccccc1")
     assert {s.rule_name for s in GATE.template_sides(primary, "[M+H]+")} == {
