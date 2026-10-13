@@ -137,8 +137,8 @@ def test_subformula_source_removes_an_isotope_peak_end_to_end():
     """The whole dataset path: spec_params -> source -> detector -> peaks dropped, no DAG."""
     import torch as th
 
-    from fragnnet.dataset.isotope_cleanup import _expected_mk_ratio
     from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
+    from fragnnet.utils.isotope_cleanup_utils import _expected_mk_ratio
 
     formula, frag_formula = "C10H22", "C5H11"
     frag_mz = 71.086
@@ -264,8 +264,8 @@ def test_protect_known_mono_keeps_a_peak_the_subformula_source_explains():
     """
     import torch as th
 
-    from fragnnet.dataset.isotope_cleanup import _expected_mk_ratio
     from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
+    from fragnnet.utils.isotope_cleanup_utils import _expected_mk_ratio
 
     formula, frag_mz = "C10H22", 71.086
     r_prec = _expected_mk_ratio(parse_formula(formula), 1.0, k=1)

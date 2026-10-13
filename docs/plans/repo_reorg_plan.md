@@ -1031,3 +1031,11 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     inference module that calls it). `_export_adapter` became `get_export_adapter`.
   - Both: definitions moved verbatim (checked), no boundary violations, full suite with no new
     failures.
+- 2026-10-12: `dataset/isotope_cleanup.py` moved to `utils/isotope_cleanup_utils.py` (user
+  request), reversing the single-owner move above. It is peak cleanup like
+  `clean_spectra_utils`, imports only from `utils/`, and `base_dataset` uses it the way it uses
+  `clean_spectra`. Moving `clean_spectra_utils` into `dataset/` instead was rejected:
+  `utils/proc_utils.py` and `preproc_scripts/` import it, so `utils/` would depend on
+  `dataset/`. File moved verbatim; imports updated in `base_dataset`, two tests, two
+  `scripts/debug/isotopes/` scripts and two debug notebooks. Isotope tests pass (107) and the
+  full suite collects.

@@ -131,10 +131,10 @@ src/fragnnet/
   `feat_utils` (atom/bond featurizers, fingerprints), `spec_utils` (intensity transforms,
   binning, CE and batch helpers), `spec_similarity` (peak matching, Hungarian assignment,
   similarity metrics), `scatter_utils` (grouped reductions), `ce_utils` (NCE/ACE),
-  `clean_spectra_utils` and `spec_parse_utils` (preprocessing), `parallel_utils`, `migrations`
+  `clean_spectra_utils`, `isotope_cleanup_utils` (peak cleanup; isotope removal is not wired
+  into any config) and `spec_parse_utils` (preprocessing), `parallel_utils`, `migrations`
   (config and checkpoint migrations), `dag_format_utils` (per-molecule DAG files), `misc_utils`
-  (constants, seeding, progress). The dataset's isotope-peak cleanup is
-  `dataset/isotope_cleanup.py`. Inference and export are the core package
+  (constants, seeding, progress). Inference and export are the core package
   [inference/](../src/fragnnet/inference/): `checkpoint`, `export_columns`, `batch_rows`, `runners`.
   Scientific assumptions must be checked against code and the relevant findings or references.
 - Tests: [tests/](../tests/), discovery in [pytest.ini](../pytest.ini), tooling in

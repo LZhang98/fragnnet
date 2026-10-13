@@ -10,7 +10,11 @@ import torch as th
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from fragnnet.dataset.isotope_cleanup import (
+from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
+from fragnnet.utils.clean_spectra_utils import clean_spectra
+from fragnnet.utils.dag_format_utils import load_frag_d
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.isotope_cleanup_utils import (
     _INST_MZ_TOL,
     ISOTOPE_CANDIDATE_RULES,
     dag_formula_source,
@@ -18,10 +22,6 @@ from fragnnet.dataset.isotope_cleanup import (
     estimate_coisolation_fraction_from_precursor,
     subformula_formula_source,
 )
-from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
-from fragnnet.utils.clean_spectra_utils import clean_spectra
-from fragnnet.utils.dag_format_utils import load_frag_d
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.migrations import RETIRED_INST_TYPE_HELP, RETIRED_INST_TYPES
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
