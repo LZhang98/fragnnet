@@ -142,7 +142,7 @@ class MassterHooks(ModelHooks):
             dataset,
             config["masster_max_h_transfer"],
             config["masster_include_cmf"],
-            config.get("masster_h_transfer_bound", "none"),
+            config["masster_h_transfer_bound"],
         )
 
     def build_batch_sampler(

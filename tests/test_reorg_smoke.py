@@ -23,7 +23,7 @@ Phase 1 and later change paths, and the edits that follow are made in the same P
 ``get_model_cls`` and ``get_dataset_cls`` stay importable from ``fragnnet.utils.setup_utils`` as
 thin wrappers (plan, registry table), ``fragnnet.utils.spec_parse_utils`` and
 ``fragnnet.utils.formula_utils`` stay in core, and ``masster_has_valid_ion`` (in MASSter's
-``frag/masster_dataset_filter`` since Phase 4) is reached only through the dataset constructor,
+``models/masster/masster_dataset_filter``) is reached only through the dataset constructor,
 never imported here. The
 Graphormer loader that the MassFormer case patches is found through the model classes, not a
 literal module path, so moving the baseline out of core does not break the patch.

@@ -127,6 +127,35 @@ class BaseDataset(Dataset):
         self._setup_inst_type_to_idx()
         self._setup_frag_mode_to_idx()
 
+    def keep_spectra(self, keep: Callable[[pd.DataFrame], pd.Series]) -> int:
+        """Keep the spectra ``keep`` accepts and drop everything that depended on the rest.
+
+        Call it after ``_base_init`` and before preprocessing. ``keep`` is applied to
+        ``spec_df`` and to ``um_spec_df``, so it may only read columns both frames carry
+        (``mol_id``, ``prec_type``, ...): a merged row and the unmerged rows it came from then
+        get the same verdict. Molecules and split rows left without a spectrum go too, and the
+        derived state (isotope cleanup tables, counts) is rebuilt.
+
+        Args:
+            keep: Maps a spectrum frame to a boolean mask aligned with its index.
+
+        Returns:
+            The number of ``spec_df`` rows removed.
+        """
+        spec_mask = keep(self.spec_df)
+        removed = int((~spec_mask).sum())
+        if not removed:
+            return 0
+        self.spec_df = self.spec_df.loc[spec_mask].reset_index(drop=True)
+        self.mol_df = self.mol_df.loc[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
+        self.um_spec_df = self.um_spec_df.loc[keep(self.um_spec_df)].copy()
+        self.split_df = self.split_df.loc[
+            self.split_df["spec_id"].isin(self.um_spec_df["spec_id"])
+        ].copy()
+        self._setup_isotope_peak_cleanup()
+        self._compute_counts()
+        return removed
+
     @staticmethod
     def _setup_dfs(
         spec_fp_or_df: str | pd.DataFrame,

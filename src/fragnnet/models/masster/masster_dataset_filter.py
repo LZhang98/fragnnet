@@ -1,13 +1,13 @@
 """MASSter's dataset filter: drop molecule/adduct pairs with no chemically valid ion channel.
 
 ``MassterHooks.filter_dataset`` runs it inside ``SpecMolDataset.__init__``, after the frames are
-built and before preprocessing. Moved out of core in the reorganization
-(docs/plans/repo_reorg_plan.md, Phase 4).
+built and before preprocessing; ``BaseDataset.keep_spectra`` applies the verdicts.
 """
 
 import logging
 from collections import Counter
 
+import pandas as pd
 import rdkit.Chem as Chem
 
 from fragnnet.utils.formula_utils import (
@@ -102,6 +102,9 @@ def filter_masster_spectra(
 ) -> None:
     """Drop incompatible molecule/adduct pairs before preprocessing and batching.
 
+    Only the verdicts are MASSter's; ``BaseDataset.keep_spectra`` drops the rows and rebuilds
+    the dataset's derived state.
+
     Args:
         dataset: A ``SpecMolDataset`` after ``_base_init``, before preprocessing.
         max_h_transfer: Largest hydrogen shift a channel may carry.
@@ -123,32 +126,23 @@ def filter_masster_spectra(
         .drop_duplicates()
         .itertuples(index=False, name=None)
     }
-    keep = [
-        valid_pairs[pair]
-        for pair in dataset.spec_df[["mol_id", "prec_type"]].itertuples(index=False, name=None)
-    ]
-    removed = len(keep) - sum(keep)
-    if not removed:
-        return
-    logging.getLogger(__name__).warning(
-        "MASSter filtered %d/%d spectra with no chemically valid ion channels",
-        removed,
-        len(keep),
-    )
-    dataset.spec_df = dataset.spec_df.loc[keep].reset_index(drop=True)
-    dataset.mol_df = dataset.mol_df.loc[dataset.mol_df["mol_id"].isin(dataset.spec_df["mol_id"])]
-    dataset.um_spec_df = dataset.um_spec_df.loc[
-        [
-            valid_pairs.get(pair, False)
-            for pair in dataset.um_spec_df[["mol_id", "prec_type"]].itertuples(
-                index=False, name=None
-            )
-        ]
-    ].copy()
-    dataset.split_df = dataset.split_df.loc[
-        dataset.split_df["spec_id"].isin(dataset.um_spec_df["spec_id"])
-    ].copy()
-    if dataset.spec_df.empty:
+    if valid_pairs and not any(valid_pairs.values()):
         raise ValueError("MASSter dataset has no chemically valid spectra after filtering")
-    dataset._setup_isotope_peak_cleanup()
-    dataset._compute_counts()
+
+    def keep(frame: pd.DataFrame) -> pd.Series:
+        return pd.Series(
+            [
+                valid_pairs.get(pair, False)
+                for pair in frame[["mol_id", "prec_type"]].itertuples(index=False, name=None)
+            ],
+            index=frame.index,
+            dtype=bool,
+        )
+
+    removed = dataset.keep_spectra(keep)
+    if removed:
+        logging.getLogger(__name__).warning(
+            "MASSter filtered %d/%d spectra with no chemically valid ion channels",
+            removed,
+            removed + len(dataset.spec_df),
+        )

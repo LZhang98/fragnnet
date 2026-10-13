@@ -150,11 +150,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 f"> dropping {len(missing_mol_ids)} mol_ids with no DAG file "
                 f"(frag gen failures): {sorted(missing_mol_ids)[:10]}"
             )
-            self.spec_df = self.spec_df[
-                ~self.spec_df["mol_id"].isin(missing_mol_ids)
-            ].reset_index(drop=True)
-            self.mol_df = self.mol_df[~self.mol_df.index.isin(missing_mol_ids)]
-            self._compute_counts()
+            self.keep_spectra(lambda frame: ~frame["mol_id"].isin(missing_mol_ids))
 
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)

@@ -108,4 +108,5 @@ def test_dataset_filter_runs_before_preprocessing(
         model_type="masster",
         masster_max_h_transfer=0,
         masster_include_cmf=False,
+        masster_h_transfer_bound="none",
     )
