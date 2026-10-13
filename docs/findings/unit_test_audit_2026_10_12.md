@@ -1,9 +1,14 @@
 # Unit test audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Bounded repository test audit; all four findings resolved (export expectations and three false-positive guards). Full-suite and GPU validation remain open.
+> **Status:** FINDING · **Updated:** 2026-10-13
+> All four findings resolved; unfiltered CPU suite passed during the codebase repairs. GPU validation remains open.
 
 ## Scope and validation
+
+Follow-up: the [2026-10-13 codebase repairs](codebase_audit_2026_10_13.md#repairs-2026-10-13)
+restored collection of the stale cut-bond test module and completed the unfiltered CPU
+suite. That record holds the final counts and remaining validation limits. The results
+below describe the original test audit.
 
 Reviewed discovery, fixtures, skip policies, configuration regression guards, preprocessing
 assertions, export contracts and selected numerical/model tests. This is not an exhaustive
@@ -88,5 +93,6 @@ Validation: those three files plus `test_export_schema.py` and
 
 This audit changed documentation only. Another session changed `tests/test_export_schema.py`
 and `tests/test_debug_masster_postcut_information_gate.py` while it was running; those edits
-were preserved. The guards were strengthened afterwards (see Resolution). Complete-suite and GPU
-validation remain open. Documentation links and `git diff --check` passed.
+were preserved. The guards were strengthened afterwards (see Resolution). Complete-suite CPU
+validation subsequently passed in the linked codebase repair record; GPU validation remains
+open. Documentation links and `git diff --check` passed.

@@ -58,7 +58,10 @@ if __name__ == "__main__":
         default="config",
         help="Path to the template config file",
     )
-    parser.add_argument("--custom_fp", type=str, default=None, help="Path to custom config file")
+    parser.add_argument(
+        "--custom_fp", type=str, default=None,
+        help="YAML overlay: explicitly declared keys override saved checkpoint settings.",
+    )
     parser.add_argument(
         "--masster_candidate_backend",
         choices=("cpu", "cuda"),

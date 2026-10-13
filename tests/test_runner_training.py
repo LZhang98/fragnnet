@@ -5,8 +5,10 @@ Model, data and trainer are replaced by fakes, so these run on CPU in seconds.
 """
 
 import os
+import random
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import torch as th
 
@@ -143,6 +145,37 @@ def test_settings_derived_after_wandb_init_are_recorded_in_the_run(fake_run, mon
     # One spectrum, batch size 2: one step per epoch, four epochs; warmup keeps its 10%.
     assert recorded == [{"lr_total_steps": 4, "lr_warmup_steps": 0, "precision": 32}]
     assert (model_kwargs["lr_total_steps"], model_kwargs["precision"]) == (4, 32)
+
+
+def test_wandb_seed_override_seeds_model_initialization(fake_run, monkeypatch):
+    trainer, model_kwargs = fake_run
+    actual = []
+    expected = (
+        random.Random(11).random(),
+        np.random.RandomState(11).random_sample(),
+        th.rand(1, generator=th.Generator().manual_seed(11)),
+    )
+
+    def setup_wandb(config, *_args):
+        config["seed"] = 11
+        # W&B may consume random state while starting a run.
+        random.random()
+        np.random.random()  # noqa: NPY002 -- exercise the global RNG seeded by Lightning
+        th.rand(1)
+        return runner.WandbRunState()
+
+    def model_cls(**config):
+        model_kwargs.update(config)
+        actual.extend((random.random(), np.random.random(), th.rand(1)))  # noqa: NPY002
+        return SimpleNamespace(train=lambda: None)
+
+    monkeypatch.setattr(runner, "setup_wandb", setup_wandb)
+    monkeypatch.setattr(runner, "get_model_cls", lambda _: model_cls)
+    _run("seed=7", "disable_checkpoints=True", "eval_test_split=False")
+    assert model_kwargs["seed"] == 11
+    assert actual[:2] == pytest.approx(expected[:2])
+    th.testing.assert_close(actual[2], expected[2], atol=0, rtol=0)
+    assert trainer.calls == [("fit", None)]
 
 
 class _FakeWandbRun:

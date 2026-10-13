@@ -1,15 +1,17 @@
 # MASSter core model on NIST20
 
-> **Status:** HUB · **Updated:** 2026-10-12
+> **Status:** HUB · **Updated:** 2026-10-13
 > Architecture, training recipe, regularization, losses, candidate/proposal machinery, speed/GPU, the 128-epoch screens and campaign reads, ion-H channel selection, and feature/information audits for MASSter on NIST20.
 
 ## Where it stands
 
-- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) remain open; repair W&B merge and override validation next.
+- **Shared codebase audit:** [repairs](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) implemented in the working tree for all six findings and the three rechecked config runtime defects. Focused regressions and the unfiltered CPU suite pass. Next: review; GPU and real-checkpoint evaluation remain unverified.
+
+- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) 1–3 repaired; 4–7 remain open. Next: malformed/duplicate YAML and historical config migration decisions.
 
 - **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated with unique cells preserved; repair reporting errors next.
 
-- **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed in tests (uncommitted). Complete-suite and GPU validation remain open.
+- **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed. The unfiltered CPU suite passes in the [codebase repair validation](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13). GPU validation remains open.
 
 - **Shared loss consolidation implemented:** [plan](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12); numerical fixes, shared preparation and reductions have regression coverage; committed in `1a63257b`. [File merge and renames](../plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12) await review.
 - **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–9 are complete on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
@@ -28,8 +30,9 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Repair W&B open-mapping merge and CLI validation |
-| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | Complete-suite and GPU validation |
+| [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | REPAIRED, uncommitted | Review; CPU validation complete, GPU/real-checkpoint evaluation unverified |
+| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; resolve malformed/duplicate YAML and legacy settings next |
+| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | CPU suite passed; GPU validation remains open |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
 | [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
@@ -78,9 +81,10 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | FINDING (2026-10-13) | Six findings and three config runtime defects repaired; unfiltered CPU suite passed |
 | [Config grouping](../plans/config_model_grouping.md) | LANDED (2026-10-12) | Model directories and caller migration; settings preserved, 138 tests passed |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
-| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-12) | Four test findings, all fixed; full suite not yet run |
+| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-13) | Four test findings fixed; unfiltered CPU suite passed during codebase repairs |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE (2026-10-12) | `runner.py` audit: 10 bugs (W&B-off upload, `ckpt_path="best"` without checkpoints, dead `interrupted` guards, silent sweep typos), then a behavior-preserving split into config and loading modules |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Reproduced correctness issues and prioritized simplifications |

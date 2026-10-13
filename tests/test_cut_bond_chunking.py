@@ -1,131 +1,67 @@
-"""Tests for the chunked cut-bond encode/pool path shared by boundary_pair and cut_bond.
+"""Model-level equivalence tests for the current cut-bond deduplication path.
 
-Nothing bounds how many (fragment, cut bond) pairs a batch holds: batches are packed to a
-frag-node budget, and cut bonds are not frag nodes. Encoding them in one shot materializes
-several (num_pairs, mol_hidden_size) tensors at once, which OOMs at inference on real DAGs.
-`FraGNNetModel._encode_pool_cut_bonds` accumulates into the pooled result in row chunks
-instead. That is only a memory optimization, so the contract under test is that it changes
-nothing: same numbers as the single-shot path, and the pool types that do NOT decompose over
-chunks keep going through `mol_pool` untouched.
+This legacy chunking test module previously referenced a removed helper and chunk
+constant. The current model encodes each directed bond once and gathers the rows
+before pooling; compare that path with per-row encoding through the full forward.
 """
-
-from __future__ import annotations
 
 import pytest
 import torch as th
 from test_ce_multi_location import _build as _build_fragnnet
 from test_cut_bond import _forward_kwargs_with_cut_bonds
 
-from fragnnet.model import fragnnet_model
-
-BASE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx"]
-NUM_ATOMS = 40
-NUM_FRAGS = 7
-NUM_PAIRS = 64
+from fragnnet.models.fragnnet import fragnnet_model
 
 
-def _model(feat: str, mol_pool_type: str = "mean"):
-    return _build_fragnnet(
-        frag_node_feats=[*BASE_FEATS, feat],
+@pytest.mark.parametrize("mol_pool_type", ["mean", "sum", "max"])
+@pytest.mark.parametrize("training", [False, True])
+def test_deduplicated_cut_bonds_match_per_row_forward_and_gradients(
+    monkeypatch, mol_pool_type, training
+):
+    model = _build_fragnnet(
+        frag_node_feats=["cc", "base_formula", "depth", "h_formulae_idx", "cut_bond"],
         frag_edge_feats=[],
         mol_pool_type=mol_pool_type,
         cut_bond_hidden_dim=32,
     ).eval()
-
-
-def _encoder(model, feat: str):
-    if feat == "cut_bond":
-        return model.cut_bond_encoder
-    return lambda a, b: model.boundary_pair_proj(th.cat([a, b], dim=-1))
-
-
-def _pair_inputs(model):
-    """Synthetic atom embeddings and cut-bond indices, with every fragment row hit at least once."""
-    g = th.Generator().manual_seed(0)
-    atom_embed = th.randn(NUM_ATOMS, model.mol_embedder.hidden_size, generator=g)
-    # Cover every fragment row so the mean-pool divisor is exercised, then fill at random.
-    frag_idxs = th.cat(
-        [
-            th.arange(NUM_FRAGS),
-            th.randint(0, NUM_FRAGS, (NUM_PAIRS - NUM_FRAGS,), generator=g),
-        ]
-    )
-    in_idxs = th.randint(0, NUM_ATOMS, (NUM_PAIRS,), generator=g)
-    out_idxs = th.randint(0, NUM_ATOMS, (NUM_PAIRS,), generator=g)
-    return atom_embed, frag_idxs, in_idxs, out_idxs
-
-
-@pytest.mark.parametrize("feat", ["boundary_pair", "cut_bond"])
-@pytest.mark.parametrize("mol_pool_type", ["mean", "sum"])
-def test_chunked_matches_single_shot(monkeypatch, feat, mol_pool_type):
-    """The chunked accumulation is exact, not an approximation, for the decomposing pools."""
-    model = _model(feat, mol_pool_type)
-    encode = _encoder(model, feat)
-    atom_embed, frag_idxs, in_idxs, out_idxs = _pair_inputs(model)
-    args = (encode, atom_embed, frag_idxs, in_idxs, out_idxs, NUM_FRAGS)
-
-    with th.no_grad():
-        single = model._encode_pool_cut_bonds(*args)
-        # One gathered row per chunk: the most fragmented schedule the helper can take.
-        monkeypatch.setattr(fragnnet_model, "CUT_BOND_CHUNK_ELEMS", model.mol_embedder.hidden_size)
-        chunked = model._encode_pool_cut_bonds(*args)
-
-    assert chunked.shape == (NUM_FRAGS, model.mol_embedder.hidden_size)
-    assert th.allclose(single, chunked, atol=1e-6)
-
-
-@pytest.mark.parametrize("feat", ["boundary_pair", "cut_bond"])
-def test_non_decomposing_pool_still_goes_through_mol_pool(monkeypatch, feat):
-    """`max` does not compose as a sum accumulation, so it must keep the single-shot path."""
-    model = _model(feat, mol_pool_type="max")
-    encode = _encoder(model, feat)
-    atom_embed, frag_idxs, in_idxs, out_idxs = _pair_inputs(model)
-
-    with th.no_grad():
-        expected = model.mol_pool(
-            encode(
-                th.index_select(atom_embed, 0, in_idxs),
-                th.index_select(atom_embed, 0, out_idxs),
-            ),
-            frag_idxs,
-            dim_size=NUM_FRAGS,
-        )
-        monkeypatch.setattr(fragnnet_model, "CUT_BOND_CHUNK_ELEMS", model.mol_embedder.hidden_size)
-        got = model._encode_pool_cut_bonds(
-            encode, atom_embed, frag_idxs, in_idxs, out_idxs, NUM_FRAGS
-        )
-
-    assert th.allclose(expected, got, atol=1e-6)
-
-
-@pytest.mark.parametrize("feat", ["boundary_pair", "cut_bond"])
-def test_training_keeps_single_shot_path_and_stays_differentiable(monkeypatch, feat):
-    """Chunking cannot help under autograd (every chunk's input stays saved), so skip it."""
-    model = _model(feat)
-    encode = _encoder(model, feat)
-    atom_embed, frag_idxs, in_idxs, out_idxs = _pair_inputs(model)
-    atom_embed.requires_grad_(True)
-    monkeypatch.setattr(fragnnet_model, "CUT_BOND_CHUNK_ELEMS", model.mol_embedder.hidden_size)
-
-    pooled = model._encode_pool_cut_bonds(
-        encode, atom_embed, frag_idxs, in_idxs, out_idxs, NUM_FRAGS
-    )
-    pooled.sum().backward()
-
-    assert atom_embed.grad is not None
-    assert th.isfinite(atom_embed.grad).all()
-
-
-@pytest.mark.parametrize("feat", ["boundary_pair", "cut_bond"])
-def test_forward_predictions_unchanged_by_chunking(monkeypatch, feat):
-    """End-to-end: chunking is invisible in the model output on a real molecule's DAG."""
-    model = _model(feat)
+    # Keep dropout disabled to isolate encoding equivalence; autograd remains enabled
+    # in the training case, just as in the previous memory-optimization regression.
     kwargs = _forward_kwargs_with_cut_bonds()
-    assert kwargs["boundary_pair_frag_idxs"].numel() > 1, "test would not exercise chunking"
+    row_count = kwargs["boundary_pair_in_idxs"].numel()
+    encoded_counts = []
+    handle = model.cut_bond_encoder.register_forward_hook(
+        lambda _module, args, _output: encoded_counts.append(args[0].shape[0])
+    )
+    try:
+        with th.set_grad_enabled(training):
+            optimized = model(**kwargs)["pred_logprobs"]
+            if training:
+                optimized.square().sum().backward()
+                optimized_grads = {
+                    name: parameter.grad.clone()
+                    for name, parameter in model.named_parameters()
+                    if parameter.grad is not None
+                }
+                model.zero_grad(set_to_none=True)
+            monkeypatch.setattr(
+                fragnnet_model,
+                "encode_cut_bond_pairs",
+                lambda encoder, atoms, inside, outside: encoder(atoms[inside], atoms[outside]),
+            )
+            reference = model(**kwargs)["pred_logprobs"]
+            if training:
+                reference.square().sum().backward()
+    finally:
+        handle.remove()
 
-    with th.no_grad():
-        single = model(**kwargs)["pred_logprobs"]
-        monkeypatch.setattr(fragnnet_model, "CUT_BOND_CHUNK_ELEMS", model.mol_embedder.hidden_size)
-        chunked = model(**kwargs)["pred_logprobs"]
-
-    assert th.allclose(single, chunked, atol=1e-6)
+    assert 0 < encoded_counts[0] < row_count
+    assert encoded_counts[1] == row_count
+    th.testing.assert_close(optimized, reference, atol=1e-6, rtol=1e-5)
+    if training:
+        assert any(name.startswith("cut_bond_encoder.") for name in optimized_grads)
+        for name, parameter in model.named_parameters():
+            if name in optimized_grads:
+                assert parameter.grad is not None and th.isfinite(parameter.grad).all()
+                th.testing.assert_close(
+                    parameter.grad, optimized_grads[name], atol=1e-5, rtol=1e-4
+                )

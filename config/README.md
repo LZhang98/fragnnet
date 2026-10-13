@@ -36,7 +36,7 @@ mode is what the per-model split (2026-09-20, reverted) kept producing: a key mo
 model's template while its reader stayed in shared code, breaking every other model at runtime
 rather than at validation time.
 
-`model_type` names the model - from the custom config, else from the checkpoint, else the
+`model_type` names the model - from the last CLI override, else the custom config, else the checkpoint, else the
 template's `frag_gnn`. It selects code, not config; `VALID_MODEL_TYPES` in
 [runner.py](../src/fragnnet/runner.py) only guards against a typo in the value. Passing a single
 file instead of the directory uses that file directly, which is how a template saved inside a
@@ -66,6 +66,19 @@ fails as loudly as one at the top level. Mappings whose sub-keys are data rather
 are not descended into. Because the template declares every model's keys, a key it does not
 declare is a typo - there is no longer an inert-versus-unknown distinction to make, and none
 that depends on which files a cluster job happened to stage.
+
+Mapping-valued CLI overrides merge recursively with the existing section and undergo the
+same schema checks. For example, `--override 'spec_params={nce: false}'` preserves the
+section's other settings; unknown nested keys and scalar replacements of sections fail
+during setup. W&B mappings merge recursively too, including new data keys inside the
+open mappings, while retaining equal float values used in metric names.
+
+At inference, the checkpoint's migrated hparams are the base. `--custom_fp` overrides
+only keys explicitly present in that YAML, with recursive merging of nested sections.
+The template validates the overlay; its defaults do not replace saved checkpoint values.
+Use the selected run's full training config when explicitly reconstructing those settings.
+An overlay cannot select a different model architecture. This policy replaces the earlier
+template-over-checkpoint behavior; see the [repair record](../docs/findings/codebase_audit_2026_10_13.md#repairs-2026-10-13).
 
 ## Sections
 

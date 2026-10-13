@@ -13,9 +13,14 @@ import pandas as pd
 import torch as th
 
 from fragnnet import registry
-from fragnnet.config import load_config
+from fragnnet.config import (
+    find_unknown_config_keys,
+    load_config,
+    load_custom_config,
+    raise_if_retired_inst_types,
+)
 from fragnnet.utils.migrations import get_pl_hparams
-from fragnnet.utils.misc_utils import get_best_ckpt_from_wandb
+from fragnnet.utils.misc_utils import deep_update, get_best_ckpt_from_wandb
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.setup_utils import get_model_cls
 
@@ -69,11 +74,7 @@ def init_wandb_ckpt(
         ckpt = decompile_jit_ckpt(ckpt)
         # init
         model = model_cls(**config_d)
-        try:
-            model.load_state_dict(ckpt["state_dict"], strict=True)
-        except RuntimeError:
-            print(f"> error when loading from checkpoint id {run_id}, will try with strict=False")
-            model.load_state_dict(ckpt["state_dict"], strict=False)
+        model.load_state_dict(ckpt["state_dict"], strict=True)
     return model
 
 
@@ -214,8 +215,11 @@ def get_config_from_ckpt(
 
     Args:
             ckpt_fp: Path to checkpoint file
-            custom_fp: Path to custom config YAML to override checkpoint config
-            template_fp: Path to template config YAML (required if custom_fp provided)
+            custom_fp: YAML overlay. Only explicitly declared settings override checkpoint
+                values; nested mappings merge without resetting their other saved fields.
+            template_fp: Template used to validate the overlay, required with custom_fp.
+                Its defaults do not replace checkpoint settings. Missing legacy settings
+                are supplied only by checkpoint migrations.
 
     Returns:
             Configuration dictionary
@@ -228,25 +232,29 @@ def get_config_from_ckpt(
     config_d = get_pl_hparams(ckpt)
 
     # Override with custom config if provided
-    if custom_fp is not None:
-        assert template_fp is not None, "template_fp required when custom_fp is provided"
+    if custom_fp is not None and template_fp is None:
+        raise ValueError("template_fp required when custom_fp is provided")
     # Load and merge template and custom config
     if template_fp is not None and custom_fp is not None:
         print(f">> Loading custom config from {custom_fp}")
         # The checkpoint's own model_type picks the overlay when the custom config is silent,
         # so an inference config never pulls in another model's keys.
-        config_d_2 = load_config(
+        schema = load_config(
             template_fp,
-            custom_fp,
+            None,
             override=None,
             model_type=config_d.get("model_type"),
         )
-        for k, v in config_d_2.items():
-            if k in config_d and v != config_d[k]:
-                print(f"  - Overwriting: {k} = {v} (was {config_d[k]})")
-            elif k not in config_d:
-                print(f"  - Adding: {k} = {v}")
-            config_d[k] = v
+        custom_d = load_custom_config(custom_fp)
+        unknown = find_unknown_config_keys(custom_d, schema)
+        if unknown:
+            raise ValueError(f"{custom_fp} sets keys the template does not declare: {unknown}")
+        overlay_model_type = custom_d.get("model_type", schema["model_type"])
+        registry.get_model_hooks(overlay_model_type)
+        if registry.MODEL_REGISTRY[overlay_model_type] != registry.MODEL_REGISTRY[schema["model_type"]]:
+            raise ValueError("inference overlay cannot change the checkpoint's model_type")
+        config_d = deep_update(config_d, custom_d)
+        raise_if_retired_inst_types(config_d, "inference config")
     return config_d
 
 

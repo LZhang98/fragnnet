@@ -1,7 +1,7 @@
 # Configuration audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Audit only; config files and runtime code remain unchanged.
+> **Status:** FINDING · **Updated:** 2026-10-13
+> Runtime findings 1–3 repaired in the working tree; config-file findings 4–7 remain open.
 
 Scope: experiment YAML under `config/`, the shared template, CLI overrides, W&B merging,
 and runner validation. Checks use the configured FRAGNNET-GPU interpreter. No training,
@@ -87,9 +87,10 @@ and infrastructure/editor configuration are outside this audit.
 
 ## Next action
 
-Repair the W&B merge and override validation with focused regression tests, then resolve
-malformed and duplicate YAML. Preserve historical experiment semantics when migrating removed
-settings; auditing alone does not choose new values for those experiments.
+Findings 1–3 were repaired with regression coverage in the
+[codebase repair record](codebase_audit_2026_10_13.md#repairs-2026-10-13).
+Resolve malformed and duplicate YAML next. Preserve historical experiment semantics when
+migrating removed settings; these runtime repairs do not choose new values for those experiments.
 
 ## Files with duplicate keys
 

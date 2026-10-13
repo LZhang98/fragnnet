@@ -1,14 +1,13 @@
 import argparse
 from pprint import pprint
 
-import torch as th
-
 import wandb
 from fragnnet.inference.checkpoint import (
     apply_inference_config,
     cleanup_model,
     init_wandb_ckpt,
     save_inference_results,
+    setup_device,
 )
 from fragnnet.inference.export_columns import prepare_output_subset
 from fragnnet.inference.runners import run_inference_pkl
@@ -50,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_everything", type=booltype, default=False)
     parser.add_argument("--untransform_spec", type=booltype, default=False)
     parser.add_argument("--disable_preproc", type=booltype, default=True)
-    parser.add_argument("--ablation_dset", type=str, default="ablations")
+    parser.add_argument("--ablation_dset", type=str, default="ablations_merged")
     parser.add_argument(
         "--ablation_model_types",
         type=str,
@@ -82,7 +81,7 @@ if __name__ == "__main__":
         "fragnnet_d4_noce": "fraggnn_d4_noce",
     }
 
-    dset_to_wandb_prefix = {"ablations": "ablationsv3-1"}
+    dset_to_wandb_prefix = {"ablations": "ablationsv3-1", "ablations_merged": "ablationsv3-1"}
 
     # this is necessary to avoid a pytorch compile issue...
     # TODO: replace this with a proper checkpoint decompilation
@@ -97,8 +96,10 @@ if __name__ == "__main__":
     template_fp = "config"
     api = wandb.Api()
     for ablation_model_type in ablation_model_types:
+        config_variant = ablation_model_type.replace("fragnnet_", "fraggnn_", 1)
+        config_dir = "ablations_merged" if ablation_dset == "ablations" else ablation_dset
         model_to_config[ablation_model_type] = (
-            f"config/fragnnet/{ablation_dset}/{ablation_model_type}/s0.yml"
+            f"config/fragnnet/{config_dir}/{config_variant}/s0.yml"
         )
         model_type_wandb_prefix = model_type_to_wandb_prefix[ablation_model_type]
         dset_wandb_group_prefix = dset_to_wandb_prefix[ablation_dset]
@@ -117,14 +118,13 @@ if __name__ == "__main__":
         custom_fp = model_to_config[ablation_model_type]
 
         # Setup configuration
-        config_d = load_config(template_fp, custom_fp)
+        config_d = load_config(template_fp, custom_fp, override=None)
         config_d = apply_inference_config(
             config_d,
             auxiliary_scores=args.auxiliary_scores,
             skip_extra_losses=args.skip_extra_losses,
             disable_preproc=args.disable_preproc,
             output_formula_str=False,
-            model_type=ablation_model_type,
         )
 
         print(">>> Loading dataset")
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         ds = ds_cls(split=eval_split, **config_d)
         dl = init_dataloader(ds, config_d)
         model_cls = FraGNNetPL
-        device = th.device("cuda:0") if config_d["accelerator"] == "gpu" else th.device("cpu")
+        device = setup_device(config_d, enable_cpu_optimizations=False)
         for seed in range(num_seeds):
             print(f">>> Starting seed {seed}")
             run_id = model_to_run_id[ablation_model_type][seed]
@@ -142,21 +142,21 @@ if __name__ == "__main__":
             model.to(device)
             model.eval()
 
-            # Prepare output subset with model-specific metrics
-            # output_subset = prepare_output_subset(
-            #   output_everything=args.output_everything,
-            #   output_subset=set(args.output_subset) if not args.output_everything else None,
-            #   model_metric_names=model.metric_names,
-            # )
+            # Include requested evaluation metrics in the exported values.
+            output_subset = prepare_output_subset(
+                output_everything=args.output_everything,
+                output_subset=set(args.output_subset) if not args.output_everything else None,
+                model_metric_names=model.metric_names,
+            )
 
             # run inference
             vals = run_inference_pkl(
-                dl,
-                model,
-                device,
-                eval_split,
-                batch_cutoff,
-                config_d["nb_iso"],
+                model=model,
+                dataloader=dl,
+                device=device,
+                batch_cutoff=batch_cutoff,
+                nb_iso=config_d["nb_iso"],
+                evaluate=True,
                 output_set=output_subset,
             )
 

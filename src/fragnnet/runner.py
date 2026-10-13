@@ -430,7 +430,6 @@ def run_training(
     # entry script's to configure (scripts/run_pl_model_fit.py).
     log_cuda_info()
     config_d = load_config(template_path, custom_fp, override)
-    seed_everything(config_d["seed"], workers=True)
     th.multiprocessing.set_sharing_strategy(config_d["mp_sharing_strategy"])
 
     # 2. W&B: start or resume the run and merge the config it holds.
@@ -453,6 +452,7 @@ def run_training(
     if wandb_state.run is not None and derived_changes:
         wandb_state.run.config.update(derived_changes, allow_val_change=True)
     validate_run_config(config_d, wandb_mode)
+    seed_everything(config_d["seed"], workers=True)
     apply_process_settings(config_d)
 
     # 4. Model.

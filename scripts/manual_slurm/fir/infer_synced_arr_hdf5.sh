@@ -57,9 +57,9 @@ WANDB_RUN_ID=${WANDB_RUN_ID:-}
 # entirely, which is one less moving part across 6 tasks.
 MODEL_CKPT=${MODEL_CKPT:-}
 # Training config for the selected checkpoint (relative to FRAGNNET_DP). REQUIRED, not
-# optional: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is given,
-# so leaving this empty makes config_d the ckpt's saved hparams alone and every config key
-# added since it was trained is missing -> model init dies on self.hparams.<new_key>.
+# optional for this wrapper's pairing policy: get_config_from_ckpt merges only explicit
+# custom settings over migrated checkpoint hparams. Template defaults never replace
+# saved values; missing legacy keys need a documented migration or a matching config.
 CUSTOM_FP=${CUSTOM_FP:-}
 
 if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then

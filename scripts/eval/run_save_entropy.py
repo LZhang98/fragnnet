@@ -7,8 +7,8 @@ import pandas as pd
 import torch as th
 
 import wandb
-from fragnnet.inference.checkpoint import init_wandb_ckpt
-from fragnnet.inference.runners import run_inference
+from fragnnet.inference.checkpoint import init_wandb_ckpt, setup_device
+from fragnnet.inference.runners import run_inference_pkl
 from fragnnet.loss.cross_entropy import sparse_conditional_entropy
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
@@ -53,10 +53,11 @@ if __name__ == "__main__":
     print(">>> Loading configs")
     template_fp = "config"
     custom_fp = os.path.join(
-        "config", "fragnnet", entropy_exp, split_type, f"{depth}_script_config.yml"
+        "config", "fragnnet", entropy_exp, f"{depth}_script_config.yml"
     )
     assert os.path.isfile(custom_fp)
-    config_d = load_config(template_fp, custom_fp)
+    config_d = load_config(template_fp, custom_fp, override=None)
+    config_d["split_dp"] = os.path.join("data", "split", f"nist20_{split_type}")
     # modify config to record relevant metrics
     config_d["auxiliary_scores"] = ["cos_sim", "cos_hun", "true_oos_prob"]
     config_d["skip_extra_losses"] = False
@@ -110,14 +111,21 @@ if __name__ == "__main__":
         for model_name, run_id in model_to_run_id.items():
             # load model
             print(f">>> Loading model {model_name} - {run_id}")
-            device = th.device("cuda:0") if config_d["accelerator"] == "gpu" else th.device("cpu")
+            device = setup_device(config_d, enable_cpu_optimizations=False)
             model = init_wandb_ckpt(
                 run_id, last_ckpt=False, model_cls=FraGNNetPL, config_d=config_d
             )
             model.to(device)
             model.eval()
             # run inference
-            vals = run_inference(dl, model, device, eval_split, batch_cutoff, config_d["nb_iso"])
+            vals = run_inference_pkl(
+                model=model,
+                dataloader=dl,
+                device=device,
+                batch_cutoff=batch_cutoff,
+                nb_iso=config_d["nb_iso"],
+                evaluate=True,
+            )
             model_to_vals[model_name] = vals
             del model
 
