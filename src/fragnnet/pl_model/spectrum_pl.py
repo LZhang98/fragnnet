@@ -22,7 +22,7 @@ from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet import registry
-from fragnnet.loss.peak_list import sparse_outside_window_intensity_fraction
+from fragnnet.loss.spectrum_distance import sparse_outside_window_intensity_fraction
 from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
 from fragnnet.utils.migrations import migrate_legacy_hparams

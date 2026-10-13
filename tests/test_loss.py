@@ -13,19 +13,17 @@ import torch as th
 
 from fragnnet.loss.cross_entropy import conditional_in_support_cross_entropy
 from fragnnet.loss.pairwise import (
-    get_pairwise_cossim,
-    get_pairwise_cross_entropy,
-    get_pairwise_jss_sim,
-)
-from fragnnet.loss.peak_list import (
-    sparse_outside_window_intensity_fraction,
-    sparse_peak_list_distance,
+    pairwise_cosine_similarity,
+    pairwise_cross_entropy,
+    pairwise_jss_similarity,
 )
 from fragnnet.loss.spectrum_distance import (
     sparse_hellinger_distance,
     sparse_jensen_shannon_divergence,
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
+    sparse_outside_window_intensity_fraction,
+    sparse_peak_list_distance,
 )
 from fragnnet.utils.spec_similarity import calculate_match_mzs
 from fragnnet.utils.spec_utils import batched_bin_func
@@ -206,7 +204,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Diagonal should be 1 (self-similarity)
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -224,7 +222,7 @@ class TestPairwiseCossim:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert S.shape == (batch_size, batch_size)
         assert th.allclose(S, th.zeros_like(S))
 
@@ -237,7 +235,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Check symmetry
         assert th.allclose(S, S.t(), atol=1e-6), "Matrix should be symmetric"
@@ -256,12 +254,12 @@ class TestPairwiseCossim:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        S_no_chunk = get_pairwise_cossim(
+        S_no_chunk = pairwise_cosine_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        S_chunk = get_pairwise_cossim(
+        S_chunk = pairwise_cosine_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -278,7 +276,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert S.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {S.shape}"
         )
@@ -299,7 +297,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
         assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -328,7 +326,7 @@ class TestPairwiseCossim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        S = pairwise_cosine_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
         assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
@@ -359,10 +357,10 @@ class TestPairwiseCossim:
         mzs_pred = th.tensor([50.0, 150.0])
         logprobs_pred = th.tensor([0.0, 0.0])
 
-        true_sim = get_pairwise_cossim(
+        true_sim = pairwise_cosine_similarity(
             mzs_true, logprobs_true, batch_idxs, batch_size, mz_max, mz_bin_res
         )
-        pred_sim = get_pairwise_cossim(
+        pred_sim = pairwise_cosine_similarity(
             mzs_pred, logprobs_pred, batch_idxs, batch_size, mz_max, mz_bin_res
         )
 
@@ -385,7 +383,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         # Diagonal should be 0 (CE between identical distributions)
         assert th.allclose(th.diag(CE), th.zeros(batch_size), atol=1e-6), "Diagonal should be 0"
         # Off-diagonal for completely disjoint spectra should be high
@@ -401,7 +399,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert CE.shape == (batch_size, batch_size)
         assert th.allclose(CE, th.zeros_like(CE))
 
@@ -414,7 +412,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Diagonal should be 0
         assert th.allclose(th.diag(CE), th.zeros(batch_size), atol=1e-6), "Diagonal should be 0"
@@ -429,12 +427,12 @@ class TestPairwiseCrossEntropy:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        CE_no_chunk = get_pairwise_cross_entropy(
+        CE_no_chunk = pairwise_cross_entropy(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        CE_chunk = get_pairwise_cross_entropy(
+        CE_chunk = pairwise_cross_entropy(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -451,7 +449,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert CE.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {CE.shape}"
         )
@@ -465,7 +463,7 @@ class TestPairwiseCrossEntropy:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        CE = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        CE = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Cross-entropy should be non-negative
         assert th.all(CE >= -1e-6), "Cross-entropy should be non-negative"
@@ -481,7 +479,7 @@ class TestPairwiseCrossEntropy:
 
         # Test with various chunk sizes
         for chunk_size in [1, 2, 4, None]:
-            CE = get_pairwise_cross_entropy(
+            CE = pairwise_cross_entropy(
                 mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=chunk_size
             )
             assert CE.shape == (batch_size, batch_size)
@@ -499,7 +497,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         # Diagonal should be 1 (self-similarity)
         assert th.allclose(th.diag(JSS), th.ones(batch_size), atol=1e-6), "Diagonal should be 1"
         # Off-diagonal for different peaks should be small
@@ -517,7 +515,7 @@ class TestPairwiseJssSim:
         mz_max = 100.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert JSS.shape == (batch_size, batch_size)
         assert th.allclose(JSS, th.zeros_like(JSS))
 
@@ -530,7 +528,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Check symmetry
         assert th.allclose(JSS, JSS.t(), atol=1e-6), "Matrix should be symmetric"
@@ -549,12 +547,12 @@ class TestPairwiseJssSim:
         mz_bin_res = 1.0
 
         # Compute without chunking
-        JSS_no_chunk = get_pairwise_jss_sim(
+        JSS_no_chunk = pairwise_jss_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=None
         )
 
         # Compute with chunking
-        JSS_chunk = get_pairwise_jss_sim(
+        JSS_chunk = pairwise_jss_similarity(
             mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=2
         )
 
@@ -571,7 +569,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
         assert JSS.shape == (batch_size, batch_size), (
             f"Expected shape {(batch_size, batch_size)}, got {JSS.shape}"
         )
@@ -585,7 +583,7 @@ class TestPairwiseJssSim:
         mz_max = 200.0
         mz_bin_res = 1.0
 
-        JSS = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        JSS = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         # Off-diagonal should be 0 (no overlap)
         assert th.allclose(JSS[0, 1], th.tensor(0.0), atol=1e-6), (
@@ -606,7 +604,7 @@ class TestPairwiseJssSim:
 
         # Test with various chunk sizes
         for chunk_size in [1, 2, 4, None]:
-            JSS = get_pairwise_jss_sim(
+            JSS = pairwise_jss_similarity(
                 mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res, chunk_size=chunk_size
             )
             assert JSS.shape == (batch_size, batch_size)
@@ -859,9 +857,11 @@ class TestPairwiseBinningGeometry:
         mz_max = 200.0
         mz_bin_res = 0.5  # 400 bins, valid integer grid
 
-        cossim = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
-        jss = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
-        ce = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        cossim = pairwise_cosine_similarity(
+            mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res
+        )
+        jss = pairwise_jss_similarity(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        ce = pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
 
         assert th.allclose(cossim[0, 1], th.tensor(1.0), atol=1e-6)
         assert th.allclose(jss[0, 1], th.tensor(1.0), atol=1e-6)
@@ -869,7 +869,7 @@ class TestPairwiseBinningGeometry:
 
     @pytest.mark.parametrize(
         "fn",
-        [get_pairwise_cossim, get_pairwise_jss_sim, get_pairwise_cross_entropy],
+        [pairwise_cosine_similarity, pairwise_jss_similarity, pairwise_cross_entropy],
     )
     def test_pairwise_losses_raise_on_non_integer_bin_geometry(self, fn):
         """Fail fast when mz_max / mz_bin_res does not define an integer bin count."""

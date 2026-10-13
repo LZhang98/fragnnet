@@ -6,8 +6,11 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
-from fragnnet.loss.entropy import sparse_conditional_entropy_fn, sparse_entropy_fn
+from fragnnet.loss.cross_entropy import (
+    get_sparse_cross_entropy_fn,
+    sparse_conditional_entropy,
+    sparse_entropy,
+)
 from fragnnet.loss.spectrum_distance import (
     sparse_jensen_shannon_divergence_hungarian,
     sparse_jensen_shannon_divergence_hungarian_vec,
@@ -58,7 +61,7 @@ def test_jsd_tiny_mass_matches_exhaustive_assignment(vectorized, shift, chunk):
 def test_entropy_zero_mass_has_finite_values_and_gradients(zero, renormalize, oos):
     lp = th.tensor([math.log(0.25), zero, math.log(0.75)]).requires_grad_()
     outside = th.tensor([zero], requires_grad=True) if oos else None
-    entropy, normalized = sparse_entropy_fn(lp, th.zeros(3, dtype=th.long), outside, renormalize)
+    entropy, normalized = sparse_entropy(lp, th.zeros(3, dtype=th.long), outside, renormalize)
     expected = -0.25 * math.log(0.25) - 0.75 * math.log(0.75)
     th.testing.assert_close(entropy, th.tensor([expected]))
     th.testing.assert_close(normalized, th.tensor([expected / math.log(4 if oos else 3)]))
@@ -73,7 +76,7 @@ def test_entropy_zero_mass_has_finite_values_and_gradients(zero, renormalize, oo
 def test_conditional_entropy_zero_mass(zero):
     marginal = th.tensor([math.log(0.6), math.log(0.4)], requires_grad=True)
     conditional = th.tensor([math.log(0.5), math.log(0.5), zero, 0.0], requires_grad=True)
-    entropy, normalized = sparse_conditional_entropy_fn(
+    entropy, normalized = sparse_conditional_entropy(
         marginal,
         th.tensor([0, 0]),
         conditional,
@@ -150,7 +153,7 @@ def test_sequential_oos_entropy_ignores_zero_mass_peaks(zero, dist):
 def test_entropy_all_zero_mass_is_zero(renormalize, with_oos):
     lp = th.full((3,), -th.inf, requires_grad=True)
     oos = th.tensor([-th.inf], requires_grad=True) if with_oos else None
-    values = sparse_entropy_fn(lp, th.zeros(3, dtype=th.long), oos, renormalize)
+    values = sparse_entropy(lp, th.zeros(3, dtype=th.long), oos, renormalize)
     for value in values:
         th.testing.assert_close(value, th.zeros(1))
     sum(value.sum() for value in values).backward()

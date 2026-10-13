@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch as th
 
-from fragnnet.loss.entropy import sparse_entropy_fn
+from fragnnet.loss.cross_entropy import sparse_entropy
 from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.utils.scatter_utils import safelog, scatter_l1normalize, scatter_reduce
 from fragnnet.utils.spec_similarity import (
@@ -427,7 +427,7 @@ def setup_metric_fns(pl_module: SpectrumPL) -> None:
                 true_log_probs = safelog(
                     scatter_l1normalize(true_ints, true_batch_idxs), eps=pl_module.hparams.log_min
                 )
-            true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs, true_batch_idxs)
+            true_spec_e, true_spec_ne = sparse_entropy(true_log_probs, true_batch_idxs)
             if "true_spec_e" in pl_module.hparams.auxiliary_scores:
                 metric_d["true_spec_e"] = true_spec_e
             if "true_spec_ne" in pl_module.hparams.auxiliary_scores:
@@ -439,7 +439,7 @@ def setup_metric_fns(pl_module: SpectrumPL) -> None:
                 pred_log_probs = safelog(
                     scatter_l1normalize(pred_ints, pred_batch_idxs), eps=pl_module.hparams.log_min
                 )
-            pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
+            pred_spec_e, pred_spec_ne = sparse_entropy(pred_log_probs, pred_batch_idxs)
             if "pred_spec_e" in pl_module.hparams.auxiliary_scores:
                 metric_d["pred_spec_e"] = pred_spec_e
             if "pred_spec_ne" in pl_module.hparams.auxiliary_scores:

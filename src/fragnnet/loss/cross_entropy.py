@@ -1,5 +1,7 @@
-"""Sparse cross-entropy between observed and predicted spectra, with its mixture and
-peak-matching variants, and the ``loss_type`` dispatcher ``get_sparse_cross_entropy_fn``.
+"""Entropy and cross-entropy of sparse spectra: the entropy of a predicted spectrum and its
+conditional variant, the sparse cross-entropy between observed and predicted spectra with its
+mixture and peak-matching variants, and the ``loss_type`` dispatcher
+``get_sparse_cross_entropy_fn``.
 """
 
 import logging
@@ -8,17 +10,116 @@ from collections.abc import Callable
 
 import torch as th
 
-from fragnnet.loss.entropy import _plogp
 from fragnnet.loss.padding import (
     build_loss_chunks,
     build_padded_batch_layout,
     pad_flat_with_layout,
     paired_batch_offsets,
 )
-from fragnnet.utils.misc_utils import LOG_ZERO
+from fragnnet.utils.misc_utils import EPS, LOG_ZERO
+from fragnnet.utils.scatter_utils import safelog, scatter_logsumexp, scatter_reduce
 from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 logger = logging.getLogger(__name__)
+
+
+def _plogp(logprobs: th.Tensor) -> th.Tensor:
+    # Replace log(0) before multiplying: masking a NaN product poisons backward.
+    finite_logs = th.where(th.isneginf(logprobs), th.zeros_like(logprobs), logprobs)
+    return logprobs.exp() * finite_logs
+
+
+def _rescale_entropy(
+    entropy: th.Tensor, max_entropy: th.Tensor, label: str
+) -> tuple[th.Tensor, th.Tensor]:
+    max_entropy = th.clamp(max_entropy, min=EPS)
+    entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
+    norm_entropy = entropy / max_entropy
+    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
+        raise ValueError(f"Normalized {label} out of bounds [0, 1]")
+    return entropy, norm_entropy
+
+
+def sparse_entropy(
+    logprobs: th.Tensor,
+    batch_idxs: th.Tensor,
+    oos_logprobs: th.Tensor | None = None,
+    renormalize: bool = False,
+    support_size_delta: float = 0.0,
+) -> tuple[th.Tensor, th.Tensor]:
+    if renormalize:
+        logpartition = scatter_logsumexp(logprobs, batch_idxs)
+        if oos_logprobs is not None:
+            logpartition = th.logsumexp(th.stack([logpartition, oos_logprobs], dim=1), dim=1)
+            oos_logprobs = oos_logprobs - logpartition
+        logprobs = logprobs - th.gather(input=logpartition, index=batch_idxs, dim=0)
+    logprobs = th.clamp(logprobs, max=0.0)
+    plogp = _plogp(logprobs)
+    batch_size = int(th.max(batch_idxs).item() + 1)
+    entropy = -scatter_reduce(
+        src=plogp,
+        index=batch_idxs,
+        reduce="sum",
+        dim_size=batch_size,
+    )
+    if th.min(entropy) < -0.001:
+        raise ValueError(f"Negative entropy: {th.min(entropy)}")
+
+    support_size = scatter_reduce(
+        src=th.ones_like(batch_idxs, dtype=logprobs.dtype),
+        index=batch_idxs,
+        reduce="sum",
+        dim_size=batch_size,
+    )
+    support_size += support_size_delta
+    if oos_logprobs is not None:
+        assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape, batch_size)
+        entropy = entropy - _plogp(oos_logprobs)
+        support_size = support_size + 1.0
+    max_entropy = safelog(support_size)
+    return _rescale_entropy(entropy, max_entropy, "entropy")
+
+
+def sparse_conditional_entropy(
+    marginal_logprobs: th.Tensor,
+    marginal_batch_idxs: th.Tensor,
+    conditional_logprobs: th.Tensor,
+    conditional_idxs: th.Tensor,
+    conditional_batch_idxs: th.Tensor,
+    conditional_support_size_delta: float = 0.0,
+) -> tuple[th.Tensor, th.Tensor]:
+    batch_size = int(th.max(conditional_batch_idxs).item() + 1)
+    marginal_support_size = marginal_logprobs.shape[0]
+    marginal_logprobs = th.clamp(marginal_logprobs, max=0.0)
+    conditional_logprobs = th.clamp(conditional_logprobs, max=0.0)
+    marginal_probs = th.exp(marginal_logprobs)
+    conditional_plogp = _plogp(conditional_logprobs)
+    conditional_entropy = -scatter_reduce(
+        conditional_plogp, index=conditional_idxs, reduce="sum", dim_size=marginal_support_size
+    )
+    entropy = scatter_reduce(
+        marginal_probs * conditional_entropy,
+        index=marginal_batch_idxs,
+        reduce="sum",
+        dim_size=batch_size,
+    )
+    if th.min(entropy) < -0.001:
+        raise ValueError(f"Negative conditional entropy: {th.min(entropy)}")
+
+    conditional_support_size = scatter_reduce(
+        th.ones_like(conditional_logprobs, dtype=marginal_logprobs.dtype),
+        index=conditional_idxs,
+        reduce="sum",
+        dim_size=marginal_support_size,
+    )
+    conditional_support_size += conditional_support_size_delta
+    max_entropy = scatter_reduce(
+        marginal_probs * th.clamp(safelog(conditional_support_size), min=0.0),
+        index=marginal_batch_idxs,
+        reduce="sum",
+        dim_size=batch_size,
+    )
+    return _rescale_entropy(entropy, max_entropy, "conditional entropy")
 
 
 def conditional_in_support_cross_entropy(
@@ -96,7 +197,7 @@ def mog_log_prob(
     return log_probs
 
 
-def mog_ce_fn(
+def gaussian_ce(
     b_true_mzs: th.Tensor,
     b_pred_mzs: th.Tensor,
     b_pred_logprobs: th.Tensor,
@@ -150,7 +251,7 @@ def mog_ce_fn(
     return b_logprobs
 
 
-def pm_ce_fn(
+def peak_marginal_ce(
     b_pred_mzs: th.Tensor,
     b_true_mzs: th.Tensor,
     b_pred_logprobs: th.Tensor,
@@ -578,9 +679,9 @@ def get_sparse_cross_entropy_fn(
     loss_batch_size: int,
 ) -> Callable:
     if dist == "gaussian":
-        ce_fn = mog_ce_fn
+        ce_fn = gaussian_ce
     elif dist == "peak_marginal":
-        ce_fn = pm_ce_fn
+        ce_fn = peak_marginal_ce
     else:
         msg = (
             f"Distribution '{dist}' not implemented. "

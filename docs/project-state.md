@@ -36,7 +36,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## MASSter core
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
-- **Shared loss consolidation implemented:** [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Numerical fixes and shared preparation/reductions have regression coverage; BCE retirement is committed. **Next:** review unstaged changes; GPU validation when available.
+- **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
@@ -85,7 +85,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## FraGNNet
 
-- **Shared loss consolidation implemented:** [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Numerical fixes and shared preparation/reductions have regression coverage; BCE retirement is committed. **Next:** review unstaged changes; GPU validation when available.
+- **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
 - **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed in the working tree with a regression test; probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
 - **Shared reorganization done** (branch, not merged; [progress](plans/repo_reorg_plan.md#progress)): FraGNNet is in `src/fragnnet/models/fragnnet/`. MCES pretraining (and fine-tuning from it), ChemLM and CLIP were retired 2026-10-12.
 
@@ -95,7 +95,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## Uncommitted working tree (2026-10-12)
 
-- Shared loss numerical fixes, consolidation and two new regression-test files; [validation](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). BCE retirement is committed in `0bfe032b`.
+- `loss/` file merge (entropy → cross_entropy, peak_list → spectrum_distance, penalty → `fragnnet_pl`) and function renames; [record](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12).
 - FraGNNet cc-mask padding fix in `fragnnet_model.py` + `tests/test_fragnnet_mask_padding.py`; audit and probe-caveat doc edits.
 - Reorganization plan and hub/dashboard updates record the external ICEBERG/ms-pred decision;
   source code and environment are unchanged. Prior RT/CCS and augmentation entries are no

@@ -66,7 +66,7 @@ def _build_dense_chunk(
     return chunk
 
 
-def get_pairwise_cossim(
+def pairwise_cosine_similarity(
     mzs: th.Tensor,
     logprobs: th.Tensor,
     batch_idxs: th.Tensor,
@@ -158,7 +158,7 @@ def get_pairwise_cossim(
     return S
 
 
-def get_pairwise_jss_sim(
+def pairwise_jss_similarity(
     mzs: th.Tensor,
     logprobs: th.Tensor,
     batch_idxs: th.Tensor,
@@ -237,7 +237,7 @@ def get_pairwise_jss_sim(
     return JSS
 
 
-def get_pairwise_cross_entropy(
+def pairwise_cross_entropy(
     mzs: th.Tensor,
     logprobs: th.Tensor,
     batch_idxs: th.Tensor,
@@ -327,7 +327,7 @@ def get_pairwise_cross_entropy(
     return CE
 
 
-def get_cross_jss_contrastive(
+def cross_jss_contrastive_loss(
     true_mzs: th.Tensor,
     true_logprobs: th.Tensor,
     true_batch_idxs: th.Tensor,

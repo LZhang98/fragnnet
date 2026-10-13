@@ -38,7 +38,7 @@ from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
 )
-from fragnnet.loss.peak_list import sparse_peak_list_distance
+from fragnnet.loss.spectrum_distance import sparse_peak_list_distance
 from fragnnet.models.masster.candidate_features import describe_candidate_features
 from fragnnet.models.masster.masster_export import masster_annotation_tables
 from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams

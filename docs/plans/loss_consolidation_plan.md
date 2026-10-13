@@ -1,7 +1,7 @@
 # Shared loss consolidation plan
 
 > **Status:** LANDED · **Updated:** 2026-10-12
-> Remaining numerical fixes and consolidation implemented with regression coverage; changes are in the working tree for review. BCE retirement is committed in `0bfe032b`.
+> Numerical fixes and consolidation committed in `1a63257b`; BCE retirement in `0bfe032b`. Follow-up file merge and renames are in the working tree ([below](#file-merge-and-renames-2026-10-12)).
 
 ## Objective and baseline
 
@@ -244,5 +244,34 @@ not a general speed claim. Autograd memory was not profiled.
 | Hungarian JSD | 6.541 | 6.127 |
 | Peak-list Hellinger plus entropy | 8.525 | 7.706 |
 
-**Next:** review the unstaged implementation and tests; run GPU validation when available.
-Other concurrent MASSter and documentation changes were preserved.
+Committed in `1a63257b`. **Next:** GPU validation when available.
+
+## File merge and renames (2026-10-12)
+
+The user asked to merge files and improve names, superseding "keep the existing files" above.
+Nine modules became six; no function body changed. The changes are uncommitted.
+
+| Before | After | Why |
+| --- | --- | --- |
+| `entropy.py` | `cross_entropy.py` | CE imported the private `_plogp` from it. |
+| `peak_list.py` | `spectrum_distance.py` | Both compare a pair of sparse spectra using the same matching, alignment and padding helpers. |
+| `penalty.py` (`get_edge_loss_fn`) | `models/fragnnet/fragnnet_pl.py` | FraGNNet-only; its single caller. |
+
+Renamed functions whose name said "factory" or "getter" but which return a value:
+
+| Old | New |
+| --- | --- |
+| `sparse_entropy_fn`, `sparse_conditional_entropy_fn` | `sparse_entropy`, `sparse_conditional_entropy` |
+| `get_pairwise_cossim`, `get_pairwise_jss_sim`, `get_pairwise_cross_entropy` | `pairwise_cosine_similarity`, `pairwise_jss_similarity`, `pairwise_cross_entropy` |
+| `get_cross_jss_contrastive` | `cross_jss_contrastive_loss` |
+| `mog_ce_fn`, `pm_ce_fn` | `gaussian_ce`, `peak_marginal_ce` (the `dist` values that select them) |
+
+The factories `get_sparse_cross_entropy_fn` and `get_edge_loss_fn` keep their names. Config keys,
+loss and metric names and state-dict keys are unchanged; checkpoints store no loss-module paths.
+Importers in `src/`, `scripts/` and `tests/` and the live reference docs were rewritten; frozen
+findings keep their old paths (see the documentation rules).
+
+Validation (CPU): the 55 test files that touch the loss package, the Lightning modules or the
+reorg boundaries gave **2,115 passed, 8 failed** before and after the change. The 8 failures are
+in `tests/test_export_schema.py`, from the uncommitted MASSter export work, and were identical
+in both runs. Ruff passes on the changed files.

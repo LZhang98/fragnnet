@@ -27,9 +27,9 @@ All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matr
 
 | Function | Config key | Notes |
 |---|---|---|
-| `get_pairwise_cossim()` | `pairwise_cosine_loss_weight` | L2-normalize log-probs → dot product; sparse COO trick avoids 150k-dim dense alloc |
-| `get_pairwise_jss_sim()` | `pairwise_jss_loss_weight` | JSS = 1 − JSD/log(2); computed in log-space for stability |
-| `get_pairwise_cross_entropy()` | `pairwise_cross_entropy_loss_weight` | **Asymmetric** — must fill full [B,B]; missing bins use log(eps) |
+| `pairwise_cosine_similarity()` | `pairwise_cosine_loss_weight` | L2-normalize log-probs → dot product; sparse COO trick avoids 150k-dim dense alloc |
+| `pairwise_jss_similarity()` | `pairwise_jss_loss_weight` | JSS = 1 − JSD/log(2); computed in log-space for stability |
+| `pairwise_cross_entropy()` | `pairwise_cross_entropy_loss_weight` | **Asymmetric** — must fill full [B,B]; missing bins use log(eps) |
 
 ### Hungarian / Peak-aligned (removed)
 

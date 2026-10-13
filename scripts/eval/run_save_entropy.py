@@ -9,7 +9,7 @@ import torch as th
 import wandb
 from fragnnet.inference.checkpoint import init_wandb_ckpt
 from fragnnet.inference.runners import run_inference
-from fragnnet.loss.entropy import sparse_conditional_entropy_fn
+from fragnnet.loss.cross_entropy import sparse_conditional_entropy
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.runner import init_dataloader, init_dataset, load_config
 from fragnnet.utils.misc_utils import booltype
@@ -262,7 +262,7 @@ if __name__ == "__main__":
             nb_joint_formula_idxs = select_d["pred_nb_joint_formula_idxs"][i]
             nb_joint_batch_idxs = select_d["pred_joint_batch_idxs"][i]
 
-            formula_node_e, formula_node_ne = sparse_conditional_entropy_fn(
+            formula_node_e, formula_node_ne = sparse_conditional_entropy(
                 formula_logprobs,
                 formula_batch_idxs,
                 formula_node_logprobs,
@@ -270,7 +270,7 @@ if __name__ == "__main__":
                 joint_batch_idxs,
             )
 
-            nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
+            nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy(
                 formula_logprobs,
                 formula_batch_idxs,
                 nb_node_formula_logprobs,
@@ -307,7 +307,7 @@ if __name__ == "__main__":
         )
         # print(ens_formula_node_lse.max(), ens_formula_node_lse.min())
 
-        ens_formula_node_e, ens_formula_node_ne = sparse_conditional_entropy_fn(
+        ens_formula_node_e, ens_formula_node_ne = sparse_conditional_entropy(
             ens_formula_logprobs,
             ens_formula_batch_idxs,
             ens_formula_node_logprobs,
@@ -328,7 +328,7 @@ if __name__ == "__main__":
             dim_size=ens_formula_formula_idxs.shape[0],
         )
 
-        ens_nb_formula_node_e, ens_nb_formula_node_ne = sparse_conditional_entropy_fn(
+        ens_nb_formula_node_e, ens_nb_formula_node_ne = sparse_conditional_entropy(
             ens_formula_logprobs,
             ens_formula_batch_idxs,
             ens_nb_formula_node_logprobs,

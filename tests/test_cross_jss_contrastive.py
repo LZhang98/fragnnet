@@ -1,11 +1,11 @@
-"""Unit tests for get_cross_jss_contrastive in fragnnet.loss.pairwise."""
+"""Unit tests for cross_jss_contrastive_loss in fragnnet.loss.pairwise."""
 
 import math
 
 import pytest
 import torch as th
 
-from fragnnet.loss.pairwise import get_cross_jss_contrastive
+from fragnnet.loss.pairwise import cross_jss_contrastive_loss
 
 
 def _make_spectrum(
@@ -35,7 +35,7 @@ class TestOutputShape:
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
         pred_mzs, pred_lp, pred_bi = true_mzs.clone(), true_lp.clone(), true_bi.clone()
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -54,7 +54,7 @@ class TestOutputShape:
         lp = th.log(th.tensor([0.6, 0.4]))
         bi = th.tensor([0, 0])
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             mzs,
             lp,
             bi,
@@ -72,7 +72,7 @@ class TestOutputShape:
         empty = th.tensor([], dtype=th.float32)
         bi = th.tensor([], dtype=th.long)
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             empty,
             empty,
             bi,
@@ -94,7 +94,7 @@ class TestLossValues:
         lp = th.log(th.tensor([0.5, 0.3, 0.2]))
         bi = th.zeros(3, dtype=th.long)
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             mzs,
             lp,
             bi,
@@ -114,7 +114,7 @@ class TestLossValues:
         true_mzs, true_lp, true_bi = _cat_spectra([spec_a, spec_b])
 
         # Perfect: pred == true
-        loss_perfect = get_cross_jss_contrastive(
+        loss_perfect = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -130,7 +130,7 @@ class TestLossValues:
         wrong_a = _make_spectrum({300.0: 0.6, 400.0: 0.4}, 0)
         wrong_b = _make_spectrum({100.0: 0.7, 200.0: 0.3}, 1)
         pred_mzs, pred_lp, pred_bi = _cat_spectra([wrong_a, wrong_b])
-        loss_wrong = get_cross_jss_contrastive(
+        loss_wrong = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -155,7 +155,7 @@ class TestLossValues:
         true_mzs, true_lp, true_bi = _cat_spectra(spectra)
         pred_lp = true_lp + th.randn_like(true_lp) * 0.5
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -179,7 +179,7 @@ class TestJSSMatrix:
         true_mzs, true_lp, true_bi = _cat_spectra([spec_a, spec_b, spec_c])
 
         T, B = 1.0, 3
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -208,7 +208,7 @@ class TestJSSMatrix:
 
         # We're testing that the function doesn't silently symmetrise the matrix.
         # Two runs with swapped true/pred should give different losses.
-        loss_fwd = get_cross_jss_contrastive(
+        loss_fwd = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -219,7 +219,7 @@ class TestJSSMatrix:
             mz_max=MZ_MAX,
             mz_bin_res=MZ_BIN_RES,
         )
-        loss_rev = get_cross_jss_contrastive(
+        loss_rev = cross_jss_contrastive_loss(
             true_mzs,
             pred_lp,
             true_bi,
@@ -243,7 +243,7 @@ class TestGradients:
 
         pred_lp = true_lp.clone().detach().requires_grad_(True)
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -268,7 +268,7 @@ class TestGradients:
 
         pred_lp = lp.clone().detach().requires_grad_(True)
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             mzs,
             lp,
             bi,
@@ -301,7 +301,7 @@ class TestOptions:
         pred_b = _make_spectrum({100.0: 0.9, 200.0: 0.1}, 1)  # B's pred looks like A
         pred_mzs, pred_lp, pred_bi = _cat_spectra([pred_a, pred_b])
 
-        loss_sqrt = get_cross_jss_contrastive(
+        loss_sqrt = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -313,7 +313,7 @@ class TestOptions:
             mz_bin_res=MZ_BIN_RES,
             sqrt_transform=True,
         )
-        loss_no_sqrt = get_cross_jss_contrastive(
+        loss_no_sqrt = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -341,7 +341,7 @@ class TestOptions:
         specs = [_make_spectrum({float(100 + i * 200): 1.0}, i) for i in range(B)]
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
 
-        loss_high_T = get_cross_jss_contrastive(
+        loss_high_T = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -353,7 +353,7 @@ class TestOptions:
             mz_bin_res=MZ_BIN_RES,
             temperature=1.0,
         )
-        loss_low_T = get_cross_jss_contrastive(
+        loss_low_T = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,
@@ -374,7 +374,7 @@ class TestOptions:
         specs = [_make_spectrum({float(100 + i * 200): 1.0}, i) for i in range(4)]
         true_mzs, true_lp, true_bi = _cat_spectra(specs)
 
-        loss = get_cross_jss_contrastive(
+        loss = cross_jss_contrastive_loss(
             true_mzs,
             true_lp,
             true_bi,

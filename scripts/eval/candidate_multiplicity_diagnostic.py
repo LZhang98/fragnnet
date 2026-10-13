@@ -1,6 +1,6 @@
 """Measure how many candidate formulas the spectral loss sums over per observed peak.
 
-The spectral loss (both ``gaussian`` / mog_ce_fn and ``peak_marginal`` / pm_ce_fn in
+The spectral loss (both ``gaussian`` / gaussian_ce and ``peak_marginal`` / peak_marginal_ce in
 ``fragnnet/loss/cross_entropy.py``) scores an observed peak by aggregating EVERY predicted candidate
 within the m/z tolerance window:
 

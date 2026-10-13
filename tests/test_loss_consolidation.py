@@ -14,12 +14,12 @@ from fragnnet.loss.padding import (
     paired_batch_offsets,
 )
 from fragnnet.loss.pairwise import (
-    get_cross_jss_contrastive,
-    get_pairwise_cossim,
-    get_pairwise_cross_entropy,
-    get_pairwise_jss_sim,
+    cross_jss_contrastive_loss,
+    pairwise_cosine_similarity,
+    pairwise_cross_entropy,
+    pairwise_jss_similarity,
 )
-from fragnnet.loss.peak_list import (
+from fragnnet.loss.spectrum_distance import (
     sparse_outside_window_intensity_fraction,
     sparse_peak_list_distance,
 )
@@ -59,9 +59,9 @@ def test_pairwise_dense_reference_and_gradient(kind, chunk, resolution, shuffle)
     lp = th.tensor([0.1, 0.4, 0.5, 0.8, 0.2, 0.3, 0.7]).log().requires_grad_()
     order = th.tensor([6, 2, 4, 0, 5, 1, 3]) if shuffle else th.arange(7)
     fn = {
-        "cosine": get_pairwise_cossim,
-        "jss": get_pairwise_jss_sim,
-        "ce": get_pairwise_cross_entropy,
+        "cosine": pairwise_cosine_similarity,
+        "jss": pairwise_jss_similarity,
+        "ce": pairwise_cross_entropy,
     }[kind]
     actual = fn(
         (cols[order] + 0.3) * resolution,
@@ -98,7 +98,7 @@ def test_cross_jss_shared_bins_dense_reference(chunk, sqrt, temperature):
     true_cols, pred_cols = th.tensor([1, 2, 2, 4, 5, 7]), th.tensor([1, 3, 2, 2, 4, 6])
     p_lp = th.tensor([0.3, 0.7, 0.8, 0.2, 0.6, 0.4]).log()
     q_lp = th.tensor([0.4, 0.6, 0.7, 0.3, 0.2, 0.8]).log().requires_grad_()
-    actual = get_cross_jss_contrastive(
+    actual = cross_jss_contrastive_loss(
         (true_cols + 0.2) / 4,
         p_lp,
         rows,
