@@ -61,8 +61,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms, including the calibrated-likelihood arms. **Prepared, not submitted:** `pow075_s2`, `b1024`, `b256` rerun,
   5 U256/E1024 configs
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
-- **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Dropout/LR signals warrant replication.
-- **Next:** recover sweep leader checkpoint, validate retrieval using the available completed candidate, and replicate against `pow075`.
+- **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Leader re-run `f44tzxoc` ties `pow075` on formula-test retrieval ([read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#leader-re-run-formula-test-retrieval-2026-10-13)).
+- **Next:** seed replicates of `pow075` and the leader. Re-select `loglik_cal` on val.
 - **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), benchmark subset retained; matched-edit census and partial-label feasibility proposed.
 
 ## Spectraverse

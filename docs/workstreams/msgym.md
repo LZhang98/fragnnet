@@ -1,10 +1,11 @@
 # MassSpecGym (MSGYM) workstream
 
-> **Status:** HUB · **Updated:** 2026-10-11
+> **Status:** HUB · **Updated:** 2026-10-13
 > MASSter training on MassSpecGym 1.5, formula-track retrieval, GLACIER comparisons, annotation-aware scoring. The ChemBERTa-3 basic model was retired on 2026-10-12.
 
 ## Where it stands
-- **Sweep read 2026-10-11:** [tiwhun9q results](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11): 15 finished / 33 interrupted; encoder dropout and LR are the strongest signals. Recover the leader’s checkpoint and validate retrieval; the best completed loss-selected checkpoint is available.
+- **Sweep read 2026-10-11:** [tiwhun9q results](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11): 15 finished / 33 interrupted; encoder dropout and LR are the strongest signals.
+- **Leader re-run ties `pow075` on formula test (2026-10-13):** `f44tzxoc`@19 (val 0.594) gives hit@1 `mspred_ent` 0.523 and `loglik_cal` 0.545; every paired difference against `pow075` crosses zero (`mspred_ent` +0.007 [−0.006, +0.021]); [read](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#leader-re-run-formula-test-retrieval-2026-10-13).
 - **Proposed:** [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md), within the existing benchmark subset; measured edit-effect transfer with partial ratio labels proposed; training-only rarity/edge census first, no code or runs.
 - **Best measured MASSter MSGYM result:** `ll04i00m` (GLACIER-parity features arm, epoch 60) reaches test `cos_sim_0.01` 0.5713 against 0.5455 for GLACIER's released checkpoint (+0.026, 99.9% CI +0.009 to +0.044). In sqrt space the gap is +0.011 (CI crosses zero). `1imawkx1` (base recipe) peaked at val 0.5754 (epoch 62) but has no uploaded checkpoint.
 - **Retrieval (formula track, simulation-challenge `[M+H]+`, test 9,954 queries):** `ll04i00m` query log-likelihood gives hit@1 0.485 against 0.358 for cosine; the calibrated rule `ll_g0.75_t2_e1e-4_a0.5` gives 0.528. GLACIER is level on ms-pred entropy and below on cosine. Not leaderboard-comparable.
@@ -21,7 +22,7 @@
 | [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PROPOSED | Class rarity first; pre-fit mapped-coverage gate before hidden-analogue tests |
 | [MSGYM training arms](../plans/masster/masster_msgym_training_arms_plan.md) | screen RAN 2026-10-03 | Val read in the [arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md); test retrieval done for `wd10`, `pow075`; other arms not retrieval-tested. |
 | [U256/E1024 follow-up](../plans/masster/masster_fragment_marginal_selection_plan.md#msgym-u256e1024-follow-up-2026-10-05-prepared-not-run) | PREPARED | Real-data GPU smoke; record launch provenance; matched comparison with U256/E4096. |
-| [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | RAN; recovery open | Recover leader checkpoint, validation retrieval, matched seed replication. |
+| [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | RAN; leader re-run retrieval-tested | Leader `f44tzxoc` ties `pow075` on formula test. Next: matched control or a seed replicate before any further retrieval run. |
 | [Annotation-aware retrieval](../plans/annotation_aware_retrieval_plan.md) | ACTIVE | `[M+Na]+` and no-CE policy for full-challenge numbers; checkpoint ensemble on val; Gate 1 baseline fixed by the user. |
 | [Retrieval runner](../guides/run_msgym_retrieval.md) | built, not run on a cluster | Submit a test-fold job for a new checkpoint after re-selecting `loglik_cal` on val. |
 | GLACIER CF NIST'20 shortcut | argument only | Needs MAGMa labelling and a retrain; judged not worth it ([swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md)). |

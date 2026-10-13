@@ -1,6 +1,6 @@
 # MASSter MSGYM validation-loss sweep, 48 trials
 
-> **Status:** ACTIVE · **Updated:** 2026-10-11
+> **Status:** ACTIVE · **Updated:** 2026-10-13
 > Sweep ran: 15 finished, 33 crashed. Results below supersede the historical preparation state;
 > checkpoint recovery and seed replication remain open.
 
@@ -194,3 +194,41 @@ loss selection and disabled test split as the leader (9.23M parameters, CPU buil
 The leader's +0.91M parameters come from depth only: encoder +1 layer (+0.89M), intensity
 transformer +1 (+1.05M), bond head -1 (-1.04M).
 Launcher: [`submit_msgym_sweep_leader.sh`](../../../scripts/manual_slurm/fir/submit_msgym_sweep_leader.sh).
+
+### Leader re-run: formula test retrieval, 2026-10-13
+
+W&B `f44tzxoc` (`msgym_masster_sweep_leader_720jwmai`, Fir) finished 128 epochs in 4.98 h.
+Loss selection kept epoch 19 (val primary loss −1.6651, val `cos_sim_0.01` 0.5937). Val cosine
+peaked at 0.5966 at epoch 81 and ended at 0.5911. Checkpoint:
+`saved_ckpts/msgym/msgym_masster_sweep_leader_720jwmai_f44tzxoc.ckpt`.
+
+The test was run on the formula track, test fold, 9,954 queries, with
+[the retrieval runner](../../guides/run_msgym_retrieval.md). It was scored against `pow075`
+(`q3oxbpgx`@55), re-run the same day on the same shards. That re-run reproduces the
+[arm screen finding](../../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)
+to three decimals. Expected hit@1 (hit@5 / hit@20), with the paired difference and 95% molecule
+bootstrap:
+
+| score | `f44tzxoc` @19 | `pow075` @55 | f44 − pow075 |
+| --- | ---: | ---: | --- |
+| `cos_sim_0.01` | 0.365 (0.719 / 0.905) | 0.362 (0.722 / 0.898) | +0.003 [−0.010, +0.015] |
+| `cos_hun` | 0.370 | 0.368 | +0.001 [−0.011, +0.014] |
+| `cos_sim_sqrt_0.01` | 0.470 (0.809 / 0.945) | 0.467 (0.808 / 0.940) | +0.003 [−0.010, +0.015] |
+| `mspred_ent` | 0.523 (0.844 / 0.956) | 0.516 (0.843 / 0.956) | +0.007 [−0.006, +0.021] |
+| `loglik` | 0.503 (0.837 / 0.960) | 0.504 (0.836 / 0.957) | −0.001 [−0.014, +0.013] |
+| `loglik_cal` | 0.545 (0.866 / 0.969) | 0.542 (0.862 / 0.970) | +0.003 [−0.010, +0.017] |
+
+- **The leader ties `pow075` on every score.** Its +0.015 val cosine (0.594 vs 0.579) does not
+  carry into retrieval, which is the same pattern as `wd10`.
+- **Per instrument,** `loglik_cal` is ORB 0.600 vs 0.603 and QTOF 0.257 vs 0.218 (1,580 queries,
+  not tested paired).
+- **`loglik_cal` was not re-selected on val** for either checkpoint. It uses the `ll04i00m`
+  parameters.
+- **Single seed, single checkpoint.** The matched control
+  (`msgym_sweep_base_control.yml`) has not been retrieval-tested.
+
+Artifacts are in `output/msgym_retrieval/formula_test/`: `run_f44tzxoc_2026_10_13.log`,
+`run_pow075_rerun_2026_10_13.log`, `summary_<ckpt stem>.csv`, `compare_f44tzxoc_pow075.csv`,
+and `shard_NNN/<ckpt stem>/` (predictions and scores).
+The 2026-10-07 per-candidate outputs of `wd10` and `ll04i00m` in that directory were deleted
+by 2026-10-13 01:03; only `pow075` was regenerated.
