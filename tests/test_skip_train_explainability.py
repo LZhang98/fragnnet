@@ -24,7 +24,7 @@ import torch_geometric as pyg
 from fragnnet.models.fragnnet.dag.builder import compute_dags, extract_mol_info
 from fragnnet.models.fragnnet.dag.graph import get_frag_graph
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
-from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.pl_model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.mol_utils import mol_from_smiles
 

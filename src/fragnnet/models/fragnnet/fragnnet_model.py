@@ -33,7 +33,7 @@ from fragnnet.models.fragnnet.fragnnet_conditioning import (
     FragModeScaler,
     StratumScaler,
 )
-from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
+from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import (
     ELEMENT_TO_VE,

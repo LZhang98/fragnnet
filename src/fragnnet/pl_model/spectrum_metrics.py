@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import torch as th
 
 from fragnnet.loss.cross_entropy import sparse_entropy
-from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.pl_model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.utils.scatter_utils import safelog, scatter_l1normalize, scatter_reduce
 from fragnnet.utils.spec_similarity import (
     batch_cos_hun_helper,

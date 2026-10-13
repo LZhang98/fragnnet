@@ -16,7 +16,7 @@ import torch as th
 
 from fragnnet.inference import export_columns
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
-from fragnnet.output_schema import EXPLAINABILITY_OUTPUT_KEYS
+from fragnnet.pl_model.output_schema import EXPLAINABILITY_OUTPUT_KEYS
 from fragnnet.runner import load_config
 
 PEAKS_ONLY = {"pred_mzs", "pred_ints"}

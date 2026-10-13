@@ -1,6 +1,6 @@
 """Model-output names and switches that core code reads.
 
-``SpectrumPL`` and the inference exporter consume these, so they live in core even though only
+``SpectrumPL`` and the spectrum metrics consume these, so they live in core even though only
 the fragment models produce the outputs (docs/plans/repo_reorg_plan.md, "Annotation output
 contract").
 """

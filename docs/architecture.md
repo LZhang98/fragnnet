@@ -58,11 +58,11 @@
 ```
 src/fragnnet/
   dataset/ utils/                    core: shared datasets, samplers and utilities
-  layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases
+  layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases,
+                                     model-output schema
   inference/                         core: checkpoint loading and the prediction exporters
   runner.py registry.py hooks.py     core: entry point, model registry, hook interface
   export_adapter.py                  core: what the inference exporters call on a model
-  output_schema.py                   core: model-output names that core reads
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/  models/masster/  the two owner models
   models/neims/  models/precursor/  models/gnn/

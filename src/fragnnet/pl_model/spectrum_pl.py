@@ -23,7 +23,7 @@ from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet import registry
 from fragnnet.loss.spectrum_distance import sparse_outside_window_intensity_fraction
-from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
+from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_metrics import setup_metric_fns
 from fragnnet.utils.migrations import migrate_legacy_hparams
 from fragnnet.utils.misc_utils import TOLERANCE_MIN_MZ, flatten_lol, to_cpu

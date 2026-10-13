@@ -1,6 +1,6 @@
 """Core output schema (reorganization plan Phase 3 step 2).
 
-``fragnnet.output_schema`` holds the model-output names and switch defaults that core reads,
+``fragnnet.pl_model.output_schema`` holds the model-output names and switch defaults that core reads,
 so ``SpectrumPL`` no longer imports FraGNNet's model module for them.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 
 from fragnnet.models.fragnnet.fragnnet_model import FraGNNetModel
-from fragnnet.output_schema import (
+from fragnnet.pl_model.output_schema import (
     EXPLAINABILITY_OUTPUT_KEYS,
     RETURN_EXPLAINABILITY_TENSORS_DEFAULT,
 )

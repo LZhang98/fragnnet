@@ -49,7 +49,7 @@ from fragnnet.models.masster.masster_export import masster_annotation_tables
 from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.rt_ccs_heads import property_regression_terms
-from fragnnet.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
+from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.migrations import (
