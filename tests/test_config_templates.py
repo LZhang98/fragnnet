@@ -272,7 +272,7 @@ class TestValidation:
 # There were 18; 5 were MCES fine-tuning configs and 3 were CLIP configs, deleted with those models
 # on 2026-10-12. Each must keep failing for exactly this reason.
 KNOWN_REJECTED_CONFIGS = {
-    "config/debug/debug_tiny_new_frag_mol_feats.yml",
+    "config/fragnnet/debug/debug_tiny_new_frag_mol_feats.yml",
     *(
         "config/masster/legacy/bond_size_curriculum/nist20_merged_" + name + "_bond_curriculum.yml"
         for name in (
@@ -296,9 +296,9 @@ KNOWN_REJECTED_CONFIGS = {
 
 # Pre-existing configs that are not valid YAML, so never reach the template check.
 KNOWN_MALFORMED_CONFIGS = {
-    "config/ablations_merged/fraggnn_d3_edges/s1.yml",
-    "config/ablations_merged/fraggnn_d3_edges/s2.yml",
-    "config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_sqrt.yml",
+    "config/fragnnet/ablations_merged/fraggnn_d3_edges/s1.yml",
+    "config/fragnnet/ablations_merged/fraggnn_d3_edges/s2.yml",
+    "config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_sqrt.yml",
 }
 
 
@@ -328,3 +328,22 @@ def test_every_tracked_config_still_resolves():
     assert set(failures) == KNOWN_REJECTED_CONFIGS
     for path, message in failures.items():
         assert "sets keys the template does not declare" in message, (path, message)
+
+
+def test_experiment_configs_live_under_their_model():
+    """Keep dataset, debug and sweep configs in their owning model's directory."""
+    for path in sorted(glob.glob("config/**/*.yml", recursive=True)):
+        if path == TEMPLATE_FP:
+            continue
+        parts = path.split("/")
+        assert parts[1] in {"fragnnet", "masster", "neims", "massformer", "graff", "precursor", "gnn"}
+        if path in KNOWN_MALFORMED_CONFIGS:
+            assert parts[1] == "fragnnet"
+            continue
+        with open(path) as config_file:
+            custom = yaml.safe_load(config_file)
+        model_type = custom.get("model_type", "frag_gnn")
+        model_dir = {"frag_gnn": "fragnnet", "mass_shatter": "masster"}.get(
+            model_type, model_type
+        )
+        assert parts[1] == model_dir, path

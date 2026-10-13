@@ -54,7 +54,7 @@ the field on that path and read the column's `flag`.
   (`"-H"`); code parsing `pred_formula_adducts` must read the signed spelling itself.
 - `preproc_scripts/inference/02_inf_prepare_spec_df.py` allows only `[M+H]+` and `[M-H]-`;
   `[M+Na]+` inputs were made by rewriting `prec_type`/`prec_mz` on an existing `spec_df`.
-- A debug checkpoint for smoke runs (`config/debug/debug_tiny_inference_smoke.yml`, about 90 s) needs
+- A debug checkpoint for smoke runs (`config/fragnnet/debug/debug_tiny_inference_smoke.yml`, about 90 s) needs
   `sparse_cosine_similarity: True` and `prec_types` / `inst_types` listing **every** value in the
   split, because `prec_type_to_idx` / `inst_type_to_idx` are direct dict lookups (unlike
   `frag_mode`, which has an unknown token). The `_cmf` variant (`include_cmf: True`, about 25 min

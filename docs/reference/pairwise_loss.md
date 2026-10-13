@@ -58,7 +58,7 @@ plan Phase 8 step 0); the code is at revision `13b1599d`.
 
 ---
 
-## Existing Configs (`config/pairwise_loss/`)
+## Existing Configs (`config/fragnnet/pairwise_loss/`)
 
 | Config | Loss (weight) | Sampler |
 |---|---|---|
@@ -97,7 +97,7 @@ Proposed: batch ~ formula-grouped  → pairwise matrix has real structure → st
 ### Plan: new config combining both
 
 ```yaml
-# proposed: config/pairwise_loss/fraggnn_d3_ma_mi_nist20_pairwise_cos_formula_sampler.yml
+# proposed: config/fragnnet/pairwise_loss/fraggnn_d3_ma_mi_nist20_pairwise_cos_formula_sampler.yml
 formula_prec_type_group_sampler: True
 formula_prec_type_group_sampler_max_per_group: 5
 dynamic_batch_sampler: True           # still wrap with dynamic to avoid OOM

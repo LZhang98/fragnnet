@@ -98,7 +98,7 @@ if __name__ == "__main__":
     api = wandb.Api()
     for ablation_model_type in ablation_model_types:
         model_to_config[ablation_model_type] = (
-            f"config/{ablation_dset}/{ablation_model_type}/s0.yml"
+            f"config/fragnnet/{ablation_dset}/{ablation_model_type}/s0.yml"
         )
         model_type_wandb_prefix = model_type_to_wandb_prefix[ablation_model_type]
         dset_wandb_group_prefix = dset_to_wandb_prefix[ablation_dset]

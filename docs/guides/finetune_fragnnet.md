@@ -2,7 +2,7 @@
 
 > **Status:** GUIDE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
-> How to fine-tune a pretrained checkpoint. The tracked example is `config/nps_pcdl_nist23_ft/`,
+> How to fine-tune a pretrained checkpoint. The tracked example is `config/fragnnet/nps_pcdl_nist23_ft/`,
 > which fine-tunes from a FraGNNet checkpoint. Fine-tuning from MCES-pretrained weights did not
 > help, and MCES pretraining was retired on 2026-10-12 with its configs.
 
@@ -131,7 +131,7 @@ finetune_shared_components:
   - inst_embedder
 ```
 
-**Example file**: [config/nps_pcdl_nist23_ft/cv0.yml](../../config/nps_pcdl_nist23_ft/cv0.yml) (shares `mol_embedder` and `mol_pool` from a FraGNNet checkpoint, `finetune_weights_lr_ratio: 1.0`)
+**Example file**: [config/fragnnet/nps_pcdl_nist23_ft/cv0.yml](../../config/fragnnet/nps_pcdl_nist23_ft/cv0.yml) (shares `mol_embedder` and `mol_pool` from a FraGNNet checkpoint, `finetune_weights_lr_ratio: 1.0`)
 
 ---
 
@@ -535,7 +535,7 @@ max_epochs: 100                           # More epochs
 | **GPU memory** | Low | High |
 | **Training time** | Fast | Slower |
 | **Adaptation** | Limited | Strong |
-| **Example** | [Example 1](#example-1-freeze-strategy) | [Example 2](#example-2-full-fine-tune-strategy), [nps_pcdl_nist23_ft/cv0.yml](../../config/nps_pcdl_nist23_ft/cv0.yml) |
+| **Example** | [Example 1](#example-1-freeze-strategy) | [Example 2](#example-2-full-fine-tune-strategy), [nps_pcdl_nist23_ft/cv0.yml](../../config/fragnnet/nps_pcdl_nist23_ft/cv0.yml) |
 
 ---
 

@@ -715,7 +715,7 @@ def report(cfg: dict, output: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/analysis/masster_cut_intensity_probe.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_cut_intensity_probe.yaml")
     parser.add_argument("--stage", choices=("fit", "score", "report"), required=True)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument(

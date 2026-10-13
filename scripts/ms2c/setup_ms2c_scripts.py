@@ -44,7 +44,12 @@ def main(args):
 
             for seed_idx in range(args.num_seeds):
                 SEED_IDX = seed_idx
-                CUSTOM_FP = f"config/nist20v3-1_d4_wr00_{SPLIT}/{MODEL}/s{SEED_IDX}.yml"
+                MODEL_DIR = "fragnnet" if MODEL.startswith("fragnnet") else MODEL
+                CONFIG_VARIANT = f"/{MODEL}" if MODEL_DIR == "fragnnet" else ""
+                CUSTOM_FP = (
+                    f"config/{MODEL_DIR}/nist20v3-1_d4_wr00_{SPLIT}"
+                    f"{CONFIG_VARIANT}/s{SEED_IDX}.yml"
+                )
                 SAVE_FP = f"{SAVE_DP}/{MODEL}_s{SEED_IDX}.pkl"
                 ID = MODEL_TYPE_TO_ID[MODEL][SEED_IDX]
                 PY_FP = "scripts/ms2c/run_ms2c_predict_val.py"

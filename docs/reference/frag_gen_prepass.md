@@ -220,6 +220,6 @@ themselves (about +21% nodes instead of 2x). Added nodes get a **placeholder roo
 is valid only for `frag_gnn_type: NodeMLP` / `pyg_edges: False`; do not point a `pyg_edges: True`
 config at it without rebuilding the edges. Built 2026-07-08:
 `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse_ringmerge.tar` and
-`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_ringmerge.yml`. Oracle ceilings are in
+`config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_ringmerge.yml`. Oracle ceilings are in
 [dag_oracle_ceiling_nist20.md](../findings/fragnnet/dag_oracle_ceiling_nist20.md); a trained-model
 result was still untested there.

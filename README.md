@@ -103,7 +103,7 @@ python scripts/run_pl_model_fit.py -t config -c <experiment config> [-w online]
 ```
 
 `-t` is the template directory (`config`), `-c` the experiment config (for example
-`config/nist20_merged_inchikey/graff/s0.yml`), and `-w` the W&B mode (default `disabled`).
+`config/graff/nist20_merged_inchikey/s0.yml`), and `-w` the W&B mode (default `disabled`).
 Inference is documented in the [inference guide](docs/guides/run_inference.md).
 
 ### Batching options

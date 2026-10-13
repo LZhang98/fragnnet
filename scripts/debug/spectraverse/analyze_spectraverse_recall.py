@@ -41,7 +41,7 @@ def main():
     parser.add_argument("--sample-size", type=int, default=512)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    config = load_config("config/template.yml", f"config/spectraverse/masster/cv{args.fold}.yml", [])
+    config = load_config("config/template.yml", f"config/masster/spectraverse/cv{args.fold}.yml", [])
     config["num_workers"] = 0
     device = th.device("cuda" if th.cuda.is_available() else "cpu")
     if device.type == "cpu":

@@ -24,7 +24,7 @@ import pandas as pd
 
 from fragnnet.utils.clean_spectra_utils import _subformula_masses
 
-# inst_type_loss_tol of config/spectraverse/masster/cv*.yml
+# inst_type_loss_tol of config/masster/spectraverse/cv*.yml
 TOL = {
     "ORB": (1e-5, 200.0),
     "QTOF": (2e-5, 750.0),

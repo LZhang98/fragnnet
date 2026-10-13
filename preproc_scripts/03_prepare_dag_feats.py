@@ -15,7 +15,7 @@ from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 # Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
-# (e.g. config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
+# (e.g. config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
 # cos_hun_inst_tol_opt convention in scripts/eval/dag_oracle_scores.py. Instrument types
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).

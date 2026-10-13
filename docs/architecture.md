@@ -109,7 +109,8 @@ src/fragnnet/
 
 ## Boundaries and canonical references
 
-- Configuration: [config/](../config/) holds one `template.yml` that declares every model's
+- Configuration: [config/](../config/) groups experiment configs under each model directory
+  ([path migration](plans/config_model_grouping.md)), and holds one `template.yml` that declares every model's
   keys, so each run resolves the same schema and `model_type` selects code rather than config.
   [config README](../config/README.md) documents the resolution order, where a key goes, and validation.
 - Fragment generation: FraGNNet's DAG code is in

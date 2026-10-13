@@ -313,7 +313,7 @@ def get_args():
     parser.add_argument(
         "--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file"
     )
-    # parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
+    # parser.add_argument("--custom_fp", type=str, default="config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
     # parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_ma_mi", help="Path to the output file")
     parser.add_argument("--batch_size", type=int, default=40, help="Batch size for the dataloader")
     parser.add_argument("--num_workers", type=int, default=4)

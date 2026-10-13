@@ -235,8 +235,8 @@ which is the heavier user of element-ordered formula arrays.
 
 | Group | Count | Feature shape |
 |-------|-------|---------------|
-| Experiment configs under `config/masster/**` and `config/sweeps_merged/masster/**` | 169 | 70 atom / 9 bond |
-| `config/nist20_merged_inchikey/masster/s0.yml` and 5 `config/debug/debug_tiny_masster*.yml` | 6 | template 60 atom / 5 bond |
+| Experiment configs under `config/masster/**` and `config/masster/sweeps_merged/**` | 169 | 70 atom / 9 bond |
+| `config/masster/nist20_merged_inchikey/s0.yml` and 5 `config/debug/debug_tiny_masster*.yml` | 6 | template 60 atom / 5 bond |
 
 The canonical seeded config (`nist20_merged_inchikey/masster/s0.yml`) therefore does not
 match the feature set every experiment arm actually trains with, and produces a different

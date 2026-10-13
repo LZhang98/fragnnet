@@ -35,6 +35,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
+- **Configs grouped by model:** [record](plans/config_model_grouping.md); shared template and experiment settings retained. [Seven audit findings](findings/config_audit_2026_10_12.md) remain open. **Next:** W&B merge and CLI validation repairs.
+
 - **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. Notebooks unchanged; next repair metric labeling, repeat scaling and parameter counts.
 
 - **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed in tests (uncommitted). **Next:** full-suite and GPU validation.
@@ -82,6 +84,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## CASMI 2026, Enveda-180, shared data
 
+- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md); code unchanged, 214 focused tests passed. Next: repair merger and inference group identity with regression coverage.
+
 - **CASMI 2026:** extracted, not preprocessed. The visible test is a copy of train, so validate
   molecule-disjoint. Dedup drops 17.6% of train; NIST HR would add 34,295 molecules.
 - **Enveda-180:** baseline (standalone, ACE only, no EMA) prepared, not submitted. The combined
@@ -101,7 +105,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## Uncommitted working tree (2026-10-12)
 
-- Everything listed here earlier is committed (`72ad897e`, `faf38bb8`, `90790e0b`, `4e36bcae`). The working tree holds another session's in-progress move of `dataset/isotope_cleanup.py` to `utils/isotope_cleanup_utils.py`.
+- Config audit, model grouping, path references and state links are uncommitted. Concurrent preprocessing audit documentation is also present; see its workstream block.
 
 ## Standing cross-workstream rules
 

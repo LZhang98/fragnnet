@@ -71,7 +71,7 @@ def main():
     parser.add_argument("--split", default="val", choices=["train", "val"])
     parser.add_argument("--config", help="custom config (default: the SPV fold config)")
     args = parser.parse_args()
-    custom = args.config or f"config/spectraverse/masster/cv{args.fold}.yml"
+    custom = args.config or f"config/masster/spectraverse/cv{args.fold}.yml"
     config = load_config("config/template.yml", custom, [])
     config["num_workers"] = 0
     config["masster_candidate_backend"] = "cpu"

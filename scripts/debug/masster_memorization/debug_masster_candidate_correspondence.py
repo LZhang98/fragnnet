@@ -276,7 +276,7 @@ def summarize_pairs(pairs: pd.DataFrame, cache: dict, floor: float) -> tuple:
 def main() -> None:
     """Run bounded, reproducible annotated inference and the deterministic matching audit."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/analysis/masster_candidate_correspondence.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_candidate_correspondence.yaml")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pairs-csv", type=Path, help="Preselected query/training-reference pairs")
     parser.add_argument("--query-split", choices=("train", "val"), default="train")

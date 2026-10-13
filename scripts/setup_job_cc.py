@@ -932,7 +932,7 @@ if __name__ == "__main__":
         help=(
             "Directory containing cv{n}.yml config files for cross-validation array jobs. "
             "Creates a SLURM array job with one task per CV fold (--cv_start to --cv_end). "
-            "Example: --cv_config_dp config/spectraverse/neims --cv_start 0 --cv_end 9"
+            "Example: --cv_config_dp config/neims/spectraverse --cv_start 0 --cv_end 9"
         ),
     )
     parser.add_argument(

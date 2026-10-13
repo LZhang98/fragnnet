@@ -62,7 +62,7 @@ ranks every in-head route side by side:
             loses more than validation here.
 
 Validation status. The mechanics are verified end to end on a 128-molecule toy model
-(``config/debug/debug_tiny_masster_cut_features.yml``, hidden 64, 60 epochs, the same
+(``config/masster/debug/debug_tiny_masster_cut_features.yml``, hidden 64, 60 epochs, the same
 ``inchikey_s`` split key production uses). That run is far too small to say anything about
 the production model, but it does show the readout discriminates: corrupting the cc pools
 left the train/validation gap unchanged (gap_closed -0.015) while corrupting the boundary

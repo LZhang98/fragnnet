@@ -31,7 +31,7 @@ code imports core and `fragmentation/` only (see the
 Train with the shared entry point, for example:
 
 ```bash
-python scripts/run_pl_model_fit.py -t config -c config/nist20_merged_inchikey/graff/s0.yml
+python scripts/run_pl_model_fit.py -t config -c config/graff/nist20_merged_inchikey/s0.yml
 ```
 
 Checkpoints: none are stored locally. W&B runs with the `graff3_long` prefix keep their

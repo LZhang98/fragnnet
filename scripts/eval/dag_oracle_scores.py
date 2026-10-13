@@ -19,7 +19,7 @@ elsewhere in eval:
   - cos_hun_opt / jss_hun_opt: fixed 10 ppm (ratio 1e-5), floor 200 Da (default eval tolerance).
   - cos_hun_inst_tol_opt / jss_hun_inst_tol_opt: per-instrument tolerance -- FT 10 ppm/200 Da,
     QTOF 20 ppm/750 Da, other instrument types fall back to the 10 ppm default (matches
-    inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
+    inst_type_loss_tol in config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml).
   - cos_hun_0p01da_opt / jss_hun_0p01da_opt: fixed absolute 0.01 Da tolerance.
 
 Every spectrum is scored under four denoise filter tiers, reported stacked so the marginal effect
@@ -75,7 +75,7 @@ TOLERANCE = 1.0e-5  # relative ratio (== 10 ppm), matches default loss_tolerance
 TOLERANCE_MIN_MZ = 200.0  # matches config/template.yml loss_tolerance_min_mz
 LOG_MIN = 1.0e-9  # matches config/template.yml log_min
 # Per-instrument tolerance override, matches inst_type_loss_tol in
-# config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
+# config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml. Instrument types not
 # listed here (IT, QQQ, Other, ...) fall back to the global TOLERANCE/TOLERANCE_MIN_MZ.
 INST_TYPE_LOSS_TOL = {
     "ORB": {"rel": 1.0e-5, "min_mz": 200.0},  # 10 ppm, floor 200 Da

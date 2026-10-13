@@ -77,7 +77,7 @@ def get_args():
     parser.add_argument(
         "--custom_fp",
         type=str,
-        default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml",
+        default="config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml",
         help="Path to the custom config file",
     )
     parser.add_argument("--batch_size", type=int, default=256)

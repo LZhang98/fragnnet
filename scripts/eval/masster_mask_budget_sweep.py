@@ -129,7 +129,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template_fp", default="config")
     parser.add_argument(
         "--custom_fp",
-        default="config/nist20_merged_inchikey/masster/s0.yml",
+        default="config/masster/nist20_merged_inchikey/s0.yml",
     )
     checkpoint_group = parser.add_mutually_exclusive_group(required=True)
     checkpoint_group.add_argument("--model_ckpt", help="Local checkpoint path.")

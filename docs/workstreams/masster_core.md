@@ -5,6 +5,8 @@
 
 ## Where it stands
 
+- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) remain open; repair W&B merge and override validation next.
+
 - **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. Notebooks unchanged; repair reporting errors next.
 
 - **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed in tests (uncommitted). Complete-suite and GPU validation remain open.
@@ -26,6 +28,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Repair W&B open-mapping merge and CLI validation |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | Complete-suite and GPU validation |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
@@ -75,6 +78,8 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Config grouping](../plans/config_model_grouping.md) | LANDED (2026-10-12) | Model directories and caller migration; settings preserved, 138 tests passed |
+| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-12) | Four test findings, all fixed; full suite not yet run |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE (2026-10-12) | `runner.py` audit: 10 bugs (W&B-off upload, `ckpt_path="best"` without checkpoints, dead `interrupted` guards, silent sweep typos), then a behavior-preserving split into config and loading modules |

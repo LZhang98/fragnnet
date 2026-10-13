@@ -63,7 +63,7 @@ cp ${FRAGNNET_DP}/saved_ckpts/deepmet/nist20_inchikey_fraggnn_d3_ma_mi_amolc_cv_
 # copy config
 mkdir -p ${WORKING_DIR}/config
 cp ${FRAGNNET_DP}/config/template.yml ${WORKING_DIR}/config/
-cp ${FRAGNNET_DP}/config/exp_fraggnn_ma_mi/d3_ma_mi_nist20_5cvs/fraggnn_d3_ma_mi_nist20_cv_all.yml ${WORKING_DIR}/config
+cp ${FRAGNNET_DP}/config/fragnnet/exp_fraggnn_ma_mi/d3_ma_mi_nist20_5cvs/fraggnn_d3_ma_mi_nist20_cv_all.yml ${WORKING_DIR}/config
 
 # copy frag data
 cp /scratch/feiw/frag-gnn-data/frags/mas_250905_filtered_d3_h4False_1.tar ${WORKING_DIR}/

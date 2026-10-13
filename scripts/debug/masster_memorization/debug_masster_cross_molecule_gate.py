@@ -154,7 +154,7 @@ def summarize(pairs: pd.DataFrame, seed: int, repeats: int) -> pd.DataFrame:
 def main() -> None:
     """Run the frozen census and write per-pair scores and provenance."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/analysis/masster_cross_molecule_gate.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_cross_molecule_gate.yaml")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     config = yaml.safe_load(Path(args.config).read_text())

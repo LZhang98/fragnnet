@@ -59,7 +59,7 @@ CUSTOM_FP=${CUSTOM_FP:-}
 if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then
     # Nothing overridden: use the default run together with the config it was trained on.
     WANDB_RUN_ID=jnokddr9
-    CUSTOM_FP=${CUSTOM_FP:-config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml}
+    CUSTOM_FP=${CUSTOM_FP:-config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml}
 elif [ -z "${CUSTOM_FP}" ]; then
     echo "ERROR: MODEL_CKPT/WANDB_RUN_ID was overridden but CUSTOM_FP was not." >&2
     echo "       Pass the training config belonging to that checkpoint:" >&2

@@ -170,7 +170,7 @@ def evaluate(model, loader, arm: str, partition: dict[int, str]) -> pd.DataFrame
 def main() -> None:
     """Run the predeclared matched arms and unlock confirmation after tuning selection."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config/analysis/masster_peak_ranking_pilot.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_peak_ranking_pilot.yaml")
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text())
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

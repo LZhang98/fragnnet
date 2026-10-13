@@ -2,7 +2,7 @@
 
 Example:
     python scripts/create_local_sweep.py \
-        --sweep-config config/sweeps/my_sweep.yaml \
+        --sweep-config config/fragnnet/sweeps/my_sweep.yaml \
         --project my-wandb-project \
         --entity my-wandb-entity
 """

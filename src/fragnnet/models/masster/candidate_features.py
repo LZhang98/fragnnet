@@ -29,8 +29,8 @@ head now appends the whole block last. Before, the cut count and the atom count 
 after the context and *ahead* of the proposal-derived columns (the per-mask component count and
 the base charge/mask log-probabilities), while every other descriptor sat after them. So under
 ``masster_unique_fragment_mode: False`` or ``masster_proposal_anchored: False`` --
-both ``config/template.yml`` defaults, inherited by ``config/debug/debug_tiny_masster.yml``
-and ``config/nist20_merged_inchikey/masster/s0.yml`` -- those two columns now follow the
+both ``config/template.yml`` defaults, inherited by ``config/masster/debug/debug_tiny_masster.yml``
+and ``config/masster/nist20_merged_inchikey/s0.yml`` -- those two columns now follow the
 proposal columns instead of preceding them. Concatenating into one ``nn.Linear`` makes that a
 permutation of weight columns: it changes which weight a given seed initializes and nothing
 else, and no checkpoint predates it. Every ``ma_mi`` arm pins both keys True and is unaffected.

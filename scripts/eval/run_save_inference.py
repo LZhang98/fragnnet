@@ -142,8 +142,10 @@ if __name__ == "__main__":
         for model_type in wandb_model_types:
             model_type_wandb_prefix = model_type_to_wandb_prefix[model_type]
             dset_wandb_group_prefix = dset_to_wandb_prefix[dset]
+            model_dir = "fragnnet" if model_type.startswith("fragnnet") else model_type
+            config_variant = f"/{model_type}" if model_dir == "fragnnet" else ""
             model_to_config[split_type][model_type] = (
-                f"config/{dset}_{split_type}/{model_type}/s0.yml"
+                f"config/{model_dir}/{dset}_{split_type}{config_variant}/s0.yml"
             )
             if model_type != "precursor":
                 group_name = f"{dset_wandb_group_prefix}_{split_type}_{model_type_wandb_prefix}"
