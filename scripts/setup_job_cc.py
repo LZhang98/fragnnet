@@ -41,6 +41,8 @@ GPU_PROFILES = {
         "price": 3.48,
         "notes": "3.4 cores, 82GB (ideal); 3 cores, 70GB (sbatch)",
     },
+    # Default Fir profile: enough for FraGNNet training and inference, half the price of
+    # fir:h100-80gb. See docs/rules/engineering.md section 5.
     "fir:h100-3g.40gb": {
         "cluster": "fir",
         "gpu_label": "H100-3g.40gb",
@@ -48,7 +50,7 @@ GPU_PROFILES = {
         "cpu": 6,
         "mem": 140,
         "price": 6.1,
-        "notes": "6 cores, 144GB (ideal); 6 cores, 140GB (sbatch)",
+        "notes": "6 cores, 144GB (ideal); 6 cores, 140GB (sbatch); DEFAULT for Fir",
     },
     # Narval (A100)
     "narval:a100-40gb": {
@@ -108,6 +110,11 @@ GPU_PROFILES = {
 }
 
 
+# Use this on Fir unless the job needs more: it is enough for FraGNNet training and
+# inference and costs half of fir:h100-80gb. See docs/rules/engineering.md section 5.
+FIR_DEFAULT_PROFILE = "fir:h100-3g.40gb"
+
+
 GPU_PROFILE_ALIASES = {
     # allow selecting by GPU label alone when unambiguous
     "h100-80gb": "fir:h100-80gb",
@@ -157,8 +164,9 @@ def print_gpu_profiles() -> None:
     print("Available --gpu_profile presets:")
     for key in sorted(GPU_PROFILES.keys()):
         p = GPU_PROFILES[key]
+        marker = "  <- default for Fir" if key == FIR_DEFAULT_PROFILE else ""
         print(
-            f"- {key}\t({p['gpu_label']}, cpu={p['cpu']}, mem={p['mem']}G, gres={p['gres_gpu']}, price={p['price']})"
+            f"- {key}\t({p['gpu_label']}, cpu={p['cpu']}, mem={p['mem']}G, gres={p['gres_gpu']}, price={p['price']}){marker}"
         )
 
 
@@ -876,7 +884,9 @@ if __name__ == "__main__":
         default=None,
         help=(
             "Apply a preset resource profile (overrides --cpu/--mem and sets --gres). "
-            "Examples: fir:h100-1g.10gb, narval:a100-40gb. Use --list_gpu_profiles to view all."
+            "On Fir use fir:h100-3g.40gb unless the job needs more - it is enough for "
+            "FraGNNet training and inference at half the price of a whole H100. "
+            "Use --list_gpu_profiles to view all."
         ),
     )
     parser.add_argument(

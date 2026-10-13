@@ -1039,3 +1039,29 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
   `dataset/`. File moved verbatim; imports updated in `base_dataset`, two tests, two
   `scripts/debug/isotopes/` scripts and two debug notebooks. Isotope tests pass (107) and the
   full suite collects.
+- 2026-10-13: install consolidation (user request). `install_lib.py` (torch 2.1.0
+  and lightning 2.1.2 pins, stale against `pyproject.toml`) is deleted. The four `env/` scripts
+  become `env/env_setup_conda.sh` (Python 3.10-3.12, `cu121`/`cu118`/`cpu`, then
+  `pip install -e ".[dev]"`) and `env/env_setup_cc.sh` (Python 3.10/3.11, wheelhouse, loads the
+  `rdkit/2023.09.5` module the old scripts lacked, still `--no-deps`). Both install torch 2.4.1
+  with `torch_scatter`, kept per Phase 5. `cython` moves from runtime dependencies to the `dev`
+  extra: the compiled modules load no Cython at runtime, `pip install` takes it from
+  `[build-system]`, and `python setup.py build_ext --inplace` needs it in the environment.
+  `INSTALL.md` and `README.md` rewritten. Checks: pinned wheels resolve for cp310-cp312 (dry
+  run; rdkit 2022.9.5 has no cp312 wheel, so 3.12 takes 2023.9.5), the lock resolves (217
+  packages), `bash -n` on both scripts, `tests/test_reorg_dgl_free.py` passes. Neither script
+  was run end to end.
+  - uv support (same day, user request): `[tool.uv]` in `pyproject.toml` and a committed
+    `uv.lock` (207 packages; Linux x86_64 CPython, Python 3.10-3.12). torch comes from the
+    PyTorch cu121 index; `torch_scatter` and `pyg_lib` (a `pyg` dependency group, default in
+    uv, inert for pip) come from the PyG index. uv-only constraints pin rdkit 2022.9.5 below
+    Python 3.12 and wandb 0.21.2, joblib 1.3.2, pandarallel 1.6.5 and pyteomics 4.7.5, as the
+    scripts do. The core stack matches the reference lock; other packages are newer. Seeding
+    the lock with the reference versions was tried and dropped: uv kept forks pinned to Python
+    3.11.13 exactly (343 packages). `.python-version` is 3.11. Checks, in a copy of the tree
+    under `output/` so the live `.so` files were not rebuilt: `uv sync --frozen --extra dev` on
+    Python 3.10, 3.11 and 3.12 (torch 2.4.1+cu121 with CUDA, `WITH_TORCH_SCATTER` and
+    `WITH_PYG_LIB` true, extensions built) and 71 pooling/fragmentation tests pass on each; a
+    `.pyx` edit triggers a rebuild (`cache-keys`); the CPU path via `uv pip --no-sources` gives
+    torch 2.4.1+cpu; `pip wheel` still builds with and without build isolation; `uv lock
+    --check` passes; `tests/test_uv_lock.py` runs it when uv is on PATH.

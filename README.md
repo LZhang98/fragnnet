@@ -64,25 +64,25 @@ If you are having trouble preprocessing the data or reproducing the results, ple
 ### Quick Start (Recommended)
 
 ```bash
-# Using conda (GPU, recommended)
-bash env/env_setup_gpu_py311_cu121_250602.sh
+# uv, Python 3.11, CUDA 12.1, from uv.lock
+uv sync --extra dev
+source .venv/bin/activate
+
+# or conda; installs fragnnet editable with the dev extra
+bash env/env_setup_conda.sh
 conda activate FRAGNNET-GPU
 ```
 
-For development with testing tools:
-```bash
-pip install -e ".[dev]"
-```
+The script takes the Python version, environment name and torch build (`cu121`, `cu118`, `cpu`)
+as optional arguments.
 
 ### Alternative: Manual Pip Installation
 
 ```bash
-# Create virtual environment and install PyTorch
 python -m venv venv
 source venv/bin/activate
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install fragnnet and dev dependencies
+pip install torch_scatter==2.1.2 -f https://data.pyg.org/whl/torch-2.4.1+cu121.html
 pip install -e ".[dev]"
 ```
 

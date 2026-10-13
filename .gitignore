@@ -23,6 +23,7 @@ python_env/
 FRAGGNET-GPU*/
 FRAG-GNN-GPU*/
 wandb_venv/
+.venv/
 
 # Project-specific Data & Outputs
 data/

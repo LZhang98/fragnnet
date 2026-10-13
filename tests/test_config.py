@@ -2,7 +2,7 @@
 
 import pytest
 
-from fragnnet.config import apply_override, load_config, migrate_config_dict
+from fragnnet.config import apply_override, load_config, merge_wandb_config, migrate_config_dict
 
 
 @pytest.fixture(scope="module")
@@ -89,3 +89,91 @@ def test_migrate_config_dict_runs_every_migration() -> None:
         "masster_head_dropout": 0.2,
         "masster_proposal_method": "connected_fragment_beam",
     }
+
+
+@pytest.mark.parametrize("item", ["spec_params={typo: true}", "frag_params={typo: true}"])
+def test_section_overrides_reject_unknown_keys(item) -> None:
+    with pytest.raises(ValueError, match="does not declare"):
+        load_config("config", None, [item])
+
+
+@pytest.mark.parametrize("value", ["false", "null", "[]", "1"])
+def test_section_overrides_require_a_mapping(value) -> None:
+    with pytest.raises(ValueError, match="must be a mapping"):
+        load_config("config", None, [f"spec_params={value}"])
+
+
+def test_section_overrides_merge_without_removing_required_settings(config) -> None:
+    before = dict(config["spec_params"])
+    apply_override(config, "spec_params={nce: false}")
+    assert config["spec_params"] == {**before, "nce": False}
+
+
+@pytest.mark.parametrize("model_type", ["not_a_model", "iceberg_gen", "mces_pretraining"])
+def test_model_override_is_validated(model_type) -> None:
+    with pytest.raises(ValueError, match="unknown model_type|retired"):
+        load_config("config", None, [f"model_type={model_type}"])
+
+
+def test_last_model_override_selects_migration_before_other_overrides(tmp_path, monkeypatch) -> None:
+    from fragnnet import registry
+
+    custom = tmp_path / "custom.yml"
+    custom.write_text("model_type: frag_gnn\n")
+    hooks = registry.get_model_hooks("masster")
+    migrated_types = []
+    original = hooks.migrate_template_config
+
+    def migrate(config):
+        migrated_types.append(config["model_type"])
+        original(config)
+
+    monkeypatch.setattr(hooks, "migrate_template_config", migrate)
+    resolved = load_config(
+        "config", str(custom), ["model_type=neims", "model_type=mass_shatter"]
+    )
+    assert resolved["model_type"] == "masster"
+    assert migrated_types == ["masster"]
+
+
+def test_wandb_merges_new_open_entries_and_preserves_other_settings() -> None:
+    config = {
+        "inst_type_loss_tol": {"ORB": {"rel": 1e-5, "min_mz": 200.0}},
+        "ce_context_ce_key_by_inst": {"ORB": "nce"},
+        "spec_params": {
+            "merge_tolerance_by_inst": {"ORB": {"abs": 0.01}},
+            "split_filters": {"train": {"filter_prec_types": False}},
+            "nce": True,
+        },
+        "eval_mz_bin_res": [1.0],
+    }
+    saved = {
+        "inst_type_loss_tol": {"ORB": {"abs": 0.02}, "QTOF": {"rel": 2e-5, "min_mz": 750}},
+        "ce_context_ce_key_by_inst": {"QTOF": "ace"},
+        "spec_params": {
+            "merge_tolerance_by_inst": {"QTOF": {"abs": 0.03}},
+            "split_filters": {"val": {"filter_prec_types": True}},
+        },
+        "eval_mz_bin_res": [1],
+    }
+    merge_wandb_config(config, saved)
+    assert config["inst_type_loss_tol"] == {
+        "ORB": {"rel": 1e-5, "min_mz": 200.0, "abs": 0.02},
+        "QTOF": {"rel": 2e-5, "min_mz": 750},
+    }
+    assert config["ce_context_ce_key_by_inst"] == {"ORB": "nce", "QTOF": "ace"}
+    assert config["spec_params"] == {
+        "nce": True,
+        "merge_tolerance_by_inst": {"ORB": {"abs": 0.01}, "QTOF": {"abs": 0.03}},
+        "split_filters": {
+            "train": {"filter_prec_types": False}, "val": {"filter_prec_types": True}
+        },
+    }
+    assert isinstance(config["eval_mz_bin_res"][0], float)
+    assert saved["inst_type_loss_tol"]["ORB"] == {"abs": 0.02}
+
+
+def test_resumed_wandb_config_skips_nested_retired_keys() -> None:
+    config = {"spec_params": {"nce": True, "ace": False}}
+    merge_wandb_config(config, {"spec_params": {"nce": False, "removed": True}}, resumed=True)
+    assert config == {"spec_params": {"nce": False, "ace": False}}

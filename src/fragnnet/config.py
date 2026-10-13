@@ -118,6 +118,9 @@ def find_unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -
 
     Returns:
         Sorted dotted paths that are not declared by the resolved config.
+
+    Raises:
+        ValueError: If a declared config section is replaced with a non-mapping.
     """
     unknown = []
     for key, value in custom_d.items():
@@ -127,11 +130,31 @@ def find_unknown_config_keys(custom_d: dict, config_d: dict, prefix: str = "") -
             continue
         if (
             path not in OPEN_CONFIG_MAPPINGS
+            and isinstance(config_d[key], dict)
+            and not isinstance(value, dict)
+        ):
+            raise ValueError(f"config section {path!r} must be a mapping; got a non-mapping")
+        if (
+            path not in OPEN_CONFIG_MAPPINGS
             and isinstance(value, dict)
             and isinstance(config_d[key], dict)
         ):
             unknown.extend(find_unknown_config_keys(value, config_d[key], path))
     return sorted(unknown)
+
+
+def load_custom_config(custom_fp: str) -> dict:
+    """Read and migrate only the explicitly declared experiment or overlay settings."""
+    if not os.path.isfile(custom_fp):
+        raise FileNotFoundError(f"custom config not found: {custom_fp}")
+    with open(custom_fp) as custom_file:
+        custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
+    if custom_d is None:
+        custom_d = {}
+    if not isinstance(custom_d, dict):
+        raise ValueError(f"{custom_fp} must contain a config mapping")
+    migrate_config_dict(custom_d)
+    return custom_d
 
 
 def apply_override(config_d: dict, override_item: str) -> None:
@@ -140,6 +163,7 @@ def apply_override(config_d: dict, override_item: str) -> None:
     The value is parsed as YAML and dotted keys address nested sections. The key goes through
     :func:`migrate_config_dict` like a config file, so a legacy spelling still applies and a
     disabled retired setting is dropped.
+    Mapping values merge recursively with the existing section after schema validation.
 
     Args:
         config_d: Resolved config.
@@ -174,8 +198,16 @@ def apply_override(config_d: dict, override_item: str) -> None:
             section = section[section_key]
         if path[-1] not in section and ".".join(path[:-1]) not in OPEN_CONFIG_MAPPINGS:
             raise ValueError(f"override {dotted_key!r} sets a key the template does not declare")
+        parent_path = ".".join(path[:-1])
+        if parent_path not in OPEN_CONFIG_MAPPINGS:
+            unknown = find_unknown_config_keys({path[-1]: value}, section, parent_path)
+            if unknown:
+                raise ValueError(f"override sets keys the template does not declare: {unknown}")
         logger.info("Updating %s from %s to %s", ".".join(path), section.get(path[-1]), value)
-        section[path[-1]] = value
+        if isinstance(section.get(path[-1]), dict) and isinstance(value, dict):
+            section[path[-1]] = deep_update(section[path[-1]], value)
+        else:
+            section[path[-1]] = value
 
 
 def load_config(
@@ -190,8 +222,8 @@ def load_config(
     of the directory uses that file directly, which is how a template saved inside a checkpoint
     resolves.
 
-    ``model_type`` comes from the custom config, else from the ``model_type`` argument (the type
-    recorded in a checkpoint), else from the template.
+    ``model_type`` comes from a CLI override, else the custom config, else the ``model_type``
+    argument (the type recorded in a checkpoint), else the template.
 
     Args:
         template_path: Config directory, or a single template file.
@@ -211,11 +243,7 @@ def load_config(
     # 1. The experiment config.
     custom_d = None
     if custom_fp is not None:
-        if not os.path.isfile(custom_fp):
-            raise FileNotFoundError(f"custom config not found: {custom_fp}")
-        with open(custom_fp) as custom_file:
-            custom_d = yaml.load(custom_file, Loader=yaml.FullLoader) or {}
-        migrate_config_dict(custom_d)
+        custom_d = load_custom_config(custom_fp)
 
     # 2. The template every model shares. One saved inside a pre-rename checkpoint still
     # spells MASSter `mass_shatter`.
@@ -230,6 +258,13 @@ def load_config(
         or config_d.get("model_type")
         or DEFAULT_MODEL_TYPE
     )
+    selection = {"model_type": resolved_model_type}
+    for override_item in override or []:
+        if override_item.split("=", 1)[0] == "model_type":
+            apply_override(selection, override_item)
+    resolved_model_type = selection["model_type"]
+    if not isinstance(resolved_model_type, str):
+        raise ValueError(f"unknown model_type {resolved_model_type!r}; expected a string")
     registry.raise_if_retired(resolved_model_type)
     if resolved_model_type not in VALID_MODEL_TYPES:
         raise ValueError(
@@ -245,10 +280,12 @@ def load_config(
         if unknown:
             raise ValueError(f"{custom_fp} sets keys the template does not declare: {unknown}")
         config_d = deep_update(config_d, custom_d)
+    config_d["model_type"] = resolved_model_type
 
     # 4. CLI overrides, then the retired-instrument check over the result.
     for override_item in override or []:
-        apply_override(config_d, override_item)
+        if override_item.split("=", 1)[0] != "model_type":
+            apply_override(config_d, override_item)
     raise_if_retired_inst_types(config_d, "config")
     return config_d
 
@@ -256,7 +293,7 @@ def load_config(
 def merge_wandb_config(config_d: dict, saved_run_config: dict, *, resumed: bool = False) -> None:
     """Take the values W&B holds for this run (sweep or resumed run) into ``config_d``, in place.
 
-    Configs nest at most two levels. A value is replaced only when it differs: W&B stores
+    Nested mappings merge recursively. A value is replaced only when it differs: W&B stores
     config through JSON and returns an integral float as an int (``1.0`` comes back as ``1``),
     which is equal but would rename the metrics built from it, e.g. ``cos_sim_1.0`` to
     ``cos_sim_1``, away from ``checkpoint_metric``.
@@ -282,31 +319,29 @@ def merge_wandb_config(config_d: dict, saved_run_config: dict, *, resumed: bool 
         raise ValueError(f"W&B config sets keys the template does not declare: {unknown}")
     if unknown:
         logger.warning("Skipping keys the template no longer declares: %s", unknown)
-    for key in list(config_d.keys()):
-        if key not in saved_run_config:
+    _merge_wandb_mapping(config_d, saved_run_config)
+    raise_if_retired_inst_types(config_d, "W&B config")
+
+
+def _merge_wandb_mapping(
+    config_d: dict, saved_config: dict, prefix: str = "", open_mapping: bool = False
+) -> None:
+    for key, value in saved_config.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if key not in config_d:
+            if open_mapping:
+                config_d[key] = value
             continue
-        if key == "model_type" and config_d[key] != saved_run_config[key]:
+        if path == "model_type" and config_d[key] != value:
             raise ValueError(
-                f"W&B config sets model_type {saved_run_config[key]!r}; "
-                f"the config resolved {config_d[key]!r}"
+                f"W&B config sets model_type {value!r}; the config resolved {config_d[key]!r}"
             )
         if isinstance(config_d[key], dict):
-            if not isinstance(saved_run_config[key], dict):
-                raise ValueError(f"W&B config sets section {key!r} to a non-mapping")
-            for sub_key in list(config_d[key].keys()):
-                if (
-                    sub_key in saved_run_config[key]
-                    and config_d[key][sub_key] != saved_run_config[key][sub_key]
-                ):
-                    logger.info(
-                        "config diff -- %s->%s: %s vs %s",
-                        key,
-                        sub_key,
-                        config_d[key][sub_key],
-                        saved_run_config[key][sub_key],
-                    )
-                    config_d[key][sub_key] = saved_run_config[key][sub_key]
-        elif config_d[key] != saved_run_config[key]:
-            logger.info("config diff -- %s: %s vs %s", key, config_d[key], saved_run_config[key])
-            config_d[key] = saved_run_config[key]
-    raise_if_retired_inst_types(config_d, "W&B config")
+            if not isinstance(value, dict):
+                raise ValueError(f"W&B config sets section {path!r} to a non-mapping")
+            _merge_wandb_mapping(
+                config_d[key], value, path, open_mapping or path in OPEN_CONFIG_MAPPINGS
+            )
+        elif config_d[key] != value:
+            logger.info("config diff -- %s: %s vs %s", path, config_d[key], value)
+            config_d[key] = value

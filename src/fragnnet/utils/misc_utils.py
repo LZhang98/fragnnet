@@ -538,7 +538,8 @@ class ProgressLogger:
 
     A line is emitted every ``log_every`` items OR every ``log_seconds`` seconds,
     whichever comes first, so long-running jobs stay legible in SLURM logs without
-    depending on tqdm.
+    depending on tqdm. ``total=None`` marks an unknown denominator (a streaming
+    source), in which case the percentage and ETA are omitted.
 
     Example:
         progress = ProgressLogger(total=len(rows), desc="Fragment generation")
@@ -550,7 +551,7 @@ class ProgressLogger:
 
     def __init__(
         self,
-        total: int,
+        total: int | None,
         desc: str = "Progress",
         log_every: int = 100,
         log_seconds: float = 30.0,
@@ -590,6 +591,16 @@ class ProgressLogger:
     def _log_progress(self, now: float) -> None:
         elapsed = now - self.start_time
         rate = self.n_done / elapsed if elapsed > 0 else 0.0
+        if self.total is None:
+            # Streaming source (e.g. an IterableDataset): the denominator is unknown
+            # until the stream is exhausted, so no percentage or ETA is reported.
+            self.logger.info(f"{self.desc}: {self.n_done}/?")
+            self.logger.info(f"  Rate: {rate:.2f} items/sec")
+            self.logger.info(f"  Elapsed: {elapsed:.0f}s")
+            if self.n_errors > 0:
+                self.logger.warning(f"  Errors encountered: {self.n_errors}")
+            self._last_log_time = now
+            return
         remaining = max(0, self.total - self.n_done)
         eta = remaining / rate if rate > 0 else 0.0
         pct = (self.n_done / self.total * 100) if self.total > 0 else 0.0

@@ -59,10 +59,9 @@ MODEL_CKPT=${MODEL_CKPT:-}
 WANDB_RUN_ID=${WANDB_RUN_ID:-}
 MODEL_SAVE_DP=${MODEL_SAVE_DP:-${FRAGNNET_DP}/saved_ckpts}
 # The checkpoint's training config. SET THIS for any checkpoint not trained against the
-# current code: get_config_from_ckpt merges config/template.yml ONLY when custom_fp is
-# given, so otherwise config_d is the ckpt's saved hparams alone and every config key
-# added since it was trained is missing -> model init dies on self.hparams.<new_key>
-# (e.g. AttributeError: ... has no attribute 'depth_ce_bias').
+# current code: get_config_from_ckpt merges only explicitly declared custom settings
+# over migrated checkpoint hparams. Template defaults never replace saved values;
+# missing legacy keys require a documented migration or an explicit matching config.
 CUSTOM_FP=${CUSTOM_FP:-}
 
 if [ -z "${MODEL_CKPT}" ] && [ -z "${WANDB_RUN_ID}" ]; then

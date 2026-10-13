@@ -82,3 +82,20 @@ def test_respects_injected_logger(caplog):
         progress.update()
 
     assert any(r.name == "frag_gen_test_channel" for r in caplog.records)
+
+
+def test_unknown_total_omits_percentage_and_eta(caplog):
+    """total=None (a streaming dataloader) reports counts without a bogus 0% / ETA."""
+    with caplog.at_level(logging.INFO):
+        progress = ProgressLogger(
+            total=None, desc="Running inference", log_every=2, log_seconds=1e9
+        )
+        for _ in range(4):
+            progress.update()
+        progress.finish()
+
+    messages = [r.message for r in caplog.records]
+    headers = [m for m in messages if m.startswith("Running inference:")]
+    assert headers == ["Running inference: 2/?", "Running inference: 4/?"]
+    assert not [m for m in messages if "ETA" in m]
+    assert "Total items processed: 4" in messages

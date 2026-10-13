@@ -1,22 +1,22 @@
 import argparse
+import warnings
 from pprint import pprint
-
-import torch as th
 
 import wandb
 from fragnnet.baselines.graff.dataset import SpecMolAnnDataset
 from fragnnet.baselines.graff.pl_model import GrAFFPL
 from fragnnet.baselines.massformer.dataset import SpecMolMFDataset
 from fragnnet.baselines.massformer.pl_model import MassFormerPL
-from fragnnet.dataset import SpecMolDataset
+from fragnnet.dataset.spec_mol_dataset import SpecMolDataset
 from fragnnet.inference.checkpoint import (
     apply_inference_config,
     cleanup_model,
     init_wandb_ckpt,
     save_inference_results,
+    setup_device,
 )
 from fragnnet.inference.export_columns import prepare_output_subset
-from fragnnet.inference.runners import run_inference_tabular
+from fragnnet.inference.runners import run_inference_pkl
 from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
 from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.models.neims.neims_pl import NeimsPL
@@ -70,9 +70,12 @@ if __name__ == "__main__":
         ],
     )
     parser.add_argument("--output_everything", type=booltype, default=False)
-    parser.add_argument("--untransform_spec", type=booltype, default=False)
+    parser.add_argument(
+        "--untransform_spec", type=booltype, default=False,
+        help="Deprecated: inference always exports linear, normalized intensities.",
+    )
     parser.add_argument("--disable_preproc", type=booltype, default=True)
-    parser.add_argument("--dset", type=str, default="nist20v3-1")
+    parser.add_argument("--dset", type=str, default="nist20", choices=["nist20", "nist20v3-1"])
     args = parser.parse_args()
 
     eval_split = args.eval_split
@@ -84,7 +87,12 @@ if __name__ == "__main__":
     skip_extra_losses = args.skip_extra_losses
     disable_preproc = args.disable_preproc
     output_everything = args.output_everything
-    untransform_spec = args.untransform_spec
+    if args.untransform_spec:
+        warnings.warn(
+            "--untransform_spec is deprecated; inference already exports linear intensities",
+            FutureWarning,
+            stacklevel=1,
+        )
 
     # Prepare output subset
     output_subset = prepare_output_subset(
@@ -130,6 +138,7 @@ if __name__ == "__main__":
 
     dset_to_wandb_prefix = {
         "nist20": "nist20v3-1",
+        "nist20v3-1": "nist20v3-1",
     }
 
     model_to_run_id = NestedDefaultDict()
@@ -145,7 +154,7 @@ if __name__ == "__main__":
             model_dir = "fragnnet" if model_type.startswith("fragnnet") else model_type
             config_variant = f"/{model_type}" if model_dir == "fragnnet" else ""
             model_to_config[split_type][model_type] = (
-                f"config/{model_dir}/{dset}_{split_type}{config_variant}/s0.yml"
+                f"config/{model_dir}/nist20_merged_{split_type}{config_variant}/s0.yml"
             )
             if model_type != "precursor":
                 group_name = f"{dset_wandb_group_prefix}_{split_type}_{model_type_wandb_prefix}"
@@ -166,14 +175,13 @@ if __name__ == "__main__":
             custom_fp = model_to_config[split_type][model_type]
 
             # Setup configuration
-            config_d = load_config(template_fp, custom_fp)
+            config_d = load_config(template_fp, custom_fp, override=None)
             config_d = apply_inference_config(
                 config_d,
                 auxiliary_scores=auxiliary_scores,
                 skip_extra_losses=skip_extra_losses,
                 disable_preproc=disable_preproc,
                 output_formula_str=True,
-                model_type=model_type,
             )
 
             print(">>> Loading dataset")
@@ -181,7 +189,7 @@ if __name__ == "__main__":
             ds = ds_cls(split=eval_split, **config_d)
             dl = init_dataloader(ds, config_d)
             model_cls = model_type_to_model_cls[model_type]
-            device = th.device("cuda:0") if config_d["accelerator"] == "gpu" else th.device("cpu")
+            device = setup_device(config_d, enable_cpu_optimizations=False)
             for seed in range(num_seeds):
                 print(f">>> Starting seed {seed}")
                 if model_type in model_to_run_id[split_type]:
@@ -194,38 +202,37 @@ if __name__ == "__main__":
                     assert model_type == "precursor", model_type
                     # does not need a checkpoint
                     model = model_cls(**config_d)
-            model.to(device)
-            model.eval()
+                model.to(device)
+                model.eval()
 
-            # Prepare output subset with model-specific metrics
-            output_subset = prepare_output_subset(
-                output_everything=output_everything,
-                output_subset=set(args.output_subset) if not output_everything else None,
-                model_metric_names=model.metric_names,
-            )
+                # Prepare output subset with model-specific metrics
+                output_subset = prepare_output_subset(
+                    output_everything=output_everything,
+                    output_subset=set(args.output_subset) if not output_everything else None,
+                    model_metric_names=model.metric_names,
+                )
 
-            # run inference
-            vals = run_inference_tabular(
-                dl,
-                model,
-                device,
-                eval_split,
-                batch_cutoff,
-                config_d["nb_iso"],
-                output_set=output_subset,
-                untransform_spec=untransform_spec,
-            )
+                # run inference
+                vals = run_inference_pkl(
+                    model=model,
+                    dataloader=dl,
+                    device=device,
+                    batch_cutoff=batch_cutoff,
+                    nb_iso=config_d["nb_iso"],
+                    evaluate=True,
+                    output_set=output_subset,
+                )
 
-            # Save results
-            save_inference_results(
-                vals=vals,
-                save_dp=save_dp,
-                model_type=model_type,
-                seed=seed,
-                eval_split=eval_split,
-                force_overwrite=force_overwrite,
-                split_type=split_type,
-            )
+                # Save results
+                save_inference_results(
+                    vals=vals,
+                    save_dp=save_dp,
+                    model_type=model_type,
+                    seed=seed,
+                    eval_split=eval_split,
+                    force_overwrite=force_overwrite,
+                    split_type=split_type,
+                )
 
-            # Cleanup
-            cleanup_model(model, use_gpu=(config_d["accelerator"] == "gpu"))
+                # Cleanup
+                cleanup_model(model, use_gpu=(config_d["accelerator"] == "gpu"))

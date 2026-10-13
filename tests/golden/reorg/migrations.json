@@ -36,7 +36,7 @@
   "get_config_from_ckpt:c0": {
     "head_dropout_checkpoint_vs_resolved": [
       0.1,
-      0.0
+      0.1
     ],
     "masster_context_dim": 128,
     "model_type": "masster"

@@ -969,7 +969,7 @@ def test_load_config_of_c0_as_a_custom_config(tmp_path: Path, c0_orb: dict) -> N
 
 
 def test_get_config_from_ckpt_of_legacy_c0(tmp_path: Path, c0_orb: dict) -> None:
-    """Checkpoint hparams alone equal ``get_pl_hparams``; a custom config makes the template win."""
+    """An overlay changes only its explicit keys, retaining migrated checkpoint settings."""
     ckpt_fp = str(tmp_path / "c0_stub.ckpt")
     th.save({"hyper_parameters": c0_orb}, ckpt_fp)
     migrated = _pl_hparams(c0_orb)
@@ -978,8 +978,7 @@ def test_get_config_from_ckpt_of_legacy_c0(tmp_path: Path, c0_orb: dict) -> None
 
     custom_fp = _write_yaml(tmp_path, "custom.yml", {"masster_context_dim": 128})
     resolved = _quiet(get_config_from_ckpt, ckpt_fp, custom_fp, F.CONFIG_DIR)
-    template = _quiet(load_config, F.CONFIG_DIR, None, None, model_type="masster")
-    assert resolved == {**template, "masster_context_dim": 128}
+    assert resolved == {**migrated, "masster_context_dim": 128}
     assert resolved["model_type"] == "masster"
     assert migrated["masster_head_dropout"] == 0.1
     record = {

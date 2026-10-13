@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 # Tracked files that install the main environment or document how to.
 INSTALL_PATHSPECS = (
     "pyproject.toml",
-    "install_lib.py",
+    "uv.lock",
     "INSTALL.md",
     "env",
     "scripts/setup_job_cc.py",
