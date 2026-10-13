@@ -20,9 +20,9 @@ import pandas as pd
 import pytest
 import torch as th
 
+from fragnnet.config import load_config
 from fragnnet.dataset.base_dataset import BaseDataset
-from fragnnet.runner import find_retired_inst_type_refs, load_config
-from fragnnet.utils.migrations import get_pl_hparams
+from fragnnet.utils.migrations import find_retired_inst_type_refs, get_pl_hparams
 from fragnnet.utils.spec_parse_utils import parse_inst_info
 
 

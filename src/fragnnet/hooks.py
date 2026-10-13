@@ -20,8 +20,8 @@ class ModelHooks:
     def migrate_template_config(self, config_d: dict[str, Any]) -> None:
         """Backfill keys that templates saved before they existed lack.
 
-        ``runner.load_config`` calls this on the template dict after resolving the model type and
-        normalizing legacy key spellings, and before validating the custom config against it.
+        ``config.load_config`` calls this on the template dict after resolving the model type
+        and normalizing legacy key spellings, and before validating the custom config against it.
 
         Args:
             config_d: Template config, modified in place.
@@ -50,8 +50,8 @@ class ModelHooks:
     def validate_config(self, config_d: dict[str, Any]) -> None:
         """Check this model's own config keys.
 
-        ``runner.validate_sampler_config`` calls it after the shared checks that come first and
-        after every other model's ``reject_foreign_config``.
+        ``dataset.loading.validate_sampler_config`` calls it after the shared checks that come
+        first and after every other model's ``reject_foreign_config``.
 
         Args:
             config_d: Resolved config.
@@ -101,8 +101,8 @@ class ModelHooks:
     ) -> Any | None:
         """Return the model's own batch sampler for ``ds``, or None for standard batching.
 
-        ``runner.init_dataloader`` calls it after choosing ``sampler``. A returned batch sampler
-        replaces the DataLoader's ``batch_size``, ``sampler`` and ``drop_last``.
+        ``dataset.loading.init_dataloader`` calls it after choosing ``sampler``. A returned batch
+        sampler replaces the DataLoader's ``batch_size``, ``sampler`` and ``drop_last``.
 
         Args:
             ds: The dataset; ``ds.split`` is "train", "val", "test" or "predict_only".

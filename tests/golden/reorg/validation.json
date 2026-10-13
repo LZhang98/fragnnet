@@ -497,7 +497,7 @@
       "batch_sampler_type='ce_context'": "ValueError: batch_sampler_type='ce_context' requires dynamic_batch_sampler=True",
       "batch_sampler_type='spec_mol_frag'": "ok",
       "bond_size_curriculum=False": "ok",
-      "bond_size_curriculum=True": "ValueError: bond_size_curriculum_epochs must be less than max_epochs",
+      "bond_size_curriculum=True": "ValueError: Bond-size curriculum requires fixed-size batching",
       "bond_size_curriculum_epochs=1": "ok",
       "bond_size_curriculum_epochs=200": "ok",
       "ce_context_spectra_per_context=1": "ValueError: ce_context_spectra_per_context must be an integer >= 2",

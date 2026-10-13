@@ -28,6 +28,7 @@ class _FakeTrainer:
     def __init__(self, checkpoint_callback=None):
         self.checkpoint_callback = checkpoint_callback
         self.calls = []
+        self.datasets_built = []
 
     def fit(self, model, *dataloaders, ckpt_path=None):
         self.calls.append(("fit", ckpt_path))
@@ -46,15 +47,18 @@ def fake_run(tmp_path, monkeypatch):
 
     def model_cls(**kwargs):
         model_kwargs.update(kwargs)
-        # No `dynamo_prof`: only FraGNNet and NEIMS built with the compile profiler have one.
+        # No `dynamo_prof`, as for MASSter: only models built with the compile profiler have one.
         return SimpleNamespace(train=lambda: None)
 
-    monkeypatch.setattr(runner, "get_model_cls", lambda _model_type: model_cls)
-    monkeypatch.setattr(
-        runner, "init_dataset", lambda _config, splits: tuple(_FakeDataset() for _ in splits)
-    )
-    monkeypatch.setattr(runner, "init_dataloader", lambda _ds, _config: [None])
     trainer = _FakeTrainer()
+
+    def init_dataset(_config, splits):
+        trainer.datasets_built.extend(splits)
+        return tuple(_FakeDataset() for _ in splits)
+
+    monkeypatch.setattr(runner, "get_model_cls", lambda _model_type: model_cls)
+    monkeypatch.setattr(runner, "init_dataset", init_dataset)
+    monkeypatch.setattr(runner, "init_dataloader", lambda _ds, _config: [None])
     monkeypatch.setattr(runner, "build_trainer", lambda *_args: trainer)
     return trainer, model_kwargs
 
@@ -92,10 +96,53 @@ def test_precision_fallback_reaches_the_model(fake_run, monkeypatch):
 
 
 def test_ema_switch_without_decay_fails_before_the_model(fake_run):
-    _, model_kwargs = fake_run
+    trainer, model_kwargs = fake_run
     with pytest.raises(ValueError, match="requires ema_decay"):
         _run("ema_switch_every_n_epochs=2")
-    assert model_kwargs == {}
+    assert model_kwargs == {} and trainer.datasets_built == []
+
+
+def test_invalid_sampler_config_fails_before_any_dataset_is_built(fake_run):
+    """DAG datasets take minutes to build; a sampler typo must fail before that."""
+    trainer, model_kwargs = fake_run
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _run("group_sampler=True", "simple_group_sampler=True")
+    assert model_kwargs == {} and trainer.datasets_built == []
+
+
+def test_settings_derived_after_wandb_init_are_recorded_in_the_run(fake_run, monkeypatch, tmp_path):
+    """W&B must record the precision and schedule actually used, not the configured ones."""
+    recorded = []
+    run = SimpleNamespace(
+        dir=str(tmp_path / "wandb_run"),
+        config=SimpleNamespace(update=lambda values, allow_val_change: recorded.append(values)),
+        finish=lambda: None,
+    )
+    monkeypatch.setattr(
+        runner, "setup_wandb", lambda *_args: runner.WandbRunState(run=run, logger=None)
+    )
+    monkeypatch.setattr(runner.th.cuda, "is_available", lambda: False)
+    _, model_kwargs = fake_run
+    runner.run_training(
+        CONFIG_DIR,
+        None,
+        "offline",
+        None,
+        [
+            "precision=bf16-mixed",
+            "disable_checkpoints=True",
+            "lr_schedule=True",
+            "lr_schedule_type=cosine",
+            "lr_total_steps=1000",
+            "lr_warmup_steps=100",
+            "max_epochs=4",
+            "train_batch_size=2",
+        ],
+        schedule_train_size=_FakeDataset().__len__(),
+    )
+    # One spectrum, batch size 2: one step per epoch, four epochs; warmup keeps its 10%.
+    assert recorded == [{"lr_total_steps": 4, "lr_warmup_steps": 0, "precision": 32}]
+    assert (model_kwargs["lr_total_steps"], model_kwargs["precision"]) == (4, 32)
 
 
 class _FakeWandbRun:

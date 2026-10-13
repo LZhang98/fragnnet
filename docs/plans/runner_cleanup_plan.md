@@ -1,7 +1,7 @@
 # Training runner cleanup plan
 
 > **Status:** ACTIVE · **Updated:** 2026-10-12
-> Phases 1–2 implemented in the working tree, not committed ([progress](#progress)). Phase 0 was folded into Phase 1. Phases 3–5 wait on the branch decision ([below](#open-decisions)).
+> Phases 1–2 committed (`3deaf652`); Phases 3–5 in the working tree, reviewed ([progress](#progress)). Next: commit.
 
 ## Objective and baseline
 
@@ -38,7 +38,7 @@ parts it left in core.
 | --- | --- | --- |
 | B1 | [:935](../../src/fragnnet/runner.py#L935) | `upload_checkpoints=True` with W&B disabled: `wandb` is imported only inside the W&B branch ([:615](../../src/fragnnet/runner.py#L615)), so `wandb.save` raises `NameError` after training. |
 | B2 | [:921](../../src/fragnnet/runner.py#L921) | `disable_checkpoints=True`, `eval_test_split=True`, `min_epochs>0`: `trainer.test(ckpt_path="best")` raises "`ModelCheckpoint` is not configured" after the full fit. The condition tests `min_epochs` where it should test whether a best checkpoint exists. |
-| B3 | [:926](../../src/fragnnet/runner.py#L926) | `compile=True`: `model.dynamo_prof` is set only by FraGNNet and NEIMS, and only when the compile profiler is available ([fragnnet_pl.py:295](../../src/fragnnet/models/fragnnet/fragnnet_pl.py#L295)). Other models raise `AttributeError` at the end of the run. |
+| B3 | [:926](../../src/fragnnet/runner.py#L926) | `compile=True`: `model.dynamo_prof` is set by FraGNNet, NEIMS, GNN, MassFormer and GRAFF, and only when the compile profiler is available ([fragnnet_pl.py:296](../../src/fragnnet/models/fragnnet/fragnnet_pl.py#L296)). MASSter, and any of those without the profiler, raise `AttributeError` at the end of the run. |
 | B4 | [:914](../../src/fragnnet/runner.py#L914), [:929](../../src/fragnnet/runner.py#L929), [:951](../../src/fragnnet/runner.py#L951) | Lightning 2.4 calls `exit(1)` on KeyboardInterrupt and re-raises every other exception, SIGTERM included, so `fit` never returns with `trainer.interrupted=True`. The guards are dead code. If the process dies between `hold_checkpoints_from_wandb` and `restore_held_checkpoints`, checkpoints stay in `ckpt_hold_*` and resume does not find them. |
 | B5 | [`merge_wandb_config`](../../src/fragnnet/runner.py#L509) | W&B keys the config does not declare are silently ignored, so a typo in a sweep YAML runs the base value. Custom configs fail on the same typo. Merged values skip `find_retired_inst_type_refs` and the `model_type` checks. |
 | B6 | [:829](../../src/fragnnet/runner.py#L829) | `validate_sampler_config` runs after both datasets are built. Config errors appear minutes in for DAG datasets. |
@@ -189,9 +189,9 @@ Move `init_dataset`, `init_dataloader` and `validate_sampler_config` to
    sweep YAML in `sweep/` sets only declared keys (checked 2026-10-12). A resumed run only
    warns: its saved config may hold keys the template has since dropped, which
    `test_legacy_wandb_run_config_merges_into_resolved_config` pins.
-2. **Branch.** Do Phases 3–4 (moving code out of `runner.py`) on
-   `refactor/fragnnet-masster-reorg`, or as a separate branch after it merges? Recommended:
-   after the merge, so the reorg goldens are not regenerated mid-review.
+2. **Branch, decided 2026-10-12.** The user asked to continue with the plan, so Phases 3–5 were
+   done on `refactor/fragnnet-masster-reorg`. Three reorg golden records changed, each listed
+   in the progress entry.
 
 ## Progress
 
@@ -229,9 +229,65 @@ Move `init_dataset`, `init_dataloader` and `validate_sampler_config` to
       no `ckpt_hold_*` directory or job file was left.
     - Behavior check: the same W&B-off runs under the `a2a2d116` runner and the new one give
       identical val and test metric tables for both models.
-    - Not run: a GPU run and an online W&B run.
-  - Found while validating, not fixed: `data/proc/debug_tinyv4/spec_df.pkl` still uses the
-    retired `FT` label, so the `config/debug/debug_tiny_*` configs no longer load. Resuming
+    - Not run here: a GPU run (covered by the Phase 3–5 `debug_tiny_frag_gine` run) and an
+      online W&B run.
+  - Found while validating: `data/proc/debug_tinyv4/spec_df.pkl` still used the retired `FT`
+    label, so the `config/debug/debug_tiny_*` configs no longer loaded (relabelled in the next
+    entry). Not fixed: resuming
     with a larger `max_epochs` fails in `SpectrumPL._consolidate_results` (per-epoch buffers
     sized by the checkpoint's `max_epochs`); a real requeue keeps the config, so this only
     matters for extending a finished run.
+- 2026-10-12: Phases 3–5 implemented in the working tree; `debug_tinyv4` relabelled.
+  - Data: `data/proc/debug_tinyv4/spec_df.pkl` relabelled with
+    `relabel_orbitrap_inst_type.py` and the NIST20 sources. Counts are in the
+    [Orbitrap finding](../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md#7-instrument-labels-ob--ob_f-implemented-2026-09-28).
+    `debug_tiny_frag_gine` and `debug_tiny_masster` train again through
+    `scripts/run_pl_model_fit.py`.
+  - Phase 3: [`config.py`](../../src/fragnnet/config.py) holds template resolution,
+    `load_config`, `merge_wandb_config` and the override parser. `migrate_config_dict` is the
+    one migration step for the template, experiment configs, overrides and W&B configs.
+    `apply_override` migrates each override as a one-key config, so the MASSter and pair-BCE
+    special cases are gone from the override loop. Overrides now pass the unknown-key check
+    (new keys are allowed inside `OPEN_CONFIG_MAPPINGS`) and raise `ValueError` instead of
+    `KeyError`.
+  - Phase 4: [`dataset/loading.py`](../../src/fragnnet/dataset/loading.py) holds
+    `init_dataset`, `init_dataloader`, `build_train_sampler` and `validate_sampler_config`.
+    One `Manager` serves every split. `init_dataset` refuses a config key named like a data
+    dict (none collides today). The curriculum check asks
+    `ModelHooks.builds_own_batch_sampler` instead of naming FraGNNet's samplers, so MASSter's
+    batch sampler with `bond_size_curriculum` now fails as "requires fixed-size batching".
+  - Phase 5: module loggers replace `print` and root `logging` calls in the moved code. The
+    CUDA allocator setting and `logging.basicConfig` moved to `scripts/run_pl_model_fit.py`
+    (and the allocator setting to `scripts/run_wandb_sweep.py`, which configures its own
+    logging). `utils/parallel_utils.py` logged through the root logger at import when
+    `FRAGNNET_JOBLIB_N_JOBS` was set, which locked the root logger at WARNING before the entry
+    script configured it and hid every INFO line of the run; it now uses a module logger.
+  - Departures from the plan text:
+    - The train-sampler `elif` chain became `build_train_sampler` rather than a table; with
+      exclusivity validated, a table added nothing.
+    - Hook lookups stay lenient (`strict=False`) in `loading.py` and strict in training; each
+      function looks the hooks up once.
+    - `runner` re-exports the moved names. `inference/checkpoint.py` and
+      `tests/test_orbitrap_inst_type.py` import from the new modules; other tests and scripts
+      still go through `runner`.
+  - Golden records regenerated, each a deliberate change: `migrations.json` (the two override
+    error strings), `validation.json` (the MASSter curriculum message above), `boundary.json`
+    (the isolation gate now covers `fragnnet.config` and `fragnnet.dataset.loading`; both load
+    no model code).
+  - Validation: new `tests/test_config.py`; full suite 5788 passed, 1 xfailed, and the same 11
+    failures in two unrelated files as in the Phase 1–2 entry; the synthetic FraGNNet and MASSter runs again give metric tables
+    identical to the `a2a2d116` runner.
+- 2026-10-12: Review of the whole change since `a2a2d116` (seven reviewers, by dimension:
+  config equivalence, loading equivalence, orchestration, logging and entry points, callers and
+  monkeypatch targets, docs, tests; two independent skeptics per finding).
+  - No code defect found. The loading, orchestration, logging and callers reviewers reported
+    nothing; the one config finding (a dict-valued override replaces its section without
+    checking sub-keys) is unchanged from the old runner and was refuted.
+  - Fixed: the B3 row named only FraGNNet and NEIMS as setting `dynamo_prof` (GNN, MassFormer
+    and GRAFF do too) and cited the wrong line.
+  - Tests added for two gaps the skeptics split on: the precision fallback and the matched sweep
+    schedule reaching `run.config.update`, and config errors failing before any dataset is
+    built. Each was checked by mutation (deleting the update, moving validation after the
+    datasets): the new tests fail on the mutants and pass on the code.
+  - The FraGNNet debug run in the Phase 3–5 entry used the GPU (`debug_tiny_frag_gine` sets
+    `accelerator: gpu`), so only an online W&B run remains unexercised.

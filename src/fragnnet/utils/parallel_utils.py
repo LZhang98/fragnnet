@@ -27,7 +27,11 @@ JOBLIB_N_JOBS = (
 JOBLIB_TIMEOUT = 10800  # default is 300 seconds for "loky"
 
 if FRAGNNET_JOBLIB_N_JOBS is not None:
-    logging.info("Using FRAGNNET_JOBLIB_N_JOBS=%s for joblib n_jobs", FRAGNNET_JOBLIB_N_JOBS)
+    # A module logger: the root-level `logging.info` would configure the root logger at import,
+    # at WARNING, before the entry script configures logging.
+    logging.getLogger(__name__).info(
+        "Using FRAGNNET_JOBLIB_N_JOBS=%s for joblib n_jobs", FRAGNNET_JOBLIB_N_JOBS
+    )
 
 
 def seq_apply(iterator: Iterable, func: Callable, need_unpack: bool = False) -> list:

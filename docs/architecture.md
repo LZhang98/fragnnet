@@ -11,8 +11,10 @@
    and DAG settings affect experiment reproducibility.
 2. [Training entry point](../scripts/run_pl_model_fit.py) passes template, custom config,
    overrides, logging mode, and job ID to [runner.py](../src/fragnnet/runner.py).
-   The runner loads configuration, seeds the run, builds datasets/loaders and the Lightning
-   model, and configures logging and checkpoints.
+   The runner resolves the configuration ([config.py](../src/fragnnet/config.py): template,
+   experiment config, overrides and W&B values through one migration path), seeds the run,
+   builds datasets and loaders ([dataset/loading.py](../src/fragnnet/dataset/loading.py)) and
+   the Lightning model, and handles W&B, resume and checkpoints.
 3. [Datasets](../src/fragnnet/dataset/) assemble molecule and spectrum inputs, and the shared
    [data_sampler.py](../src/fragnnet/dataset/data_sampler.py) holds the generic batch samplers.
    Model-specific datasets and samplers live with their model (see
@@ -61,7 +63,8 @@ src/fragnnet/
   layers/ loss/ pl_model/            core: torch building blocks, spectrum losses, Lightning bases,
                                      model-output schema
   inference/                         core: checkpoint loading and the prediction exporters
-  runner.py registry.py hooks.py     core: entry point, model registry, hook interface
+  runner.py config.py                core: training entry point, config resolution
+  registry.py hooks.py               core: model registry, hook interface
   export_adapter.py                  core: what the inference exporters call on a model
   fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
   models/fragnnet/  models/masster/  the two owner models

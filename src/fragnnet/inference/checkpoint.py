@@ -13,7 +13,7 @@ import pandas as pd
 import torch as th
 
 from fragnnet import registry
-from fragnnet.runner import load_config
+from fragnnet.config import load_config
 from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.misc_utils import get_best_ckpt_from_wandb
 from fragnnet.utils.nn_utils import decompile_jit_ckpt

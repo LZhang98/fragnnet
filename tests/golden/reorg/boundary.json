@@ -1,8 +1,10 @@
 {
   "ast_violations": {},
   "isolation_entry_modules": {
+    "fragnnet.config": {},
     "fragnnet.dataset.base_dataset": {},
     "fragnnet.dataset.data_sampler": {},
+    "fragnnet.dataset.loading": {},
     "fragnnet.dataset.spec_mol_dataset": {},
     "fragnnet.inference.checkpoint": {},
     "fragnnet.inference.runners": {},

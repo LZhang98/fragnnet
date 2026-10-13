@@ -787,8 +787,8 @@
       "spec_params_orb_rel": 0.5
     },
     "errors": {
-      "legacy_key_not_in_template": "KeyError: 'masster_not_a_key'",
-      "missing_section": "KeyError: 'no_section not in config'",
+      "legacy_key_not_in_template": "ValueError: override 'mass_shatter_not_a_key' sets a key the template does not declare",
+      "missing_section": "ValueError: override 'no_section.key': no_section is not a config section",
       "retired_instrument_type": "ValueError: config names a retired instrument type at ['spec_params.inst_types[0]']"
     },
     "frag_gnn_model_type": {

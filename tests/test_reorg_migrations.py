@@ -928,7 +928,12 @@ def test_load_config_cli_overrides(template_config: dict) -> None:
             )
         ),
     }
-    assert errors["legacy_key_not_in_template"] == "KeyError: 'masster_not_a_key'"
+    assert errors["legacy_key_not_in_template"] == (
+        "ValueError: override 'mass_shatter_not_a_key' sets a key the template does not declare"
+    )
+    assert errors["missing_section"] == (
+        "ValueError: override 'no_section.key': no_section is not a config section"
+    )
     assert errors["retired_instrument_type"].startswith("ValueError: config names a retired")
     errors["retired_instrument_type"] = errors["retired_instrument_type"].split(". ")[0]
     record["errors"] = errors

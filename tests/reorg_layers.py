@@ -67,6 +67,8 @@ RETIRED_MODEL_TYPES = (
 # Core entry modules checked by the isolation gate (plan, Phase 1 gate table).
 ENTRY_MODULES = (
     "fragnnet.runner",
+    "fragnnet.config",
+    "fragnnet.dataset.loading",
     "fragnnet.inference.runners",
     "fragnnet.inference.checkpoint",
     "fragnnet.pl_model.spectrum_pl",

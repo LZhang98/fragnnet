@@ -23,7 +23,7 @@
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
-| [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 in the working tree: review and commit; decide the branch for Phases 3–4 |
+| [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
 | [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Matched Enveda multitask/control evaluation; coordinated in the [CASMI/Enveda hub](casmi_enveda.md) |
 | [Architecture review todo](../plans/masster/masster_architecture_review_todo.md) | DEFERRED | `a1_prenorm` seed replicate; `a5` read against `a3`; RWSE needs the `random_walk_pe` fix ported |

@@ -437,6 +437,12 @@ retired; FTICR, which is not an Orbitrap, maps to `Other`.
   | NIST23 | 1,016,119 instrument field + 66,528 unnamed | 703,626 instrument field | 370,613 → 370,894 |
   | NIST20 | 712,969 instrument field + 65,703 unnamed (MoNA 2023) | 251,326 instrument field (5,537 via NIST23) | 212,096 → 212,366 |
 
+  - **`data/proc/debug_tinyv4`, relabelled 2026-10-12** with the NIST20 sources (backup
+    `spec_df_orig_20261012_214224.pkl`). All 1,787 FT rows are `nist20_hr`. The NIST20 export
+    names 1,686: 1,340 `ORB` and 346 `ORB_F`, matching `data/proc/nist20` row for row. The other
+    101 are in neither source nor the current NIST20 `spec_df` and become unnamed `ORB`.
+    Groups stay at 350; non-FT rows are unchanged.
+
   - **NIST20's first relabel was inferred, and it was replaced.** It used a NIST23 match on
     molecule, adduct, m/z and eV, then the eV rule, before the export arrived. Checked against
     the export, 6,607 of 958,758 labels (0.69%) were wrong:

@@ -4,7 +4,7 @@ import re
 import subprocess
 
 # Kept local so this script runs on a login node without the fragnnet package installed.
-# Mirrors ``fragnnet.runner.TEMPLATE_FILENAME``.
+# Mirrors ``fragnnet.config.TEMPLATE_FILENAME``.
 TEMPLATE_FILENAME = "template.yml"
 
 
