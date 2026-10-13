@@ -35,6 +35,10 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
+- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. Notebooks unchanged; next repair metric labeling, repeat scaling and parameter counts.
+
+- **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed in tests (uncommitted). **Next:** full-suite and GPU validation.
+
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
 - **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the [export fix](findings/masster/masster_export_merge_untransform_2026_10_12.md) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
 - **Shared loss consolidation committed** (`1a63257b`, file merge and renames `72ad897e`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12), [file merge and renames](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** GPU validation when available.

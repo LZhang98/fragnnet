@@ -30,6 +30,8 @@ BASE_COLUMNS = [
     "pred_mzs",
     "pred_ints",
     "pred_oos_prob",
+    "pred_rt",
+    "pred_ccs",
     "frag_formula_peak_idxs",
     "frag_formula_peak_mzs",
     "pred_formula_formula_idxs",

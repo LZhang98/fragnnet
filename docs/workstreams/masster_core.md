@@ -5,6 +5,10 @@
 
 ## Where it stands
 
+- **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. Notebooks unchanged; repair reporting errors next.
+
+- **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed in tests (uncommitted). Complete-suite and GPU validation remain open.
+
 - **Shared loss consolidation implemented:** [plan](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12); numerical fixes, shared preparation and reductions have regression coverage; committed in `1a63257b`. [File merge and renames](../plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12) await review.
 - **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–9 are complete on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
 - **Simplification cleanup committed:** [audit](../findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12) items 1–4 and the [annotated-export fix](../findings/masster/masster_export_merge_untransform_2026_10_12.md) for sqrt/log10 models with merged rows. Module renames: candidate generation (builder, Cython `cut_mask_kernels.pyx`, SMARTS templates, CUDA) lives in `src/fragnnet/models/masster/candidates/` (`4e36bcae`); the heads are split into `candidate_transformer.py`, `proposal_heads.py`, `component_pooling.py` and `pathway_probabilities.py`.
@@ -22,6 +26,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | Complete-suite and GPU validation |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
 | [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
@@ -70,6 +75,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-12) | Four test findings, all fixed; full suite not yet run |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE (2026-10-12) | `runner.py` audit: 10 bugs (W&B-off upload, `ckpt_path="best"` without checkpoints, dead `interrupted` guards, silent sweep typos), then a behavior-preserving split into config and loading modules |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Reproduced correctness issues and prioritized simplifications |
@@ -122,6 +128,7 @@
 | [masster_training_speed_2026_09_17](../findings/masster/masster_training_speed_2026_09_17.md) | FINDING (2026-10-06) | Training speed: monitoring, CPU/CUDA candidates, batched coverage loss, cut-bond dedup |
 | [masster_unmerged_overfitting_2026_09_16](../findings/masster/masster_unmerged_overfitting_2026_09_16.md) | FINDING (2026-09-16) | W&B read of the growing unmerged generalization gap |
 | [unexplained_peak_split_2026_09_22](../findings/masster/unexplained_peak_split_2026_09_22.md) | FINDING (2026-09-22) | Unreachable ~11% intensity: 73% coverage, 27% escape; isotopologues 46.5% of escape |
+| [notebook_audit_2026_10_12](../findings/notebook_audit_2026_10_12.md) | FINDING (2026-10-12) | Shared notebook reporting correctness and reproducibility audit |
 | [loss_setup_review_2026_09_13](../findings/loss_setup_review_2026_09_13.md) | FINDING (2026-09-21) | Loss setup review with counterexamples and fixes |
 | [feature_headroom_2026_09_22](../findings/feature_headroom_2026_09_22.md) | CLOSED NULL (2026-09-22) | Descriptor features closed null; only external quantum knowledge has headroom |
 | [feature_information_audit_2026_09_22](../findings/feature_information_audit_2026_09_22.md) | FINDING (2026-09-27) | Map of the feature/information investigation and withdrawn conclusions |
