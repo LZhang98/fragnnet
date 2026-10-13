@@ -1,7 +1,8 @@
 # MASSter MSGYM validation-loss sweep, 48 trials
 
-> **Status:** PREPARED · **Updated:** 2026-10-08
-> W&B sweep created; Fir submission awaits the SSH login and checkout path. No training launched.
+> **Status:** ACTIVE · **Updated:** 2026-10-11
+> Sweep ran: 15 finished, 33 crashed. Results below supersede the historical preparation state;
+> checkpoint recovery and seed replication remain open.
 
 ## Objective and acceptance
 
@@ -92,3 +93,88 @@ generated script pass `bash -n`. No GPU training, validation-set evaluation, or 
 
 Next: obtain Fir login/checkout, stage the prepared source, measure worst-case GPU memory,
 submit the array, and record its job ID, actual source/input identity and first trial result.
+
+
+## Live results read, 2026-10-11
+
+Source: W&B [tiwhun9q](https://wandb.ai/frag-gnn/frag-gnn/sweeps/tiwhun9q), all 48
+run configs/summaries and unsampled epoch histories via `wandb.Api().sweep(...).runs` and
+`run.scan_history(keys=["epoch", "val_primary_loss_epoch/mean",
+"val_cos_sim_0.01_epoch/mean", "val_wrecall_epoch/mean"], page_size=1000)`.
+Checkpoint availability checked with `run.files()` for the first three loss-ranked trials.
+This is validation selection only; no new training or retrieval evaluation was performed.
+
+### Integrity and interruptions
+
+- All 48 actually used pow0.75, loss chunks 16, seed 397623 and test evaluation disabled.
+  Batch256 uses total/warmup steps 49664/2000; batch512 uses 24832/1000.
+  The online sweep description saying linear intensity is stale.
+- 15 finished all 128 epochs; 33 crashed at about 2.936–2.970 hours, versus 3.236–4.946 hours
+  for completed trials. This strongly suggests a time-limit interruption, but scheduler logs
+  were not read, so the cause is unconfirmed. These are not demonstrated OOM failures.
+- Every trial has validation history through epoch 75. Restricting all trials to epochs 0–75
+  leaves every best-loss value and the loss ranking unchanged. Interrupted runs remain censored
+  for later improvement; their current best checkpoints are still useful candidates.
+- All best observed losses occur at epochs 11–66 (median 28); best cosine has median epoch 49.
+  Only one run's best cosine is after epoch 75. Among completed runs, final loss is worse than
+  best by 0.110 on average. Early stopping deserves a follow-up; changing cosine schedule length
+  is a different intervention and is not validated by truncating these curves.
+
+### Leading runs
+
+Lower loss is better. Cosine is linear 0.01 Da. Loss-selected and cosine-selected epochs differ.
+
+| Run | State | Best loss | Epoch | Cosine at loss epoch | Peak cosine (epoch) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `720jwmai` | crashed | -1.662002 | 32 | 0.597606 | 0.599811 (46) |
+| `6egv3347` | crashed | -1.651483 | 28 | 0.586189 | 0.589625 (59) |
+| `86f3wm2f` | finished | -1.648701 | 25 | 0.591627 | 0.592739 (58) |
+| `7ms4lgh2` | crashed | -1.645117 | 28 | 0.591067 | 0.593777 (47) |
+| `1t7bverf` | finished | -1.642208 | 33 | 0.591194 | 0.592072 (35) |
+
+`720jwmai` and `6egv3347` have no W&B checkpoint files. `86f3wm2f` has
+`ckpt/model-epoch=025.ckpt` and `ckpt/last.ckpt` in W&B; neither was downloaded here.
+The runner uploads checkpoints after successful training, explaining why interrupted runs
+can have metrics without uploaded weights. Cluster-local checkpoint survival is unknown.
+
+The previous pow075 run `q3oxbpgx` has best loss -1.590353 at epoch 25 and best cosine 0.578978
+at epoch 55. Thus the sweep leader improves observed best loss by 0.07165 and peak cosine by
+0.02083; the best finished trial improves peak cosine by 0.01376. Both train against pow0.75,
+although the previous run used loss chunks 64 and selected its saved checkpoint by cosine.
+These are selected single-run validation differences, not confirmed test/retrieval gains.
+
+### What the random search suggests
+
+Unadjusted group means over all trials (same best-loss results through epoch 75):
+
+| Encoder dropout | Trials | Mean best loss | Mean peak cosine through epoch 75 |
+| --- | ---: | ---: | ---: |
+| 0.0 | 8 | -1.4526 | 0.5516 |
+| 0.1 | 10 | -1.5504 | 0.5740 |
+| 0.2 | 16 | -1.5868 | 0.5796 |
+| 0.3 | 14 | -1.6089 | 0.5852 |
+
+- Encoder dropout 0.2–0.3 and higher LR are the strongest follow-up candidates. LR bins
+  <=3e-4 / (3e-4,7e-4] / >7e-4 have 14/16/18 trials and mean best losses
+  -1.4988/-1.5754/-1.6027. LR versus loss Spearman correlation is -0.676; LR versus encoder
+  dropout is only 0.021. An exploratory additive standardized regression over the 11 sampled
+  parameters (log10 LR and weight decay) retains dropout and LR as the largest coefficients.
+- Batch256 has mean peak cosine 0.5808 versus 0.5705 for batch512. Weight decay 0.1 is also
+  promising; these remain confounded random-search associations, not matched ablations.
+- Do not infer a depth winner. The apparent marginal benefit of bond depth reverses in the
+  additive adjustment, and leading runs use different depths. Other dropout settings are
+  less clearly resolved. All trials share one seed, with 11 jointly varied parameters.
+
+Leader `720jwmai`: batch256, LR 0.0015548897423024086, weight decay 0.1; encoder/bond/intensity
+transformer depths 3/2/3; encoder/head/boundary/intensity-input/transformer dropout
+0.2/0.3/0.2/0.2/0.1. Best completed `86f3wm2f`: batch256, LR 0.0005775193973727379,
+weight decay 0.1; depths 3/3/2; dropouts 0.3/0.2/0.3/0.2/0.1.
+
+### Next checks
+
+Recover `720jwmai` epoch 32 from the cluster if present; otherwise reproduce its recipe.
+Use available `86f3wm2f` epoch 25 as the immediate evaluation candidate. Run validation retrieval
+and re-select calibration per checkpoint before one held-out test read. Replicate the leader and
+pow075 control on additional matched seeds. Inspect scheduler logs before changing allocation
+limits; preserve best checkpoints during training in any separately authorized reliability fix.
+No submission, checkpoint download or code change was made in this analysis.

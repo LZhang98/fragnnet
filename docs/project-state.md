@@ -36,6 +36,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## MASSter core
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
+- **Code cleanup in the working tree (uncommitted):** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12) done, candidate generation moved to `models/masster/path_selection/`, and an [export bug fixed](findings/masster/masster_export_merge_untransform_2026_10_12.md): annotated exports of sqrt/log10 models with merged rows untransformed each pathway before summing. **Next:** review and commit; then audit item 5.
 - **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
@@ -52,9 +53,10 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
 - **Problem:** generalization, train 0.884 vs val 0.584; arms one seed each (control spread 0.0025).
 - **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms, including the calibrated-likelihood arms. **Prepared, not submitted:** `pow075_s2`, `b1024`, `b256` rerun,
-  5 U256/E1024 configs, sweep `tiwhun9q`
+  5 U256/E1024 configs
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
-- **Next:** re-select `loglik_cal` on val for `pow075`/`wd10`; a second `pow075` seed.
+- **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Dropout/LR signals warrant replication.
+- **Next:** recover sweep leader checkpoint, validate retrieval using the available completed candidate, and replicate against `pow075`.
 - **Proposed:** [rare chemistry augmentation](plans/masster/rare_chemistry_augmentation_plan.md), benchmark subset retained; matched-edit census and partial-label feasibility proposed.
 
 ## Spectraverse
@@ -96,10 +98,9 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## Uncommitted working tree (2026-10-12)
 
 - `loss/` file merge (entropy → cross_entropy, peak_list → spectrum_distance, penalty → `fragnnet_pl`) and function renames; [record](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12).
+- Sweep `tiwhun9q` live results and linked MSGYM state updates.
 - FraGNNet cc-mask padding fix in `fragnnet_model.py` + `tests/test_fragnnet_mask_padding.py`; audit and probe-caveat doc edits.
-- Reorganization plan and hub/dashboard updates record the external ICEBERG/ms-pred decision;
-  source code and environment are unchanged. Prior RT/CCS and augmentation entries are no
-  longer working-tree changes according to the current Git status.
+- MASSter cleanup (audit items 1–4), annotated-export merge fix, and the `path_selection/` move: renames staged with `git mv`, everything else unstaged; `src/fragnnet/models/masster/path_selection/__init__.py` is untracked and must be added with the move.
 
 ## Standing cross-workstream rules
 
