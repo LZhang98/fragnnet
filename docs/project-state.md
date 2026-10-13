@@ -36,8 +36,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## MASSter core
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
-- **Code cleanup in the working tree (uncommitted):** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12) done, candidate generation moved to `models/masster/path_selection/`, and an [export bug fixed](findings/masster/masster_export_merge_untransform_2026_10_12.md): annotated exports of sqrt/log10 models with merged rows untransformed each pathway before summing. **Next:** review and commit; then audit item 5.
-- **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
+- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the [export fix](findings/masster/masster_export_merge_untransform_2026_10_12.md) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
+- **Shared loss consolidation committed** (`1a63257b`, file merge and renames `72ad897e`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12), [file merge and renames](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** GPU validation when available.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
@@ -97,10 +97,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## Uncommitted working tree (2026-10-12)
 
-- `loss/` file merge (entropy → cross_entropy, peak_list → spectrum_distance, penalty → `fragnnet_pl`) and function renames; [record](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12).
-- Sweep `tiwhun9q` live results and linked MSGYM state updates.
-- FraGNNet cc-mask padding fix in `fragnnet_model.py` + `tests/test_fragnnet_mask_padding.py`; audit and probe-caveat doc edits.
-- MASSter cleanup (audit items 1–4), annotated-export merge fix, and the `path_selection/` move: renames staged with `git mv`, everything else unstaged; `src/fragnnet/models/masster/path_selection/__init__.py` is untracked and must be added with the move.
+- Everything listed here earlier is committed (`72ad897e`, `faf38bb8`, `90790e0b`, `4e36bcae`). The working tree holds another session's in-progress move of `dataset/isotope_cleanup.py` to `utils/isotope_cleanup_utils.py`.
 
 ## Standing cross-workstream rules
 

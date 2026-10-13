@@ -44,25 +44,6 @@ from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pai
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder
-from fragnnet.models.masster.bond_fragment_heads import (
-    AtomChargeAffinityHead,
-    BondFocusedBreakHead,
-    CandidateIntensityTransformerHead,
-    EndpointBondBreakHead,
-    IonModeProposalHead,
-    _segment_logsumexp,
-    _validate_tensor_condition,
-    boundary_bond_endpoint_orientation,
-    candidate_graph_edges,
-    component_charge_log_probabilities,
-    component_membership_rows,
-    fragment_internal_edges,
-    latent_pathway_charge_log_probabilities,
-    masked_ion_hydrogen_log_probabilities,
-    pool_boundary_bond_embeddings,
-    pool_component_and_complement_embeddings,
-    pool_component_embeddings,
-)
 from fragnnet.models.masster.candidate_features import (
     COMPOSITION_FEATURE_DIM,
     COMPOSITION_HYDROGEN_COLUMN,
@@ -73,6 +54,10 @@ from fragnnet.models.masster.candidate_features import (
     component_neutral_masses,
     element_counts_by_group,
     resolve_candidate_features,
+)
+from fragnnet.models.masster.candidate_transformer import (
+    CandidateIntensityTransformerHead,
+    candidate_graph_edges,
 )
 from fragnnet.models.masster.candidates.builder import (
     MassterCandidateBatch,
@@ -88,10 +73,30 @@ from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
     filter_masster_templates,
 )
+from fragnnet.models.masster.component_pooling import (
+    boundary_bond_endpoint_orientation,
+    component_membership_rows,
+    fragment_internal_edges,
+    pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
+    pool_component_embeddings,
+)
 from fragnnet.models.masster.nominal_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
     nominal_isotope_power_table,
+)
+from fragnnet.models.masster.pathway_probabilities import (
+    _segment_logsumexp,
+    component_charge_log_probabilities,
+    latent_pathway_charge_log_probabilities,
+    masked_ion_hydrogen_log_probabilities,
+)
+from fragnnet.models.masster.proposal_heads import (
+    AtomChargeAffinityHead,
+    BondFocusedBreakHead,
+    EndpointBondBreakHead,
+    IonModeProposalHead,
 )
 from fragnnet.models.masster.rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
@@ -104,6 +109,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
+from fragnnet.utils.misc_utils import _validate_tensor_condition
 from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 
 

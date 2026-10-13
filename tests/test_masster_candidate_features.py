@@ -28,12 +28,6 @@ from torch_geometric.data import Batch
 
 import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.layers.cut_bond_encoder import CutBondEncoder
-from fragnnet.models.masster.bond_fragment_heads import (
-    CandidateIntensityTransformerHead,
-    boundary_bond_endpoint_orientation,
-    pool_boundary_bond_embeddings,
-    pool_component_and_complement_embeddings,
-)
 from fragnnet.models.masster.candidate_features import (
     CANDIDATE_FEATURES_BY_NAME,
     COMPOSITION_FEATURE_DIM,
@@ -43,6 +37,12 @@ from fragnnet.models.masster.candidate_features import (
     candidate_feature_width,
     describe_candidate_features,
     resolve_candidate_features,
+)
+from fragnnet.models.masster.candidate_transformer import CandidateIntensityTransformerHead
+from fragnnet.models.masster.component_pooling import (
+    boundary_bond_endpoint_orientation,
+    pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
 )
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER

@@ -17,7 +17,6 @@ from fragnnet.fragmentation.hydrogen_cap import compute_cc_h_cap
 from fragnnet.models.fragnnet.dag import compute_frags
 from fragnnet.models.fragnnet.dag.builder import extract_mol_info
 from fragnnet.models.fragnnet.dag.formula import formula_to_peak_mzs
-from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.candidates.builder import MassterStaticGraph
 from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
@@ -37,6 +36,7 @@ from fragnnet.models.masster.masster_model import (
     _top_k_fragment_keep_mask,
 )
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
+from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS
 

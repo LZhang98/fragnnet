@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import torch as th
 
-from fragnnet.models.masster.bond_fragment_heads import CandidateIntensityTransformerHead
+from fragnnet.models.masster.candidate_transformer import CandidateIntensityTransformerHead
 
 SCRIPT_PATH = (
     Path(__file__).parents[1]

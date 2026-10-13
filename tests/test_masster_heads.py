@@ -1,4 +1,5 @@
-"""Tests for one-pass bond, charge, and hydrogen-transfer heads."""
+"""Tests for MASSter's proposal heads, candidate transformer, component pooling and pathway
+probabilities."""
 
 from __future__ import annotations
 
@@ -10,19 +11,23 @@ import pytest
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.models.masster.bond_fragment_heads import (
-    AtomChargeAffinityHead,
-    BondFocusedBreakHead,
-    CandidateIntensityTransformerHead,
-    EndpointBondBreakHead,
-    IonModeProposalHead,
+from fragnnet.models.masster.candidate_transformer import CandidateIntensityTransformerHead
+from fragnnet.models.masster.component_pooling import (
+    pool_boundary_bond_embeddings,
+    pool_component_and_complement_embeddings,
+    pool_component_embeddings,
+)
+from fragnnet.models.masster.pathway_probabilities import (
     component_charge_log_probabilities,
     cut_mask_log_probabilities,
     latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
-    pool_boundary_bond_embeddings,
-    pool_component_and_complement_embeddings,
-    pool_component_embeddings,
+)
+from fragnnet.models.masster.proposal_heads import (
+    AtomChargeAffinityHead,
+    BondFocusedBreakHead,
+    EndpointBondBreakHead,
+    IonModeProposalHead,
 )
 
 

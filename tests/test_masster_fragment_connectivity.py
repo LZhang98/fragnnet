@@ -10,7 +10,7 @@ model is exactly unchanged. ``masster_fragment_connectivity_messages: False`` (a
 the matched pooled control: the identical module, features and pooling, but over an EMPTY edge
 set, so no message crosses a retained bond.
 
-This file covers, in order: the two new join primitives in ``bond_fragment_heads.py``
+This file covers, in order: the two new join primitives in ``component_pooling.py``
 (``fragment_internal_edges``, ``component_membership_rows``) against a hand-built fixture, then
 the model-level branch (construction, safe-start, shapes, raw-feature sourcing, gradients,
 backend parity) and the ``fc1p`` messages-off control.
@@ -21,7 +21,7 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet import runner
-from fragnnet.models.masster.bond_fragment_heads import (
+from fragnnet.models.masster.component_pooling import (
     component_membership_rows,
     fragment_internal_edges,
 )

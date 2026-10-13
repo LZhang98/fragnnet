@@ -625,8 +625,8 @@ def test_grouped_smarts_lookup_matches_distinct_view_assembly_and_gradients() ->
 def test_mechanism_head_scores_only_masks_with_a_template_alternative() -> None:
     from test_masster_model import _build_batch, _build_model
 
-    from fragnnet.models.masster.bond_fragment_heads import pool_boundary_bond_embeddings
-    from fragnnet.models.masster.masster_model import _segment_logsumexp
+    from fragnnet.models.masster.component_pooling import pool_boundary_bond_embeddings
+    from fragnnet.models.masster.pathway_probabilities import _segment_logsumexp
 
     smiles = ("Cc1ccc(S(=O)(=O)Nc2ccccn2)cc1", "CCO", "Oc1ccc(S(=O)(=O)O)cc1")
     batch = _build_batch(smiles)

@@ -22,7 +22,6 @@ from fragnnet.loss.cross_entropy import (
     get_sparse_cross_entropy_fn,
 )
 from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
-from fragnnet.models.masster.bond_fragment_heads import BondFocusedBreakHead
 from fragnnet.models.masster.candidates.builder import MassterStaticGraph
 from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
 from fragnnet.models.masster.masster_pl import (
@@ -37,6 +36,7 @@ from fragnnet.models.masster.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
+from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams
