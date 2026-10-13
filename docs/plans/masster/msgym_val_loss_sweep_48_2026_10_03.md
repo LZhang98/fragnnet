@@ -178,3 +178,15 @@ and re-select calibration per checkpoint before one held-out test read. Replicat
 pow075 control on additional matched seeds. Inspect scheduler logs before changing allocation
 limits; preserve best checkpoints during training in any separately authorized reliability fix.
 No submission, checkpoint download or code change was made in this analysis.
+
+### Leader re-run prepared, 2026-10-12
+
+[`msgym_sweep_leader_720jwmai.yml`](../../../config/masster/massspecgym/msgym_sweep_leader_720jwmai.yml)
+re-trains `720jwmai`'s recipe (seed 397623, 128 epochs, batch 256, 49664/2000 steps). Every
+top-level key matches the W&B run config. Nested `spec_params` differ only by new off-by-default
+RT/CCS keys. It builds on `refactor/fragnnet-masster-reorg` (10.14M parameters, CPU). Not submitted.
+Batch-256 trials reached about epoch 76 in about 2.95 h, so use a wall time of at least 8 h.
+Matched pow075 control:
+[`msgym_sweep_pow075_control.yml`](../../../config/masster/massspecgym/msgym_sweep_pow075_control.yml)
+is the sweep base run unchanged under its own W&B name, so it uses the same seed, loss selection
+and disabled test split as the leader (9.23M parameters, CPU build). Not submitted.
