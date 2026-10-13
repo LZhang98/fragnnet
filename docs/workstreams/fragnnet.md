@@ -54,7 +54,7 @@
 - [Bond-set representation](../plans/fragnnet/fragment_bond_set_representation.md) — cost argument refuted (+109%); goal is regularization; `het_only` has best dominant-sibling mismatch 0.405 vs cc 0.473.
 
 **Audits**
-- [FraGNNet/MASSter audit](../findings/fragnnet_masster_audit_2026_09_12.md) and [fixes](../plans/fragnnet/fragnnet_audit_fixes.md) — six defects fixed and landed; checkpoints before the fix may differ.
+- FraGNNet/MASSter correctness audit (2026-09-12) — six defects fixed and landed, covered by `tests/test_fragnnet_audit_fixes.py`; checkpoints before the fix may differ. Audit and fix docs removed 2026-10-13 (`git show e65339ed:docs/findings/fragnnet_masster_audit_2026_09_12.md`).
 
 ## All documents
 | Doc | Status (updated) | One-line content |
@@ -68,7 +68,6 @@
 | [dominant_peak_outcome_decomposition](../findings/fragnnet/dominant_peak_outcome_decomposition.md) | FINDING (2026-08-13) | Base-peak failure ~7:1 ranking |
 | [fragment_intensity_ranking_findings](../findings/fragnnet/fragment_intensity_ranking_findings.md) | FINDING (2026-08-11) | Provisional NodeMLP ranking evidence |
 | [glacier_gap_ce_decomposition_2026_09_21](../findings/fragnnet/glacier_gap_ce_decomposition_2026_09_21.md) | FINDING (2026-09-21) | GLACIER gap is high-CE allocation |
-| [fragnnet_masster_audit_2026_09_12](../findings/fragnnet_masster_audit_2026_09_12.md) | FINDING (2026-10-06) | Reproduced correctness defects |
 | [missing_peak_findings](../findings/fragnnet/missing_peak_findings.md) | CURATED ANALYSIS (2026-07-18) | Per-subclass DAG misses `[M+H]+`; append-only |
 | [missing_peak_findings_m-h](../findings/fragnnet/missing_peak_findings_m-h.md) | CURATED ANALYSIS (2026-06-30) | Per-subclass DAG misses `[M-H]-`; append-only |
 | [oracle_recall_wrecall_by_ce](../findings/fragnnet/oracle_recall_wrecall_by_ce.md) | FINDING (2026-07-18) | DAG recall/wrecall by CE and adduct |
@@ -86,7 +85,6 @@
 | [fluxmpnn_plan](../plans/fragnnet/fluxmpnn_plan.md) | STOPPED (2026-07-22) | DAG-flow output law |
 | [fragment_bond_set_representation](../plans/fragnnet/fragment_bond_set_representation.md) | DEFERRED (2026-10-06) | Bond sets, charge placement, regularization reframe |
 | [fragment_context_gate_experiment_plan](../plans/fragnnet/fragment_context_gate_experiment_plan.md) | PROPOSED (2026-08-11) | Per-fragment context routing and gate |
-| [fragnnet_audit_fixes](../plans/fragnnet/fragnnet_audit_fixes.md) | LANDED (2026-09-12) | Six audit fixes, plus formula-support crash fix |
 | [ft_contender_pair_minimal_training_plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md) | STOPPED (2026-10-12) | Pair BCE retired |
 | [global_fragment_intensity_ranking_experiment_plan](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) | PROPOSED (2026-10-06) | Global base-mass ranking and CE pair supervision; [log](../history/global_fragment_intensity_ranking_experiment_plan_log.md) |
 | [ion_collision_energy_matrix_experiment_plan](../plans/fragnnet/ion_collision_energy_matrix_experiment_plan.md) | PROPOSED (2026-08-13) | Ion x CE matrix diagnostic |

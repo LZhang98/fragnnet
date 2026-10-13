@@ -45,7 +45,7 @@ stubbing the solver out of the batched path removes only about 8 ms. Switching
 `masster_peak_matching` to `closest` would therefore not fix this.
 
 This is the same defect, and the same fix, as `observational_channel_targets` and
-`_candidate_weighted_recall` in the [GPU audit](masster_gpu_audit.md): any per-spectrum loop
+`_candidate_weighted_recall` in the GPU audit (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_gpu_audit.md`): any per-spectrum loop
 that indexes with boolean masks pays a fixed host cost regardless of how little math it does.
 
 ### Cost split
@@ -411,7 +411,7 @@ substitute and cost nothing extra.
 
 ## Related documents
 
-- [MASSter GPU audit](masster_gpu_audit.md) — the per-spectrum-loop defect class and the
+- MASSter GPU audit (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_gpu_audit.md`) — the per-spectrum-loop defect class and the
   two loops already batched.
 - [Intensity-head bucketing sync plan](masster_intensity_head_bucketing_sync_plan.md) — the
   same defect in `CandidateIntensityTransformerHead`.

@@ -135,7 +135,7 @@ Notes:
    sinusoid and its adduct and instrument one-hots to every atom's Graphormer input
    (`ms_pred/glacier/joint_model.py:251-289` at `318bb7b`). MASSter has the switch
    (`masster_context_in_gnn`, plus the zero-init suggestion in the
-   [context design audit](masster_context_design_audit.md) §4). No result on the current
+   context design audit (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_context_design_audit.md`) §4). No result on the current
    references is recorded.
 3. **Physical adduct treatment is rare.** Only CFM-ID (per-model) and FIORA (H-shift set)
    do it. MASSter's mass and element-delta tables already handle 16 adducts, including

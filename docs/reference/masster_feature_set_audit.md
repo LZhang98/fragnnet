@@ -16,7 +16,7 @@ Audited against `31c487db` on branch `research/masshatter-ion-h-selection`, over
 sample (seed 0) of `data/proc/nist20/mol_df.pkl` (120,641 atoms, 254,498 bonds).
 The companion FraGNNet document is [feature_set_audit.md](feature_set_audit.md); the metadata
 conditioning design is audited separately in
-[masster_context_design_audit.md](../findings/masster/masster_context_design_audit.md).
+masster_context_design_audit.md (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_context_design_audit.md`).
 
 ---
 

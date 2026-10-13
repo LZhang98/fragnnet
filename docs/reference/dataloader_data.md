@@ -32,8 +32,9 @@ The merger weights primary-CE schedules equally, then their replicates equally, 
 within each row equally. Both models use these weights when pooling CE embeddings. Collated
 CE statistics use weighted mean and standard deviation over valid readings; missing values keep
 the existing missing-token semantics. Legacy batches omit weight fields and retain mean pooling.
-See the [CE correction record](../findings/masster/masster_context_design_audit.md) for constraints
-and compatibility behavior.
+Weighted mode (`spec_params.merge_ce_aggregation: weighted`) requires retained CE, tolerance
+consensus, and equal CE target weighting. `legacy` remains the default, and the checkpoint reader
+supplies it for old saved configs.
 
 ## Output Dictionary Reference
 

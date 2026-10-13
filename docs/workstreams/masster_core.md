@@ -105,7 +105,6 @@
 | [masster_direct_loss_batching_plan](../plans/masster/masster_direct_loss_batching_plan.md) | LANDED (2026-09-19) | Batched direct peak-list losses: closest 44x, hungarian 11x faster |
 | [masster_energy_based_model_plan](../plans/masster/masster_energy_based_model_plan.md) | PROPOSED (2026-09-13) | Bond-cut then spectrum EBM program; proposal only |
 | [masster_fast_gnn_proposal](../plans/masster/masster_fast_gnn_proposal.md) | STOPPED (2026-10-06) | Connected-fragment beam proposal; stopped (flat 0.8695 mass vs 1.0000 cut_masks) |
-| [masster_gpu_audit](../plans/masster/masster_gpu_audit.md) | REFERENCE (2026-09-17) | Static plus measured GPU profile and priorities |
 | [masster_hierarchical_fragment_graph_plan](../plans/masster/masster_hierarchical_fragment_graph_plan.md) | DEFERRED (2026-09-29) | Retained-fragment GNN branch; `fc1` local screen not positive |
 | [masster_improvement_plan](../plans/masster/masster_improvement_plan.md) | DEFERRED (2026-10-06) | Intensity/support-gating roadmap and cluster commands from 2026-09-17 |
 | [masster_intensity_head_bucketing_sync_plan](../plans/masster/masster_intensity_head_bucketing_sync_plan.md) | PROPOSED (2026-09-14) | Remove bucketing host syncs in the intensity head; unmeasured payoff |
@@ -123,8 +122,6 @@
 | [masster_campaign_readout_2026_09_21](../findings/masster/masster_campaign_readout_2026_09_21.md) | FINDING (2026-09-24) | 41-run W&B review; feature bundle +0.006; sweep no promotions |
 | [masster_candidate_cut_descriptors_2026_09_22](../findings/masster/masster_candidate_cut_descriptors_2026_09_22.md) | FINDING (2026-09-22) | Cut descriptors on MASSter candidates; adjacency is the missing relation (48.9% ambiguity) |
 | [masster_channel_selection_findings](../findings/masster/masster_channel_selection_findings.md) | FINDING (2026-09-05) | Historical channel-selection results (chemistry revalidation pending) |
-| [masster_code_audit](../findings/masster/masster_code_audit.md) | REFERENCE (2026-09-13) | Candidate-attention A/B code audit; seven fixes |
-| [masster_context_design_audit](../findings/masster/masster_context_design_audit.md) | REFERENCE (2026-09-08) | CE/context conditioning design audit and fixes |
 | [masster_head_input_asymmetry_2026_09_22](../findings/masster/masster_head_input_asymmetry_2026_09_22.md) | FINDING (2026-09-24) | Proposal branch reads detached inputs in the merged lineage; charge head inert |
 | [masster_identity_supervision_2026_09_22](../findings/masster/masster_identity_supervision_2026_09_22.md) | FINDING (2026-09-22) | 2.75 fragments share a formula; the structural-teacher recommendation is retracted |
 | [masster_loss_audit_2026_09_19](../findings/masster/masster_loss_audit_2026_09_19.md) | FINDING (2026-09-19) | Loss-function audit and Hungarian/closest measurements |

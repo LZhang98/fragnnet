@@ -124,7 +124,8 @@ a `repeat_interleave` away on the GPU and should never be materialized as Python
    Python lists (`th.tensor(list, device=...)`) is not a device sync but *is* host-blocking through a
    pageable staging copy, and small-tensor construction, `repeat_interleave` and `th.cat` each have
    their own launch and allocator behavior. The sync count after this change is a claim to verify
-   with the profiler (same method as `masster_gpu_audit.md`), not to assert from the source.
+   with the profiler (`profiler: pytorch` through `scripts/run_pl_model_fit.py`, 8 active steps
+   after `profiler_wait_steps=3, warmup=2`), not to assert from the source.
 
 ## Correctness risk and how to bound it
 
@@ -169,12 +170,12 @@ block points.
 2. Step 3 (contiguous-slice gathers) in isolation — the correctness-bearing change — verified
    against the harness on CPU and CUDA.
 3. Steps 1-2 (single small payload, pinned buffer, event-gated two-point wait) — pure reordering,
-   lower risk, verified by the same harness plus a real profiled run (same method as
-   `masster_gpu_audit.md`'s measured section) to confirm the sync actually moves off the
+   lower risk, verified by the same harness plus a real profiled run (same profiler
+   method as above) to confirm the sync actually moves off the
    critical path rather than just changing which line the profiler blames, the way the
    `batched_rel_filter_func` fix did. Count the surviving syncs in the profile rather than
    asserting the number from the source.
-4. Re-profile the full config and update `masster_gpu_audit.md`'s measured section with the
-   result — do not claim a throughput win before that re-measurement, for the same reason the
+4. Re-profile the full config and record the result here, against the 2026-09-14 baseline in
+   the removed GPU audit (`git show e65339ed:docs/plans/masster/masster_gpu_audit.md`) — do not claim a throughput win before that re-measurement, for the same reason the
    rel-filter fix's initial 25% estimate turned out to be a profiler-attribution artifact rather
    than recoverable time.

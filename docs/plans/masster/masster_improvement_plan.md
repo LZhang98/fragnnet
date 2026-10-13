@@ -38,7 +38,7 @@ It does not declare a winning output parameterization or supersede compatibility
   distinguish output clutter, soft fragment attribution, and mass-compatible support.
   Their historical pruning numbers require chemistry revalidation. High retained proposal
   probability did not guarantee preserved spectral coverage.
-- The [code audit](../../findings/masster/masster_code_audit.md) records chemistry, gradient-routing,
+- The code audit (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_code_audit.md`) records chemistry, gradient-routing,
   and inference corrections. Re-evaluate affected checkpoints on corrected code before using
   their metrics as current references. Merged consensus targets also differ from historical
   exact-union targets and must not be compared as if the training data were identical.

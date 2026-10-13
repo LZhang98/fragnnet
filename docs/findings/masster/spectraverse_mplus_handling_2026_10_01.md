@@ -29,7 +29,7 @@ chemistry, so it is not made here.
 - **Charge site.** The ion-mass code applies one electron correction whatever the atoms' formal
   charges are (`_fragment_masses_and_valid_channels` in
   [`masster_model.py`](../../../src/fragnnet/model/masster_model.py)). The earlier
-  double-electron bug ([code audit §2](masster_code_audit.md)) is no longer present. The charged
+  double-electron bug (code audit §2 (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_code_audit.md`)) is no longer present. The charged
   atom is not required to be in the ion: either side of a cut can be the ion, and the hydrogen
   ladder covers hydride or proton bookkeeping. The encoder sees the charge site only through
   the `a_formal` atom feature.
