@@ -186,7 +186,11 @@ re-trains `720jwmai`'s recipe (seed 397623, 128 epochs, batch 256, 49664/2000 st
 top-level key matches the W&B run config. Nested `spec_params` differ only by new off-by-default
 RT/CCS keys. It builds on `refactor/fragnnet-masster-reorg` (10.14M parameters, CPU). Not submitted.
 Batch-256 trials reached about epoch 76 in about 2.95 h, so use a wall time of at least 8 h.
-Matched pow075 control:
-[`msgym_sweep_pow075_control.yml`](../../../config/masster/massspecgym/msgym_sweep_pow075_control.yml)
-is the sweep base run unchanged under its own W&B name, so it uses the same seed, loss selection
-and disabled test split as the leader (9.23M parameters, CPU build). Not submitted.
+
+Matched control:
+[`msgym_sweep_base_control.yml`](../../../config/masster/massspecgym/msgym_sweep_base_control.yml)
+is the sweep base run unchanged under its own W&B name, so it uses the same seed, pow0.75 CE,
+loss selection and disabled test split as the leader (9.23M parameters, CPU build). Not submitted.
+The leader's +0.91M parameters come from depth only: encoder +1 layer (+0.89M), intensity
+transformer +1 (+1.05M), bond head -1 (-1.04M).
+Launcher: [`submit_msgym_sweep_leader.sh`](../../../scripts/manual_slurm/fir/submit_msgym_sweep_leader.sh).

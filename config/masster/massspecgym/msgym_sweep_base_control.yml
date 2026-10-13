@@ -1,10 +1,11 @@
-# pow075 control matched to msgym_sweep_leader_720jwmai.yml: the sweep tiwhun9q base run as-is
-# (batch 512, lr 1e-3, wd 0.01, depths 2/3/2, the base dropouts). Same seed, pow0.75 CE,
+# Sweep-base control matched to msgym_sweep_leader_720jwmai.yml: the sweep tiwhun9q base run
+# as-is (batch 512, lr 1e-3, wd 0.01, depths 2/3/2, the base dropouts). pow0.75, like every
+# tiwhun9q trial and the leader. Same seed,
 # loss chunks 16, loss-selected checkpoint and disabled test split as the leader, so the two
 # checkpoints differ only in the swept hyperparameters. It differs from the pow075 arm config
 # (msgym_..._k1_ema999_fourier_pow075.yml) only in checkpoint selection (val_primary_loss min
 # vs val_cos_sim_0.01 max) and eval_test_split; that arm's run q3oxbpgx also used loss chunks 64.
-wandb_name: msgym_masster_sweep_pow075_control
+wandb_name: msgym_masster_sweep_base_control
 wandb_group: msgym_masster_sweep_leaders_20261012
 wandb_tags:
 - masster
