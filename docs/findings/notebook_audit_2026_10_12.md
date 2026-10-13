@@ -146,3 +146,17 @@ The Spectraverse/MSGYM pair uses different datasets; the baseline/MBFS and MBFS/
 pair compares different DAG mechanisms. Both pairs were retained. Existing condition-
 notebook deletions and the isotope-notebook rename were left untouched. Source-preservation
 checks and JSON parsing passed; no notebooks or model tests were executed.
+
+
+## Large table output cleanup (2026-10-13)
+
+Starting from clean revision `ee94e9d3`, removed 77 saved HTML table outputs larger
+than 5,000 bytes (serialized JSON) from 18 notebooks. This includes large DataFrame
+previews from data-loading cells. Outputs with image MIME data or embedded figure
+markup were excluded; all 117 identified figure outputs remain unchanged. Smaller
+tables, text outputs, execution counts, metadata, code and Markdown remain intact.
+No notebook files were deleted. File size decreased by 1,297,847 bytes.
+
+JSON parsing and structural comparisons verified that table-output removal was the
+only semantic notebook change; figure payload preservation was checked against HEAD.
+No notebook computations or model tests were run. Existing audit findings remain open.

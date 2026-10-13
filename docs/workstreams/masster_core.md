@@ -1,13 +1,13 @@
 # MASSter core model on NIST20
 
-> **Status:** HUB · **Updated:** 2026-10-12
+> **Status:** HUB · **Updated:** 2026-10-13
 > Architecture, training recipe, regularization, losses, candidate/proposal machinery, speed/GPU, the 128-epoch screens and campaign reads, ion-H channel selection, and feature/information audits for MASSter on NIST20.
 
 ## Where it stands
 
 - **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) remain open; repair W&B merge and override validation next.
 
-- **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated with unique cells preserved; repair reporting errors next.
+- **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated; large saved table outputs cleared with figures preserved. Reporting repairs remain open.
 
 - **Unit test audit:** [findings](../findings/unit_test_audit_2026_10_12.md); export expectations and the three false-positive guards are fixed in tests (uncommitted). Complete-suite and GPU validation remain open.
 

@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-12
+> **Status:** REFERENCE · **Updated:** 2026-10-13
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -37,7 +37,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 - **Configs grouped by model:** [record](plans/config_model_grouping.md); shared template and experiment settings retained. [Seven audit findings](findings/config_audit_2026_10_12.md) remain open. **Next:** W&B merge and CLI validation repairs.
 
-- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. NIST20 duplicate consolidated with unique cells preserved; next repair reporting errors.
+- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. NIST20 duplicate consolidated; large saved table outputs cleared with figures preserved. Reporting repairs remain open.
 
 - **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed in tests (uncommitted). **Next:** full-suite and GPU validation.
 
