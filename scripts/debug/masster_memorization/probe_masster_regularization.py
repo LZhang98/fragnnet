@@ -31,9 +31,9 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet.layers.gnn import GNN
-from fragnnet.models.masster import candidate_transformer
+from fragnnet.models.masster import masster_candidate_transformer as candidate_transformer
 from fragnnet.models.masster.masster_model import MassterContextEncoder, MassterModel
-from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_proposal_heads import BondFocusedBreakHead
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.migrations import LEGACY_MASSTER_MODEL_TYPE, migrate_legacy_masster_name
 from fragnnet.utils.nn_utils import build_lr_scheduler

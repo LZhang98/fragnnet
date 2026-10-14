@@ -251,6 +251,58 @@ def gaussian_ce(
     return b_logprobs
 
 
+def laplace_ce(
+    b_true_mzs: th.Tensor,
+    b_pred_mzs: th.Tensor,
+    b_pred_logprobs: th.Tensor,
+    relative: bool,
+    tolerance: float,
+    tolerance_min_mz: float,
+    tolerance_multiple: float,
+    gaussian_renormalize: bool,
+    **kwargs,
+) -> th.Tensor:
+    """Per-true-peak log density under a mixture of Laplace kernels.
+
+    The kernel standard deviation equals the Gaussian one, ``sigma = max(mz, min_mz) * tol``
+    (relative) or ``tol`` (absolute), so the Laplace scale is ``b = sigma / sqrt(2)`` and
+
+        log p(x | mu) = -|x - mu| / b - log(2 b).
+
+    Truncating at ``k * sigma`` keeps mass ``1 - exp(-sqrt(2) k)``; ``gaussian_renormalize``
+    divides it out, as for the Gaussian.
+    """
+    if relative:
+        b_scales = th.clamp(b_pred_mzs, min=tolerance_min_mz) * tolerance / math.sqrt(2)
+    else:
+        b_scales = tolerance / math.sqrt(2) * th.ones_like(b_pred_mzs)
+    log_trunc_factor = 0.0
+    if gaussian_renormalize:
+        assert tolerance_multiple > 0, tolerance_multiple
+        log_trunc_factor = math.log(-math.expm1(-math.sqrt(2) * tolerance_multiple))
+    # [T, P]
+    b_log_probs = (
+        -th.abs(b_true_mzs.reshape(-1, 1) - b_pred_mzs.reshape(1, -1)) / b_scales.reshape(1, -1)
+        - th.log(2 * b_scales.reshape(1, -1))
+        + b_pred_logprobs.reshape(1, -1)
+        - log_trunc_factor
+    )
+    # Same windowing as ``gaussian_ce``: a positive multiple truncates, -1 does not.
+    if tolerance_multiple > 0:
+        b_match_mask = calculate_match_mzs(
+            b_true_mzs,
+            b_pred_mzs,
+            tolerance=tolerance * tolerance_multiple,
+            relative=relative,
+            tolerance_min_mz=tolerance_min_mz,
+        )
+        b_match_mask = th.as_tensor(b_match_mask, device=b_pred_logprobs.device)
+        b_log_probs = b_log_probs + LOG_ZERO(b_log_probs.dtype) * (~b_match_mask).to(
+            b_log_probs.dtype
+        )
+    return th.logsumexp(b_log_probs, dim=1)
+
+
 def peak_marginal_ce(
     b_pred_mzs: th.Tensor,
     b_true_mzs: th.Tensor,
@@ -450,7 +502,8 @@ def sparse_cross_entropy_vec(
         gaussian_renormalize: Whether to renormalize Gaussian.
         loss_batch_size: Batch size for loss computation.
         dist: Output distribution. ``"gaussian"`` weights each matched candidate by a
-            Gaussian m/z density; ``"peak_marginal"`` aggregates matched candidate
+            Gaussian m/z density; ``"laplace"`` by a Laplace density with the same standard
+            deviation (scale ``sigma / sqrt(2)``); ``"peak_marginal"`` aggregates matched candidate
             log-probabilities with a hard tolerance window and no density term.
 
     Returns:
@@ -481,16 +534,19 @@ def sparse_cross_entropy_vec(
 
     # Precompute loop-invariant constants as Python scalars (avoids per-iteration tensor creation).
     _LOG_2PI = math.log(2 * math.pi)
-    if dist not in ("gaussian", "peak_marginal"):
+    if dist not in ("gaussian", "laplace", "peak_marginal"):
         raise ValueError(
             f"Distribution '{dist}' not implemented. "
-            "Supported distributions: 'gaussian', 'peak_marginal'."
+            "Supported distributions: 'gaussian', 'laplace', 'peak_marginal'."
         )
-    use_gaussian = dist == "gaussian"
-    if gaussian_renormalize and use_gaussian:
+    use_density = dist in ("gaussian", "laplace")
+    if gaussian_renormalize and use_density:
         if oos_tolerance_multiple <= 0:
             raise ValueError(f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}")
-        _log_trunc_factor: float = math.log(math.erf(oos_tolerance_multiple / math.sqrt(2)))
+        if dist == "gaussian":
+            _log_trunc_factor: float = math.log(math.erf(oos_tolerance_multiple / math.sqrt(2)))
+        else:
+            _log_trunc_factor = math.log(-math.expm1(-math.sqrt(2) * oos_tolerance_multiple))
     else:
         _log_trunc_factor = 0.0
 
@@ -581,7 +637,7 @@ def sparse_cross_entropy_vec(
 
         # 5. Match peaks and compute Gaussian-mixture probabilities within each spectrum.
         bl_valid_pairs = bl_true_valid.unsqueeze(2) & bl_pred_valid.unsqueeze(1)
-        if use_gaussian and oos_tolerance_multiple == -1:
+        if use_density and oos_tolerance_multiple == -1:
             # Untruncated mixtures include every real candidate of the same spectrum.
             bl_both_mask = bl_valid_pairs
         else:
@@ -604,7 +660,7 @@ def sparse_cross_entropy_vec(
 
         bl_true_both_mask = th.any(bl_both_mask, dim=2)
 
-        if use_gaussian:
+        if use_density:
             if relative:
                 if bl_tol_per_pred_padded is not None:
                     bl_stds = (
@@ -619,15 +675,18 @@ def sparse_cross_entropy_vec(
                     if bl_tol_per_pred_padded is not None
                     else tolerance * th.ones_like(bl_pred_mzs_padded)
                 )
-            bl_vars = bl_stds**2
-
+            bl_diffs = bl_true_mzs_padded.unsqueeze(2) - bl_pred_mzs_padded.unsqueeze(1)
+            if dist == "gaussian":
+                bl_vars = bl_stds**2
+                bl_kernel_log_probs = -0.5 * bl_diffs**2 / bl_vars.unsqueeze(1) - 0.5 * (
+                    _LOG_2PI + th.log(bl_vars.unsqueeze(1))
+                )
+            else:
+                # Laplace with the Gaussian's standard deviation: scale b = sigma / sqrt(2).
+                bl_scales = bl_stds.unsqueeze(1) / math.sqrt(2)
+                bl_kernel_log_probs = -th.abs(bl_diffs) / bl_scales - th.log(2 * bl_scales)
             bl_ios_log_probs = (
-                -0.5
-                * (bl_true_mzs_padded.unsqueeze(2) - bl_pred_mzs_padded.unsqueeze(1)) ** 2
-                / bl_vars.unsqueeze(1)
-                - 0.5 * (_LOG_2PI + th.log(bl_vars.unsqueeze(1)))
-                + bl_pred_logprobs_padded.unsqueeze(1)
-                - _log_trunc_factor
+                bl_kernel_log_probs + bl_pred_logprobs_padded.unsqueeze(1) - _log_trunc_factor
             )
         else:
             # Peak-marginal: every candidate inside the tolerance window contributes its
@@ -680,16 +739,20 @@ def get_sparse_cross_entropy_fn(
 ) -> Callable:
     if dist == "gaussian":
         ce_fn = gaussian_ce
+    elif dist == "laplace":
+        ce_fn = laplace_ce
     elif dist == "peak_marginal":
         ce_fn = peak_marginal_ce
     else:
         msg = (
             f"Distribution '{dist}' not implemented. "
-            "Supported distributions: 'gaussian', 'peak_marginal'."
+            "Supported distributions: 'gaussian', 'laplace', 'peak_marginal'."
         )
         raise NotImplementedError(msg)
 
-    tolerance_multiple = oos_tolerance_multiple if dist == "gaussian" else pm_tolerance_multiple
+    tolerance_multiple = (
+        pm_tolerance_multiple if dist == "peak_marginal" else oos_tolerance_multiple
+    )
     common = {
         "tolerance": tolerance,
         "relative": relative,

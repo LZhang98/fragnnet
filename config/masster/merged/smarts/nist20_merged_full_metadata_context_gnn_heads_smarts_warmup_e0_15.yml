@@ -1,7 +1,7 @@
 # SMARTS-enabled merged GNN-context run, derived from the context-ablation arm.
 # Preserve Gaussian CE, consensus targets, and U256/E1024; warm up through epoch 15.
 # The SMARTS/proposal-only-warmup construction guard is removed and validated; see
-# docs/findings/masster/masster_code_audit.md#smarts-proposal-only-warmup-guard-removed-2026-09-11.
+# git show e65339ed:docs/findings/masster/masster_code_audit.md (guard removed 2026-09-11).
 wandb_name: nist20_merged_full_metadata_context_gnn_heads_smarts_warmup_e0_15
 wandb_group: nist20_mass_shatter_merged_smarts
 wandb_tags:

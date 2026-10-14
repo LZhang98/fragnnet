@@ -1065,3 +1065,12 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
     `.pyx` edit triggers a rebuild (`cache-keys`); the CPU path via `uv pip --no-sources` gives
     torch 2.4.1+cpu; `pip wheel` still builds with and without build isolation; `uv lock
     --check` passes; `tests/test_uv_lock.py` runs it when uv is on PATH.
+- 2026-10-14: `models/masster/` basenames get the `masster_` prefix (user request), matching
+  `models/fragnnet/`: `candidate_features`, `candidate_transformer`, `component_pooling`,
+  `nominal_isotopes`, `pathway_probabilities`, `proposal_heads`, `rt_ccs_heads`. The
+  `candidates/` subpackage keeps its names, like `models/fragnnet/dag/`. Stripping the prefix
+  from every model package instead was considered and declined (churn; Phase 8 kept basenames).
+  Imports, mock targets, one `template.yml` comment and the boundary golden were rewritten (the
+  golden changes in names and order only). Checks: reorg and MASSter suites, 2374 passed; the 2
+  failures in `test_masster_pl.py` count configs under `config/masster/merged/` that `ef9be514`
+  deleted. The 7 local MASSter checkpoints' `data.pkl` name none of the old module paths.

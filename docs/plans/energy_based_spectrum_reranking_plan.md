@@ -77,7 +77,7 @@ finding also does not establish that MASSter has the same error decomposition.
   experiment manifest rather than depending on the ambiguous help. This disables the export
   intensity filter only: audit upstream model pruning, zero handling, and serialization to verify
   complete retained chemical support. Inspect the
-  [correctness audit](../findings/fragnnet_masster_audit_2026_09_12.md) and reconcile
+  correctness audit (removed 2026-10-13; `git show e65339ed:docs/findings/fragnnet_masster_audit_2026_09_12.md`) and reconcile
   relevant checkpoint, export, and metric issues against current code before measuring.
 - Aggregate candidate ions/fragments into predicted peak-mass groups using the existing mass
   convention. Pool all associated fragment embeddings for a mass; do not assign an observed

@@ -124,7 +124,7 @@ def test_peak_marginal_ignores_offset_inside_window_but_gaussian_does_not() -> N
     assert run(gauss_fn, pred_mzs) != pytest.approx(run(gauss_fn, shifted_pred_mzs), abs=1e-6)
 
 
-@pytest.mark.parametrize("dist", ["gaussian", "peak_marginal"])
+@pytest.mark.parametrize("dist", ["gaussian", "laplace", "peak_marginal"])
 @pytest.mark.parametrize("loss_batch_size", [1, 8])
 def test_vectorized_matches_sequential(dist: str, loss_batch_size: int) -> None:
     """The vectorized path reproduces the sequential path for both distributions."""
@@ -198,10 +198,10 @@ def test_per_sample_tolerance_widens_the_window() -> None:
 
 def test_unknown_distribution_is_rejected() -> None:
     with pytest.raises(NotImplementedError):
-        _make_fn("laplace", vectorized=True)
+        _make_fn("cauchy", vectorized=True)
 
 
-@pytest.mark.parametrize("dist", ["gaussian", "peak_marginal"])
+@pytest.mark.parametrize("dist", ["gaussian", "laplace", "peak_marginal"])
 def test_per_sample_tolerance_matching_the_global_is_a_no_op(dist: str) -> None:
     """Enabling per-instrument tolerance with the global values changes nothing.
 
@@ -252,3 +252,75 @@ def test_sequential_gaussian_truncates_at_the_tolerance_window() -> None:
         assert run(vectorized, in_window_only, [0.5]) == pytest.approx(
             run(vectorized, with_outsider, [0.5, 0.5]), abs=1e-5
         )
+
+
+@pytest.mark.parametrize("vectorized", [True, False])
+@pytest.mark.parametrize("renormalize", [False, True])
+def test_laplace_matches_closed_form(vectorized: bool, renormalize: bool) -> None:
+    """Laplace density uses the Gaussian's std: scale b = max(mz, min_mz) * tol / sqrt(2)."""
+    true_mzs = th.tensor([300.0], dtype=th.float32)
+    true_logprobs = th.tensor([0.0], dtype=th.float32)
+    pred_mzs = th.tensor([300.001, 300.002], dtype=th.float32)
+    pred_probs = [0.6, 0.4]
+    multiple = 1.0
+    fn = get_sparse_cross_entropy_fn(
+        dist="laplace",
+        vectorized=vectorized,
+        tolerance=TOLERANCE,
+        relative=True,
+        tolerance_min_mz=TOLERANCE_MIN_MZ,
+        oos_tolerance_multiple=multiple,
+        gaussian_renormalize=renormalize,
+        pm_tolerance_multiple=1.0,
+        loss_batch_size=8,
+    )
+    ios_ce = fn(
+        true_mzs,
+        true_logprobs,
+        th.tensor([0], dtype=th.long),
+        pred_mzs,
+        th.log(th.tensor(pred_probs, dtype=th.float32)),
+        th.zeros(2, dtype=th.long),
+        th.tensor([math.log(1e-6)], dtype=th.float32),
+    )[0].item()
+
+    density = 0.0
+    for mz, prob in zip(pred_mzs.tolist(), pred_probs, strict=True):
+        scale = mz * TOLERANCE / math.sqrt(2)
+        density += prob * math.exp(-abs(300.0 - mz) / scale) / (2 * scale)
+    if renormalize:
+        density /= 1 - math.exp(-math.sqrt(2) * multiple)
+    assert ios_ce == pytest.approx(-math.log(density), abs=1e-4)
+
+
+def test_laplace_has_heavier_tails_than_gaussian() -> None:
+    """At equal std, Laplace is peakier and heavier-tailed than the Gaussian."""
+
+    def run(dist: str, pred_mz: float) -> float:
+        fn = get_sparse_cross_entropy_fn(
+            dist=dist,
+            vectorized=True,
+            tolerance=TOLERANCE,
+            relative=True,
+            tolerance_min_mz=TOLERANCE_MIN_MZ,
+            oos_tolerance_multiple=3.0,
+            gaussian_renormalize=False,
+            pm_tolerance_multiple=1.0,
+            loss_batch_size=8,
+        )
+        return fn(
+            th.tensor([300.0]),
+            th.tensor([0.0]),
+            th.tensor([0], dtype=th.long),
+            th.tensor([pred_mz]),
+            th.tensor([0.0]),
+            th.tensor([0], dtype=th.long),
+            th.tensor([math.log(1e-6)]),
+        )[0].item()
+
+    sigma = 300.0 * TOLERANCE
+    # Lower CE = higher density. Laplace is denser at the centre and in the tails,
+    # sparser in the shoulder around 1 sigma.
+    assert run("laplace", 300.0) < run("gaussian", 300.0)
+    assert run("laplace", 300.0 + sigma) > run("gaussian", 300.0 + sigma)
+    assert run("laplace", 300.0 + 2.5 * sigma) < run("gaussian", 300.0 + 2.5 * sigma)

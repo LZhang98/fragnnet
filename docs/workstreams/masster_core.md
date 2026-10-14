@@ -7,7 +7,7 @@
 
 - **Shared codebase audit:** [repairs](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) implemented in the working tree for all six findings and the three rechecked config runtime defects. Focused regressions and the unfiltered CPU suite pass. Next: review; GPU and real-checkpoint evaluation remain unverified.
 
-- **Config organization:** [grouping record](../plans/config_model_grouping.md); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) 1–3 repaired; 4–7 remain open. Next: malformed/duplicate YAML and historical config migration decisions.
+- **Config organization:** grouping record (removed 2026-10-13; `git show e65339ed:docs/plans/config_model_grouping.md`); experiment configs now live under their model, with the single root template retained. [Audit findings](../findings/config_audit_2026_10_12.md) 1–3 repaired; 6 resolved for MASSter by [retiring 97 configs](../findings/config_audit_2026_10_12.md#masster-config-retirement-2026-10-13) (2026-10-13, recover from `e180f2c2`); 4, 5 and 7 remain open. Next: malformed/duplicate YAML.
 
 - **Shared notebook audit:** [findings](../findings/notebook_audit_2026_10_12.md); metric relabeling, repeat scaling, reversed parameter counts and execution blockers found. NIST20 duplicate consolidated; large saved table outputs cleared with figures preserved. Reporting repairs remain open.
 
@@ -31,7 +31,7 @@
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | REPAIRED, uncommitted | Review; CPU validation complete, GPU/real-checkpoint evaluation unverified |
-| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; resolve malformed/duplicate YAML and legacy settings next |
+| [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; 6 resolved for MASSter (configs retired 2026-10-13); resolve malformed/duplicate YAML next |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | CPU suite passed; GPU validation remains open |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
@@ -41,9 +41,7 @@
 | [Regularization sweep / `wd10`](../plans/masster/masster_regularization_sweep_plan.md) | PREPARED | Generate on Fir with `submit_masster_regularization.sh wd10` if the gap question is reopened |
 | [Ion/H channel selection](../plans/masster/masster_ion_h_channel_selection_plan.md) | DEFERRED | Disable support gate, verify top-k 95/99 metric, recover a checkpoint, run `masster_ion_h_top_k_sweep.py` |
 | [Attention/bond budget](../plans/masster/masster_attention_budget_2026_09_21.md) | PREPARED | Submit `a4`/`a5`/`b4` only if architecture work resumes |
-| [Candidate backend](../plans/masster/masster_candidate_backend_plan.md) and [topology performance](../plans/masster/masster_topology_assembly_performance_plan.md) | LANDED / DEFERRED | Record L40S acceptance numbers if throughput is revisited |
 | [Bond-cut EBM](../plans/masster/masster_bond_cut_ebm_plan.md), [EBM plan](../plans/masster/masster_energy_based_model_plan.md) | PROPOSED | Oracle excess over matched random pools before any implementation |
-| [Intensity-head bucketing syncs](../plans/masster/masster_intensity_head_bucketing_sync_plan.md) | PROPOSED | Profile `isin`/`nonzero`/`searchsorted` overhead first |
 | [Unused NIST peak annotations](../findings/unused_information_inventory_2026_09_22.md) | FINDING (open) | Decide whether to use per-peak formula assignments in the loss |
 | [Cross-adduct paired loss](../findings/cross_adduct_loss_headroom_2026_09_17.md) | FINDING (gate half) | Needs a multi-adduct MASSter checkpoint |
 | [Retained-fragment GNN](../plans/masster/masster_hierarchical_fragment_graph_plan.md) | DEFERRED | Candidate branch unbuilt; `fc1` was not positive |
@@ -72,7 +70,7 @@
 **Speed and candidate machinery**
 - [Training speed](../findings/masster/masster_training_speed_2026_09_17.md) — monitoring off 1.40x; CUDA construction about 1.9x per epoch; cut-bond encoder dedup cuts encoder FLOPs 20.1 to 2.1 GFLOP.
 - [FastGNN / beam](../plans/masster/masster_fast_gnn_proposal.md) — beam captures flat 0.8695 mass; stopped.
-- [Direct-loss batching](../plans/masster/masster_direct_loss_batching_plan.md) — closest 44x, hungarian 11x.
+- Direct-loss batching (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_direct_loss_batching_plan.md`) — closest 44x, hungarian 11x.
 **Ion/H**
 - [Ion/H plan summary](../plans/masster/masster_ion_h_channel_selection_plan.md) — gate gives no benefit (dense cosine 0.7630/0.7655/0.7631); selection never exercised.
 **Neighbouring workstreams**: error analyses, memorization, SMARTS pathway, QET, ORB instruments in [generalization](masster_generalization.md); MSGYM and GLACIER in [msgym](msgym.md); datasets in [spectraverse](spectraverse.md), [nist23_ei](nist23_ei.md), [casmi_enveda](casmi_enveda.md); [fragnnet](fragnnet.md).
@@ -82,7 +80,6 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | FINDING (2026-10-13) | Six findings and three config runtime defects repaired; unfiltered CPU suite passed |
-| [Config grouping](../plans/config_model_grouping.md) | LANDED (2026-10-12) | Model directories and caller migration; settings preserved, 138 tests passed |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-13) | Four test findings fixed; unfiltered CPU suite passed during codebase repairs |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
@@ -98,24 +95,17 @@
 | [masster_attention_budget_2026_09_21](../plans/masster/masster_attention_budget_2026_09_21.md) | PREPARED (2026-10-06) | Attention and bond-head budget options (default-off); `a4`/`a5`/`b4` never run |
 | [masster_bond_cut_ebm_plan](../plans/masster/masster_bond_cut_ebm_plan.md) | PROPOSED (2026-09-13) | Bond-cut energy-based model design, stage 1; no implementation |
 | [masster_campaign_4h_2026_09_21](../plans/masster/masster_campaign_4h_2026_09_21.md) | REFERENCE (2026-10-06) | Launch record of the 20-arm 2026-09-21 campaign (3 h boxes on Fir) |
-| [masster_candidate_backend_plan](../plans/masster/masster_candidate_backend_plan.md) | LANDED (2026-10-06) | CPU-first, optional CUDA candidate construction; in production use |
 | [masster_candidate_feature_list_plan](../plans/masster/masster_candidate_feature_list_plan.md) | LANDED (2026-10-06) | Ordered candidate-token feature list with one spec table |
-| [masster_candidate_pathway_refactor](../plans/masster/masster_candidate_pathway_refactor.md) | LANDED (2026-08-29) | Five-layer refactor of candidate/pathway assembly, behavior-identical on 72 configs |
 | [masster_cut_set_features_plan](../plans/masster/masster_cut_set_features_plan.md) | CLOSED NULL (2026-10-06) | Cut-set descriptors for the candidate token; five arms all null (adjacency +0.0032) |
-| [masster_direct_loss_batching_plan](../plans/masster/masster_direct_loss_batching_plan.md) | LANDED (2026-09-19) | Batched direct peak-list losses: closest 44x, hungarian 11x faster |
 | [masster_energy_based_model_plan](../plans/masster/masster_energy_based_model_plan.md) | PROPOSED (2026-09-13) | Bond-cut then spectrum EBM program; proposal only |
 | [masster_fast_gnn_proposal](../plans/masster/masster_fast_gnn_proposal.md) | STOPPED (2026-10-06) | Connected-fragment beam proposal; stopped (flat 0.8695 mass vs 1.0000 cut_masks) |
-| [masster_gpu_audit](../plans/masster/masster_gpu_audit.md) | REFERENCE (2026-09-17) | Static plus measured GPU profile and priorities |
 | [masster_hierarchical_fragment_graph_plan](../plans/masster/masster_hierarchical_fragment_graph_plan.md) | DEFERRED (2026-09-29) | Retained-fragment GNN branch; `fc1` local screen not positive |
 | [masster_improvement_plan](../plans/masster/masster_improvement_plan.md) | DEFERRED (2026-10-06) | Intensity/support-gating roadmap and cluster commands from 2026-09-17 |
-| [masster_intensity_head_bucketing_sync_plan](../plans/masster/masster_intensity_head_bucketing_sync_plan.md) | PROPOSED (2026-09-14) | Remove bucketing host syncs in the intensity head; unmeasured payoff |
 | [masster_nonprobabilistic_intensity_plan](../plans/masster/masster_nonprobabilistic_intensity_plan.md) | LANDED (2026-10-06) | Direct peak-list objectives (Hellinger, leak, CE auxiliary); CE stays production |
 | [masster_proposal_early_stop_plan](../plans/masster/masster_proposal_early_stop_plan.md) | CLOSED NULL (2026-09-23) | Proposal freeze/weight-decay knobs `p1`/`p3`: both nulls |
 | [masster_regularization_sweep_plan](../plans/masster/masster_regularization_sweep_plan.md) | PREPARED (2026-10-06) | One-hour regularization sweep (no promotions) and the prepared full-length `wd10` arm |
 | [masster_rl_exploration_plan](../plans/masster/masster_rl_exploration_plan.md) | SUPERSEDED (2026-08-19) | Historical RL exploration analysis; superseded |
 | [masster_supervised_escape_plan](../plans/masster/masster_supervised_escape_plan.md) | CLOSED NULL (2026-09-27) | Intensity escape for unreachable peaks; implemented, exact null |
-| [masster_topology_assembly_performance_plan](../plans/masster/masster_topology_assembly_performance_plan.md) | DEFERRED (2026-10-06) | CPU topology assembly performance stages and gates |
-| [one_pass_bond_fragment_testing_plan](../plans/masster/one_pass_bond_fragment_testing_plan.md) | DEFERRED (2026-10-06) | Verification tracker for the one-pass model (2026-08-14) |
 | [chemfrag_rearrangement_triage_2026_09_14](../findings/masster/chemfrag_rearrangement_triage_2026_09_14.md) | FINDING (2026-09-28) | 32 rearrangement transforms triaged; none adds unique coverage |
 | [connected_fragment_beam_reuse_and_equivalence_2026_09_17](../findings/masster/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md) | FINDING (2026-09-17) | Beam vs cut_masks reuse/equivalence algebra and candidate-only measurement |
 | [connected_fragment_beam_speed_2026_09_17](../findings/masster/connected_fragment_beam_speed_2026_09_17.md) | FINDING (2026-09-17) | Synchronized GPU timing of the connected-fragment beam |
@@ -123,8 +113,6 @@
 | [masster_campaign_readout_2026_09_21](../findings/masster/masster_campaign_readout_2026_09_21.md) | FINDING (2026-09-24) | 41-run W&B review; feature bundle +0.006; sweep no promotions |
 | [masster_candidate_cut_descriptors_2026_09_22](../findings/masster/masster_candidate_cut_descriptors_2026_09_22.md) | FINDING (2026-09-22) | Cut descriptors on MASSter candidates; adjacency is the missing relation (48.9% ambiguity) |
 | [masster_channel_selection_findings](../findings/masster/masster_channel_selection_findings.md) | FINDING (2026-09-05) | Historical channel-selection results (chemistry revalidation pending) |
-| [masster_code_audit](../findings/masster/masster_code_audit.md) | REFERENCE (2026-09-13) | Candidate-attention A/B code audit; seven fixes |
-| [masster_context_design_audit](../findings/masster/masster_context_design_audit.md) | REFERENCE (2026-09-08) | CE/context conditioning design audit and fixes |
 | [masster_head_input_asymmetry_2026_09_22](../findings/masster/masster_head_input_asymmetry_2026_09_22.md) | FINDING (2026-09-24) | Proposal branch reads detached inputs in the merged lineage; charge head inert |
 | [masster_identity_supervision_2026_09_22](../findings/masster/masster_identity_supervision_2026_09_22.md) | FINDING (2026-09-22) | 2.75 fragments share a formula; the structural-teacher recommendation is retracted |
 | [masster_loss_audit_2026_09_19](../findings/masster/masster_loss_audit_2026_09_19.md) | FINDING (2026-09-19) | Loss-function audit and Hungarian/closest measurements |

@@ -432,7 +432,7 @@ Dataset cleanup now implements the best observed path:
 
 > Since 2026-09-20 the fragment composition can also come from subformula decomposition instead
 > of a DAG, which matches the DAG source to 99.2% of peak decisions and needs no `frag_dp`:
-> [subformula_isotope_detection_plan.md](../plans/subformula_isotope_detection_plan.md).
+> subformula_isotope_detection_plan.md (removed 2026-10-13; `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md`).
 
 FT formula-mode sweep over `min_coiso_fraction`:
 

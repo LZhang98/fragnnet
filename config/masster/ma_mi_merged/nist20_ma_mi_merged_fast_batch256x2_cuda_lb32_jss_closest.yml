@@ -1,4 +1,4 @@
-# LOSS-BATCHING VALIDATION ARM -- see docs/plans/masster/masster_direct_loss_batching_plan.md.
+# LOSS-BATCHING VALIDATION ARM -- see `git show e65339ed:docs/plans/masster/masster_direct_loss_batching_plan.md`.
 # Exercises the batched sparse_peak_list_distance / round_aggregate_peaks rewrite (86cbf98d) in a
 # real training run on the 2g.20gb MIG slice. Derived from ..._ctrl_2g.yml by changing exactly
 # loss_type and masster_peak_matching (plus wandb_name/group/tags); every model, data, shape

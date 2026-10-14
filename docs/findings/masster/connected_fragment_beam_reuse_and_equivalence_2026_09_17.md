@@ -663,7 +663,7 @@ device-to-host synchronization on every iteration, inside every chunk, inside ev
 audit names that host-visible equality test as a main contributor. `_search` synchronizes
 further at `recorded.any()`, `int(counts.max().item())`, `int(keep_rank.max().item())` and at
 each boolean-mask index. This is the failure mode the
-[MASSter GPU audit](../../plans/masster/masster_gpu_audit.md) catalogues. It is independent of the
+MASSter GPU audit (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_gpu_audit.md`) catalogues. It is independent of the
 union-find question: an asynchronous fixed-iteration or count-based convergence test would
 remove the syncs without changing the algorithm.
 

@@ -1117,7 +1117,7 @@ class TestRegularIsotopeBranchKnownDefects:
 
     These tests assert what the code does today, not what it should do. Each one names the
     defect it records, so a fix inverts the assertion rather than discovering the behaviour
-    again. See ``docs/plans/subformula_isotope_detection_plan.md`` and
+    again. See `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md` and
     ``docs/reference/detect_isotope_peaks_tuning.md``. The whole branch is off in every
     template, which is why these are recorded rather than fixed.
     """

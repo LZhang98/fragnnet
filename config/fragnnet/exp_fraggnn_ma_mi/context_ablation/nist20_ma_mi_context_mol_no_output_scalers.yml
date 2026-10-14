@@ -1,4 +1,4 @@
-# Matched routing/scaler ablation; see docs/plans/conditioning_refactor_plan.md.
+# Matched routing/scaler ablation; see `git show e65339ed:docs/plans/conditioning_refactor_plan.md`.
 # Compare with the existing scaler-on mol and mol,mlp configs; retrain each arm.
 # ============================================================================
 # W&B Logging

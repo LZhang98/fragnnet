@@ -130,7 +130,7 @@ rediscovers its membership with `isin`, `nonzero` and `searchsorted`. Counts plu
 sorted spans already describe that layout. A simpler layout calculation may also remove device
 synchronizations, but no speedup was measured here.
 
-This is an existing [proposed work item](../../plans/masster/masster_intensity_head_bucketing_sync_plan.md).
+This is an existing proposed work item (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_intensity_head_bucketing_sync_plan.md`).
 Its atom-decoder discussion is historical: that decoder is now retired. Reprofile the current
 attention path and retain ordering, padding and gradient parity before changing it.
 

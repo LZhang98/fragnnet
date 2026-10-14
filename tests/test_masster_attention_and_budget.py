@@ -14,12 +14,12 @@ import pytest
 import torch as th
 
 from fragnnet.layers.gnn import GNN
-from fragnnet.models.masster.candidate_transformer import (
+from fragnnet.models.masster.masster_candidate_transformer import (
     CandidateIntensityTransformerHead,
     PairwiseMassBias,
     _BiasedSelfAttention,
 )
-from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_proposal_heads import BondFocusedBreakHead
 
 HEAD_KWARGS = {
     "fragment_embedding_dim": 4,

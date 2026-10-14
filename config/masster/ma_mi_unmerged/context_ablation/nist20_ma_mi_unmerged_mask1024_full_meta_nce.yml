@@ -1,5 +1,5 @@
 # Optional NCE-only diagnostic, outside the next run queue. Use the dual-CE baseline.
-# See docs/plans/conditioning_refactor_plan.md.
+# See `git show e65339ed:docs/plans/conditioning_refactor_plan.md`.
 # Keep global loss tolerance and CE-specific proposals fixed.
 wandb_name: nist20_ma_mi_unmerged_mask1024_full_meta_nce
 wandb_group: nist20_mass_shatter_l40s

@@ -73,7 +73,7 @@ instead of rejecting the checkpoint. No network request was made.
 
 Require complete restoration on this path too. If legacy weight migrations are needed,
 apply named migrations before the strict check. This is a remaining loader-path gap
-related to the [earlier checkpoint audit](fragnnet_masster_audit_2026_09_12.md), not a
+related to the earlier checkpoint audit (removed 2026-10-13; `git show e65339ed:docs/findings/fragnnet_masster_audit_2026_09_12.md`), not a
 claim that its repaired local-loader bug has returned.
 
 ### 4. P1 — Multi-seed evaluation exports only the final seed

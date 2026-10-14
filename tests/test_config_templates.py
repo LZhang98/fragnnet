@@ -270,28 +270,10 @@ class TestValidation:
 # Configs that set keys no template has ever declared and were already rejected before the
 # template layout change, or undeclared nested sub-keys that only recursive validation catches.
 # There were 18; 5 were MCES fine-tuning configs and 3 were CLIP configs, deleted with those models
-# on 2026-10-12. Each must keep failing for exactly this reason.
+# on 2026-10-12, and 9 were legacy MASSter exploration configs, retired on 2026-10-13. Each must
+# keep failing for exactly this reason.
 KNOWN_REJECTED_CONFIGS = {
     "config/fragnnet/debug/debug_tiny_new_frag_mol_feats.yml",
-    *(
-        "config/masster/legacy/bond_size_curriculum/nist20_merged_" + name + "_bond_curriculum.yml"
-        for name in (
-            "mask256_gine_gsa384_bondcentric_a2_b3_explore256",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_explore512",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512",
-        )
-    ),
-    *(
-        "config/masster/legacy/explore/nist20_merged_" + name + ".yml"
-        for name in (
-            "mask256_gine_gsa384_bondcentric_a2_b3_explore256",
-            "mask256_gine_gsa384_bondcentric_a2_b3_explore64",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_explore512",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore256",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512",
-            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512_layernorm",
-        )
-    ),
 }
 
 # Pre-existing configs that are not valid YAML, so never reach the template check.
