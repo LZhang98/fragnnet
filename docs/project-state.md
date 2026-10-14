@@ -64,6 +64,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   5 U256/E1024 configs
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
 - **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Leader re-run `f44tzxoc` ties `pow075` on formula-test retrieval ([read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#leader-re-run-formula-test-retrieval-2026-10-13)).
+- **Prepared 2026-10-14:** [short-schedule / budget screen](plans/masster/msgym_short_budget_screen_2026_10_14.md), six arms on the leader recipe at 64 epochs (U128, E1024, fragment floor 0.01, 32-epoch control).
 - **Next:** seed replicates of `pow075` and the leader. Re-select `loglik_cal` on val.
 - **Removed 2026-10-14:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) MSGYM arms, never run; route 1 is NIST20-only.
 

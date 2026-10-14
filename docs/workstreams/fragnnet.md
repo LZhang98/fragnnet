@@ -26,7 +26,7 @@
 | [ClassyFire atom pretraining](../plans/fragnnet/classyfire_atom_pretraining_plan.md) | PROPOSED | Not started |
 | [Energy-based reranking](../plans/energy_based_spectrum_reranking_plan.md) | PROPOSED | Pick checkpoint, unfiltered export, pass Gate A over matched random pools; MASSter bond-cut EBM first |
 | [Sibling-ranking target on P(n)](../plans/fragnnet/sibling_ranking_target_plan.md) | DEFERRED | Implement the ranking loss (coverage gate already passed) |
-| [Bond-set representation](../plans/fragnnet/fragment_bond_set_representation.md) | DEFERRED | Run `cc_atom_dropout_p{00,01,02}` (never run: no checkpoint, `output/` file or doc result as of 2026-10-06; configs `p00`-`p03` exist) |
+| [Bond-set representation](../plans/fragnnet/fragment_bond_set_representation.md) | DEFERRED | Not to be run (user, 2026-10-14). `cc_atom_dropout_p{00,01,02}` was never run (checked: no checkpoint, `output/` file or doc result as of 2026-10-06; configs `p00`-`p03` exist) |
 | [DAG full-recall tractability](../plans/fragnnet/dag_full_recall_tractability_plan.md) | DEFERRED | Steps 5-7 (trained scorer) paused; static priority lost to random |
 
 ## Settled — read before re-proposing
