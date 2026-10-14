@@ -10,8 +10,8 @@ import pytest
 import torch as th
 from rdkit import Chem
 
-from fragnnet.models.masster.candidate_features import COMPOSITION_FEATURE_DIM
-from fragnnet.models.masster.nominal_isotopes import nominal_isotope_power_table
+from fragnnet.models.masster.masster_candidate_features import COMPOSITION_FEATURE_DIM
+from fragnnet.models.masster.masster_nominal_isotopes import nominal_isotope_power_table
 from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER
 from tests.test_masster_model import _build_batch, _build_model
 

@@ -50,7 +50,7 @@ from functools import cached_property
 import torch as th
 from torch_geometric.data import Batch
 
-from fragnnet.models.masster.component_pooling import (
+from fragnnet.models.masster.masster_component_pooling import (
     boundary_bond_endpoint_orientation,
     pool_boundary_bond_embeddings,
 )

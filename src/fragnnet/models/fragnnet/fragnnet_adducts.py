@@ -1,6 +1,6 @@
 """FraGNNet's precursor-type (adduct) handling of formula rows: the elements a precursor delta
 can remove, tracked-count rows that reject impossible ion formulas, and the precursor delta of
-every formula row of a batch (moved from ``utils/formula_utils.py``).
+every formula row of a batch.
 """
 
 from collections.abc import Sequence

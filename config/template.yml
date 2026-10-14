@@ -846,7 +846,7 @@ masster_rule_pathway_token: False
 # this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
 masster_boundary_bond_encoder: True
 # Descriptor columns appended to each candidate's intensity token, concatenated in registry
-# order regardless of the order listed here. `src/fragnnet/models/masster/candidate_features.py` holds
+# order regardless of the order listed here. `src/fragnnet/models/masster/masster_candidate_features.py` holds
 # the specs and documents what each one measures and why. An unknown or duplicated name raises
 # at model construction, which is also where the resolved layout is logged.
 #   c_cut_count       1                                bonds severed

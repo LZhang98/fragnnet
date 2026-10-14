@@ -36,7 +36,7 @@ from fragnnet.models.masster.masster_model import (
     _top_k_fragment_keep_mask,
 )
 from fragnnet.models.masster.masster_pl import _proposal_coverage_loss
-from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_proposal_heads import BondFocusedBreakHead
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.formula_utils import H_MASS
 

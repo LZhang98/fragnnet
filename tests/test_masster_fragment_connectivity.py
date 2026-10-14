@@ -21,7 +21,7 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet import runner
-from fragnnet.models.masster.component_pooling import (
+from fragnnet.models.masster.masster_component_pooling import (
     component_membership_rows,
     fragment_internal_edges,
 )

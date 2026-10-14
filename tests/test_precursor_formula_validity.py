@@ -8,11 +8,16 @@ from fragnnet.models.fragnnet.dag.layout import NODE_FEAT_TO_IDX
 from fragnnet.models.fragnnet.fragnnet_adducts import (
     PREC_DELTA_REMOVED_ELEMENTS,
     TOTAL_ATOM_COLUMN,
+    formula_row_prec_deltas,
     prec_type_removed_counts,
     tracked_element_counts,
 )
 from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_COMP_DIFF, PREC_TYPE_TO_COMP_DIFF
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_COMP_DIFF,
+    PREC_TYPE_TO_COMP_DIFF,
+    cmf_duplicate_crf_h_shift,
+)
 
 NODE_FEATS = ["cc", "base_formula", "depth", "h_formulae_idx", "cmf_h_formulae_idx"]
 # Salicylic acid carries exactly one COOH, so only some fragments can lose CO2. It has no
@@ -215,3 +220,46 @@ def test_validity_guard_does_not_mutate_cached_graph(frag_entry):
 
     assert th.equal(cached_pyg.x, before), "cached graph was modified in place"
     assert not th.equal(applied["frag_pyg"].x, before), "expected channels to be masked"
+
+
+class TestFormulaRowPrecDeltas:
+    """CRF/CMF split across the batch-concatenated formula rows."""
+
+    def test_crf_only_layout(self):
+        # 1 sample, NULL + 3 CRF rows. The NULL row stands for no fragment.
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 4], include_cmf=False, max_h_transfer=4)
+        assert deltas.tolist() == ["", "H1", "H1", "H1"]
+
+    def test_negative_mode_delta(self):
+        deltas = formula_row_prec_deltas(["[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4)
+        assert deltas.tolist() == ["", "H-1", "H-1"]
+
+    def test_cmf_half_gets_the_migration_delta(self):
+        # NULL + CRF[1:2] + CMF[1:2] = 5 rows; [M+Na]+ keeps both channels.
+        deltas = formula_row_prec_deltas(["[M+Na]+"], [0, 5], include_cmf=True, max_h_transfer=4)
+        assert deltas.tolist() == ["", "Na1", "Na1", "H1", "H1"]
+
+    def test_cmf_ignored_when_it_duplicates_a_crf_h_shift(self):
+        # [M+H]+ CMF is the CRF state at delta_h = -1, so the dataset never emits it.
+        assert cmf_duplicate_crf_h_shift("[M+H]+", 4) == -1
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=4)
+        assert deltas.tolist() == ["", "H1", "H1", "H1", "H1"]
+
+    def test_cmf_emitted_when_h_transfer_cannot_reach_it(self):
+        # With no hydrogen transfer the CRF ladder never reaches the CMF state, so the
+        # dataset does emit the CMF half even for [M+H]+.
+        assert cmf_duplicate_crf_h_shift("[M+H]+", 0) is None
+        deltas = formula_row_prec_deltas(["[M+H]+"], [0, 5], include_cmf=True, max_h_transfer=0)
+        assert deltas.tolist() == ["", "H1", "H1", "", ""]
+
+    def test_per_sample_precursor_across_a_batch(self):
+        deltas = formula_row_prec_deltas(
+            ["[M+H]+", "[M-H]-"], [0, 3, 6], include_cmf=False, max_h_transfer=4
+        )
+        assert deltas.tolist() == ["", "H1", "H1", "", "H-1", "H-1"]
+
+    def test_cumsizes_length_is_validated(self):
+        with pytest.raises(ValueError, match="batch_size \\+ 1"):
+            formula_row_prec_deltas(
+                ["[M+H]+", "[M-H]-"], [0, 3], include_cmf=False, max_h_transfer=4
+            )
