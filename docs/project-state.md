@@ -105,7 +105,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   oracle is 0.937, so the gap is intensity ranking, not coverage.
 - **Stopped:** precursor BCE and CE-switch BCE retired at user request; Stage A configs and generator removed. See the [loss plan](plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 
-## Branch `research/rare-chemistry-sampling` (2026-10-13)
+## Branch `rare-chemistry-sampling` (2026-10-13)
 
 - Rare chemistry A1/A3 sampler, census script, six configs, tests and docs; committed on the branch, origin/main merged in, not submitted.
   State and verification are in the [plan handoff](plans/masster/rare_chemistry_augmentation_plan.md#implementation-handoff-and-current-state).
