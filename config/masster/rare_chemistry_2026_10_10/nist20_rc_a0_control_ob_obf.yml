@@ -1,16 +1,12 @@
-# ARM rc_a0_control_ob_obf -- rare chemistry sampling A0 on NIST20 [M+H]+ ORB/ORB_F, 2026-10-10.
+# ARM rc_a0_control_ob_obf -- rare-element route 1 control on NIST20 [M+H]+ ORB/ORB_F, 2026-10-14.
 # same-code control: i1 unchanged except W&B naming.
-# Plan: docs/plans/masster/rare_chemistry_augmentation_plan.md (sections 2, 4 and 5).
+# Plan: docs/plans/masster/rare_chemistry_augmentation_plan.md (section "Rare-element handling").
 #
-# SCREEN. A0, A1 and A3 share this file's recipe, seed 397623 and code revision; A0 reruns i1
-# because i1 (i50ig7rf) ran on 2026-09-28 code. Every arm draws len(train) spectra per epoch at
-# fixed batch 512, so updates, LR schedule in steps and validation cadence match. A1 vs A0 reads
-# per-molecule spectrum multiplicity; A3 vs A1 reads functional-group rarity exposure. Scaffold
-# arm A2 and replicate arm A4 are not built. Evaluation is untouched and unweighted.
-# READ: molecule-averaged cos_hun_inst_tol on the frozen rare cohorts from
-# scripts/debug/rare_chemistry/rare_chemistry_census.py (output/rare_chemistry_census/nist20_i1/),
-# plus overall val_cos_sim_0.01_epoch/mean tail mean (epochs 54-63; seed spread 0.0042).
-# Promotion needs the plan's three-seed confirmation gate; this is the one-seed screen.
+# CONTROL for E0 (hidden Br) and E2 (+ a_periodic); see nist20_rc_e*_ob_obf.yml for the read. A0
+# reruns i1 because i1 (i50ig7rf) ran on 2026-09-28 code; same seed 397623, fixed batch 512. The
+# A1/A3 sampling arms this file first controlled were removed at the user's request on 2026-10-14.
+# READ: overall val_cos_sim_0.01_epoch/mean tail mean (epochs 54-63; seed spread 0.0042) and the
+# val Br-molecule cohort.
 #
 # Base config follows: mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml.
 # ARM i1_inst_ob_obf -- unmerged [M+H]+, n4 on the ORB / ORB_F instrument labels, 2026-09-28.

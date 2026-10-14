@@ -20,11 +20,6 @@ from fragnnet.dataset.data_sampler import (
     get_group_sampler,
     validate_bond_size_curriculum,
 )
-from fragnnet.dataset.rarity_sampling import (
-    CLASS_PANELS,
-    WEIGHTING_MODES,
-    build_molecule_acquisition_sampler,
-)
 from fragnnet.hooks import ModelHooks
 from fragnnet.utils.setup_utils import get_dataset_cls
 
@@ -91,9 +86,8 @@ def build_train_sampler(
 ) -> Sampler | None:
     """Choose the training index sampler.
 
-    ``validate_sampler_config`` allows at most one group sampler, no group sampler with the
-    bond-size curriculum, and no other train sampler with the molecule-acquisition sampler, so
-    the order below only matters for invalid configs.
+    ``validate_sampler_config`` allows at most one group sampler, and no group sampler with the
+    bond-size curriculum, so the order below only matters for invalid configs.
 
     Args:
         ds: Training dataset.
@@ -134,8 +128,6 @@ def build_train_sampler(
             curriculum_epochs=config_d["bond_size_curriculum_epochs"],
             generator=generator,
         )
-    if config_d["molecule_acquisition_sampler"]:
-        return build_molecule_acquisition_sampler(ds, config_d, generator)
     return RandomSampler(ds, False, generator=generator)
 
 
@@ -269,31 +261,3 @@ def validate_sampler_config(config_d: dict) -> None:
             and config_d["bond_size_curriculum_epochs"] >= config_d["max_epochs"]
         ):
             raise ValueError("bond_size_curriculum_epochs must be less than max_epochs")
-
-    if config_d["molecule_acquisition_sampler"]:
-        conflicting = group_samplers + (
-            ["bond_size_curriculum"] if config_d["bond_size_curriculum"] else []
-        )
-        # A model's own batch sampler ignores the index sampler, or draws its own indices.
-        if model_hooks.builds_own_batch_sampler(config_d) or uses_ce_context_sampler:
-            conflicting.append("the model's own batch sampler")
-        if conflicting:
-            raise ValueError(f"molecule_acquisition_sampler excludes {conflicting}")
-        if config_d["spec_params"]["merge"] or config_d["spec_params"]["merge_train_only"]:
-            raise ValueError("molecule_acquisition_sampler requires unmerged training spectra")
-        if config_d["train_sample_weight"] != "none":
-            raise ValueError("molecule_acquisition_sampler requires train_sample_weight='none'")
-        if config_d["molecule_acquisition_sampler_weighting"] not in WEIGHTING_MODES:
-            raise ValueError(
-                f"molecule_acquisition_sampler_weighting must be one of {sorted(WEIGHTING_MODES)}"
-            )
-        if config_d["molecule_acquisition_sampler_class_panel"] not in CLASS_PANELS:
-            raise ValueError(
-                f"molecule_acquisition_sampler_class_panel must be one of {sorted(CLASS_PANELS)}"
-            )
-        if not config_d["molecule_acquisition_sampler_ref_count"] > 0:
-            raise ValueError("molecule_acquisition_sampler_ref_count must be positive")
-        if not config_d["molecule_acquisition_sampler_weight_cap"] >= 1:
-            raise ValueError("molecule_acquisition_sampler_weight_cap must be at least 1")
-        if not 0 <= config_d["molecule_acquisition_sampler_uniform_mix"] <= 1:
-            raise ValueError("molecule_acquisition_sampler_uniform_mix must be in [0, 1]")

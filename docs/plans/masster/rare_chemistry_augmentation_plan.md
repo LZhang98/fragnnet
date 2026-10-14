@@ -1,7 +1,7 @@
 # Rare chemistry augmentation for NIST20 and MassSpecGym
 
 > **Status:** PREPARED · **Updated:** 2026-10-14
-> A1/A3 sampler, census and A0/A1/A3 configs on branch `rare-chemistry-sampling`; not submitted. Census: A1 ready on both datasets; A3 fails the support gate. Rare elements: [route 1](#rare-element-handling-revised-2026-10-14) (`a_periodic` + hidden-Br test, E0/E1/E2) prepared, not submitted; element-swap transfer is a NIST20 halogen study only.
+> Rare-element [route 1](#rare-element-handling-revised-2026-10-14) (`a_periodic` + hidden-Br test, A0/E0/E1/E2 on NIST20) prepared, not submitted. The A1/A3 sampling arms and their sampler were removed at the user's request on 2026-10-14, never run (code in Git at `ae0470d4`). Element-swap transfer is a NIST20 halogen study only.
 
 ## Objective and scope
 
@@ -518,6 +518,10 @@ relevant donors. This branch is proposed; no network, pseudo-labels or trainer h
 
 ## 4. Controlled experiment sequence
 
+**Removed 2026-10-14 (user):** the A1–A3 sampling arms below were built but never run; their
+sampler, configs and census script were removed and are in Git at `ae0470d4`. Only A0 survives, as
+route 1's control.
+
 | Arm | Change | Main comparison |
 | --- | --- | --- |
 | A0 | Uniform per-spectrum shuffle; fixed batch 512; optional samplers off | Reference |
@@ -579,7 +583,7 @@ retain measured spectra. Report each dataset independently.
 - Completed: reviewed workstream constraints, current sampler semantics and related
   reliability work; specified the census, arms, validity checks and evaluation gates. Refined
   the network branch to measured edit effects, family-held-out tests and partial ratio intervals.
-- **Built 2026-10-10 (branch `rare-chemistry-sampling`, committed; `origin/main` merged 2026-10-13):** the A1/A3 sampler
+- **Removed 2026-10-14 (user), never run; in Git at `ae0470d4`:** what was built 2026-10-10: the A1/A3 sampler
   `MoleculeAcquisitionSampler` in [data_sampler.py](../../../src/fragnnet/dataset/data_sampler.py);
   molecule key, raw-CE acquisition key, frozen `functional_groups_v1` panel and class weights in
   [rarity_sampling.py](../../../src/fragnnet/dataset/rarity_sampling.py); default-off
@@ -587,8 +591,8 @@ retain measured spectra. Report each dataset independently.
   [loading.py](../../../src/fragnnet/dataset/loading.py); tests in
   `tests/test_rarity_sampling.py` and `tests/test_runner_config.py`. Every arm draws `len(train)`
   spectra per epoch at fixed batch 512, matching A0's steps.
-- **Configs:** `config/masster/rare_chemistry_2026_10_10/`, A0/A1/A3 for NIST20 (from `i1`) and
-  MSGYM (from the k1/EMA/Fourier control), seed 397623. A0 reruns each control on current code.
+- **Configs:** `config/masster/rare_chemistry_2026_10_10/` now holds only NIST20 A0 (the `i1`
+  rerun, seed 397623) and route 1's E0/E1/E2; the A1/A3 and MSGYM configs were removed.
 - **Census ([finding](../../findings/masster/rare_chemistry_class_census_2026_10_10.md)):** A1 moves
   molecule exposure (total variation from A0: NIST20 0.109, MSGYM 0.479). A3 with this panel is
   nearly identical to A1 and has under 30 held-out rare molecules per split; it fails the census
@@ -607,8 +611,9 @@ retain measured spectra. Report each dataset independently.
   to train only.
 - Not started: scaffold arm A2, replicate arm A4, matched-edit census, rare-element steps 1–3,
   and any job submission.
-- Next concrete check: user decision on A3; submit A0, A1 and route 1's E0/E1/E2 on NIST20
-  (A0 is shared). Then build the val Br-cohort read for E0/E1.
+- Next concrete check: submit A0, E0, E1 and E2 on NIST20 with
+  `scripts/manual_slurm/fir/submit_masster_rare_chemistry.sh all`; build the val Br-cohort read
+  for E0/E1 while they run.
 - Future code belongs in the dataset/sampler layer and focused analysis scripts; expose
   default-off config keys only after reading the Python/ML rules. Tests must verify training-only
   counts, split isolation, reproducible draws, actual update budgets and unmodified evaluation.

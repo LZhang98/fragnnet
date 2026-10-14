@@ -35,12 +35,6 @@ def _base_config(**overrides) -> dict:
         "simple_group_sampler": False,
         "simple_group_sampler_type": "adduct_inst_type",
         "formula_prec_type_group_sampler": False,
-        "molecule_acquisition_sampler": False,
-        "molecule_acquisition_sampler_weighting": "uniform",
-        "molecule_acquisition_sampler_class_panel": "functional_groups_v1",
-        "molecule_acquisition_sampler_ref_count": 20,
-        "molecule_acquisition_sampler_weight_cap": 4.0,
-        "molecule_acquisition_sampler_uniform_mix": 0.5,
         "cross_ev_fragment_loss_weight": 0.0,
         "masster_share_proposal_across_ev": False,
         "masster_unique_fragment_mode": False,
@@ -51,7 +45,6 @@ def _base_config(**overrides) -> dict:
         "inst_type_loss_tol": {"ORB": {"rel": 1.0e-5, "min_mz": 200.0}},
         "spec_params": {
             "merge": False,
-            "merge_train_only": False,
             "nce": True,
             "ace": False,
             "inst_types": ["ORB", "QTOF", "IT"],
@@ -60,68 +53,6 @@ def _base_config(**overrides) -> dict:
     }
     cfg.update(overrides)
     return cfg
-
-
-def _molecule_sampler_config(**overrides) -> dict:
-    """Return a valid fixed-batch MASSter config with the A1/A3 sampler on."""
-    cfg = _base_config(
-        model_type="masster",
-        dynamic_batch_sampler=False,
-        automatic_optimization=True,
-        molecule_acquisition_sampler=True,
-    )
-    cfg["spec_params"] = dict(cfg["spec_params"])
-    cfg.update(overrides)
-    return cfg
-
-
-class TestMoleculeAcquisitionSamplerConfig:
-    @pytest.mark.parametrize("weighting", ["uniform", "class"])
-    def test_valid_arms_pass(self, weighting):
-        validate_sampler_config(
-            _molecule_sampler_config(molecule_acquisition_sampler_weighting=weighting)
-        )
-
-    @pytest.mark.parametrize(
-        "key",
-        [
-            "group_sampler",
-            "simple_group_sampler",
-            "formula_prec_type_group_sampler",
-            "bond_size_curriculum",
-            "masster_batch_sampler",
-        ],
-    )
-    def test_other_train_samplers_conflict(self, key):
-        overrides = {key: True}
-        if key == "masster_batch_sampler":
-            overrides["masster_batch_sampler_max"] = 1000
-        if key == "bond_size_curriculum":
-            overrides["bond_size_curriculum_epochs"] = 20
-        with pytest.raises(ValueError, match="molecule_acquisition_sampler excludes"):
-            validate_sampler_config(_molecule_sampler_config(**overrides))
-
-    @pytest.mark.parametrize("merge_key", ["merge", "merge_train_only"])
-    def test_merged_spectra_rejected(self, merge_key):
-        cfg = _molecule_sampler_config()
-        cfg["spec_params"][merge_key] = True
-        with pytest.raises(ValueError, match="unmerged"):
-            validate_sampler_config(cfg)
-
-    @pytest.mark.parametrize(
-        ("key", "value", "message"),
-        [
-            ("train_sample_weight", "inv_mol", "train_sample_weight"),
-            ("molecule_acquisition_sampler_weighting", "scaffold", "weighting"),
-            ("molecule_acquisition_sampler_class_panel", "functional_groups_v0", "class_panel"),
-            ("molecule_acquisition_sampler_ref_count", 0, "ref_count"),
-            ("molecule_acquisition_sampler_weight_cap", 0.5, "weight_cap"),
-            ("molecule_acquisition_sampler_uniform_mix", 1.5, "uniform_mix"),
-        ],
-    )
-    def test_invalid_values_rejected(self, key, value, message):
-        with pytest.raises(ValueError, match=message):
-            validate_sampler_config(_molecule_sampler_config(**{key: value}))
 
 
 class TestValidateSamplerConfig:
@@ -221,7 +152,9 @@ class TestValidateSamplerConfig:
                     },
                 ]
             )
-            mol_datas = {1: {"mol_pyg": SimpleNamespace(num_nodes=4, num_edges=6)}}
+            mol_datas = {
+                1: {"mol_pyg": SimpleNamespace(num_nodes=4, num_edges=6)}
+            }
 
             def __len__(self):
                 return len(self.spec_df)
@@ -397,6 +330,7 @@ class TestValidateSamplerConfig:
     def test_invalid_batch_sampler_type_raises(self):
         with pytest.raises(ValueError, match="batch_sampler_type"):
             validate_sampler_config(_base_config(batch_sampler_type="invalid"))
+
 
     def test_dag_size_curriculum_valid_config_passes(self):
         validate_sampler_config(_base_config(dag_size_curriculum=True))
@@ -584,7 +518,9 @@ class TestMassterWorkerPersistence:
         assert loader.persistent_workers is False
 
     def test_single_process_loading_stays_non_persistent(self):
-        loader = init_dataloader(self._Dataset(), self._config(model_type="masster", num_workers=0))
+        loader = init_dataloader(
+            self._Dataset(), self._config(model_type="masster", num_workers=0)
+        )
         assert loader.persistent_workers is False
 
 

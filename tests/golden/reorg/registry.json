@@ -486,12 +486,6 @@
         "smiles": true
       },
       "mol_pool_type": "none",
-      "molecule_acquisition_sampler": false,
-      "molecule_acquisition_sampler_class_panel": "functional_groups_v1",
-      "molecule_acquisition_sampler_ref_count": 20,
-      "molecule_acquisition_sampler_uniform_mix": 0.5,
-      "molecule_acquisition_sampler_weight_cap": 4.0,
-      "molecule_acquisition_sampler_weighting": "uniform",
       "mp_sharing_strategy": "file_descriptor",
       "mz_bin_res": 0.01,
       "mz_max": 1500.0,

@@ -23,7 +23,33 @@ RDLogger.DisableLog("rdApp.*")
 
 from fragnnet.config import load_config  # noqa: E402
 from fragnnet.dataset.base_dataset import BaseDataset  # noqa: E402
-from fragnnet.dataset.rarity_sampling import RAW_CE_COLS, acquisition_keys  # noqa: E402
+
+# Raw CE columns that define the recorded CE signature.
+RAW_CE_COLS = ("ce_type", "nce", "nce_extra_1", "nce_extra_2", "ace", "ace_extra_1", "ace_extra_2")
+
+
+def _ce_token(value):
+    """Format one raw CE field, keeping missingness explicit."""
+    if pd.isna(value) or value == -1:
+        return "NA"
+    return repr(float(value))
+
+
+def acquisition_keys(spec_df, raw_ce_df):
+    """Per-spectrum ``adduct|instrument|frag_mode|ce_type|nce=...|ace=...`` from raw metadata."""
+    raw = raw_ce_df.loc[spec_df["spec_id"].to_numpy()]
+    keys = []
+    for meta, ce in zip(
+        spec_df[["prec_type", "inst_type", "frag_mode"]].itertuples(index=False, name=None),
+        raw[list(RAW_CE_COLS)].itertuples(index=False, name=None),
+    ):
+        ce_type = "NA" if pd.isna(ce[0]) else str(ce[0])
+        nce = ",".join(_ce_token(v) for v in ce[1:4])
+        ace = ",".join(_ce_token(v) for v in ce[4:7])
+        meta_str = "|".join("NA" if pd.isna(v) else str(v) for v in meta)
+        keys.append(f"{meta_str}|{ce_type}|nce={nce}|ace={ace}")
+    return keys
+
 
 SWAPS = [
     ("Br", "Cl"),

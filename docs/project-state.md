@@ -31,7 +31,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy
   and a train/calibration/confirmation protocol.
-- **Prepared:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3 on `i1`; [census](findings/masster/rare_chemistry_class_census_2026_10_10.md) says submit A0/A1, A3 needs a redesign decision.
+- **Prepared:** [rare-element route 1](plans/masster/rare_chemistry_augmentation_plan.md#rare-element-handling-revised-2026-10-14) A0/E0/E1/E2 on `i1` (`a_periodic`, hidden-Br test); the A1/A3 sampling arms were removed 2026-10-14 without running.
 
 ## MASSter core
 
@@ -65,7 +65,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
 - **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Leader re-run `f44tzxoc` ties `pow075` on formula-test retrieval ([read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#leader-re-run-formula-test-retrieval-2026-10-13)).
 - **Next:** seed replicates of `pow075` and the leader. Re-select `loglik_cal` on val.
-- **Prepared:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3; A1 shifts exposure strongly here, A3 fails the support gate ([census](findings/masster/rare_chemistry_class_census_2026_10_10.md)).
+- **Removed 2026-10-14:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) MSGYM arms, never run; route 1 is NIST20-only.
 
 ## Spectraverse
 
@@ -105,9 +105,9 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   oracle is 0.937, so the gap is intensity ranking, not coverage.
 - **Stopped:** precursor BCE and CE-switch BCE retired at user request; Stage A configs and generator removed. See the [loss plan](plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 
-## Branch `rare-chemistry-sampling` (2026-10-13)
+## Branch `rare-chemistry-sampling` (2026-10-14)
 
-- Rare chemistry A1/A3 sampler, census script, six configs, tests and docs; committed on the branch, origin/main merged in, not submitted.
+- Rare-element route 1 (`a_periodic`, `filter_exclude_elements`, A0/E0/E1/E2 configs, Fir launcher) and the element-swap census; the A1/A3 sampler was removed. Not submitted.
   State and verification are in the [plan handoff](plans/masster/rare_chemistry_augmentation_plan.md#implementation-handoff-and-current-state).
 
 ## Standing cross-workstream rules

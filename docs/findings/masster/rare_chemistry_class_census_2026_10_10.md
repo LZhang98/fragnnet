@@ -1,7 +1,7 @@
 # Rare chemistry census: A1 moves exposure, A3 does not
 
-> **Status:** FINDING · **Updated:** 2026-10-10
-> Training-only census for the A1/A3 sampling arms on NIST20 and MSGYM. A1 changes molecule exposure substantially, most on MSGYM. A3 with the functional-group panel barely differs from A1 and fails the plan's evaluation-support gate on both datasets.
+> **Status:** FINDING · **Updated:** 2026-10-14
+> The A1/A3 sampler and this census script were removed at the user's request on 2026-10-14 and never ran; both are in Git at `ae0470d4`. Training-only census for the A1/A3 sampling arms on NIST20 and MSGYM. A1 changes molecule exposure substantially, most on MSGYM. A3 with the functional-group panel barely differs from A1 and fails the plan's evaluation-support gate on both datasets.
 
 ## Decision
 
