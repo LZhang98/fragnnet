@@ -36,7 +36,7 @@ from fragnnet.models.masster.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
-from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
+from fragnnet.models.masster.masster_proposal_heads import BondFocusedBreakHead
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams

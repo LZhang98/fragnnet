@@ -869,7 +869,7 @@ def _build_cpu_candidates(
         # Mixtures have never forced them -- the pre-refactor code derived the bond
         # count from a list it left empty when num_mixtures > 1 -- and no shipped
         # config combines the two, so the behavior is preserved rather than changed
-        # here. See docs/plans/masster/masster_candidate_pathway_refactor.md.
+        # here. See `git show e65339ed:docs/plans/masster/masster_candidate_pathway_refactor.md`.
         if include_single_bond_cuts and num_mixtures == 1:
             forced_bond_sets.extend((bond_index,) for bond_index in range(len(global_bond_indices)))
         base_forced_mask_count = len(forced_bond_sets)

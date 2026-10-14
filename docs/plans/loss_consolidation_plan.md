@@ -15,7 +15,7 @@ and untruncated Gaussian CE were fixed in `6b359293`. The follow-up findings rem
 The [architecture map](../architecture.md) and
 [reorganization plan](repo_reorg_plan.md#phase-8--naming-and-model-packages-done-2026-10-12)
 define package ownership. The earlier
-[direct-loss batching work](masster/masster_direct_loss_batching_plan.md) establishes
+direct-loss batching work (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_direct_loss_batching_plan.md`) establishes
 why preparation can be shared while MASSter peak-list and FraGNNet Hungarian objectives
 must remain distinct.
 

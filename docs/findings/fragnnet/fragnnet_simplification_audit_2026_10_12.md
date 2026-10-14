@@ -106,7 +106,7 @@ the existing registered modules and parameter names.
 Keep head-specific normalization, CMF handling, competition, and depth-bias placement explicit.
 In particular, depth bias belongs on node logits for `node_formula`; shifting all conditional
 formula logits equally cancels under softmax. The
-[earlier fixes](../../plans/fragnnet/fragnnet_audit_fixes.md) and current regression tests
+earlier fixes (removed 2026-10-13; `git show e65339ed:docs/plans/fragnnet/fragnnet_audit_fixes.md`) and current regression tests
 are reasons not to merge the heads into one generic conditional pipeline.
 
 After deduplication, extract a few coherent stages: fragment feature assembly, formula-index

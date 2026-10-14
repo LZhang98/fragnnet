@@ -92,7 +92,7 @@ embedding therefore also separates two largely disjoint sets of molecules.
   predictable (R² ≤ 0). [Residual structure](masster_i1_residual_structure_2026_09_28.md)
 - **FraGNNet, for contrast.** Per-fragment CE at the node MLP was null (−0.0007). FraGNNet
   conditions through per-field `*_insert_location` embeddings and optional output scalers; see
-  [conditioning refactor plan](../../plans/conditioning_refactor_plan.md). That plan's
+  conditioning refactor plan (removed 2026-10-13; `git show e65339ed:docs/plans/conditioning_refactor_plan.md`). That plan's
   "three overlapping mechanisms" describes FraGNNet. MASSter has one.
 
 ## 4. Comparison with published forward models
@@ -135,7 +135,7 @@ Notes:
    sinusoid and its adduct and instrument one-hots to every atom's Graphormer input
    (`ms_pred/glacier/joint_model.py:251-289` at `318bb7b`). MASSter has the switch
    (`masster_context_in_gnn`, plus the zero-init suggestion in the
-   [context design audit](masster_context_design_audit.md) §4). No result on the current
+   context design audit (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_context_design_audit.md`) §4). No result on the current
    references is recorded.
 3. **Physical adduct treatment is rare.** Only CFM-ID (per-model) and FIORA (H-shift set)
    do it. MASSter's mass and element-delta tables already handle 16 adducts, including

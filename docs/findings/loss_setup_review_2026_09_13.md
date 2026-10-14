@@ -220,7 +220,7 @@ loss wiring, shared loss helpers, representative checked-in configurations, and 
 Configurations below establish available setups, not the identity of a running experiment.
 No model code, configuration, data, environment, or training state was changed.
 
-The prior [correctness audit](fragnnet_masster_audit_2026_09_12.md) is historical:
+The prior correctness audit (removed 2026-10-13; `git show e65339ed:docs/findings/fragnnet_masster_audit_2026_09_12.md`) is historical:
 its three FraGNNet loss/explanation defects are fixed in current source and their
 regressions pass. MASSter now rejects unsupported precursor-pair supervision.
 The project state's linked `wandb_screen_2026_09_11.md` is absent in this checkout;

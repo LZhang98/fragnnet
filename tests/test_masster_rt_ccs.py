@@ -14,7 +14,7 @@ from fragnnet.dataset.property_labels import join_rt_ccs_labels
 from fragnnet.dataset.spec_mol_dataset import SpecMolDataset
 from fragnnet.inference import batch_rows, export_columns, runners
 from fragnnet.models.masster.masster_pl import MassterPL
-from fragnnet.models.masster.rt_ccs_heads import property_regression_terms
+from fragnnet.models.masster.masster_rt_ccs_heads import property_regression_terms
 from fragnnet.runner import load_config
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.migrations import get_pl_hparams

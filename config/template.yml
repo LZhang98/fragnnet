@@ -126,7 +126,7 @@ spec_params:
   # needs `frag_dp`, which only the FraGNNet template declares, and `none` falls back to the
   # m/z-scaled precursor proxy (wrong for Cl/Br). Measured head to head on 1,500 FT NIST20
   # spectra, subformula and DAG agree on 99.2% of peak decisions:
-  # docs/plans/subformula_isotope_detection_plan.md.
+  # `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md`.
   remove_isotope_peaks: False
   remove_regular_isotope_peaks: False
   remove_coisolation_peaks: False
@@ -276,6 +276,7 @@ lr_decay_rate: 0.95
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 optimizer: adamw
+# gaussian | laplace (same std as gaussian, scale = sigma/sqrt(2)) | peak_marginal
 output_distribution: gaussian
 # cross_entropy keeps the historical coverage-weighted sparse CE.
 # conditional_cross_entropy (MASSter only) divides its in-support term by represented
@@ -428,7 +429,7 @@ frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none
 frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 # Combined context (stratum) embedding: consolidate CE + adduct + instrument + frag_mode into
 # ONE learned vector injected at context_insert_location, instead of four separate *_insert
-# paths (see docs/plans/conditioning_refactor_plan.md). When True, the individual metadata embeddings
+# paths (see `git show e65339ed:docs/plans/conditioning_refactor_plan.md`). When True, the individual metadata embeddings
 # feed the context and are NOT injected separately. Off = existing per-metadata behavior.
 context_embedding: False
 context_embedding_dim: 64       # width of the produced context vector
@@ -845,7 +846,7 @@ masster_rule_pathway_token: False
 # this reuses. DEFAULT since 2026-09-20; pre-existing checkpoints predate the extra parameters.
 masster_boundary_bond_encoder: True
 # Descriptor columns appended to each candidate's intensity token, concatenated in registry
-# order regardless of the order listed here. `src/fragnnet/models/masster/candidate_features.py` holds
+# order regardless of the order listed here. `src/fragnnet/models/masster/masster_candidate_features.py` holds
 # the specs and documents what each one measures and why. An unknown or duplicated name raises
 # at model construction, which is also where the resolved layout is logged.
 #   c_cut_count       1                                bonds severed

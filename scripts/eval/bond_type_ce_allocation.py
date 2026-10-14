@@ -25,9 +25,9 @@ Target mass at an m/z shared by several channels is split equally among them (mo
 Usage (repository root, local GPU):
 
     python scripts/eval/bond_type_ce_allocation.py \
-        --custom_fp config/masster/mh_ft_clean_2026_09_22/f1_mh_ft_all_filters.yml \
-        --model_ckpt saved_ckpts/f1_mh_ft_all_filters_6h67zps9.ckpt \
-        --batch_cutoff 40 --eval_batch_size 256 --out_fp bond_type_f1.pkl
+        --custom_fp config/masster/mh_ft_memorization_route_2026_09_24/i1_inst_ob_obf.yml \
+        --model_ckpt "saved_ckpts/i1_inst_ob_obf_i50ig7rf/ckpt/model-epoch=059.ckpt" \
+        --batch_cutoff 40 --eval_batch_size 256 --out_fp bond_type_i1.pkl
 """
 
 from __future__ import annotations

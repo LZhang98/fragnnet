@@ -2,7 +2,7 @@
 # (../unique_fragment/nist20_ma_mi_unmerged_unique256_enum4096_gine_gsa384_bondcentric_a2_b3_transformer_full_context_proposal_selection_only_inst_tol.yml,
 # W&B run ef7fl5c6, val cos_sim_0.01 0.7515) except for three deltas:
 #   1. ace: True, so NCE and ACE are both context inputs (the selected full-metadata
-#      conditioning baseline; see docs/plans/conditioning_refactor_plan.md).
+#      conditioning baseline; see `git show e65339ed:docs/plans/conditioning_refactor_plan.md`).
 #   2. inst_types drops IT. Measured on data/split/nist20_ma_mi_inchikey: 480,002 spectra,
 #      FT and QTOF only, zero IT rows. The IT slot only widened the embedding table.
 #   3. masster_channel_diagnostics: True, so the valid/attributed/retained ion-H

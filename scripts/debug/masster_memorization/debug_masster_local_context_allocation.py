@@ -52,8 +52,8 @@ from fragnnet.inference.checkpoint import (
     init_model_from_ckpt,
 )
 from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
-from fragnnet.models.masster.component_pooling import boundary_bond_endpoint_orientation
-from fragnnet.models.masster.pathway_probabilities import masked_ion_hydrogen_log_probabilities
+from fragnnet.models.masster.masster_component_pooling import boundary_bond_endpoint_orientation
+from fragnnet.models.masster.masster_pathway_probabilities import masked_ion_hydrogen_log_probabilities
 from fragnnet.runner import load_config
 from fragnnet.utils.setup_utils import get_dataset_cls
 from fragnnet.utils.spec_similarity import cos_sim_helper

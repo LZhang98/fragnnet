@@ -20,7 +20,7 @@ The objective-level semantics (JSS vs KL gradient behaviour, matching and suppor
 unmatched-intensity invariance) were already reviewed in
 [loss_setup_review_2026_09_13.md](../loss_setup_review_2026_09_13.md) and are not repeated.
 Throughput context is in
-[masster_direct_loss_batching_plan.md](../../plans/masster/masster_direct_loss_batching_plan.md).
+masster_direct_loss_batching_plan.md (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_direct_loss_batching_plan.md`).
 
 Tests run: `tests/test_masster_peak_list_distance.py` and
 `tests/test_spec_utils_preprocessing.py` (298 passed), `tests/test_masster_pl.py`
@@ -148,7 +148,7 @@ turns on two per-spectrum Python loops inside `loss_fn`, on every training step:
 Batch 64, 256 fragments per spectrum, 2 ion modes x 9 H channels. Together 81.6 ms per batch,
 against 3.8-20 ms for the primary loss itself, and **faster on CPU** - the same signature as
 `observational_channel_targets`, which was 230 ms per batch and the same on CPU before being
-batched to 2.7 ms ([GPU audit](../../plans/masster/masster_gpu_audit.md)). Both loops index dense tensors with
+batched to 2.7 ms (GPU audit (removed 2026-10-13; `git show e65339ed:docs/plans/masster/masster_gpu_audit.md`)). Both loops index dense tensors with
 a boolean `fragment_batch_idxs == batch_index` mask, and `_ion_h_required_k_metrics` adds a
 per-spectrum `th.quantile` and an `if not batch_supported.any()` sync.
 

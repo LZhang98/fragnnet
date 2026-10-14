@@ -44,7 +44,7 @@ from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pai
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder
-from fragnnet.models.masster.candidate_features import (
+from fragnnet.models.masster.masster_candidate_features import (
     COMPOSITION_FEATURE_DIM,
     COMPOSITION_HYDROGEN_COLUMN,
     CandidateFeatureInputs,
@@ -55,7 +55,7 @@ from fragnnet.models.masster.candidate_features import (
     element_counts_by_group,
     resolve_candidate_features,
 )
-from fragnnet.models.masster.candidate_transformer import (
+from fragnnet.models.masster.masster_candidate_transformer import (
     CandidateIntensityTransformerHead,
     candidate_graph_edges,
 )
@@ -73,7 +73,7 @@ from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
     filter_masster_templates,
 )
-from fragnnet.models.masster.component_pooling import (
+from fragnnet.models.masster.masster_component_pooling import (
     boundary_bond_endpoint_orientation,
     component_membership_rows,
     fragment_internal_edges,
@@ -81,24 +81,24 @@ from fragnnet.models.masster.component_pooling import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
-from fragnnet.models.masster.nominal_isotopes import (
+from fragnnet.models.masster.masster_nominal_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
     nominal_isotope_power_table,
 )
-from fragnnet.models.masster.pathway_probabilities import (
+from fragnnet.models.masster.masster_pathway_probabilities import (
     _segment_logsumexp,
     component_charge_log_probabilities,
     latent_pathway_charge_log_probabilities,
     masked_ion_hydrogen_log_probabilities,
 )
-from fragnnet.models.masster.proposal_heads import (
+from fragnnet.models.masster.masster_proposal_heads import (
     AtomChargeAffinityHead,
     BondFocusedBreakHead,
     EndpointBondBreakHead,
     IonModeProposalHead,
 )
-from fragnnet.models.masster.rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
+from fragnnet.models.masster.masster_rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
 from fragnnet.utils.formula_utils import (
     CANONICAL_ELEMENT_ORDER,
     H_MASS,
@@ -1305,7 +1305,7 @@ class MassterModel(nn.Module):
                 ``pred_escape_intensities`` for ``sparse_peak_list_distance``.
             candidate_features: Names of the descriptor columns appended to each candidate's
                 intensity token, resolved against
-                :data:`~fragnnet.models.masster.candidate_features.CANDIDATE_FEATURE_SPECS`, which
+                :data:`~fragnnet.models.masster.masster_candidate_features.CANDIDATE_FEATURE_SPECS`, which
                 documents what each one measures. The list is a set: columns are concatenated
                 in that module's canonical order, not the order given here. The default is the
                 pair of columns that used to be unconditional.

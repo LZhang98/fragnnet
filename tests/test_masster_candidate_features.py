@@ -13,10 +13,10 @@ And the 2026-09-22 refactor that replaced the five independent
 ``candidate_mass_features``/``candidate_charge_feature``/``candidate_composition_features``/
 ``candidate_cut_bond_features``/``candidate_cut_adjacency_features`` booleans with the single
 ``candidate_features`` list resolved against
-:mod:`fragnnet.models.masster.candidate_features`. Most of this file builds a
-:class:`~fragnnet.models.masster.candidate_features.CandidateFeatureInputs` directly and
+:mod:`fragnnet.models.masster.masster_candidate_features`. Most of this file builds a
+:class:`~fragnnet.models.masster.masster_candidate_features.CandidateFeatureInputs` directly and
 calls a spec's ``build`` (or
-:func:`~fragnnet.models.masster.candidate_features.build_candidate_features`) instead of the
+:func:`~fragnnet.models.masster.masster_candidate_features.build_candidate_features`) instead of the
 deleted private model methods; the asserted values are unchanged from before the refactor.
 """
 
@@ -28,7 +28,7 @@ from torch_geometric.data import Batch
 
 import fragnnet.models.masster.masster_model as masster_model_module
 from fragnnet.layers.cut_bond_encoder import CutBondEncoder
-from fragnnet.models.masster.candidate_features import (
+from fragnnet.models.masster.masster_candidate_features import (
     CANDIDATE_FEATURES_BY_NAME,
     COMPOSITION_FEATURE_DIM,
     CandidateFeatureInputs,
@@ -38,8 +38,8 @@ from fragnnet.models.masster.candidate_features import (
     describe_candidate_features,
     resolve_candidate_features,
 )
-from fragnnet.models.masster.candidate_transformer import CandidateIntensityTransformerHead
-from fragnnet.models.masster.component_pooling import (
+from fragnnet.models.masster.masster_candidate_transformer import CandidateIntensityTransformerHead
+from fragnnet.models.masster.masster_component_pooling import (
     boundary_bond_endpoint_orientation,
     pool_boundary_bond_embeddings,
     pool_component_and_complement_embeddings,

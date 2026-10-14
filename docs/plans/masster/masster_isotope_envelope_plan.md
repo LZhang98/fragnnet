@@ -57,7 +57,7 @@ instead of being fitted by hydrogen-shift channels or left unexplained.
   Fragment satellites on NIST are not measured.
 - **Target filters remove isotope peaks.** `filter_subformula_peaks` alone removes 64.3% of
   NIST-annotated isotope peaks
-  ([subformula isotope plan](../subformula_isotope_detection_plan.md)), and
+  (subformula isotope plan (removed 2026-10-13; `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md`)), and
   `filter_above_precursor_peaks` removes the precursor ladder. An envelope arm trained with
   either on would learn to predict peaks its target no longer has.
 - **Element counts are missing.** MASSter counts only hydrogen and adduct-removable elements per

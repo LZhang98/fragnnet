@@ -1,7 +1,8 @@
 # Configuration audit
 
 > **Status:** FINDING · **Updated:** 2026-10-13
-> Runtime findings 1–3 repaired in the working tree; config-file findings 4–7 remain open.
+> Runtime findings 1–3 repaired in the working tree; finding 6 resolved for MASSter by retiring
+> 97 configs on 2026-10-13; findings 4, 5 and 7 remain open.
 
 Scope: experiment YAML under `config/`, the shared template, CLI overrides, W&B merging,
 and runner validation. Checks use the configured FRAGNNET-GPU interpreter. No training,
@@ -58,6 +59,9 @@ and infrastructure/editor configuration are outside this audit.
    `masster_explore_masks`. This preserves the reorganization baseline but does not establish
    that every shipped config is usable. Separate historical configs from supported runnable
    configs, or migrate them with explicit reproducibility decisions.
+   **MASSter part resolved 2026-10-13:** the nine legacy configs were retired (see
+   [MASSter config retirement](#masster-config-retirement-2026-10-13)); only the FraGNNet debug
+   config remains allowlisted.
 
 7. **P2 — Five charge-migration ablations load but fail runner validation.**
    Under `config/ablations/charge_migration_fragmentation/`, the `molc_cl_only`,
@@ -91,6 +95,34 @@ Findings 1–3 were repaired with regression coverage in the
 [codebase repair record](codebase_audit_2026_10_13.md#repairs-2026-10-13).
 Resolve malformed and duplicate YAML next. Preserve historical experiment semantics when
 migrating removed settings; these runtime repairs do not choose new values for those experiments.
+
+## MASSter config retirement (2026-10-13)
+
+User decision: retire closed and unreferenced MASSter configs. The last commit holding all of
+them is `e180f2c2`; recover any file with `git show e180f2c2:<path>`. Frozen findings and plans
+keep their links to these paths.
+
+Every config under `config/masster/` was loaded with `load_config`, its data paths were checked
+(all present), and the repository (docs, scripts, tests, src, `sweep/`) was searched for its
+path, filename and stem.
+
+**Retired, 97 configs plus 5 companions:**
+
+| Group | Configs | Reason |
+| --- | --- | --- |
+| `config/masster/legacy/` (`explore`, `bond_size_curriculum`) | 15 | 9 failed validation on removed exploration keys; all were historical records |
+| `config/masster/mh_ft_clean_2026_09_22/` (`f0`, `f1`) | 2 | `f0`/`f1` retired; their findings are SUPERSEDED |
+| `config/masster/sweeps_merged/` | 4 | Pre-`i1` merged sweeps; the 4 matching `sweep/masster/merged_*` definitions retired with them |
+| `config/masster/merged/` (`baseline` 7, `channel_selection` 10, `proposal_warmup` 6, `subformula_filter` 7, `unique_fragment` 17, `warmup_duration` 5, `intensity_attention` 1) | 53 | Closed screens; no reference to the file, its name or its arm stem anywhere |
+| `config/masster/ma_mi_unmerged/` (`baseline` 5, `cmf` 5, `unique_fragment` 13) | 23 | Same criterion |
+
+Also removed: `scripts/manual_slurm/fir/submit_masster_mh_ft_clean.sh`. The usage example in
+`scripts/eval/bond_type_ce_allocation.py` now points at the `i1` config and checkpoint. Every
+cited, test-loaded or active-workstream config was kept. The remaining `merged/` and
+`ma_mi_unmerged/` files are those that tests, guides or findings name. Validation:
+`tests/test_config_templates.py`, `test_merged_ce_context.py`,
+`test_masster_connected_fragment_beam.py`, `test_config.py` and `test_runner_config.py`:
+**239 passed**.
 
 ## Files with duplicate keys
 

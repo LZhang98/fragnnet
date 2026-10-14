@@ -218,7 +218,7 @@ useless—the preceding `mol` versus `mol,mlp` result answers that question.
 
 ## Relationship to other mechanisms
 
-- [`conditioning_refactor_plan.md`](../conditioning_refactor_plan.md) defines how context metadata are
+- `conditioning_refactor_plan.md` (removed 2026-10-13; `git show e65339ed:docs/plans/conditioning_refactor_plan.md`) defines how context metadata are
   consolidated; its `mol,mlp` route is already fragment-specific.
 - `GINE_GATED` gates molecular bond messages upstream and answers a different bond-lability
   question.

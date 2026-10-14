@@ -17,7 +17,7 @@ config/
 
 Debug configs and sweep training configs live under their model too. W&B search definitions
 remain in `sweep/`. The shared template and its schema are unchanged. The
-[model grouping record](../docs/plans/config_model_grouping.md) explains the path migration;
+model grouping record (removed 2026-10-13; `git show e65339ed:docs/plans/config_model_grouping.md`) explains the path migration;
 use the new paths in commands and regenerate previously generated cluster jobs.
 
 A run's configuration resolves in three steps, each overriding the previous:

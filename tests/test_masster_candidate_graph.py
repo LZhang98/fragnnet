@@ -11,7 +11,7 @@ wiring (default off, unique-fragment requirement, a finite forward and backward)
 import pytest
 import torch as th
 
-from fragnnet.models.masster.candidate_transformer import candidate_graph_edges
+from fragnnet.models.masster.masster_candidate_transformer import candidate_graph_edges
 from tests.test_masster_attention_and_budget import _head_inputs, _moved_outputs, _mz_head
 from tests.test_masster_model import _build_batch, _build_model
 
