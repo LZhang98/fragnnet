@@ -160,6 +160,8 @@ spec_params:
   #   ace_min/ace_max operate on the raw ACE column from the pickle file.
   #   QTOF spectra always carry raw ace; ace: true is NOT required (and conflicts with nce: true).
   #   Spectra of a listed instrument with missing/unfillable CE are dropped.
+  # filter_exclude_elements: list of element symbols; drop every molecule containing any of them
+  #   (e.g. train: {filter_exclude_elements: [Br]} holds an element out of training).
   # Example:
   # split_filters:
   #  train:
@@ -196,6 +198,7 @@ mol_params:
     # - a_charge    # Gasteiger partial charge (continuous); computed on-the-fly, no DAG recomputation needed
     # - a_num_hs    # total H count one-hot [0, 1, 2, 3, >=4]; complements a_degree (heavy-atom only)
     # - a_fused_ring # atom in >=2 SSSR rings (2 bits); a ring-junction atom cannot be freed by one cut
+    # - a_periodic  # [period/7, group/18, Pauling EN/4, valence e-/8]: Se sits near S, As near P
   pyg_edge_feats:
     - b_degree
     # - b_ring      # bond ring membership (2 bits); no DAG recomputation needed

@@ -1,7 +1,7 @@
 # Rare chemistry augmentation for NIST20 and MassSpecGym
 
 > **Status:** PREPARED · **Updated:** 2026-10-14
-> A1/A3 sampler, census and A0/A1/A3 configs on branch `rare-chemistry-sampling`; not submitted. Census: A1 ready on both datasets; A3 fails the support gate. Rare elements now handled by the [revised plan](#rare-element-handling-revised-2026-10-14): element-swap transfer is a NIST20 halogen study; Se/As/Si have no measured pairs.
+> A1/A3 sampler, census and A0/A1/A3 configs on branch `rare-chemistry-sampling`; not submitted. Census: A1 ready on both datasets; A3 fails the support gate. Rare elements: [route 1](#rare-element-handling-revised-2026-10-14) (`a_periodic` + hidden-Br test, E0/E1/E2) prepared, not submitted; element-swap transfer is a NIST20 halogen study only.
 
 ## Objective and scope
 
@@ -218,10 +218,21 @@ the molecular-networking branch below as the route for rare-element classes.
      spectrum as input, MARASON-like) and swap augmentation (I analogues of training Br/Cl
      molecules with transported, edit-corrected spectra), each under the evaluation gates in
      section 5. Neither is designed yet.
-4. **Representation, for elements with no pairs.** If step 1 shows a gap on Se, As, Si or B,
-   test atom features carrying periodic properties (group, period, electronegativity, covalent
-   radius) so Se can borrow from S and As from P. Check MASSter's current atom featurizer
-   before proposing this; it has not been read for this plan.
+4. **Representation, for elements with no pairs (route 1, chosen 2026-10-14; PREPARED).**
+   MASSter's `a_onehot` already gives Se, As, Si, B, I, Br and P their own columns (only Te and
+   unlisted elements share the unknown bucket), but those columns train on 0–9 molecules and
+   nothing relates one element to another; `a_mass` is the only continuous element property.
+   New `a_periodic` atom feature: period/7, group/18, Pauling electronegativity/4, valence
+   electrons/8. RDKit covalent radii were rejected (P 0.75 Å vs S 1.02 Å), and a bond-enthalpy
+   feature was dropped: its C–Se and C–As values would be guesses, and the GNN sees each bond's
+   endpoint periods anyway. Rare elements cannot be measured directly (Se: 1 val molecule), so
+   **Br stands in**: `spec_params.split_filters.train.filter_exclude_elements: [Br]` drops all
+   997 Br training molecules (7.8% of spectra) while val keeps its 333. Arms in
+   `config/masster/rare_chemistry_2026_10_10/`: E0 hidden-Br control, E1 hidden Br +
+   `a_periodic`, E2 full data + `a_periodic`, against A0. Read: val Br molecules, E1 − E0
+   paired by molecule with a bootstrap CI, and the share of the A0 − E0 gap E1 closes; non-Br
+   val must stay within the 0.0042 seed spread. E2 vs A0 is the usual +0.005 overall screen.
+   E1 vs E0 tests periodic properties against `a_mass`, which both keep.
 5. **Report the unreachable.** Azide, peroxide and boron classes have neither cousins nor pairs;
    report them descriptively with counts and exclude them from promotion claims.
 
@@ -587,10 +598,17 @@ retain measured spectra. Report each dataset independently.
   failures in export-schema, MASSter export and post-cut gate tests that also fail on clean HEAD.
 - **Element-swap census 2026-10-14 ([finding](../../findings/masster/rare_chemistry_element_swap_census_2026_10_14.md)):**
   structure-only; halogen pairs exist on NIST20, none usable on MSGYM.
-- Not started: scaffold arm A2, replicate arm A4, matched-edit census, rare-element steps 1–4,
+- **Built 2026-10-14 (route 1):** `a_periodic` (`AtomPeriodic`, `periodic_position`,
+  `PAULING_ELECTRONEGATIVITY`) in [feat_utils.py](../../../src/fragnnet/utils/feat_utils.py);
+  `filter_exclude_elements` split filter in
+  [base_dataset.py](../../../src/fragnnet/dataset/base_dataset.py); tests in
+  `tests/test_feat_utils.py` and `tests/test_split_filters.py`; configs E0/E1/E2. Verified:
+  1,027 tests pass; a two-epoch GPU smoke of E1 on 512 spectra exits 0 with the filter applied
+  to train only.
+- Not started: scaffold arm A2, replicate arm A4, matched-edit census, rare-element steps 1–3,
   and any job submission.
-- Next concrete check: user decision on A3, then submit A0 and A1 on both datasets. In parallel,
-  rare-element step 1 (val only, existing `i1` checkpoint) and step 3a.
+- Next concrete check: user decision on A3; submit A0, A1 and route 1's E0/E1/E2 on NIST20
+  (A0 is shared). Then build the val Br-cohort read for E0/E1.
 - Future code belongs in the dataset/sampler layer and focused analysis scripts; expose
   default-off config keys only after reading the Python/ML rules. Tests must verify training-only
   counts, split isolation, reproducible draws, actual update budgets and unmodified evaluation.

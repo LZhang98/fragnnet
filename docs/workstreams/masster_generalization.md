@@ -17,7 +17,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED | A0/A1 ready to submit; A3 needs a user redesign decision; rare-element step 1 (`i1` val gap) and 3a (Br↔Cl screen) next |
+| [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED | A0/A1 and rare-element route 1 (E0/E1/E2: `a_periodic`, hidden-Br test) ready to submit; A3 needs a user redesign decision |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) (dated log: [history](../history/masster_memorization_route_plan_log.md)) | ACTIVE | Energetics gate protocol (above); coverage run `so1` when the user decides |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING | State/calculation policy, missing-feature handling, independent selector, effect size, before any fit |
 | [Transfer-oriented (MLDG-style) training](../plans/masster/masster_memorization_route_plan.md#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred) | DEFERRED | Only a cheap head-gradient conflict check on training-only batches, if revived |
