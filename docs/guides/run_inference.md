@@ -468,7 +468,7 @@ cc bitmasks, and ~2.4 TB and ~8.3 GB of joint rows. The node count was threshold
 before the fix, so the left column is also what `--min_intensity 10.0` used to produce.
 
 **MASSter (2026-09-25).** MASSter checkpoints emit the same columns under the same flags. It
-has no DAG, so `masster_annotation_tables` in `src/fragnnet/utils/script_utils.py` builds the
+has no DAG, so `masster_annotation_tables` in `src/fragnnet/models/masster/masster_export.py` builds the
 formula, joint and node tables for each batch from the model's output pathways (fragment × ion
 mode × H shift). The exporter then filters, rebases and writes them the same way it does
 FraGNNet's. The reading code above works unchanged. The differences:
@@ -523,7 +523,7 @@ exports, not the annotation. On CPU the two exports are bit-identical.
 Moved here from the project-state handoff (2026-09-24 entries) on 2026-10-06.
 
 - **One row per peak.** MASSter emits candidate rows, about 4.5 connected fragments per peak
-  m/z. For `MassterPL` only, `process_batch_to_tabular_row` (`src/fragnnet/utils/script_utils.py`,
+  m/z. For `MassterPL` only, `process_batch_to_tabular_row` (`src/fragnnet/inference/batch_rows.py`,
   called by every exporter) sums candidates within 4-decimal m/z groups with
   `aggregate_peaks_exact_mz` before the base-peak rescale and before `--min_peak_int`. The exact
   m/z is kept (intensity-weighted mean where members differ). Rounded m/z moved binned
@@ -604,8 +604,32 @@ sbatch scripts/manual_slurm/fir/infer_synced_arr_hdf5.sh
 
 Both run one task per frag shard (`--array=0-14`, `CHUNK_SIZE=20000`): task i consumes
 shard i and predicts exactly the mol_df slice that built it, so no merge step is needed.
-`--array` must cover exactly the shards preprocessing wrote, and the scripts refuse to
-start otherwise; pass `PARTIAL_ARRAY=1` when rerunning a subset that starts at task 0.
+A full sweep needs `--array` to cover exactly the shards preprocessing wrote. A narrower
+array is allowed — `sbatch --array=0-0` to run one shard, or a subset to rerun failed
+tasks — and the scripts only print a note comparing task count to shard count. Nothing
+fails when shards are left out: those molecules are simply not predicted and every task
+still exits 0, so check the note before calling a sweep complete.
+
+`infer_synced_arr_hdf5.sh` batches by **fragment-node budget**, not by a fixed spectrum
+count: `DYNAMIC_BATCH_MAX=100000` (frag_node), passed through as `--dynamic_batch_max`. Each
+of a molecule's 14 SYNCED rows carries that molecule's whole DAG, so a fixed batch costs
+whatever the molecules in it happen to cost. Measured on 400 random SYNCED molecules
+(mean 1,549 frag_node, p99 24,609, max 108,721), the old `BATCH_SIZE=64` gave batches of mean
+99,591 nodes but max 1,552,120 — the GPU had to be sized for a tail batch 50x the median one.
+The cap keeps the mean and the batch count while cutting that peak 14x. Below ~110,000 the peak
+stops improving (single molecules already exceed it, and are predicted as one-sample batches),
+so raise rather than lower it; the same config trains at `dynamic_batch_sampler_max: 400000`.
+`DYNAMIC_BATCH_MAX=0 sbatch ...` restores fixed `BATCH_SIZE` batches, which is what
+`infer_synced_arr.sh` (tar backend) still does by default.
+
+Every chunk save and the end of the run print a `>> resources:` line to the task's
+`#SBATCH --output` file — throughput plus peak GPU and host memory, as high-water marks
+rather than samples. This is unconditional; `WANDB_TRACK_MODE=online sbatch ...` (which the
+scripts pass through as `--wandb_mode`, default `disabled`) only adds the same numbers to
+a W&B run. Size the next `--gpu_profile` and `--time` from that line,
+not from a guess. Note that NVML reports no SM utilization for a MIG slice, so W&B's
+system panels cannot tell you whether a `h100_3g.40gb` instance is saturated — only the
+memory figures and throughput are available.
 
 A task that runs out of wall time is resumed by resubmitting the array — each task skips
 the spec_ids already present in its own output dir. Output goes to

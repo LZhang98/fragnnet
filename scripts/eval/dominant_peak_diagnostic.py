@@ -66,7 +66,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 # Per-instrument m/z tolerance, matching INST_TYPE_LOSS_TOL in dag_oracle_scores.py and
-# inst_type_loss_tol in config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml.
+# inst_type_loss_tol in config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml.
 INST_TYPE_LOSS_TOL = {
     "ORB": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da
     "ORB_F": (1.0e-5, 200.0),  # 10 ppm, floor 200 Da

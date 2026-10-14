@@ -4,16 +4,12 @@ import subprocess
 
 SCAFFOLD_MODEL_TYPE_TO_IDS = {
     "fraggnn_d4_long": ["wpf5lx0s", "i9sbcq1x", "e4ps82x2", "654110tn", "udv8nild"],
-    "iceberg_inten3_100_long": ["nln6cd2l", "q0jzakvq", "pp10scb2", "lzpjmspn", "w7hmwdm4"],
-    "iceberg_gen": ["4pweeg45", "9j26mr4s", "n27tube2", "biofdpxl", "cyot56r3"],
     "neims_long": ["f86qx5mc", "n78taefc", "j6l4pig7", "nlmxw6uk", "ihtfbuyh"],
     "massformer_long": ["wbcacs9a", "9goj2crn", "mfinb7je", "xryfrdrt", "n8x5946i"],
 }
 
 INCHIKEY_MODEL_TYPE_TO_IDS = {
     "fraggnn_d4_long": ["okoezseo", "k6pjarvc", "njwchu0d", "euspkn0w", "z7r2i8pc"],
-    "iceberg_inten3_100_long": ["bsuk0836", "f6zb8xg5", "t5pdsmdf", "hcybvcmu", "zr0i9hcm"],
-    "iceberg_gen": ["i7k9gc3d", "mz3s3h62", "6f4nes2g", "lp60e1nq", "3zjhzrss"],
     "neims_long": ["xclueecr", "68wj70ah", "px0nb7mk", "aio4nee7", "0467epvx"],
     "massformer_long": ["i75p4rqv", "dey5m0xz", "luyzp00n", "muzcg5hy", "81vgna81"],
 }
@@ -48,37 +44,24 @@ def main(args):
 
             for seed_idx in range(args.num_seeds):
                 SEED_IDX = seed_idx
-                CUSTOM_FP = f"config/nist20v3-1_d4_wr00_{SPLIT}/{MODEL}/s{SEED_IDX}.yml"
+                MODEL_DIR = "fragnnet" if MODEL.startswith("fragnnet") else MODEL
+                CONFIG_VARIANT = f"/{MODEL}" if MODEL_DIR == "fragnnet" else ""
+                CUSTOM_FP = (
+                    f"config/{MODEL_DIR}/nist20v3-1_d4_wr00_{SPLIT}"
+                    f"{CONFIG_VARIANT}/s{SEED_IDX}.yml"
+                )
                 SAVE_FP = f"{SAVE_DP}/{MODEL}_s{SEED_IDX}.pkl"
-                if MODEL == "iceberg_inten3_100_long":
-                    GEN_ID = MODEL_TYPE_TO_ID["iceberg_gen"][SEED_IDX]
-                    INTEN_ID = MODEL_TYPE_TO_ID["iceberg_inten3_100_long"][SEED_IDX]
-                    MAGMA_DP = (
-                        f"{DIR}/magma/pred_magma_nist20v3_{SPLIT}_iceberg_gen_s{SEED_IDX}_{GEN_ID}"
-                    )
-                    PY_FP = "scripts/ms2c/run_iceberg_ms2c_predict_val.py"
-                    PY_ARGS = [
-                        "run_iceberg_gen=False",
-                        f"proc_dp={PROC_DP}",
-                        f"magma_dp={MAGMA_DP}",
-                        f"iceberg_inten_wandb_run_id={INTEN_ID}",
-                        f"iceberg_inten_custom_fp={CUSTOM_FP}",
-                        f"save_fp={SAVE_FP}",
-                        f"iceberg_inten_batch_size={BATCH_SIZE}",
-                        "iceberg_inten_num_workers=7",
-                    ]
-                else:
-                    ID = MODEL_TYPE_TO_ID[MODEL][SEED_IDX]
-                    PY_FP = "scripts/ms2c/run_ms2c_predict_val.py"
-                    PY_ARGS = [
-                        f"proc_dp={PROC_DP}",
-                        f"frag_dp={FRAG_DP}",
-                        f"wandb_run_id={ID}",
-                        f"custom_fp={CUSTOM_FP}",
-                        f"save_fp={SAVE_FP}",
-                        f"batch_size={BATCH_SIZE}",
-                        "num_workers=7",
-                    ]
+                ID = MODEL_TYPE_TO_ID[MODEL][SEED_IDX]
+                PY_FP = "scripts/ms2c/run_ms2c_predict_val.py"
+                PY_ARGS = [
+                    f"proc_dp={PROC_DP}",
+                    f"frag_dp={FRAG_DP}",
+                    f"wandb_run_id={ID}",
+                    f"custom_fp={CUSTOM_FP}",
+                    f"save_fp={SAVE_FP}",
+                    f"batch_size={BATCH_SIZE}",
+                    "num_workers=7",
+                ]
                 SETUP_CMD = [
                     "python",
                     "scripts/setup_job_vv.py",
@@ -113,7 +96,6 @@ if __name__ == "__main__":
         default=[
             "fraggnn_d3_long",
             "fraggnn_d4_long",
-            "iceberg_inten3_100_long",
             "neims_long",
             "massformer_long",
         ],

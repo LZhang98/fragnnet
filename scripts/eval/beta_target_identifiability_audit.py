@@ -50,8 +50,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils, parallel_utils
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -87,7 +86,7 @@ def _bfs_depth(edge_index: np.ndarray, num_nodes: int) -> np.ndarray:
 
 def _process_mol(mol_id: int, frag_dp: str, is_compressed: bool) -> dict | None:
     """Per-molecule multi-parent and branching-parent counts for the three structures."""
-    dag_d = frag_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
+    dag_d = dag_format_utils.load_frag_d(mol_id, frag_dp, is_compressed=is_compressed)
     if dag_d is None:
         return None
     dag = dag_d["dag"]
@@ -182,7 +181,7 @@ def main() -> None:
     parser.add_argument("--frag_dp", required=True, help="DAG dir (or .tar/.zip).")
     parser.add_argument("--limit_mols", type=int, default=None, help="Subsample this many DAGs.")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of per-mol counts.")
     args = parser.parse_args()
 
@@ -197,7 +196,7 @@ def main() -> None:
 
     worker = functools.partial(_process_mol, frag_dp=args.frag_dp, is_compressed=is_compressed)
     log.info("Processing %d DAGs", len(mol_ids))
-    rows = [r for r in data_utils.par_apply(mol_ids, worker, n_jobs=args.n_jobs) if r is not None]
+    rows = [r for r in parallel_utils.par_apply(mol_ids, worker, n_jobs=args.n_jobs) if r is not None]
     if not rows:
         raise ValueError("No DAG produced audit rows; check --frag_dp.")
 

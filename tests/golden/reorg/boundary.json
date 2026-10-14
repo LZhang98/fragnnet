@@ -1,0 +1,115 @@
+{
+  "ast_violations": {},
+  "isolation_entry_modules": {
+    "fragnnet.config": {},
+    "fragnnet.dataset.base_dataset": {},
+    "fragnnet.dataset.data_sampler": {},
+    "fragnnet.dataset.loading": {},
+    "fragnnet.dataset.spec_mol_dataset": {},
+    "fragnnet.inference.checkpoint": {},
+    "fragnnet.inference.runners": {},
+    "fragnnet.pl_model.spectrum_pl": {},
+    "fragnnet.runner": {},
+    "fragnnet.utils.feat_utils": {},
+    "fragnnet.utils.migrations": {},
+    "fragnnet.utils.proc_utils": {}
+  },
+  "isolation_model_selection": {
+    "frag_gnn": {
+      "fragnnet": [
+        "fragnnet.models.fragnnet",
+        "fragnnet.models.fragnnet.dag",
+        "fragnnet.models.fragnnet.dag.graph",
+        "fragnnet.models.fragnnet.dag.layout",
+        "fragnnet.models.fragnnet.dag.storage",
+        "fragnnet.models.fragnnet.fragment_competition",
+        "fragnnet.models.fragnnet.fragnnet_adducts",
+        "fragnnet.models.fragnnet.fragnnet_conditioning",
+        "fragnnet.models.fragnnet.fragnnet_dataset",
+        "fragnnet.models.fragnnet.fragnnet_model",
+        "fragnnet.models.fragnnet.fragnnet_pl"
+      ]
+    },
+    "fragnnet": {
+      "fragnnet": [
+        "fragnnet.models.fragnnet",
+        "fragnnet.models.fragnnet.dag",
+        "fragnnet.models.fragnnet.dag.graph",
+        "fragnnet.models.fragnnet.dag.layout",
+        "fragnnet.models.fragnnet.dag.storage",
+        "fragnnet.models.fragnnet.fragment_competition",
+        "fragnnet.models.fragnnet.fragnnet_adducts",
+        "fragnnet.models.fragnnet.fragnnet_conditioning",
+        "fragnnet.models.fragnnet.fragnnet_dataset",
+        "fragnnet.models.fragnnet.fragnnet_model",
+        "fragnnet.models.fragnnet.fragnnet_pl"
+      ]
+    },
+    "gnn": {
+      "gnn": [
+        "fragnnet.models.gnn",
+        "fragnnet.models.gnn.gnn_model",
+        "fragnnet.models.gnn.gnn_pl"
+      ]
+    },
+    "graff": {
+      "baseline:graff": [
+        "fragnnet.baselines.graff",
+        "fragnnet.baselines.graff.data_utils",
+        "fragnnet.baselines.graff.dataset",
+        "fragnnet.baselines.graff.model",
+        "fragnnet.baselines.graff.nn_utils",
+        "fragnnet.baselines.graff.pl_model"
+      ]
+    },
+    "massformer": {
+      "baseline:massformer": [
+        "fragnnet.baselines.massformer",
+        "fragnnet.baselines.massformer.algos",
+        "fragnnet.baselines.massformer.data_utils",
+        "fragnnet.baselines.massformer.dataset",
+        "fragnnet.baselines.massformer.model",
+        "fragnnet.baselines.massformer.nn_utils",
+        "fragnnet.baselines.massformer.pl_model"
+      ]
+    },
+    "masster": {
+      "fragmentation": [
+        "fragnnet.fragmentation",
+        "fragnnet.fragmentation.smarts_prepass"
+      ],
+      "masster": [
+        "fragnnet.models.masster",
+        "fragnnet.models.masster.candidate_features",
+        "fragnnet.models.masster.candidate_transformer",
+        "fragnnet.models.masster.candidates",
+        "fragnnet.models.masster.candidates.builder",
+        "fragnnet.models.masster.candidates.connected_fragment_beam",
+        "fragnnet.models.masster.candidates.smarts_templates",
+        "fragnnet.models.masster.component_pooling",
+        "fragnnet.models.masster.masster_export",
+        "fragnnet.models.masster.masster_hooks",
+        "fragnnet.models.masster.masster_model",
+        "fragnnet.models.masster.masster_pl",
+        "fragnnet.models.masster.nominal_isotopes",
+        "fragnnet.models.masster.pathway_probabilities",
+        "fragnnet.models.masster.proposal_heads",
+        "fragnnet.models.masster.rt_ccs_heads"
+      ]
+    },
+    "neims": {
+      "neims": [
+        "fragnnet.models.neims",
+        "fragnnet.models.neims.neims_model",
+        "fragnnet.models.neims.neims_pl"
+      ]
+    },
+    "precursor": {
+      "precursor": [
+        "fragnnet.models.precursor",
+        "fragnnet.models.precursor.precursor_model",
+        "fragnnet.models.precursor.precursor_pl"
+      ]
+    }
+  }
+}

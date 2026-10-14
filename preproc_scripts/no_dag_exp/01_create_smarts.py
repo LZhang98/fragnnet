@@ -13,12 +13,12 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 from tqdm import tqdm
 
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.formula_utils import H_MASS, PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
+from fragnnet.utils.formula_utils import H_MASS, PREC_TYPE_TO_MASS_DIFF, th_long_to_mask
 from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.mol_utils import mol_from_smiles
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def draw_highlighted_atoms(mol, atom_ids):
@@ -313,7 +313,7 @@ def get_args():
     parser.add_argument(
         "--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file"
     )
-    # parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
+    # parser.add_argument("--custom_fp", type=str, default="config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
     # parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_ma_mi", help="Path to the output file")
     parser.add_argument("--batch_size", type=int, default=40, help="Batch size for the dataloader")
     parser.add_argument("--num_workers", type=int, default=4)

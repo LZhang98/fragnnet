@@ -9,9 +9,9 @@ import pytest
 import torch as th
 
 from fragnnet.dataset.base_dataset import BaseDataset, _ce_list_to_stats
-from fragnnet.model.masster_model import MassterContextEncoder
+from fragnnet.models.masster.masster_model import MassterContextEncoder
 from fragnnet.runner import load_config
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import weighted_mean_by_batch
 from tests.test_ce_multi_location import _build

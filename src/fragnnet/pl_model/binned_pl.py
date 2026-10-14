@@ -1,7 +1,7 @@
 import torch as th
 
-from fragnnet.model.loss import sparse_cosine_distance_binned
-from fragnnet.pl_model import SpectrumPL
+from fragnnet.loss.spectrum_distance import sparse_cosine_distance_binned
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 
 
 class BinnedPL(SpectrumPL):

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from fragnnet.utils.data_utils import rdkit_import
+from fragnnet.utils.mol_utils import rdkit_import
 
 logger = logging.getLogger(__name__)
 

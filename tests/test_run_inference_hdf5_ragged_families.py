@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.utils import script_utils
+from fragnnet.inference import export_columns, runners
 
 COLUMNS = [
     "spec_id",
@@ -93,10 +93,11 @@ def _make_batches(batch_sizes):
 
 def _write(monkeypatch, tmp_path, batch_sizes, chunk_size):
     batches = _make_batches(batch_sizes)
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "pred.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),
@@ -177,10 +178,11 @@ def test_missing_adducts_in_first_chunk_keep_formula_alignment(monkeypatch, tmp_
     adduct_col = COLUMNS.index("pred_formula_adducts")
     for i in range(2):
         batches[0][adduct_col][i] = [np.nan] * SPECTRA[i]["n_formulas"]
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: COLUMNS)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: COLUMNS)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "missing_adducts.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),
@@ -213,10 +215,11 @@ def test_absent_family_writes_no_points(monkeypatch, tmp_path):
     for start in range(0, len(SPECTRA), 2):
         rows = [_blocks(s) for s in SPECTRA[start : start + 2]]
         batches.append([[r[c] for r in rows] for c in cols])
-    monkeypatch.setattr(script_utils, "get_tabular_columns", lambda *a, **k: cols)
-    monkeypatch.setattr(script_utils, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
+    monkeypatch.setattr(export_columns, "get_tabular_columns", lambda *a, **k: cols)
+    monkeypatch.setattr(runners, "get_tabular_columns", lambda *a, **k: cols)
+    monkeypatch.setattr(runners, "run_inference_tabular_iter", lambda *a, **k: iter(batches))
     path = str(tmp_path / "sparse.hdf5")
-    script_utils.run_inference_hdf5(
+    runners.run_inference_hdf5(
         types.SimpleNamespace(hparams=None),
         dataloader=list(range(len(batches))),
         device=th.device("cpu"),

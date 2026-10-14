@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import torch as th
 
-from fragnnet.utils import misc_utils
+from fragnnet.utils import misc_utils, scatter_utils
 
 
 def test_none_or_nan_variants() -> None:
@@ -39,7 +39,7 @@ def test_deep_update_merges_nested_dicts() -> None:
 def test_scatter_logsumexp_matches_manual() -> None:
     logits = th.tensor([0.0, 1.0, 0.0])
     subset_idxs = th.tensor([0, 0, 1])
-    out = misc_utils.scatter_logsumexp(logits, subset_idxs)
+    out = scatter_utils.scatter_logsumexp(logits, subset_idxs)
     expected_group0 = math.log(1.0 + math.e)  # logsumexp([0, 1])
     expected_group1 = 0.0  # logsumexp([0])
     assert th.isclose(out[0], th.tensor(expected_group0), atol=1e-6)

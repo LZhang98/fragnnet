@@ -19,7 +19,7 @@ import pandas as pd
 import torch as th
 
 from fragnnet.dataset.data_sampler import MoleculeAcquisitionSampler
-from fragnnet.utils.data_utils import rdkit_import
+from fragnnet.utils.mol_utils import rdkit_import
 
 logger = logging.getLogger(__name__)
 

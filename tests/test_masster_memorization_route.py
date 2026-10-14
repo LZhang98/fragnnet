@@ -18,16 +18,17 @@ import pytest
 import torch as th
 
 from fragnnet import runner
-from fragnnet.model.base_model import CutBondEncoder
-from fragnnet.model.bond_fragment_heads import (
+from fragnnet.layers.cut_bond_encoder import CutBondEncoder
+from fragnnet.layers.gine_gsa import GINE_GSA
+from fragnnet.layers.gnn import GINE
+from fragnnet.models.masster.candidate_transformer import (
     CandidateIntensityTransformerHead,
     _drop_set_keys,
     _InducedCandidateAttentionLayer,
     _substitute_set_message,
 )
-from fragnnet.model.masster_model import MassterModel
-from fragnnet.model.nn_blocks import GINE, GINE_GSA
-from fragnnet.pl_model.masster_pl import MassterPL
+from fragnnet.models.masster.masster_model import MassterModel
+from fragnnet.models.masster.masster_pl import MassterPL
 from tests.test_masster_model import _build_batch, _build_model
 
 UNIQUE_KWARGS = {"max_masks": 4, "max_enumerated_masks": 8, "unique_fragment_mode": True}

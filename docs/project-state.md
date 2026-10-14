@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-10
+> **Status:** REFERENCE · **Updated:** 2026-10-13
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -19,7 +19,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 | Spectraverse v1.0.2 | [spectraverse](workstreams/spectraverse.md) | Five arms PREPARED, none submitted |
 | NIST23 EI (nominal) | [nist23_ei](workstreams/nist23_ei.md) | e2/e3/e4 PREPARED |
 | CASMI 2026, Enveda-180, shared data quality | [casmi_enveda](workstreams/casmi_enveda.md) | ACTIVE: CASMI train filter decision |
-| FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; Stage A PREPARED |
+| FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; pair BCE retired |
 
 ## MASSter generalization on NIST20
 
@@ -35,6 +35,18 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
+- **Shared codebase audit:** [repairs](findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) for all six findings and three config runtime defects are implemented, uncommitted. Focused checks and the unfiltered CPU suite pass. **Next:** review; GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.
+
+- **Configs grouped by model:** [record](plans/config_model_grouping.md); shared template and experiment settings retained. [Audit findings](findings/config_audit_2026_10_12.md) 1–3 repaired; 4–7 remain open. **Next:** malformed/duplicate YAML and legacy migration decisions.
+
+- **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. NIST20 duplicate consolidated; large saved table outputs cleared with figures preserved. Reporting repairs remain open.
+
+- **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed. Unfiltered CPU suite passed in the codebase repair validation. **Next:** GPU validation.
+
+- **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
+- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the [export fix](findings/masster/masster_export_merge_untransform_2026_10_12.md) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
+- **Shared loss consolidation committed** (`1a63257b`, file merge and renames `72ad897e`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12), [file merge and renames](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** GPU validation when available.
+
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
 - **Prepared:** full-length `wd10` and its `trainaux` control (`fir:h100-80gb`); `a4`,
@@ -49,9 +61,10 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
 - **Problem:** generalization, train 0.884 vs val 0.584; arms one seed each (control spread 0.0025).
 - **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms, including the calibrated-likelihood arms. **Prepared, not submitted:** `pow075_s2`, `b1024`, `b256` rerun,
-  5 U256/E1024 configs, sweep `tiwhun9q`
+  5 U256/E1024 configs
   ([arms plan](plans/masster/masster_msgym_training_arms_plan.md)).
-- **Next:** re-select `loglik_cal` on val for `pow075`/`wd10`; a second `pow075` seed.
+- **Sweep ran:** [tiwhun9q live read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#live-results-read-2026-10-11); 15 finished / 33 interrupted. Leader re-run `f44tzxoc` ties `pow075` on formula-test retrieval ([read](plans/masster/msgym_val_loss_sweep_48_2026_10_03.md#leader-re-run-formula-test-retrieval-2026-10-13)).
+- **Next:** seed replicates of `pow075` and the leader. Re-select `loglik_cal` on val.
 - **Prepared:** [rare chemistry sampling](plans/masster/rare_chemistry_augmentation_plan.md) A0/A1/A3; A1 shifts exposure strongly here, A3 fails the support gate ([census](findings/masster/rare_chemistry_class_census_2026_10_10.md)).
 
 ## Spectraverse
@@ -73,6 +86,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## CASMI 2026, Enveda-180, shared data
 
+- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md) fixed in the working tree 2026-10-13 (uncommitted), 272 focused tests passed. Next: review and commit; rebuild any merger/inference-merged outputs into new directories before use.
+
 - **CASMI 2026:** extracted, not preprocessed. The visible test is a copy of train, so validate
   molecule-disjoint. Dedup drops 17.6% of train; NIST HR would add 34,295 molecules.
 - **Enveda-180:** baseline (standalone, ACE only, no EMA) prepared, not submitted. The combined
@@ -82,14 +97,17 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## FraGNNet
 
+- **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
+- **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed in the working tree with a regression test; probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
+- **Shared reorganization done** (branch, not merged; [progress](plans/repo_reorg_plan.md#progress)): FraGNNet is in `src/fragnnet/models/fragnnet/`. MCES pretraining (and fine-tuning from it), ChemLM and CLIP were retired 2026-10-12.
+
 - **Dormant since September.** Best `pqx7ywc9` 0.7555 `cos_hun_inst_tol` (NIST20 test). The DAG
   oracle is 0.937, so the gap is intensity ranking, not coverage.
-- **Prepared:** FT contender-pair Stage A (`c0`/`c1`/`p1`/`p2`). Re-measure steps per epoch
-  after the 2026-09-26 sampler fix before submitting.
+- **Stopped:** precursor BCE and CE-switch BCE retired at user request; Stage A configs and generator removed. See the [loss plan](plans/loss_consolidation_plan.md#phase-1-retire-precursor-and-ce-switch-bce).
 
-## Uncommitted working tree (2026-10-10, branch `rare-chemistry-sampling`)
+## Branch `research/rare-chemistry-sampling` (2026-10-13)
 
-- Rare chemistry A1/A3 sampler, census script, six configs, tests and docs; not submitted.
+- Rare chemistry A1/A3 sampler, census script, six configs, tests and docs; committed on the branch, origin/main merged in, not submitted.
   State and verification are in the [plan handoff](plans/masster/rare_chemistry_augmentation_plan.md#implementation-handoff-and-current-state).
 
 ## Standing cross-workstream rules

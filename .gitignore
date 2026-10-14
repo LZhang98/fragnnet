@@ -9,8 +9,8 @@ logs
 logs*
 # Extensions
 *.c
-src/fragnnet/frag/compute_frags.c
-src/fragnnet/massformer/algos.c
+src/fragnnet/models/fragnnet/dag/compute_frags.c
+src/fragnnet/baselines/massformer/algos.c
 cysignals_crash_logs
 
 # Distribution / packaging
@@ -23,6 +23,7 @@ python_env/
 FRAGGNET-GPU*/
 FRAG-GNN-GPU*/
 wandb_venv/
+.venv/
 
 # Project-specific Data & Outputs
 data/
@@ -58,8 +59,12 @@ containers/apptainer/
 /scripts/debug/*.pkl
 /wandb_api_key
 
-# Others
+# Others Caches
 .github
-# Claude configuration and cache
 .claude
 .codex
+.rvtmp
+.ruff_cache
+.benchmarks
+.aws
+.agents

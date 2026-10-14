@@ -103,13 +103,14 @@ def run_score(args: argparse.Namespace) -> None:
     import torch as th
     from pandarallel import pandarallel
 
-    from fragnnet.runner import init_dataloader, load_config
-    from fragnnet.utils.misc_utils import safelog, to_device
-    from fragnnet.utils.script_utils import (
+    from fragnnet.inference.checkpoint import (
         apply_inference_config,
         init_model_from_ckpt,
         setup_device,
     )
+    from fragnnet.runner import init_dataloader, load_config
+    from fragnnet.utils.misc_utils import to_device
+    from fragnnet.utils.scatter_utils import safelog
     from fragnnet.utils.setup_utils import get_dataset_cls
 
     pandarallel.initialize(progress_bar=False, nb_workers=6)

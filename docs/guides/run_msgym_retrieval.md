@@ -109,8 +109,9 @@ Compare runs by hit@k, not by per-candidate scores.
   `scripts/ms2c/run_ms2c_predict_msgym.py` and
   `preproc_scripts/msgym_ms2c/02_prepare_mgsgym_prediction_frag.py`, neither of which exists, and
   read hard-coded `/scratch/feiw/...` tars. Do not use them; they were left in place.
-- **The `scripts/ms2c/` predictors are FraGNNet-only.** `run_ms2c_predict_val.py` and
-  `run_iceberg_ms2c_predict_val.py` are for FraGNNet and ICEBERG.
+- **The `scripts/ms2c/` predictor is FraGNNet-only.** `run_ms2c_predict_val.py` is for FraGNNet.
+  The ICEBERG predictor was removed with the local ICEBERG fork on 2026-10-11; run ICEBERG through
+  external ms-pred.
 - **A stale README claim.** The ms2c inference README's `cos_sim_sqrt` auxiliary-score name is
   rejected by `run_save_inference_eval.py`, which raises `metric_name cos_sim_sqrt not
   recognized`. The sqrt cosine is enabled by `--override eval_bin_sqrt=True`.

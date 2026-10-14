@@ -14,9 +14,9 @@ sys.path.insert(
 )
 from build_cut_pair_targets import load_spec_df_with_ce_fill
 
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.feat_utils import get_node_feats
-from fragnnet.utils.frag_utils import th_long_to_mask
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
+from fragnnet.utils import dag_format_utils
+from fragnnet.utils.formula_utils import th_long_to_mask
 
 CACHE_FP = "/tmp/cut-pair-review-BJ5z6X/cache_500mol.pt"
 PRED_FP = "output/inference_eval/9t63zils/predictions_val.hdf5"
@@ -124,7 +124,7 @@ def main() -> None:
             row = spec_by_id.loc[spec_id]
             mol_id = int(row["mol_id"])
             if mol_id not in atom_counts_by_mol:
-                dag_d = frag_utils.load_frag_d(
+                dag_d = dag_format_utils.load_frag_d(
                     mol_id, cache["metadata"]["frag_dp"], is_compressed=True
                 )
                 dag = dag_d["dag"]

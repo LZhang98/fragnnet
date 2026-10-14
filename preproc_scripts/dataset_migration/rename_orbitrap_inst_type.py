@@ -31,7 +31,7 @@ import os
 import pandas as pd
 import torch as th
 
-from fragnnet.utils.data_utils import find_retired_inst_type_refs
+from fragnnet.utils.migrations import find_retired_inst_type_refs
 
 RENAMES = {"OB": "ORB", "OB_F": "ORB_F"}
 

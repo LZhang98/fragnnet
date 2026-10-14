@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 
 from fragnnet.dataset.base_dataset import BaseDataset
-from fragnnet.utils import data_utils
+from fragnnet.utils import formula_utils, spec_parse_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 # ============================================================================
@@ -665,7 +665,7 @@ class TestSpectrumCleanup:
         self, use_instrument_tolerance, expected_spec_ids
     ):
         theoretical_mz = (
-            data_utils.formula_to_mass("CH4")
+            formula_utils.formula_to_mass("CH4")
             + PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
         )
         spec_df = _make_spec_df(
@@ -698,7 +698,7 @@ class TestSpectrumCleanup:
         assert out_mol["mol_id"].tolist() == expected_spec_ids
 
     def test_centroid_and_subformula_filter_run_during_dataframe_preprocessing(self):
-        carbon_ion_mz = data_utils.formula_to_mass("C") - data_utils.ELECTRON_MASS
+        carbon_ion_mz = formula_utils.formula_to_mass("C") - spec_parse_utils.ELECTRON_MASS
         spec_df = _make_spec_df(
             [
                 {

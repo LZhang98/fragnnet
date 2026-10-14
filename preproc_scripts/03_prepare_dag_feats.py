@@ -7,14 +7,15 @@ from typing import cast
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.data_utils as data_utils
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.frag_utils import run_frag_gen_hdf5
+from fragnnet.models.fragnnet.dag import storage
+from fragnnet.models.fragnnet.dag.builder import run_frag_gen_hdf5, timed_get_dags
+from fragnnet.models.fragnnet.dag.stats import compute_frag_peak_stats
+from fragnnet.utils import dag_format_utils, formula_utils, parallel_utils
 from fragnnet.utils.misc_utils import ProgressLogger, booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 # Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
-# (e.g. config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
+# (e.g. config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
 # cos_hun_inst_tol_opt convention in scripts/eval/dag_oracle_scores.py. Instrument types
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).
@@ -78,10 +79,10 @@ def log_frag_output_summary(args, h5_fp: str, dag_dp: str) -> None:
 
 
 def main(args):
-    if args.max_time >= data_utils.JOBLIB_TIMEOUT:
+    if args.max_time >= parallel_utils.JOBLIB_TIMEOUT:
         raise ValueError(
             f"max_time ({args.max_time}s) must be less than JOBLIB_TIMEOUT "
-            f"({data_utils.JOBLIB_TIMEOUT}s)"
+            f"({parallel_utils.JOBLIB_TIMEOUT}s)"
         )
 
     # Setup logging. datefmt is explicit so asctime renders as "2026-09-14 22:06:53"
@@ -213,7 +214,7 @@ def main(args):
                     f"prec_spec_recall_{tolerance}_h{h_transfer}",
                 ]
                 if "ppm" in tolerance:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -225,7 +226,7 @@ def main(args):
                         is_ppm=True,
                     )
                 else:
-                    result = frag_utils.compute_frag_peak_stats(
+                    result = compute_frag_peak_stats(
                         peaks,
                         formula_peak_mzs,
                         formula_peak_probs,
@@ -252,7 +253,7 @@ def main(args):
                 f"prec_spec_recall_inst_tol_h{h_transfer}",
             ]
             results.append(
-                frag_utils.compute_frag_peak_stats(
+                compute_frag_peak_stats(
                     peaks,
                     formula_peak_mzs,
                     formula_peak_probs,
@@ -336,11 +337,11 @@ def main(args):
         import h5py
 
         h5_file = h5py.File(h5_fp, "w")
-        frag_utils.initialize_packed_dag_hdf5(h5_file)
+        storage.initialize_packed_dag_hdf5(h5_file)
     else:
         h5_file = None
-    frag_results_gen = data_utils.par_apply(
-        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+    frag_results_gen = parallel_utils.par_apply(
+        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
     )
     if frag_results_gen is None:
         raise RuntimeError("Parallel fragment generation did not return any results")
@@ -385,16 +386,16 @@ def main(args):
                 if args.use_hdf5:
                     if h5_file is None:
                         raise RuntimeError("HDF5 file was not initialized")
-                    frag_utils.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
+                    storage.dump_dag_hdf5_packed(h5_file, mol_id, dag_d)
                 else:
                     # Write one artifact per molecule when HDF5 storage is disabled.
-                    fp = frag_utils.get_dag_output_path(
+                    fp = dag_format_utils.get_dag_output_path(
                         dag_dp=dag_dp,
                         mol_id=mol_id,
                         compress_dags=args.compress_dags,
                         compress_format=args.compress_format,
                     )
-                    frag_utils.dump_dag_pickle(fp, dag_d)
+                    dag_format_utils.dump_dag_pickle(fp, dag_d)
             except MemoryError:
                 logging.error(f"OOM (MemoryError) writing DAG for mol_id={mol_id} — skipping")
                 oom_mol_ids.append(mol_id)
@@ -571,7 +572,7 @@ def main(args):
             )
 
         logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
-        stats_results = data_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
+        stats_results = parallel_utils.par_apply(spectra_input_rows, compute_spectra_stats, True)
         del spectra_input_rows
         stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
         del stats_results
@@ -728,7 +729,7 @@ if __name__ == "__main__":
         "--elements",
         type=str,
         nargs="+",
-        default=frag_utils.ELEMENTS,
+        default=formula_utils.ELEMENTS,
         help="Allowed chemical elements for molecules",
     )
     parser.add_argument(

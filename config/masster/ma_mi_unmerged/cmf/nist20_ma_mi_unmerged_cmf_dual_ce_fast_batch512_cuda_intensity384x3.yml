@@ -41,7 +41,7 @@
 #     cuda     512          143    120     88
 #
 # The gain is batch-size dependent, which is what the implementation predicts:
-# loss_batch_size is a CEILING on chunk width in _build_loss_chunks and the inner guard
+# loss_batch_size is a CEILING on chunk width in build_loss_chunks and the inner guard
 # breaks a chunk as soon as padded_pairs > flat_pairs, so a wider ceiling only merges
 # chunks where padding still pays -- and there is only something to merge once a step
 # carries enough spectra. At 256 it is flat to slightly negative; at 512 it is 1.63x.
@@ -179,7 +179,6 @@ sparse_cosine_similarity: true
 loss_vectorized: true
 loss_batch_size: 64
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 inst_type_loss_tol:
   ORB:
     rel: 1.0e-05

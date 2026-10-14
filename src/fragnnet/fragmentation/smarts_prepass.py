@@ -1,0 +1,956 @@
+"""SMARTS-based rearrangement prepass for multi-bond BFS fragmentation.
+
+Contains :class:`SmartsFragRule`, :data:`FRAG_RULES`, :func:`_apply_smarts_prepass`,
+:class:`NeutralLossRule`, :data:`NL_RULES`, and :func:`_apply_nl_prepass` — the
+pure-Python prepass for reactions that require new bond formation (1,3-elimination,
+acyclic ester CO₂ loss) and neutral-loss rearrangements (SO₂ extrusion, SO₃ loss,
+N₂O extrusion).
+
+Kept in a separate module so the Cython ``.so`` can shadow ``multi_cut_bfs``
+for the BFS entry-point while this prepass remains importable without any
+``importlib`` hacks.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+from rdkit import Chem
+
+MASK_DTYPE = np.uint8
+
+
+@dataclass
+class SmartsFragRule:
+    """SMARTS-based fragmentation rule for the rearrangement prepass.
+
+    Encodes a 2-fragment reaction that cannot be described as a simple bond cut
+    (e.g., 1,3-elimination, ester CO₂ loss) by specifying which bonds to cut and
+    how to reassemble 3-component results into 2 fragments.
+
+    All atom map numbers must be **1-based** (never 0).  RDKit treats map number 0
+    as "no map", so :0 atoms cannot be retrieved by ``GetAtomMapNum()``.
+
+    Attributes:
+        name: Rule identifier for logging and debugging.
+        reactant_smarts: SMARTS pattern for the reactant substructure only
+            (no ">>" product part).  All mapped atoms use 1-based map numbers.
+        cut_bond_map_pairs: Pairs of 1-based atom map numbers defining bonds to
+            sever.  Each pair ``(a, b)`` identifies the bond between the matched
+            atoms carrying map numbers *a* and *b*.
+        merge_outer_map_nums: When cutting produces 3 CCs (n_ccs==3), the map
+            numbers of the two "outer" atoms whose CCs are merged into one
+            fragment.  Empty list discards n_ccs==3 results.
+        filter_bond_map_nums: Optional pair of map numbers.  If the matched atoms
+            are directly bonded in the original graph the rule is skipped — used
+            to exclude cyclic cases already covered by BFS cut=2.
+        min_num_atoms: Minimum number of atoms required for this rule to apply.
+            Rules are skipped early if the molecule has fewer atoms, avoiding
+            unnecessary SMARTS matching on small molecules.
+        uniquify: Passed to ``GetSubstructMatches``. RDKit's default keeps one mapping
+            per matched atom set, which drops mirror embeddings of a symmetric pattern
+            even when they cut different bonds. Set False for such rules; callers
+            deduplicate the resulting fragment pairs.
+
+    Example:
+        >>> rule = SmartsFragRule(
+        ...     name="crf12_0",
+        ...     reactant_smarts="[*+0:1]-[*+0:2]-[*+0:3]-[*+0:4]",
+        ...     cut_bond_map_pairs=[(1, 2), (3, 4)],
+        ...     merge_outer_map_nums=[1, 4],
+        ...     filter_bond_map_nums=(1, 4),
+        ...     min_num_atoms=4,
+        ... )
+    """
+
+    name: str
+    reactant_smarts: str
+    cut_bond_map_pairs: list[tuple[int, int]]
+    merge_outer_map_nums: list[int] = field(default_factory=list)
+    filter_bond_map_nums: tuple[int, int] | None = None
+    min_num_atoms: int = 0
+    uniquify: bool = True
+
+
+FRAG_RULES: list[SmartsFragRule] = [
+    # crf12_0: acyclic 1,3-elimination (single bonds on both sides)
+    # A–B–C–D  →  A·D (new bond) + B=C
+    # Cut bonds A-B and C-D; outer atoms A,D merge; inner B,C stay together.
+    # Skip if A and D are already directly bonded (4-membered ring → BFS cut=2).
+    SmartsFragRule(
+        name="crf12_0",
+        reactant_smarts="[*+0:1]-[*+0:2]-[*+0:3]-[*+0:4]",
+        cut_bond_map_pairs=[(1, 2), (3, 4)],
+        merge_outer_map_nums=[1, 4],
+        filter_bond_map_nums=(1, 4),
+        min_num_atoms=4,
+    ),
+    # crf12_1: acyclic 1,3-elimination (double bond between inner atoms)
+    # A–B=C–D  →  A·D (new bond) + B≡C
+    SmartsFragRule(
+        name="crf12_1",
+        reactant_smarts="[*+0:1]-[*+0:2]=[*+0:3]-[*+0:4]",
+        cut_bond_map_pairs=[(1, 2), (3, 4)],
+        merge_outer_map_nums=[1, 4],
+        filter_bond_map_nums=(1, 4),
+        min_num_atoms=4,
+    ),
+    # crf13_2: CO2 loss from acyclic ester
+    # R–C(=O)–O–R'  →  CO2  +  R·R' (new R-R' bond)
+    # Cut bonds R-C and O-R'; outer R,R' merge; inner C,=O,O stay together (CO2).
+    # Skip if R and R' are already directly bonded (lactone → BFS cut=2).
+    SmartsFragRule(
+        name="crf13_2",
+        reactant_smarts="[*+0:1][C+0:2](=[O+0:3])[O+0:4][*+0:5]",
+        cut_bond_map_pairs=[(1, 2), (4, 5)],
+        merge_outer_map_nums=[1, 5],
+        filter_bond_map_nums=(1, 5),
+        min_num_atoms=5,
+    ),
+    # linear_tricyclic_bis_c4_loss: a 6-membered central ring ortho-fused to two
+    # *separate* outer 6-rings on opposite edges (anthraquinone/anthracene-type
+    # topology) loses both outer rings' non-fusion C4 units in one step, keeping
+    # only the central ring (e.g. anthraquinone -> benzoquinone core).
+    #
+    # NOTE: a single-ring-release rule (cut just one ring's 2 outer bonds) was
+    # tried first and empirically added ZERO new DAG formulas -- baseline's
+    # native ring-open (n_ccs==1) + ring-cut (n_ccs==2) sequence already reaches
+    # that 2-bond-cut atom mask within its normal depth budget. mbfs's measured
+    # gain requires a *compounded* 4-bond cut (two ring releases at once) that
+    # baseline cannot reach within max_depth=3 (each release costs 2 depth
+    # steps sequentially -> 4 total, one over budget). This rule injects that
+    # 4-bond result directly as a single depth-2 prepass node.
+    #
+    # Atom map: 1=central-ring atom (e.g. carbonyl C), 2/7=fusion pair of ring A
+    # (2-7 is the shared fusion bond), 3-6=ring A's non-fusion atoms, 8=other
+    # central-ring atom, 9/14=fusion pair of ring B (9-14 fusion bond),
+    # 10-13=ring B's non-fusion atoms. Cut (2,3),(6,7),(9,10),(13,14) to release
+    # rings A and B; merge their non-fusion atoms (3 and 10) into one outer
+    # fragment, leaving the central ring {1,2,7,8,9,14} as the inner fragment.
+    SmartsFragRule(
+        name="linear_tricyclic_bis_c4_loss",
+        reactant_smarts="[*+0:1]1[c+0:2]2[c+0:3][c+0:4][c+0:5][c+0:6][c+0:7]2[*+0:8][c+0:9]3[c+0:10][c+0:11][c+0:12][c+0:13][c+0:14]31",
+        cut_bond_map_pairs=[(2, 3), (6, 7), (9, 10), (13, 14)],
+        merge_outer_map_nums=[3, 10],
+        min_num_atoms=14,
+    ),
+    # anthraquinone_bis_co_loss: same linearly-fused tricyclic, but the two central-ring
+    # non-fusion atoms are explicit carbonyls (anthraquinone's 9,10-dione). Loses BOTH
+    # carbonyl oxygens AND one flanking ring's non-fusion C4 unit in one compound cut,
+    # keeping the other flanking ring fully intact (matches the empirically dominant
+    # mbfs-confirmed formula family for anthraquinones: [M-2O-C4H4]-type ions, i.e. loss
+    # of both C=O oxygens plus one ring, equivalent to bis-CO loss with ring contraction).
+    # Atom map: 1/10=carbonyl O's, 2/9=carbonyl C's, 3/8=ring-A fusion pair, 4-7=ring A's
+    # non-fusion atoms (released), 11/16=ring-B fusion pair, 12-15=ring B (kept intact).
+    # Cuts: O=C double bonds (1,2)/(9,10) plus ring A's outer bonds (3,4)/(7,8); the 3
+    # discarded CCs ({O1},{O10},{ring A C4}) merge into one "outer" byproduct mask, the
+    # remaining connected piece (both carbonyl C's + intact ring B) is the "inner" kept
+    # fragment. uniquify=False keeps the mirrored embedding (releasing ring B, keeping
+    # ring A), which maps the same atoms and so is dropped by RDKit's default
+    # uniquification; with it, both directions are covered by one rule.
+    # NOTE: map numbers must be 1-based -- RDKit treats map 0 as "unmapped" and silently
+    # drops it from q_idx_to_map, which makes cut_bond_map_pairs lookups fail (the bug
+    # in the first version of this rule, caught by empirical validation returning 0 hits).
+    SmartsFragRule(
+        name="anthraquinone_bis_co_loss",
+        reactant_smarts=(
+            "[O+0:1]=[C+0:2]1[c+0:3]2[c+0:4][c+0:5][c+0:6][c+0:7][c+0:8]2"
+            "[C+0:9](=[O+0:10])[c+0:11]3[c+0:12][c+0:13][c+0:14][c+0:15][c+0:16]31"
+        ),
+        cut_bond_map_pairs=[(1, 2), (9, 10), (3, 4), (7, 8)],
+        merge_outer_map_nums=[1, 10, 4],
+        min_num_atoms=16,
+        uniquify=False,
+    ),
+    # xanthone_ring_cleavage: dibenzo-γ-pyranone (xanthone / xanthen-9-one) scaffold.
+    # Two benzene rings fused on either side of a central ring containing both a
+    # carbonyl (=O on :1) and a bridge ether O. Releases both flanking benzene C4
+    # units simultaneously with 4 ring-bond cuts: (2,3) and (6,7) bracket the left
+    # benzene's non-fusion atoms; (9,10) and (13,14) bracket the right benzene's
+    # non-fusion atoms. Produces 3 CCs: left C4H4 outer, right C4H4 outer, and the
+    # central pyranone ring (C5O2) as the inner kept fragment.
+    # Baseline BFS cannot reach this within max_depth=3: releasing one benzene costs
+    # 2 sequential cuts (depth +2), both take 4 → depth 4, one over budget. This
+    # rule injects it as a single depth-2 prepass leaf.
+    # merge_outer_map_nums=[3, 10]: one atom from each outer C4 piece.
+    # min_num_atoms=15 (bare xanthone C13H8O2 has 15 heavy atoms).
+    SmartsFragRule(
+        name="xanthone_ring_cleavage",
+        reactant_smarts=(
+            "[O+0]=[c+0:1]1[c+0:2]2[c+0:3][c+0][c+0][c+0:6][c+0:7]2"
+            "[o+0][c+0:9]3[c+0:10][c+0][c+0][c+0:13][c+0:14]31"
+        ),
+        cut_bond_map_pairs=[(2, 3), (6, 7), (9, 10), (13, 14)],
+        merge_outer_map_nums=[3, 10],
+        min_num_atoms=15,
+    ),
+    # phenoxazine_ring_cleavage: dibenz[b,e][1,4]oxazine (phenoxazine) scaffold.
+    # Two benzene rings fused on either side of a central 6-membered ring containing
+    # one N and one O bridge. Releases both flanking benzene C4 units simultaneously
+    # with 4 ring-bond cuts: (2,3) and (6,7) bracket the right benzene's non-fusion
+    # atoms; (9,10) and (13,14) bracket the left benzene's non-fusion atoms.
+    # Produces 3 CCs: right C4 outer, left C4 outer, and the central C4NO ring as
+    # the inner kept fragment.
+    # Baseline BFS cannot reach this within max_depth=3: releasing one benzene costs
+    # 2 sequential cuts (depth +2), both take 4 → depth 4, one over budget. This
+    # rule injects it as a single depth-2 prepass leaf.
+    # merge_outer_map_nums=[3, 10]: one atom from each outer C4 piece.
+    # min_num_atoms=13 (bare phenoxazine C12H9NO has 13 heavy atoms).
+    # Note: [N+0:1] matches both NH (phenoxazine) and N-alkyl (e.g. N-phenylphenoxazine)
+    # since the N charge constraint (+0) excludes N+ quaternary but allows both variants.
+    # [O+0] (not [o+0]) is required because the bridge O in phenoxazine is non-aromatic.
+    SmartsFragRule(
+        name="phenoxazine_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[c+0:2]2[c+0:3][c+0][c+0][c+0:6][c+0:7]2[O+0][c+0:9]3"
+            "[c+0:10][c+0][c+0][c+0:13][c+0:14]31"
+        ),
+        cut_bond_map_pairs=[(2, 3), (6, 7), (9, 10), (13, 14)],
+        merge_outer_map_nums=[3, 10],
+        min_num_atoms=13,
+    ),
+    # furanocoumarin_ring_cleavage: furan–benzene–pyranone (psoralen/linear furanocoumarin)
+    # scaffold. The three fused rings share two fusion bonds: benzene∩furan (atoms :5–:3
+    # shared edge) and benzene∩pyranone (atoms :8–:1 shared edge). This rule cuts 4
+    # non-fusion ring bonds that bracket the central benzene's furan-facing atoms: (5,6)
+    # and (3,4) release the furan's non-fusion atoms {furan CH, CH, O} as one outer CC,
+    # while (1,2) and (7,8) release the entire pyranone ring as the other outer CC. The
+    # inner kept fragment is the 4-atom open chain {benzene C's flanking the furan fusion
+    # bond} plus any substituents on those atoms.
+    # Baseline BFS cannot reach this within max_depth=3: releasing the furan non-fusion
+    # atoms + pyranone simultaneously requires 4 sequential depth steps (two ring
+    # openings × 2 each), one over budget. This rule injects it as a single depth-2
+    # prepass leaf.
+    # merge_outer_map_nums=[4, 8]: atom :4 is in the furan outer CC {7,8,9}; atom :8 is
+    # in the pyranone outer CC {0,1,2,3,4,12,13} (psoralen numbering).
+    # min_num_atoms=14 (bare psoralen C11H6O3 has 14 heavy atoms).
+    SmartsFragRule(
+        name="furanocoumarin_ring_cleavage",
+        reactant_smarts=(
+            "[O+0]=[c+0]1[c+0][c+0][c+0:8]2[c+0:7][c+0:5]3[c+0:6][c+0][o+0:4][c+0:3]3"
+            "[c+0:2][c+0:1]2[o+0]1"
+        ),
+        cut_bond_map_pairs=[(1, 2), (3, 4), (5, 6), (7, 8)],
+        merge_outer_map_nums=[4, 8],
+        min_num_atoms=14,
+    ),
+    # morphinan_ring_cleavage: 5-ring morphinan alkaloid scaffold (morphine/codeine class).
+    # Piperidine ring (ring 0) fused to a benzene ring (ring 1) via a dihydrofuran bridge ring
+    # (ring 2, 5-membered, ether O) and a cyclohexene ring (ring 3), with a 6-membered bridge
+    # ring (ring 4) spanning the whole system. 4 cuts simultaneously: N-C (piperidine, maps 1-2),
+    # C-C (cyclohexene C15-C16, maps 3-4), C(bridgehead)-C (C6-C20, maps 5-6), c-C (C8-C22
+    # aromatic-bridge, maps 7-8). Produces n_ccs=2: inner kept fragment is the benzene+dihydrofuran
+    # bicyclic C10HxO2 piece (atoms from piperidine CH2-CH2-bridgehead + benzene + ether O chain);
+    # outer is the large N-containing piece (allyl-N + ring 3 + ring 4 remainder).
+    # GT-confirmed formula C10H8O2 in 20+ NIST20 morphinan molecules; base BFS misses it because
+    # 4 cuts from root exceed max_cut_size=2 × max_depth=3 within the normal sequential budget.
+    # min_num_atoms=18 (the ring system alone has 18 heavy atoms: 1N + 1O + 16C).
+    # Note: ~ bonds in ring 3 allow single (naloxone) or double (morphine) C-C bond variants.
+    SmartsFragRule(
+        name="morphinan_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[C:2][C][C:5]23[c]4[c:7]5[c][c][c][c]4O[C:3]2[C:4]~[C;r]~[C][C:6]3C1[C:8]5"
+        ),
+        cut_bond_map_pairs=[(1, 2), (3, 4), (5, 6), (7, 8)],
+        merge_outer_map_nums=[],
+        min_num_atoms=18,
+    ),
+    # benzopyranone_ring_cleavage: benzene fused to a γ-lactone (pyranone) ring,
+    # i.e. the coumarin / chromen-2-one scaffold (and its substituted variants).
+    # Requires 4 simultaneous bond cuts: two adjacent benzene C-C bonds on either
+    # side of one ring carbon (:1) isolate that carbon from the benzene, while the
+    # two pyranone bonds C8a-O (:4-:5) and C2-C3 (:6-:7) open the lactone ring.
+    # Produces 3 CCs: {atom :1 + any exo-substituents} (small outer piece),
+    # {atoms :5 + :6 + exo=O} (the O=C-O lactone fragment), and the remaining
+    # large carbocyclic fragment. Outer CCs (containing :1 and :5) are merged into
+    # one byproduct mask; the large carbon fragment is kept as the inner result.
+    #
+    # Baseline BFS cannot reach this fragment within max_depth=3: the two ring
+    # openings (benzene + pyranone) each cost 2 sequential depth steps → 4 total,
+    # one over budget. This rule injects the 4-bond compound cut directly as a
+    # single depth-2 prepass leaf, matching the dominant mbfs-confirmed fragment
+    # family for 3-aryl-7-methoxycoumarin scaffolds (empirically, 52 improved
+    # molecules in NIST20 with wrecall_h4 gap > 0.01).
+    #
+    # Atom map:
+    #   Benzene ring: :1-:2-:3-:4-:9-:10 (ring1; :1 is the isolated C)
+    #   Pyranone ring: :4-:5-:6-:7-:8-:9 (ring2; :4/:9 are ring-fusion atoms)
+    #   Exo =O on :6 is unmapped (included in match tuple but not in map dict).
+    # Cuts: (1,2) and (10,1) to bracket :1; (4,5) for C8a-O; (6,7) for C2-C3.
+    # NOTE: [OC] (used in an earlier draft) is invalid SMARTS — it means "atom that
+    # is simultaneously O and C" (impossible), so always returns 0 matches.
+    SmartsFragRule(
+        name="benzopyranone_ring_cleavage",
+        reactant_smarts=(
+            "[c+0:1]1[c+0:2][c+0:3][c+0:4]2[o+0:5][c+0:6](=O)[c+0:7][c+0:8][c+0:9]2[c+0:10]1"
+        ),
+        cut_bond_map_pairs=[(1, 2), (10, 1), (4, 5), (6, 7)],
+        merge_outer_map_nums=[1, 5],
+        min_num_atoms=11,
+    ),
+    # halogenated_quinoline_ring_cleavage: quinoline (benzo ring fused to a pyridine
+    # ring) bearing at least one halogen substituent anywhere in the molecule.
+    # Direct-cation ring fragmentation excises the pyridine N (both its ring bonds,
+    # maps 1-2 and 1-10) AND one benzo-ring non-fusion carbon (maps 6-7 and 7-8)
+    # simultaneously, producing 3 CCs: {N} singleton, {benzo C} singleton, and the
+    # remaining fused-ring skeleton (still one piece via the other ring path) as the
+    # inner kept fragment. The 2 singleton CCs merge into one outer byproduct.
+    # This generalizes the classic aza-arene HCN-loss pathway (already reachable by
+    # base BFS as a single-ring 2-bond cut) by compounding it with a second,
+    # independent ring-carbon loss from the OTHER (benzo) ring in one step -- base
+    # BFS reaches each loss individually but not both together within max_depth=3
+    # (4 total ring-bond cuts spanning both rings exceeds the sequential budget).
+    # The kept fragment retains any halogens not on the excised atoms, matching the
+    # halide-retaining "direct cation" fragments observed for halogenated quinolines.
+    # Quinoline has no symmetry, so the pattern has one embedding: only C6 (map 7) is
+    # excised, never C7. On a 6-haloquinoline that halogen leaves with the excised C6.
+    # Atom map: 1=N1, 2=C2, 3=C3, 4=C4, 5=C4a (fusion), 6=C5, 7=C6 (excised),
+    # 8=C7, 9=C8, 10=C8a (fusion). ".[F,Cl,Br,I]" is a disconnected component
+    # requiring a halogen present somewhere in the molecule (guards against firing
+    # on plain quinolines).
+    # min_num_atoms=11 (bare quinoline C9H7N has 10 heavy atoms + >=1 halogen).
+    SmartsFragRule(
+        name="halogenated_quinoline_ring_cleavage",
+        reactant_smarts=(
+            "[n+0:1]1[c+0:2][c+0:3][c+0:4][c+0:5]2[c+0:6][c+0:7][c+0:8][c+0:9][c+0:10]12"
+            ".[F,Cl,Br,I]"
+        ),
+        cut_bond_map_pairs=[(1, 2), (1, 10), (6, 7), (7, 8)],
+        merge_outer_map_nums=[1, 7],
+        min_num_atoms=11,
+    ),
+    # benzopyranone_bis_ch_loss: SECOND compound-cut on the same coumarin scaffold as
+    # benzopyranone_ring_cleavage. Instead of expelling the lactone O-C(=O) unit, this
+    # one keeps the lactone fully intact and instead excises a single lone CH from
+    # EACH ring: the pyranone alkene carbon alpha to the carbonyl (map 7, C3 in coumarin
+    # numbering) and the benzo carbon ortho to the ether-bridge fusion (map 3, C8).
+    # Reuses the identical reactant_smarts as benzopyranone_ring_cleavage (same ring
+    # skeleton) with a different cut_bond_map_pairs/merge_outer_map_nums.
+    # Cuts: (2,3)+(3,4) isolate map3 (C8); (6,7)+(7,8) isolate map7 (C3).
+    # Empirically confirmed: this exact 4-ring-cut mask is mbfs-only (absent from
+    # baseline+benzopyranone_ring_cleavage) across all 61 NIST20 "coumarins and
+    # derivatives" molecules with the largest residual wrecall_h4 gap after the
+    # original rule (mean gap ~0.20); baseline cannot reach it within max_depth=3
+    # because releasing both lone CH's requires 4 sequential depth steps.
+    # min_num_atoms=11 (bare coumarin C9H6O2 has 11 heavy atoms).
+    SmartsFragRule(
+        name="benzopyranone_bis_ch_loss",
+        reactant_smarts=(
+            "[c+0:1]1[c+0:2][c+0:3][c+0:4]2[o+0:5][c+0:6](=O)[c+0:7][c+0:8][c+0:9]2[c+0:10]1"
+        ),
+        cut_bond_map_pairs=[(2, 3), (3, 4), (6, 7), (7, 8)],
+        merge_outer_map_nums=[3, 7],
+        min_num_atoms=11,
+    ),
+    # anthraquinone_ring_c4_plus_ch_loss: SECOND compound-cut on the same anthraquinone
+    # scaffold as anthraquinone_bis_co_loss. Instead of losing both carbonyl oxygens
+    # plus one flanking ring's C4 unit, this one keeps BOTH carbonyls (both C=O groups)
+    # fully intact and instead loses one flanking ring ENTIRELY (all 6 atoms, maps
+    # 11-16) plus one additional lone CH from the OTHER flanking ring (map 4, adjacent
+    # to fusion map 3).
+    # Cuts: (9,11)+(16,2) release ring B (maps 11-16) entirely; (3,4)+(4,5) isolate
+    # map4 alone from ring A. The pattern has four mappings onto one anthraquinone
+    # (ring A/B swap, and each ring's two directions), each cutting different bonds;
+    # uniquify=False keeps all four, which RDKit's default uniquification collapses to one.
+    # Empirically confirmed: this exact 4-ring-cut mask is mbfs-only across all 35
+    # NIST20 "anthraquinones" molecules with the largest residual wrecall_h4 gap
+    # after the original rule (mean gap ~0.26); unreachable by baseline within
+    # max_depth=3 (a single full-ring release already costs 2 depth steps per the
+    # linear_tricyclic_bis_c4_loss docstring; compounding it with one more lone-CH
+    # loss needs 4 total, one over budget).
+    # min_num_atoms=16 (bare anthraquinone C14H8O2 has 16 heavy atoms).
+    SmartsFragRule(
+        name="anthraquinone_ring_c4_plus_ch_loss",
+        reactant_smarts=(
+            "[O+0:1]=[C+0:2]1[c+0:3]2[c+0:4][c+0:5][c+0:6][c+0:7][c+0:8]2"
+            "[C+0:9](=[O+0:10])[c+0:11]3[c+0:12][c+0:13][c+0:14][c+0:15][c+0:16]31"
+        ),
+        cut_bond_map_pairs=[(9, 11), (16, 2), (3, 4), (4, 5)],
+        merge_outer_map_nums=[11, 4],
+        min_num_atoms=16,
+        uniquify=False,
+    ),
+    # morphinan_amine_arm_loss: SECOND compound-cut on the same 5-ring oxide-bridged
+    # morphinan scaffold as morphinan_ring_cleavage. Reuses the identical ring
+    # skeleton (adds map numbers to 5 previously-unmapped atoms: the piperidine
+    # CH2 adjacent to the bridgehead, the ring-closing CH2 back to N, and 3 benzo
+    # ring atoms) and cuts a DIFFERENT pair of bonds: instead of releasing the
+    # benzene+dihydrofuran C10HxO2 piece, this one releases the N-alkyl-piperidine
+    # "amine arm" (N + its methyl/allyl substituent + 2 CH2's, maps 1/2/9) and a
+    # single lone benzo CH (map 11) simultaneously, keeping the bridge-O ring +
+    # cyclohexene ring + rest of the benzo ring intact as one connected piece.
+    # Cuts: (9,5) + (13,1) release the amine arm; (10,11) + (11,12) isolate the
+    # lone benzo CH.
+    # Empirically confirmed: this exact mask is mbfs-only (absent from
+    # baseline+morphinan_ring_cleavage) for all 14 NIST20 "morphinans" molecules
+    # where morphinan_ring_cleavage already fires but still has the largest
+    # residual wrecall_h4 gap (mean gap ~0.41); the amine-arm loss alone (2 cuts)
+    # is already reachable by baseline, but compounding it with the benzo CH loss
+    # needs 4 total cuts, one over the max_depth=3 budget.
+    # min_num_atoms=18 (same bare scaffold as morphinan_ring_cleavage).
+    SmartsFragRule(
+        name="morphinan_amine_arm_loss",
+        reactant_smarts=(
+            "[N+0:1]1[C:2][C:9][C:5]23[c]4[c:7]5[c:10][c:11][c:12][c]4O[C:3]2"
+            "[C:4]~[C;r]~[C][C:6]3[C:13]1[C:8]5"
+        ),
+        cut_bond_map_pairs=[(9, 5), (10, 11), (11, 12), (13, 1)],
+        merge_outer_map_nums=[9, 11],
+        min_num_atoms=18,
+    ),
+    # desoxymorphinan_ring_cleavage: analog of morphinan_ring_cleavage for morphinan
+    # alkaloids that lack the 4,5-epoxy (dihydrofuran) bridge entirely -- levorphanol/
+    # dextromethorphan/levallorphan-class morphinans, where the bridge ring is a plain
+    # tetracyclic carbocycle (no ring oxygen) rather than the 5-ring oxide-bridged
+    # system. morphinan_ring_cleavage's SMARTS requires the bridge "O" atom and never
+    # matches this family at all (confirmed: 0/4 matches in NIST20).
+    # Ring system: piperidine (maps 1,2,3,4 + bridgehead 4/5) fused to a plain
+    # cyclohexane (bridgeheads maps 4,5) fused to a 6-membered ring (maps 5,6,7,8,9)
+    # bridging to the aromatic ring (maps 8,9 fusion atoms).
+    # Cuts: (3,4)+(6,1) release the N-alkylamine arm (N + substituent + 2 CH2's,
+    # maps 1/2/3/6); (7,8)+(9,4) release the aromatic ring + its benzylic CH2
+    # entirely (map 7 + aromatic maps 8/9). Kept/inner = the plain bicyclic aliphatic
+    # core (cyclohexane fused to the piperidine ring minus its amine arm).
+    # Empirically confirmed: this exact mask is mbfs-only (absent from baseline) for
+    # all 4 NIST20 non-oxide morphinans with data (1412, 15421, 20146, 34342; mean
+    # wrecall_h4 gap ~0.56, i.e. essentially unexplained by baseline).
+    # min_num_atoms=17 (bare des-oxide morphinan ring skeleton: 1 N + 16 C).
+    SmartsFragRule(
+        name="desoxymorphinan_ring_cleavage",
+        reactant_smarts=(
+            "[N+0:1]1[C+0:2][C+0:3][C+0:4]23[C+0][C+0][C+0][C+0][C+0:5]2"
+            "[C+0:6]1[C+0:7][c+0:8]4[c+0][c+0][c+0][c+0][c+0:9]34"
+        ),
+        cut_bond_map_pairs=[(3, 4), (6, 1), (7, 8), (9, 4)],
+        merge_outer_map_nums=[3, 8],
+        min_num_atoms=17,
+    ),
+    # desoxymorphinan_aromatic_core_release: SECOND compound-cut on the same
+    # non-oxide morphinan scaffold as desoxymorphinan_ring_cleavage. Reuses the
+    # identical ring skeleton (adds map numbers to 3 previously-unmapped atoms in
+    # the plain cyclohexane ring) and cuts a DIFFERENT pair of bonds: instead of
+    # releasing the aromatic ring, this one releases only the N-alkylamine arm
+    # (maps 1/2/3/6, same as desoxymorphinan_ring_cleavage) plus a single lone
+    # cyclohexane CH2 (map 11, excised via 2 cuts to its ring neighbors maps
+    # 10/12), keeping the aromatic ring + phenol + bridge ring + one cyclohexane
+    # CH2 intact as one connected piece. This targets the N-free aromatic-core
+    # cascade (fluorenone/fluorenol-type, formula C13HxO after H-shift) documented
+    # in docs/findings/fragnnet/missing_peak_findings.md as the dominant morphinan miss category --
+    # distinct from desoxymorphinan_ring_cleavage's small aliphatic-core product.
+    # Cuts: (3,4)+(6,1) release the amine arm; (10,11)+(11,12) excise the lone
+    # cyclohexane CH2.
+    # Empirically confirmed: mbfs-only mask for all 4 NIST20 non-oxide morphinans
+    # (1412, 15421, 20146, 34342), formula C13O1 (bare scaffold) to C14O1
+    # (methoxy-substituted variant), matching within h4 the fluorenone (181.065)
+    # and fluorenol (183.080) missing-peak formulas.
+    # min_num_atoms=17 (same bare scaffold as desoxymorphinan_ring_cleavage).
+    SmartsFragRule(
+        name="desoxymorphinan_aromatic_core_release",
+        reactant_smarts=(
+            "[N+0:1]1[C+0:2][C+0:3][C+0:4]23[C+0:10][C+0:11][C+0:12][C+0][C+0:5]2"
+            "[C+0:6]1[C+0:7][c+0:8]4[c+0][c+0][c+0][c+0][c+0:9]34"
+        ),
+        cut_bond_map_pairs=[(3, 4), (6, 1), (10, 11), (11, 12)],
+        merge_outer_map_nums=[3, 11],
+        min_num_atoms=17,
+    ),
+]
+
+
+@dataclass
+class NeutralLossRule:
+    """Rule for rearrangements that expel a neutral fragment and form a new bond.
+
+    Unlike :class:`SmartsFragRule`, these reactions cannot be represented as
+    simple bond cuts because the product requires bond formation (e.g. SO₂
+    extrusion creates a new Ar–N bond).  The product is represented as an atom
+    mask covering all precursor atoms *except* the neutral-loss atoms.  Because
+    the new bond is not in the original graph, the product atoms may be
+    disconnected in the original connectivity. Hydrogen shifts count from the
+    product atoms' own hydrogens (``num_hs_prior`` in ``dag.formula``), so the product
+    formula sits at the shift that moves H between the product and the neutral:
+    0 when the neutral takes exactly the hydrogens of its own atoms, and a few H
+    either way otherwise, inside ``max_h_transfer``. Each rule's comment gives it.
+
+    Attributes:
+        name: Rule identifier for logging.
+        reactant_smarts: SMARTS pattern.  All mapped atoms use 1-based map numbers.
+        nl_map_nums: Map numbers of the atoms that leave as the neutral loss.
+            The product mask = all atoms minus these. Mutually exclusive with
+            ``product_map_nums``.
+        nl_mass: Exact monoisotopic neutral-loss mass (Da), for documentation.
+            ``None`` when the complementary neutral has variable composition.
+        min_num_atoms: Minimum molecule heavy-atom count for early exit.
+        product_map_nums: Map numbers of the atoms retained in the product. This
+            supports diagnostic small ions whose complementary neutral includes
+            an arbitrarily substituted group and therefore cannot be enumerated
+            with a fixed list of map numbers.
+        nl_side_map_nums: Map numbers, a subset of ``nl_map_nums``, whose whole
+            substituent side also leaves: every atom reachable from the mapped atom
+            without entering another mapped atom. This lets a variably substituted
+            leaving group (e.g. R2N-S=O) be one rule. A match is skipped when that
+            side reaches a neighbour of a retained mapped atom, i.e. when the leaving
+            group is joined to the product through a ring.
+    """
+
+    name: str
+    reactant_smarts: str
+    nl_map_nums: list[int]
+    nl_mass: float | None
+    min_num_atoms: int = 0
+    product_map_nums: list[int] = field(default_factory=list)
+    nl_side_map_nums: list[int] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Require exactly one direction for constructing the product mask."""
+        if bool(self.nl_map_nums) == bool(self.product_map_nums):
+            raise ValueError("exactly one of nl_map_nums and product_map_nums must be populated")
+        if not set(self.nl_side_map_nums) <= set(self.nl_map_nums):
+            raise ValueError("nl_side_map_nums must be a subset of nl_map_nums")
+
+
+NL_RULES: list[NeutralLossRule] = [
+    # Aromatic sulfonamide SO₂ extrusion (HIGHEST PRIORITY).
+    # Ar–SO₂–NH–Het → [Ar–NH–Het]⁻ + SO₂  (NL = 63.962 Da).
+    # A new Ar–N bond forms, so the product atoms are disconnected in the original
+    # graph.  SO₂ carries no H, so the product formula sits at H shift 0.
+    # Confirmed in spec_id=610784 and 856552; affects thousands of NIST23 spectra.
+    # Positive-ESI SO2 extrusion evidence (substituent-dependent):
+    # https://pubmed.ncbi.nlm.nih.gov/18059004/
+    # This paper does not validate unrestricted ionization/scaffold eligibility.
+    NeutralLossRule(
+        name="aryl_sulfonamide_so2",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])-[NH:5]",
+        nl_map_nums=[2, 3, 4],
+        nl_mass=63.9619,
+        min_num_atoms=8,
+    ),
+    # Aromatic sulfonate SO₂ loss.
+    # Ar–SO₃⁻ → [Ar–O]⁻ + SO₂  (NL = 63.962 Da).
+    # A new Ar–O bond forms; SO₂ carries no H, so the product sits at H shift 0.
+    # Root cause of miss in pyrenes (82.8%) and phenanthrenes (50.9%) in [M-H]-.
+    NeutralLossRule(
+        name="aryl_sulfonate_so2",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])[O-,OH:5]",
+        nl_map_nums=[2, 3, 4],
+        nl_mass=63.9619,
+        min_num_atoms=7,
+    ),
+    # Aromatic sulfonate SO₃ loss.
+    # Ar–SO₃⁻ → [Ar]⁻ + SO₃  (NL = 79.957 Da).
+    # Direct S–C bond cleavage; product is a connected Ar anion.
+    # SO₃ carries no H: the product sits at H shift 0 for the sulfonate (O⁻) and +1 for
+    # the acid (OH), whose H stays with the aryl.
+    NeutralLossRule(
+        name="aryl_sulfonate_so3",
+        reactant_smarts="[c:1]-[SX4:2](=[O:3])(=[O:4])[O-,OH:5]",
+        nl_map_nums=[2, 3, 4, 5],
+        nl_mass=79.9568,
+        min_num_atoms=7,
+    ),
+    # N-nitramine N₂O extrusion.
+    # O₂N–NH–R → [R–OH] + N₂O  (NL = 44.001 Da), the structure the SMARTS encodes.
+    # Confirmed in spec_id=550113 (0.1 mDa).  The O⁻ from NO₂ (:3) stays in the
+    # product, and so does the NH hydrogen, since N₂O carries none: H shift +1.
+    NeutralLossRule(
+        name="n_nitramine_n2o",
+        reactant_smarts="[N+:1](=[O:2])([O-:3])-[NH:4]-[#6,#7]",
+        nl_map_nums=[1, 2, 4],
+        nl_mass=44.0010,
+        min_num_atoms=5,
+    ),
+    # Sulfoxide SO loss.
+    # R–S(=O)–R' → [R–R'] + SO  (NL = 47.967 Da).
+    # The C–S bonds break and a new C–C bond forms in the product; retained atoms
+    # may be disconnected in the original graph. SO carries no H: H shift 0.
+    # SX3 matches only sulfoxides (3-connected S), excluding sulfones (SX4) and thioethers.
+    # `~[OX1]` accepts both S=O and the [S+]–[O-] form the standardizer writes; the earlier
+    # `=[O]` pattern never matched a standardized molecule.
+    NeutralLossRule(
+        name="sulfoxide_so_loss",
+        reactant_smarts="[#6:1]-[SX3:2](~[OX1:3])-[#6:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=47.9669,
+        min_num_atoms=3,
+    ),
+    # Diarylethylene (stilbene-type) C₂H₂ extrusion.
+    # Ar–CH=CH–Ar' → [Ar–Ar'] + HC≡CH  (NL = 26.016 Da).
+    # The two vinyl CH atoms (:2, :3), each bearing one H, leave as acetylene (C₂H₂).
+    # A new Ar–Ar' bond forms in the product (not present in the precursor), making
+    # this a rearrangement outside BFS DAG coverage. Product atoms are disconnected
+    # in the original graph. C₂H₂ leaves with its own two H, so the biaryl sits at
+    # H shift 0.
+    # `!R` on :2/:3 excludes bridged vinyl units in fused rings (indene, acenaphthylene)
+    # where the vinyl CH=CH is part of a ring and BFS already covers the 2-bond cut.
+    # min_num_atoms=8: minimum diarylethylene is two 5-membered aromatics + 2 vinyl C.
+    NeutralLossRule(
+        name="diarylvinyl_c2h2_loss",
+        reactant_smarts="[c:1]-[CH;!R:2]=[CH;!R:3]-[c:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=26.0157,
+        min_num_atoms=8,
+    ),
+    # Diaryl ketone CO extrusion (negative mode).
+    # Ar–C(=O)–Ar' → [Ar–Ar']⁻ + CO  (NL = 27.995 Da).
+    # The keto carbon (:2) and its oxygen (:3) leave as CO; a new Ar–Ar' bond forms
+    # in the product.  Cutting both Ar–CO bonds would give 3 CCs (BFS-invalid), so the
+    # merged {Ar+Ar'} atom mask is outside BFS coverage.  CO carries no H, so the
+    # biaryl sits at H shift 0.
+    # `!R` on :2 excludes ring ketones (chromone, fluorenone) where a 2-CC BFS cut
+    # already covers the product; `[c:1]` and `[c:4]` restrict to diaryl ketones
+    # (excludes acetophenone, chalcone, aldehyde, carboxylic acid).
+    # min_num_atoms=12: minimum is two 5-membered aromatic rings + keto CO (5+5+2).
+    NeutralLossRule(
+        name="diaryl_ketone_co_loss",
+        reactant_smarts="[c:1]-[CX3;!R:2](=[O:3])-[c:4]",
+        nl_map_nums=[2, 3],
+        nl_mass=27.9949,
+        min_num_atoms=12,
+    ),
+    # 2-Aminobenzothiazole HCN extrusion (direct-cation ring fragmentation).
+    # The thiazole ring's C2=N3 unit expels HCN (using one H from the exocyclic
+    # amine), and the remaining fragment retains ring S1 and the exocyclic amine
+    # attached to the benzo ring (aminothiophenol-type cation).  A new Ar–NH2 bond
+    # forms, so the product atoms are disconnected in the original graph. The HCN
+    # hydrogen comes from the amine, which stays in the product: H shift -1.
+    # NL confirmed empirically: mol_id 27770 (spec) shows NL=27.0113 Da at
+    # intensity 217/999 (2nd-most-intense peak); consistent NL≈27.011 across
+    # 13/14 halogenated NIST20 2-aminobenzothiazoles checked.
+    # min_num_atoms=10: bare 2-aminobenzothiazole (C7H6N2S) has 10 heavy atoms.
+    NeutralLossRule(
+        name="aminobenzothiazole_hcn_loss",
+        reactant_smarts="[NX3H2]-[c:1]1[n:2]c2ccccc2s1",
+        nl_map_nums=[1, 2],
+        nl_mass=27.0109,
+        min_num_atoms=10,
+    ),
+]
+
+# Pre-compiled SMARTS patterns (keyed by rule name) — avoid recompiling per molecule.
+_COMPILED_PATTERNS: dict[str, Chem.Mol] = {}
+_COMPILED_NL_PATTERNS: dict[str, Chem.Mol] = {}
+
+
+def _get_compiled_pattern(rule: SmartsFragRule) -> Chem.Mol | None:
+    """Return a cached compiled SMARTS pattern for *rule*, compiling on first call."""
+    if rule.name not in _COMPILED_PATTERNS:
+        _COMPILED_PATTERNS[rule.name] = Chem.MolFromSmarts(rule.reactant_smarts)
+    return _COMPILED_PATTERNS[rule.name]
+
+
+def _union_find_ccs_all(
+    num_nodes: int,
+    node_mask: np.ndarray,
+    edges: np.ndarray,
+    edge_mask: np.ndarray,
+    num_edges: int,
+) -> list[np.ndarray]:
+    """Compute all connected components without a cap on their count.
+
+    Used by the SMARTS prepass where reactions may produce 3 components
+    (e.g., 1,3-elimination splits A-B-C-D into {A}, {B,C}, {D}).
+
+    Args:
+        num_nodes: Total atom count.
+        node_mask: Shape ``(num_nodes,)`` uint8 — active atoms.
+        edges: Shape ``(MAX_NUM_EDGES, 2)`` int32 — bond endpoints.
+        edge_mask: Shape ``(MAX_NUM_EDGES,)`` uint8 — active bonds.
+        num_edges: Number of real bonds (un-padded prefix length).
+
+    Returns:
+        List of node-mask arrays (shape ``(num_nodes,)`` uint8), one per CC.
+        Empty list if no active atoms.
+    """
+    # Use a Python list for parent to avoid numpy indexing overhead in the hot loop.
+    parent = list(range(num_nodes))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    live_atoms = [i for i in range(num_nodes) if node_mask[i] == 1]
+    if not live_atoms:
+        return []
+
+    for idx in range(num_edges):
+        if edge_mask[idx] == 0:
+            continue
+        u, v = int(edges[idx, 0]), int(edges[idx, 1])
+        pu, pv = find(u), find(v)
+        if pu != pv:
+            parent[pu] = pv
+
+    roots: dict[int, int] = {}
+    for a in live_atoms:
+        r = find(a)
+        if r not in roots:
+            roots[r] = len(roots)
+
+    cc_masks = [np.zeros(num_nodes, dtype=MASK_DTYPE) for _ in range(len(roots))]
+    for a in live_atoms:
+        cc_masks[roots[find(a)]][a] = 1
+
+    return cc_masks
+
+
+def _build_edge_dict(edges: np.ndarray, num_edges: int) -> dict[tuple[int, int], int]:
+    """Build a reverse lookup from (atom_u, atom_v) → edge index.
+
+    Both orderings (u, v) and (v, u) are stored so lookups are O(1) regardless
+    of the direction the edge was stored in the array.
+
+    Args:
+        edges: Shape ``(MAX_NUM_EDGES, 2)`` int32 — bond endpoints.
+        num_edges: Number of real bonds (un-padded prefix length).
+
+    Returns:
+        Dict mapping ``(atom_a, atom_b)`` to its 0-based edge index.
+    """
+    d: dict[tuple[int, int], int] = {}
+    for i in range(num_edges):
+        u, v = int(edges[i, 0]), int(edges[i, 1])
+        d[(u, v)] = i
+        d[(v, u)] = i
+    return d
+
+
+def _apply_smarts_prepass(
+    rules: list[SmartsFragRule],
+    mol: Chem.Mol,
+    base_edge_mask: np.ndarray,
+    edges: np.ndarray,
+    num_nodes: int,
+    num_edges: int,
+) -> list[tuple[np.ndarray, np.ndarray, int]]:
+    """Apply SMARTS fragmentation rules to the root molecule.
+
+    For each rule, matches the reactant SMARTS against *mol*, cuts the specified
+    bonds, and decomposes the result into exactly two fragment node-masks.
+    When a cut produces 3 components (e.g., 1,3-elimination), the two "outer"
+    components (containing ``merge_outer_map_nums`` atoms) are merged into one
+    fragment.
+
+    Only the root (un-fragmented) molecule is processed. The DAG builder injects the
+    resulting pairs as root children: at node depth 1 and expanded on the multi-cut
+    path, at node depth 2 and not expanded on the single-cut path.
+
+    Args:
+        rules: List of :class:`SmartsFragRule` to apply.
+        mol: RDKit molecule (same atoms/indices used to build the edge arrays).
+        base_edge_mask: Shape ``(MAX_NUM_EDGES,)`` uint8 — root edge mask (all
+            real bonds active).
+        edges: Shape ``(MAX_NUM_EDGES, 2)`` int32 — bond endpoints.
+        num_nodes: Number of atoms.
+        num_edges: Number of real bonds.
+
+    Returns:
+        List of ``(node_mask_a, node_mask_b, rule_idx)`` tuples, one per valid
+        match.  ``rule_idx`` is the 0-based index into *rules* that produced the
+        pair.  Duplicate fragment pairs are **not** deduplicated here; the BFS
+        ``css_to_id_dict`` handles deduplication by node-mask key.
+    """
+    root_node_mask = np.ones(num_nodes, dtype=MASK_DTYPE)
+    results: list[tuple[np.ndarray, np.ndarray, int]] = []
+
+    # Fix 1: build (atom_a, atom_b) → edge_idx lookup once per molecule call.
+    edge_dict = _build_edge_dict(edges, num_edges)
+
+    for rule_idx, rule in enumerate(rules):
+        # Fix 3: skip rules that can't match given the molecule size.
+        if rule.min_num_atoms > 0 and num_nodes < rule.min_num_atoms:
+            continue
+
+        # Use pre-compiled SMARTS pattern (avoids recompiling on every molecule).
+        patt = _get_compiled_pattern(rule)
+        if patt is None:
+            continue
+
+        # Build: query atom index → atom map number (skip unmapped atoms, i.e. map==0)
+        q_idx_to_map: dict[int, int] = {}
+        for q_idx in range(patt.GetNumAtoms()):
+            map_num = patt.GetAtomWithIdx(q_idx).GetAtomMapNum()
+            if map_num != 0:
+                q_idx_to_map[q_idx] = map_num
+
+        matches = mol.GetSubstructMatches(patt, uniquify=rule.uniquify)
+        for match in matches:
+            # match[q_idx] = mol atom index for query atom q_idx
+            map_num_to_mol: dict[int, int] = {
+                map_num: match[q_idx] for q_idx, map_num in q_idx_to_map.items()
+            }
+
+            # Skip cyclic cases already covered by BFS cut=2.
+            # Fix 1: O(1) dict lookup instead of O(E) np.where scan.
+            if rule.filter_bond_map_nums is not None:
+                fa, fb = rule.filter_bond_map_nums
+                mol_a = map_num_to_mol.get(fa)
+                mol_b = map_num_to_mol.get(fb)
+                if mol_a is not None and mol_b is not None:
+                    bond_idx = edge_dict.get((mol_a, mol_b), -1)
+                    if bond_idx != -1 and base_edge_mask[bond_idx] == 1:
+                        continue  # atoms directly bonded → cyclic; covered by cut=2
+
+            # Cut the specified bonds in a temporary mask.
+            work_mask = base_edge_mask.copy()
+            valid = True
+            for map_a, map_b in rule.cut_bond_map_pairs:
+                mol_a = map_num_to_mol.get(map_a)
+                mol_b = map_num_to_mol.get(map_b)
+                if mol_a is None or mol_b is None:
+                    valid = False
+                    break
+                bond_idx = edge_dict.get((mol_a, mol_b), -1)  # Fix 1: O(1) lookup
+                if bond_idx == -1:
+                    valid = False
+                    break
+                work_mask[bond_idx] = 0
+            if not valid:
+                continue
+
+            # Fix 2: _union_find_ccs_all now uses Python list for parent array
+            # (avoids numpy element-wise indexing overhead in the union-find loop).
+            cc_masks = _union_find_ccs_all(num_nodes, root_node_mask, edges, work_mask, num_edges)
+            n_ccs = len(cc_masks)
+
+            if n_ccs == 2:
+                results.append((cc_masks[0], cc_masks[1], rule_idx))
+            elif n_ccs >= 3 and rule.merge_outer_map_nums:
+                # Identify which CCs contain the "outer" atoms. Merge ALL outer CCs into
+                # one fragment and ALL remaining ("inner") CCs into the other -- generalizes
+                # the original 2-outer/1-inner n_ccs==3 case to any CC count/split (e.g. one
+                # CC per discarded atom/group, as in a multi-bond compound cut).
+                outer_cc_set: set[int] = set()
+                for map_num in rule.merge_outer_map_nums:
+                    mol_idx = map_num_to_mol.get(map_num)
+                    if mol_idx is not None:
+                        for cc_idx, cc_mask in enumerate(cc_masks):
+                            if cc_mask[mol_idx] == 1:
+                                outer_cc_set.add(cc_idx)
+                                break
+                inner_cc_set = set(range(n_ccs)) - outer_cc_set
+                if outer_cc_set and inner_cc_set:
+                    outer_mask = np.zeros(num_nodes, dtype=MASK_DTYPE)
+                    for cc_idx in outer_cc_set:
+                        outer_mask |= cc_masks[cc_idx]
+                    inner_mask = np.zeros(num_nodes, dtype=MASK_DTYPE)
+                    for cc_idx in inner_cc_set:
+                        inner_mask |= cc_masks[cc_idx]
+                    results.append((outer_mask, inner_mask, rule_idx))
+
+    return results
+
+
+def _get_compiled_nl_pattern(rule: NeutralLossRule) -> Chem.Mol | None:
+    """Return a cached compiled SMARTS pattern for *rule*, compiling on first call."""
+    if rule.name not in _COMPILED_NL_PATTERNS:
+        _COMPILED_NL_PATTERNS[rule.name] = Chem.MolFromSmarts(rule.reactant_smarts)
+    return _COMPILED_NL_PATTERNS[rule.name]
+
+
+def _substituent_sides(
+    mol: Chem.Mol,
+    rule: NeutralLossRule,
+    map_to_mol: dict[int, int],
+) -> set[int] | None:
+    """Atoms on the substituent side of each ``nl_side_map_nums`` atom of one match.
+
+    Walks from each such atom without entering any mapped atom. Returns ``None`` when
+    a side reaches a neighbour of a mapped atom that stays in the product, because the
+    leaving group is then fused to the product and has no separate side.
+    """
+    mapped = set(map_to_mol.values())
+    leaving = {map_to_mol[m] for m in rule.nl_map_nums}
+    kept_neighbours = {
+        neighbour.GetIdx()
+        for atom in mapped - leaving
+        for neighbour in mol.GetAtomWithIdx(atom).GetNeighbors()
+        if neighbour.GetIdx() not in mapped
+    }
+    sides: set[int] = set()
+    for map_num in rule.nl_side_map_nums:
+        stack = [map_to_mol[map_num]]
+        while stack:
+            atom = stack.pop()
+            for neighbour in mol.GetAtomWithIdx(atom).GetNeighbors():
+                index = neighbour.GetIdx()
+                if index in mapped or index in sides:
+                    continue
+                if index in kept_neighbours:
+                    return None
+                sides.add(index)
+                stack.append(index)
+    return sides
+
+
+def _apply_nl_prepass(
+    rules: list[NeutralLossRule],
+    mol: Chem.Mol,
+    num_nodes: int,
+) -> list[tuple[np.ndarray, int]]:
+    """Apply neutral-loss rules to the root molecule.
+
+    For each rule, matches the reactant SMARTS against *mol* and returns a
+    product atom mask. Most rules construct it by excluding mapped neutral-loss
+    atoms; diagnostic-small-ion rules instead provide the mapped product atoms
+    directly. Because the product requires new bond formation, the retained
+    atoms may be disconnected in the original graph. The product formula's
+    hydrogen shift is given in :class:`NeutralLossRule` and each rule's comment.
+
+    Args:
+        rules: List of :class:`NeutralLossRule` to apply.
+        mol: RDKit molecule.
+        num_nodes: Number of heavy atoms.
+
+    Returns:
+        List of ``(product_mask, rule_idx)`` tuples.  *product_mask* is a
+        ``(num_nodes,)`` uint8 array with 1 for retained atoms and 0 for
+        neutral-loss atoms. Duplicate product atom sets from different SMARTS
+        embeddings are deduplicated.
+    """
+    results: list[tuple[np.ndarray, int]] = []
+    for rule_idx, rule in enumerate(rules):
+        if rule.min_num_atoms > 0 and num_nodes < rule.min_num_atoms:
+            continue
+        patt = _get_compiled_nl_pattern(rule)
+        if patt is None:
+            continue
+        q_idx_to_map: dict[int, int] = {}
+        for q_idx in range(patt.GetNumAtoms()):
+            map_num = patt.GetAtomWithIdx(q_idx).GetAtomMapNum()
+            if map_num != 0:
+                q_idx_to_map[q_idx] = map_num
+        seen_product_sets: set[frozenset[int]] = set()
+        for match in mol.GetSubstructMatches(patt):
+            map_to_mol: dict[int, int] = {m: match[q] for q, m in q_idx_to_map.items()}
+            selected_map_nums = rule.product_map_nums or rule.nl_map_nums
+            selected_atoms: set[int] = set()
+            valid = True
+            for map_num in selected_map_nums:
+                mol_idx = map_to_mol.get(map_num)
+                if mol_idx is None:
+                    valid = False
+                    break
+                selected_atoms.add(mol_idx)
+            if not valid:
+                continue
+            if rule.nl_side_map_nums:
+                side_atoms = _substituent_sides(mol, rule, map_to_mol)
+                if side_atoms is None:
+                    continue
+                selected_atoms |= side_atoms
+            if rule.product_map_nums:
+                product_atoms = selected_atoms
+            else:
+                product_atoms = set(range(num_nodes)) - selected_atoms
+            product_key = frozenset(product_atoms)
+            if product_key in seen_product_sets:
+                continue
+            seen_product_sets.add(product_key)
+            product_mask = np.zeros(num_nodes, dtype=MASK_DTYPE)
+            for idx in product_atoms:
+                product_mask[idx] = 1
+            results.append((product_mask, rule_idx))
+    return results

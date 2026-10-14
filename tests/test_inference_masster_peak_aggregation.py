@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.pl_model import MassterPL
-from fragnnet.utils import script_utils
+from fragnnet.inference import batch_rows, export_columns
+from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, round_aggregate_peaks
 
 
@@ -58,13 +58,13 @@ def _export(pred_mzs, pred_ints, pred_batch_idxs, min_peak_int=0.0):
         "batch_size": th.tensor(batch_size),
     }
     output_set = {"pred_mzs", "pred_ints"}
-    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+    batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
         output_set, model, nb_iso=False
     )
-    columns = script_utils.get_tabular_columns(
+    columns = export_columns.get_tabular_columns(
         model.hparams, return_formula_str=False, return_cc_hash=False, output_subset=output_set
     )
-    rows = script_utils.process_batch_to_tabular_row(
+    rows = batch_rows.process_batch_to_tabular_row(
         batch_input=batch_input,
         model=model,
         device=th.device("cpu"),

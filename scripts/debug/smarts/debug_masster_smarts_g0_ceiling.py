@@ -51,7 +51,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from torch_geometric.data import Batch
 
-from fragnnet.frag.masster_templates import (
+from fragnnet.models.masster.candidates.smarts_templates import (
     _MASSTER_PRECURSOR_TYPES,
     MASSTER_NUM_RULES,
     MASSTER_RULE_NAMES,

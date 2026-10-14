@@ -176,8 +176,8 @@ def score_spectrum(i: int) -> list[tuple]:
 
 def run_targets(args: argparse.Namespace) -> None:
     """Dump the eval targets a config's ``spec_params`` (plus overrides) builds for one split."""
+    from fragnnet.inference.checkpoint import apply_inference_config
     from fragnnet.runner import load_config
-    from fragnnet.utils.script_utils import apply_inference_config
     from fragnnet.utils.setup_utils import get_dataset_cls
 
     # 1. Resolve the config and apply the spec_params overrides (YAML-parsed values).

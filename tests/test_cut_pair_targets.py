@@ -15,11 +15,8 @@ import sys
 import numpy as np
 import pytest
 
-from fragnnet.utils.formula_utils import (
-    PREC_TYPE_TO_CMF_MASS_DIFF,
-    PREC_TYPE_TO_MASS_DIFF,
-    tracked_element_counts,
-)
+from fragnnet.models.fragnnet.fragnnet_adducts import tracked_element_counts
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_MASS_DIFF, PREC_TYPE_TO_MASS_DIFF
 
 sys.path.insert(
     0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "eval")

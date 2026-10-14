@@ -412,7 +412,9 @@ def test_uwpr_tiers_keep_preclassified_dag_feasible_peak(monkeypatch: pytest.Mon
         "idx_by_h_delta": [{0}],
         "dag_num_nodes": 1,
     }
-    monkeypatch.setattr(dag_oracle_scores.frag_utils, "load_frag_d", lambda *args, **kwargs: dag)
+    monkeypatch.setattr(
+        dag_oracle_scores.dag_format_utils, "load_frag_d", lambda *args, **kwargs: dag
+    )
     monkeypatch.setattr(
         dag_oracle_scores,
         "_score_all_tolerances",

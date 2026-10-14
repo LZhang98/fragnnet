@@ -19,9 +19,9 @@ placed at exact C13_SPACING multiples so the search window reliably finds them.
 import numpy as np
 import pytest
 
-from fragnnet.utils import isotope_utils
+from fragnnet.utils import isotope_cleanup_utils
 from fragnnet.utils.formula_utils import C13_SPACING, parse_formula
-from fragnnet.utils.isotope_utils import (
+from fragnnet.utils.isotope_cleanup_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
     dag_formula_source,
@@ -709,7 +709,7 @@ class TestDetectIsotopePeaksFormulaMode:
         """Single fragment pair with large f detected via formula single-pair fallback."""
         # f=0.4 >> aggressive_single_pair_min_f=0.15; only 1 pair visible.
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import _parse_adduct_counts
+        from fragnnet.utils.isotope_cleanup_utils import _parse_adduct_counts
 
         formula = "C10H14N2O5"
         prec_type = "[M+H]+"
@@ -739,7 +739,7 @@ class TestDetectIsotopePeaksFormulaMode:
     def test_single_pair_formula_fallback_small_f_rejected(self):
         """Single fragment pair with f=0.01 (below threshold) is not flagged."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import _parse_adduct_counts
+        from fragnnet.utils.isotope_cleanup_utils import _parse_adduct_counts
 
         formula = "C10H14N2O5"
         prec_type = "[M+H]+"
@@ -844,7 +844,8 @@ class TestIsotopeOffsetsFromFormula:
 
     def test_carbon_only_m1_dominates(self):
         """For a carbon-only formula, M+1 should be the largest offset."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_cleanup_utils import isotope_offsets_from_formula
 
         offsets = isotope_offsets_from_formula(parse_formula("C10H14N2O5"))
         assert len(offsets) >= 1
@@ -853,7 +854,8 @@ class TestIsotopeOffsetsFromFormula:
 
     def test_bromine_m2_larger_than_m1(self):
         """For C10H8Br2, M+2 relative intensity should exceed M+1."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_cleanup_utils import isotope_offsets_from_formula
 
         offsets = isotope_offsets_from_formula(parse_formula("C10H8Br2"))
         # Build offset → intensity map
@@ -864,12 +866,13 @@ class TestIsotopeOffsetsFromFormula:
         assert m2_rel > 0.4, "Br2 M+2 relative intensity should be ~0.46"
 
     def test_empty_formula_returns_empty(self):
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula
+        from fragnnet.utils.isotope_cleanup_utils import isotope_offsets_from_formula
 
         assert isotope_offsets_from_formula({}) == []
 
     def test_threshold_filters_low_peaks(self):
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
+        from fragnnet.utils.formula_utils import parse_formula
+        from fragnnet.utils.isotope_cleanup_utils import isotope_offsets_from_formula
 
         ec = parse_formula("C6H12O6")
         offsets_loose = isotope_offsets_from_formula(ec, threshold=0.0001)
@@ -888,7 +891,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_basic_carbon_m1_detected(self):
         """M+1 of a carbon-rich molecule at correct spacing is flagged."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_cleanup_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C10H14N2O5")
         mono = 242.090
@@ -901,7 +904,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_bromine_m2_detected(self):
         """For C10H8Br2, the large M+2 peak should be flagged as isotope."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_cleanup_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C10H8Br2")
         mono = 285.899
@@ -913,7 +916,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_intensity_gate_rejects_noise(self):
         """A peak at the right offset but wrong intensity is not flagged when check_intensity=True."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_cleanup_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         mono = 180.063
@@ -925,7 +928,7 @@ class TestDetectIsotopePeaksFormulaAware:
 
     def test_empty_spectrum(self):
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_cleanup_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         mask = detect_isotope_peaks_formula_aware(np.array([]), np.array([]), ec)
@@ -933,7 +936,7 @@ class TestDetectIsotopePeaksFormulaAware:
 
     def test_wrong_shape_raises(self):
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_cleanup_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         with pytest.raises(ValueError):
@@ -1085,23 +1088,23 @@ class TestRatioGate:
         expected = np.array([0.05])
 
         for rule in ("median", "all", "any"):
-            assert isotope_utils._ratio_gate(0.06, expected, 0.5, 2.0, rule)
-            assert not isotope_utils._ratio_gate(0.5, expected, 0.5, 2.0, rule)
+            assert isotope_cleanup_utils._ratio_gate(0.06, expected, 0.5, 2.0, rule)
+            assert not isotope_cleanup_utils._ratio_gate(0.5, expected, 0.5, 2.0, rule)
 
     def test_rules_differ_once_candidates_disagree(self):
         expected = np.array([0.05, 0.08])
 
         # 0.026 is inside 0.05's window [0.025, 0.1] and outside 0.08's [0.04, 0.16].
-        assert isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "any")
-        assert not isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "all")
+        assert isotope_cleanup_utils._ratio_gate(0.026, expected, 0.5, 2.0, "any")
+        assert not isotope_cleanup_utils._ratio_gate(0.026, expected, 0.5, 2.0, "all")
         # The median of two is their mean, 0.065, whose window starts at 0.0325.
-        assert not isotope_utils._ratio_gate(0.026, expected, 0.5, 2.0, "median")
+        assert not isotope_cleanup_utils._ratio_gate(0.026, expected, 0.5, 2.0, "median")
         # 0.09 is inside both windows, so even the intersection accepts it.
-        assert isotope_utils._ratio_gate(0.09, expected, 0.5, 2.0, "all")
+        assert isotope_cleanup_utils._ratio_gate(0.09, expected, 0.5, 2.0, "all")
 
     def test_unknown_rule_raises(self):
         with pytest.raises(ValueError, match="unknown candidate_rule"):
-            isotope_utils._ratio_gate(0.1, np.array([0.1]), 0.5, 2.0, "mean")
+            isotope_cleanup_utils._ratio_gate(0.1, np.array([0.1]), 0.5, 2.0, "mean")
 
 
 # ---------------------------------------------------------------------------
@@ -1125,7 +1128,7 @@ class TestRegularIsotopeBranchKnownDefects:
 
     def test_coarse_generator_gives_every_formula_the_same_m2_offset(self):
         """DEFECT 1: the M+2 offset ignores which heavy isotope carries it."""
-        from fragnnet.utils.formula_utils import isotope_offsets_from_formula
+        from fragnnet.utils.isotope_cleanup_utils import isotope_offsets_from_formula
 
         for formula in ("C10H8Br2", "C6H5Cl", "C20H30N2O3"):
             offsets = dict(isotope_offsets_from_formula(parse_formula(formula), max_isotope=2))
@@ -1267,7 +1270,7 @@ class TestDagFormulaSourceEdges:
 
 class TestFragmentExpectedRatios:
     def test_one_ratio_per_candidate(self):
-        ratios = isotope_utils._fragment_expected_ratios(
+        ratios = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17,
             formula_source=lambda _mz: [{"C": 5, "H": 11}, {"C": 9, "H": 11}],
         )
@@ -1277,10 +1280,10 @@ class TestFragmentExpectedRatios:
         assert ratios[1] > ratios[0]
 
     def test_an_empty_source_falls_back_to_the_scaled_precursor(self):
-        proxy = isotope_utils._fragment_expected_ratios(
+        proxy = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17, formula_source=None
         )
-        empty = isotope_utils._fragment_expected_ratios(
+        empty = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 1, parse_formula("C10H22"), {}, 1.00728, 142.17,
             formula_source=lambda _mz: [],
         )
@@ -1290,7 +1293,7 @@ class TestFragmentExpectedRatios:
 
     def test_a_zero_precursor_mass_does_not_divide(self):
         """The caller guards this, but the fallback must not depend on that guard."""
-        ratios = isotope_utils._fragment_expected_ratios(
+        ratios = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 1, parse_formula("C10H22"), {}, 0.0, 0.0, formula_source=None
         )
 
@@ -1298,11 +1301,11 @@ class TestFragmentExpectedRatios:
 
     def test_an_adduct_carrier_reaches_the_m2_ratio(self):
         """A retained Cl is all-or-nothing, and the ion composition is what carries it."""
-        with_cl = isotope_utils._fragment_expected_ratios(
+        with_cl = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 2, parse_formula("C5H12O"), {}, 0.0, 88.09,
             formula_source=lambda _mz: [{"C": 2, "H": 5, "O": 1, "Cl": 1}],
         )
-        without_cl = isotope_utils._fragment_expected_ratios(
+        without_cl = isotope_cleanup_utils._fragment_expected_ratios(
             100.0, 2, parse_formula("C5H12O"), {}, 0.0, 88.09,
             formula_source=lambda _mz: [{"C": 2, "H": 5, "O": 1}],
         )
@@ -1318,6 +1321,6 @@ class TestFragmentExpectedRatios:
         expected = np.array([0.02, 0.10])
 
         # 0.058 matches neither candidate under a tight window, but sits on their mean.
-        assert isotope_utils._ratio_gate(0.058, expected, 0.9, 1.1, "median")
-        assert not isotope_utils._ratio_gate(0.058, expected, 0.9, 1.1, "any")
-        assert isotope_utils._ratio_point(expected) == pytest.approx(0.06)
+        assert isotope_cleanup_utils._ratio_gate(0.058, expected, 0.9, 1.1, "median")
+        assert not isotope_cleanup_utils._ratio_gate(0.058, expected, 0.9, 1.1, "any")
+        assert isotope_cleanup_utils._ratio_point(expected) == pytest.approx(0.06)

@@ -14,17 +14,18 @@ from rdkit import Chem
 from torch_geometric.data import Batch, Data
 
 import fragnnet.runner as runner
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
-from fragnnet.frag.masster_candidates import MassterStaticGraph
-from fragnnet.frag.masster_templates import build_masster_templates
-from fragnnet.model.bond_fragment_heads import BondFocusedBreakHead
-from fragnnet.model.loss import (
+from fragnnet.dataset import SpecMolDataset
+from fragnnet.inference import checkpoint, runners
+from fragnnet.layers.graphormer import GINEGraphormer
+from fragnnet.loss.cross_entropy import (
     conditional_in_support_cross_entropy,
     get_sparse_cross_entropy_fn,
 )
-from fragnnet.model.nn_blocks import GINEGraphormer
-from fragnnet.pl_model import MassterPL, SpectrumPL
-from fragnnet.pl_model.masster_pl import (
+from fragnnet.models.fragnnet.fragnnet_dataset import SpecMolFragDataset
+from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
+from fragnnet.models.masster.masster_pl import (
+    MassterPL,
     _balanced_binary_support_loss,
     _candidate_coverage_by_cut_count,
     _candidate_weighted_recall,
@@ -35,11 +36,12 @@ from fragnnet.pl_model.masster_pl import (
     _proposal_coverage_loss,
     _shared_group_proposal_coverage_loss,
 )
-from fragnnet.utils import script_utils
+from fragnnet.models.masster.proposal_heads import BondFocusedBreakHead
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_graph
-from fragnnet.utils.pl_utils import get_pl_hparams
+from fragnnet.utils.migrations import get_pl_hparams
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-from fragnnet.utils.spec_utils import aggregate_peaks_exact_mz, calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def _build_pl(**config_overrides: object) -> tuple[MassterPL, dict]:
@@ -535,37 +537,6 @@ def test_kl_distance_rejects_fp16_mixed_precision(precision: int | str) -> None:
         _build_pl(loss_type="kl_distance", precision=precision)
 
 
-@pytest.mark.parametrize(
-    ("intensity_output", "loss_type"),
-    [
-        ("probability", "cross_entropy"),
-        ("probability", "cosine_distance"),
-        ("independent", "cosine_distance"),
-    ],
-)
-@pytest.mark.parametrize("pair_weight", [0.0, 0.1, 10.0])
-def test_precursor_pair_supervision_is_explicitly_unsupported(
-    intensity_output: str, loss_type: str, pair_weight: float
-) -> None:
-    config = {
-        "masster_unique_fragment_mode": True,
-        "masster_proposal_anchored": True,
-        "masster_proposal_selection_only": True,
-        "masster_proposal_loss_weight": 1.0,
-        "masster_intensity_output": intensity_output,
-        "loss_type": loss_type,
-        "precursor_pair_loss_weight": pair_weight,
-    }
-    if pair_weight == 0.0:
-        model, _ = _build_pl(**config)
-        assert callable(model.loss_fn)
-    else:
-        with pytest.raises(
-            ValueError, match="MASSter does not support precursor_pair_loss_weight"
-        ):
-            _build_pl(**config)
-
-
 def _loss_diagnostics() -> dict[str, th.Tensor]:
     return {
         "retained_mask_probability": th.tensor([0.8]),
@@ -715,7 +686,7 @@ def test_hungarian_channel_attribution_drops_infeasible_channels(
         return th.tensor([0]), th.tensor([0])
 
     monkeypatch.setattr(
-        "fragnnet.model.candidate_support.linear_sum_assignment",
+        "fragnnet.loss.channel_support.linear_sum_assignment",
         assignment,
     )
     targets = _observational_channel_targets(
@@ -1772,7 +1743,7 @@ def test_selection_only_loss_skips_unrequested_channel_diagnostics(
         raise AssertionError("dense channel matching must stay off unless requested")
 
     monkeypatch.setattr(
-        "fragnnet.pl_model.masster_pl._observational_channel_targets",
+        "fragnnet.models.masster.masster_pl._observational_channel_targets",
         unexpected_channel_target,
     )
     actual = model.loss_fn(
@@ -1805,6 +1776,7 @@ def test_proposal_target_can_use_a_different_intensity_transform() -> None:
     model, _ = _build_pl(
         ints_transform="sqrt",
         masster_proposal_ints_transform="none",
+        masster_merge_same_mz_rows=True,
         masster_unique_fragment_mode=True,
         masster_proposal_anchored=True,
         masster_proposal_selection_only=True,
@@ -2097,6 +2069,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
         masster_proposal_loss_weight=0.1,
         loss_type="cosine_distance",
         ints_transform="sqrt",
+        masster_merge_same_mz_rows=True,
     )
     params = config["mol_params"]
     graph = get_mol_graph(
@@ -2118,7 +2091,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
     model.eval()
     with th.no_grad():
         expected = [model.inference_step(batch) for batch in batches]
-    output = script_utils.run_inference_pkl(
+    output = runners.run_inference_pkl(
         model,
         batches,
         th.device("cpu"),
@@ -2131,7 +2104,7 @@ def test_prediction_only_pickle_preserves_processed_intensities(output_mode: str
     expected_batch_idxs = th.cat([x["pred_batch_idxs"] + index for index, x in enumerate(expected)])
     th.testing.assert_close(
         output["pred_ints"],
-        script_utils.batched_mf1000_normalize(
+        runners.batched_mf1000_normalize(
             th.cat([x["pred_ints"] for x in expected]), expected_batch_idxs
         ),
     )
@@ -2155,6 +2128,7 @@ def test_masster_cli_exports_without_dags(
         masster_proposal_loss_weight=0.1,
         loss_type="cosine_distance",
         ints_transform="sqrt",
+        masster_merge_same_mz_rows=True,
         auxiliary_scores=[],
     )
     smiles = ["CCO", "CO"]
@@ -2205,10 +2179,10 @@ def test_masster_cli_exports_without_dags(
     # model prediction, intensity conversion, tabular iterator, and chunk writer.
     monkeypatch.setattr(SpecMolDataset, "__init__", dataset_init)
     monkeypatch.setattr(runner, "init_dataloader", lambda *_args: [batch])
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
-    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
-    monkeypatch.setattr(script_utils, "init_model_from_ckpt", lambda *_args: model)
-    monkeypatch.setattr(script_utils, "setup_device", lambda *_args: th.device("cpu"))
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(checkpoint, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(checkpoint, "init_model_from_ckpt", lambda *_args: model)
+    monkeypatch.setattr(checkpoint, "setup_device", lambda *_args: th.device("cpu"))
     output_dir = tmp_path / "predictions"
     # `existing_dag_directory` also varies the chunk size so both the periodic and the
     # final chunk writer run. Parquet is no longer an option, so both arms write pkl.
@@ -2236,23 +2210,82 @@ def test_masster_cli_exports_without_dags(
     assert saved["spec_id"].tolist() == [101, 102]
     for index in range(2):
         mask = prediction["pred_batch_idxs"] == index
-        # sqrt-transformed scores are squared back to linear intensity; the export then sums
-        # candidates at one m/z (4 decimals), as every score does, keeps each peak's exact m/z,
-        # and rescales the summed peaks to a per-spectrum base peak of 1000.
+        # The merged spectrum has one row per 4-decimal m/z whose scores already sum the
+        # pathways there; the export must untransform that sum (sqrt scores are squared back
+        # to linear) and rescale to a per-spectrum base peak of 1000, never square each pathway.
         linear = (weights[mask] / weights[mask].max()).square()
-        peak_mzs, peak_ints, _ = aggregate_peaks_exact_mz(
-            prediction["pred_mzs"][mask], linear, th.zeros(int(mask.sum()), dtype=th.long)
-        )
+        peak_mzs = prediction["pred_mzs"][mask]
         th.testing.assert_close(
-            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=peak_mzs.dtype), peak_mzs
+            th.as_tensor(saved.iloc[index]["pred_mzs"], dtype=peak_mzs.dtype),
+            peak_mzs,
+            rtol=0,
+            atol=1e-4,
         )
-        expected = peak_ints / peak_ints.max() * 1000.0
+        expected = linear / linear.max() * 1000.0
         th.testing.assert_close(
             th.as_tensor(saved.iloc[index]["pred_ints"], dtype=expected.dtype),
             expected,
             rtol=1e-5,
             atol=1e-4,
         )
+
+
+@pytest.mark.parametrize("output_mode", ["probability", "independent"])
+@pytest.mark.parametrize("ints_transform", ["sqrt", "log10"])
+def test_annotation_export_peaks_equal_the_merged_spectrum(
+    output_mode: str, ints_transform: str
+) -> None:
+    """The annotation export untransforms each m/z's summed score, as the merged spectrum does."""
+    model, config = _build_pl(
+        masster_intensity_output=output_mode,
+        masster_merge_same_mz_rows=True,
+        masster_unique_fragment_mode=True,
+        masster_proposal_selection_only=True,
+        masster_proposal_anchored=True,
+        masster_proposal_loss_weight=0.1,
+        ints_transform=ints_transform,
+        loss_type="cosine_distance",
+        auxiliary_scores=[],
+    )
+    smiles = ["CCO", "CCCO", "CC(C)O"]
+    params = config["mol_params"]
+    graphs = [
+        get_mol_graph(
+            Chem.MolFromSmiles(s),
+            params["pyg_node_feats"],
+            params["pyg_edge_feats"],
+            params["pyg_pe_embed_k"],
+            True,
+        )
+        for s in smiles
+    ]
+    batch = {
+        "mol_pyg": Batch.from_data_list(graphs),
+        "mol_smiles": smiles,
+        "mol_id": th.tensor([11, 22, 33]),
+        "spec_unique_id": th.tensor([101, 102, 103]),
+        "spec_prec_type": th.tensor([0, 0, 0]),
+        "spec_inst_type": th.tensor([0, 0, 0]),
+        "spec_nce": th.tensor([25.0, 35.0, 30.0]),
+        "batch_size": th.tensor(3),
+    }
+    model.eval()
+    with th.no_grad():
+        merged = model.inference_step(dict(batch))
+        annotated = model.inference_step({**batch, "return_explainability_tensors": True})
+    # Several pathways must share an m/z, or the two spectra could agree by construction.
+    assert annotated["pred_pathway_mzs"].numel() > merged["pred_mzs"].numel()
+    (mzs, ints, batch_idxs), annotation = model.postprocess_export_peaks(
+        dict(batch),
+        annotated,
+        (annotated["pred_mzs"], annotated["pred_ints"], annotated["pred_batch_idxs"]),
+        need_annotation=True,
+        return_cc_hash=False,
+        return_rule_provenance=False,
+    )
+    th.testing.assert_close(batch_idxs, merged["pred_batch_idxs"])
+    th.testing.assert_close(mzs, merged["pred_mzs"], rtol=0, atol=1e-4)
+    th.testing.assert_close(ints, merged["pred_ints"])
 
 
 @pytest.mark.parametrize("model_type", ["frag_gnn", "fragnnet"])
@@ -2280,8 +2313,8 @@ def test_inference_cli_preserves_dag_model_filtering(
         raise DatasetChecked
 
     monkeypatch.setattr(SpecMolFragDataset, "__init__", dataset_init)
-    monkeypatch.setattr(script_utils, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
-    monkeypatch.setattr(script_utils, "get_config_from_ckpt", lambda **_kwargs: config)
+    monkeypatch.setattr(checkpoint, "get_ckpt_path", lambda **_kwargs: "unused.ckpt")
+    monkeypatch.setattr(checkpoint, "get_config_from_ckpt", lambda **_kwargs: config)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -2329,7 +2362,7 @@ def test_masster_primary_loss_uses_candidate_only_sparse_cross_entropy(
         raise AssertionError("CE candidate_wrecall must not compute cut-bucket metrics")
 
     monkeypatch.setattr(
-        "fragnnet.pl_model.masster_pl._candidate_coverage_by_cut_count",
+        "fragnnet.models.masster.masster_pl._candidate_coverage_by_cut_count",
         unexpected_bucket_matching,
     )
     actual = model.loss_fn(

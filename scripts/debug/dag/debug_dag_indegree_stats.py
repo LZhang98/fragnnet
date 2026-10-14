@@ -20,7 +20,7 @@ import os
 import numpy as np
 import pandas as pd
 
-import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils import dag_format_utils
 
 
 def _detect_is_compressed(frag_dp: str) -> bool:
@@ -51,7 +51,7 @@ def main() -> None:
         if n_loaded >= args.limit_mols:
             break
         try:
-            dag_d = frag_utils.load_frag_d(int(m), args.frag_dp, is_compressed=is_compressed)
+            dag_d = dag_format_utils.load_frag_d(int(m), args.frag_dp, is_compressed=is_compressed)
         except FileNotFoundError:
             continue  # molecule not fragmented in this dir
         if dag_d is None:

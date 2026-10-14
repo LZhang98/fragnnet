@@ -6,11 +6,12 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
+from fragnnet.models.fragnnet.dag.layout import get_node_feats
 from fragnnet.runner import init_dataloader, init_dataset, load_config
-from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.frag_utils import get_node_feats, th_long_to_mask
+from fragnnet.utils.formula_utils import th_long_to_mask
 from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.mol_utils import mol_from_smiles
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 
 def create_fragments_by_reaction(mol):
@@ -76,7 +77,7 @@ def get_args():
     parser.add_argument(
         "--custom_fp",
         type=str,
-        default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml",
+        default="config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml",
         help="Path to the custom config file",
     )
     parser.add_argument("--batch_size", type=int, default=256)

@@ -125,7 +125,7 @@ python scripts/setup_job_cc.py \
   --frag_gnn_dp . \
   --python_script_fp scripts/run_pl_model_fit.py \
   --job_name fragnnet_cv \
-  --cv_config_dp config/spectraverse/fragnnet \
+  --cv_config_dp config/fragnnet/spectraverse \
   --cv_start 0 --cv_end 9 \
   --cv_use_job_id \
   --gpu_profile fir:h100-3g.40gb \

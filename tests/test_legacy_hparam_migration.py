@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from fragnnet.runner import load_config
-from fragnnet.utils.pl_utils import (
+from fragnnet.utils.migrations import (
     get_pl_hparams,
     migrate_legacy_hparams,
     migrate_legacy_masster_name,
@@ -112,7 +112,7 @@ def test_current_key_wins_over_legacy_name():
 )
 def test_use_nce_and_use_ace_fall_back_to_spec_params(spec_params, expected_nce, expected_ace):
     """These two read the dataset section, not a constant, so the backfill must too."""
-    config = {"model_type": "clip", "spec_params": spec_params}
+    config = {"model_type": "neims", "spec_params": spec_params}
     migrate_legacy_hparams(config)
     assert config["use_nce"] is expected_nce
     assert config["use_ace"] is expected_ace

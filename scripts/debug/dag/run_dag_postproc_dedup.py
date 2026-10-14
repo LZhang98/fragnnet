@@ -49,7 +49,7 @@ import torch as th
 from torch_geometric.data import Data
 
 sys.path.insert(0, "src")
-from fragnnet.utils.frag_utils import get_node_feats  # noqa: E402
+from fragnnet.models.fragnnet.dag.layout import get_node_feats  # noqa: E402
 
 
 def get_remove_set_hrange_cutoff(node_depth: list, node_key: list, n_nodes: int, cutoff: int) -> set[int]:

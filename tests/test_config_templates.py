@@ -13,6 +13,7 @@ import re
 import pytest
 import yaml
 
+from fragnnet.registry import RETIRED_MODEL_TYPES
 from fragnnet.runner import (
     VALID_MODEL_TYPES,
     find_unknown_config_keys,
@@ -117,19 +118,25 @@ class TestTemplateLayout:
         """Every known model either owns a section or is declared core-only."""
         owned = {
             "masster",
-            "iceberg_gen",
-            "iceberg_inten",
             "massformer",
             "neims",
-            "chemlm",
             "graff",
-            "clip",
-            "spec_mol_clip_pretraining",
-            "mces_pretraining",
             "frag_gnn",
             "fragnnet",
         }
         assert owned | CORE_ONLY_MODEL_TYPES == set(VALID_MODEL_TYPES)
+
+    def test_retired_model_types_are_not_valid(self):
+        """Retired types keep their inert template section but cannot be selected."""
+        assert {
+            "iceberg_gen",
+            "iceberg_inten",
+            "mces_pretraining",
+            "chemlm",
+            "clip",
+            "spec_mol_clip_pretraining",
+        } == set(RETIRED_MODEL_TYPES)
+        assert not set(RETIRED_MODEL_TYPES) & set(VALID_MODEL_TYPES)
 
 
 class TestResolution:
@@ -206,9 +213,7 @@ class TestValidation:
     def test_nested_typo_is_rejected(self, tmp_path):
         """A typo inside a section fails as loudly as one at the top level."""
         custom = tmp_path / "custom.yml"
-        custom.write_text(
-            yaml.safe_dump({"model_type": "masster", "spec_params": {"ncee": True}})
-        )
+        custom.write_text(yaml.safe_dump({"model_type": "masster", "spec_params": {"ncee": True}}))
 
         with pytest.raises(ValueError, match=r"spec_params\.ncee"):
             load_config(TEMPLATE_DIR, str(custom), None)
@@ -216,9 +221,7 @@ class TestValidation:
     def test_another_models_key_is_simply_inert(self, tmp_path):
         """One schema: a historical config carrying another model's key is valid, not a typo."""
         custom = tmp_path / "custom.yml"
-        custom.write_text(
-            yaml.safe_dump({"model_type": "neims", "masster_batch_sampler": False})
-        )
+        custom.write_text(yaml.safe_dump({"model_type": "neims", "masster_batch_sampler": False}))
 
         resolved = load_config(TEMPLATE_DIR, str(custom), None)
 
@@ -264,9 +267,45 @@ class TestValidation:
         assert unknown == ["a", "b.d"]
 
 
+# Configs that set keys no template has ever declared and were already rejected before the
+# template layout change, or undeclared nested sub-keys that only recursive validation catches.
+# There were 18; 5 were MCES fine-tuning configs and 3 were CLIP configs, deleted with those models
+# on 2026-10-12. Each must keep failing for exactly this reason.
+KNOWN_REJECTED_CONFIGS = {
+    "config/fragnnet/debug/debug_tiny_new_frag_mol_feats.yml",
+    *(
+        "config/masster/legacy/bond_size_curriculum/nist20_merged_" + name + "_bond_curriculum.yml"
+        for name in (
+            "mask256_gine_gsa384_bondcentric_a2_b3_explore256",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_explore512",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512",
+        )
+    ),
+    *(
+        "config/masster/legacy/explore/nist20_merged_" + name + ".yml"
+        for name in (
+            "mask256_gine_gsa384_bondcentric_a2_b3_explore256",
+            "mask256_gine_gsa384_bondcentric_a2_b3_explore64",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_explore512",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore256",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512",
+            "mask512_gine_gsa384_bondcentric_a2_b3_transformer_logmeanexp_explore512_layernorm",
+        )
+    ),
+}
+
+# Pre-existing configs that are not valid YAML, so never reach the template check.
+KNOWN_MALFORMED_CONFIGS = {
+    "config/fragnnet/ablations_merged/fraggnn_d3_edges/s1.yml",
+    "config/fragnnet/ablations_merged/fraggnn_d3_edges/s2.yml",
+    "config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_sqrt.yml",
+}
+
+
 def test_every_tracked_config_still_resolves():
     """No config in the repository may be broken by the layout change."""
-    failures = []
+    failures = {}
+    malformed = set()
     for path in sorted(glob.glob("config/**/*.yml", recursive=True)):
         if os.path.abspath(path) == os.path.abspath(TEMPLATE_FP):
             continue
@@ -274,7 +313,8 @@ def test_every_tracked_config_still_resolves():
             with open(path) as config_file:
                 custom = yaml.safe_load(config_file)
         except yaml.YAMLError:
-            continue  # pre-existing malformed config, not this layout's concern
+            malformed.add(path)
+            continue
         if not isinstance(custom, dict):
             continue
         if custom.get("model_type", "frag_gnn") not in VALID_MODEL_TYPES:
@@ -282,7 +322,28 @@ def test_every_tracked_config_still_resolves():
         try:
             load_config(TEMPLATE_DIR, path, None)
         except ValueError as error:
-            failures.append((path, str(error)))
-    # 14 configs set keys no template has ever declared and were already rejected before this
-    # work; 4 more set undeclared nested sub-keys that only recursive validation catches.
-    assert len(failures) == 18, [path for path, _ in failures]
+            failures[path] = str(error)
+    assert malformed == KNOWN_MALFORMED_CONFIGS
+    # Same set, not the same count: a newly rejected config cannot hide behind a fixed one.
+    assert set(failures) == KNOWN_REJECTED_CONFIGS
+    for path, message in failures.items():
+        assert "sets keys the template does not declare" in message, (path, message)
+
+
+def test_experiment_configs_live_under_their_model():
+    """Keep dataset, debug and sweep configs in their owning model's directory."""
+    for path in sorted(glob.glob("config/**/*.yml", recursive=True)):
+        if path == TEMPLATE_FP:
+            continue
+        parts = path.split("/")
+        assert parts[1] in {"fragnnet", "masster", "neims", "massformer", "graff", "precursor", "gnn"}
+        if path in KNOWN_MALFORMED_CONFIGS:
+            assert parts[1] == "fragnnet"
+            continue
+        with open(path) as config_file:
+            custom = yaml.safe_load(config_file)
+        model_type = custom.get("model_type", "frag_gnn")
+        model_dir = {"frag_gnn": "fragnnet", "mass_shatter": "masster"}.get(
+            model_type, model_type
+        )
+        assert parts[1] == model_dir, path

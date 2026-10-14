@@ -1,6 +1,6 @@
 # Frag-Gen + SMARTS Prepass
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-04-05
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > How BFS + SMARTS prepass build the fragment DAG.
 
@@ -118,7 +118,7 @@ The depth-2 rule described above applies to the **`multi_cut_bfs=False`**
 
 ## Implementation: `_inject_smarts_pairs_into_dag`
 
-The relevant lines in [frag_utils.py](../../src/fragnnet/utils/frag_utils.py):
+The relevant lines in [dag/builder.py](../../src/fragnnet/models/fragnnet/dag/builder.py):
 
 ```python
 # BEFORE (incorrect — depth 1):
@@ -150,7 +150,7 @@ so the one-hot vector remains valid.
 ## Rule design notes (from local memory, verified 2026-10-06)
 
 Per-rule scaffolds and counts for `FRAG_RULES` / `NL_RULES` in
-[smarts_prepass.py](../../src/fragnnet/frag/smarts_prepass.py). Usage statistics are in
+[smarts_prepass.py](../../src/fragnnet/fragmentation/smarts_prepass.py). Usage statistics are in
 [smarts_usage_audit_2026_09_23.md](../findings/smarts_usage_audit_2026_09_23.md); MASSter's
 adopted rules are in [masster_smarts_rules.md](masster_smarts_rules.md).
 
@@ -203,7 +203,7 @@ re-ranks fragments already in the DAG, so any new-bond pathway needs a `NeutralL
 
 | Rule | SMARTS and notes |
 | --- | --- |
-| `sulfoxide_so_loss` (47.9669) | `[#6:1]-[SX3:2](=[O:3])-[#6:4]`, `nl_map_nums=[2, 3]`; `SX3` excludes sulfones. **The original `=[O:3]` form was dead**: the standardizer rewrites sulfoxides to `[S+][O-]`, so `=[O:3]` matched 0 of 52,787 NIST23 molecules; the charge-tolerant form matches 171. The rule now uses `[#6:1]-[SX3:2](~[OX1:3])-[#6:4]`, which accepts both forms (see [masster_smarts_rules.md](masster_smarts_rules.md)). The unit tests passed only because they used raw SMILES. Test every pattern against `data_utils.mol_from_smiles` output; N-oxides and sulfoxides are the hypervalent forms that bite. |
+| `sulfoxide_so_loss` (47.9669) | `[#6:1]-[SX3:2](=[O:3])-[#6:4]`, `nl_map_nums=[2, 3]`; `SX3` excludes sulfones. **The original `=[O:3]` form was dead**: the standardizer rewrites sulfoxides to `[S+][O-]`, so `=[O:3]` matched 0 of 52,787 NIST23 molecules; the charge-tolerant form matches 171. The rule now uses `[#6:1]-[SX3:2](~[OX1:3])-[#6:4]`, which accepts both forms (see [masster_smarts_rules.md](masster_smarts_rules.md)). The unit tests passed only because they used raw SMILES. Test every pattern against `mol_utils.mol_from_smiles` output; N-oxides and sulfoxides are the hypervalent forms that bite. |
 | `diarylvinyl_c2h2_loss` (26.0157) | `[c:1]-[CH;!R:2]=[CH;!R:3]-[c:4]`, `nl_map_nums=[2, 3]`, `min_num_atoms=8`. `!R` on both vinyl carbons is required, or indene's ring vinyl matches. Excludes chalcone, cinnamic acid, styrene, indene, acenaphthylene. |
 | `diaryl_ketone_co_loss` (27.9949) | `[c:1]-[CX3;!R:2](=[O:3])-[c:4]`, `min_num_atoms=12`. For bridging ketones, cutting both Ar-CO bonds gives 3 CCs, and raw BFS accepts only n_ccs in {1, 2} (n_ccs=99 is discarded), so the merged `{Ar+Ar'}` mask is unreachable. `!R` excludes chromone, fluorenone and anthraquinone, whose 2-CC cut already reaches the mask. |
 | `aminobenzothiazole_hcn_loss` (27.0109) | `[NX3H2]-[c:1]1[n:2]c2ccccc2s1`, `nl_map_nums=[1, 2]`, `min_num_atoms=10`. NL 27.011 seen in 13 of 14 halogenated 2-aminobenzothiazole spectra (mol_ids 27768-27795). The competing HNCS loss (58.983 Da, about 6 of 14) was not implemented. |
@@ -220,6 +220,6 @@ themselves (about +21% nodes instead of 2x). Added nodes get a **placeholder roo
 is valid only for `frag_gnn_type: NodeMLP` / `pyg_edges: False`; do not point a `pyg_edges: True`
 config at it without rebuilding the edges. Built 2026-07-08:
 `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse_ringmerge.tar` and
-`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_ringmerge.yml`. Oracle ceilings are in
+`config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_ringmerge.yml`. Oracle ceilings are in
 [dag_oracle_ceiling_nist20.md](../findings/fragnnet/dag_oracle_ceiling_nist20.md); a trained-model
 result was still untested there.

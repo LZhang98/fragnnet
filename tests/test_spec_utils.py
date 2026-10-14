@@ -15,7 +15,7 @@ import pytest
 import torch as th
 
 from fragnnet.utils.misc_utils import EPS
-from fragnnet.utils.spec_utils import (
+from fragnnet.utils.spec_similarity import (
     align_sparse_peak_support,
     batch_cos_hun_helper,
     batch_jss_hun_helper,

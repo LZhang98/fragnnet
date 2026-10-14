@@ -2,23 +2,52 @@
 
 ## Overview
 
-This repository contains the code and models for the paper **FraGNNet: A Deep Probabilistic Model for Mass Spectrum Prediction**. FraGNNet is a deep probabilistic graph neural network (GNN) model for predicting tandem mass spectra (MS/MS) from molecular structures. FraGNNet predicts MS/MS spectra from molecular structures using a combination of:
-- A **recursive bond-breaking algorithm** for fragment generation.
-- A **graph neural network (GNN)** for predicting the spectrum from fragments.
+This repository contains the code and models for the paper **FraGNNet: A Deep Probabilistic Model
+for Mass Spectrum Prediction**, and for MASSter, the fragmentation model developed after it. Both
+predict tandem mass spectra (MS/MS) from molecular structures through explicit fragments, so every
+predicted peak carries formula and fragment annotations.
 
-This method provides:
-- High mass accuracy.
-- Scalability for large compound libraries.
-- Interpretability through latent variable distributions (formula and fragment annotations).
+- **FraGNNet** generates fragments with a **recursive bond-breaking algorithm** that builds a
+  fragmentation DAG, then predicts the spectrum from those fragments with a **graph neural network
+  (GNN)**. It offers high mass accuracy, scales to large compound libraries, and is interpretable
+  through its latent distributions over formulas and fragments.
+- **MASSter** enumerates no fragments ahead of time. One GNN pass over the precursor scores the
+  chemical bonds; the most probable bond-cut sets are materialized, split into connected
+  fragments and expanded into ion channels (charge retention or migration, hydrogen transfers).
+  Candidate construction runs on CPU (Cython) or, optionally, CUDA.
+
+Baselines retained for comparison: GRAFF and MassFormer (in-repository), NEIMS, and ICEBERG, which
+now runs from the external [ms-pred](https://github.com/coleygroup/ms-pred) repository
+([baselines reference](docs/reference/baselines.md)).
 
 ---
 
 ## Project Structure
 
+```
+src/fragnnet/
+  dataset/ utils/                    shared datasets, samplers and utilities
+  layers/                            shared torch building blocks (GNN cells, pooling, heads)
+  loss/                              spectrum losses and distances
+  pl_model/                          Lightning base classes (SpectrumPL, BinnedPL)
+  inference/                         checkpoint loading and the prediction exporters
+  runner.py registry.py hooks.py     training entry point, model registry, per-model hooks
+  fragmentation/                     bond-cut chemistry shared by FraGNNet and MASSter
+  models/fragnnet/                   FraGNNet: DAG builders (Cython), datasets, samplers, model
+  models/masster/                    MASSter: candidate builders (Cython/CUDA), model
+  models/neims/ models/precursor/ models/gnn/
+  baselines/graff/ baselines/massformer/
+```
+
+Shared code never imports a specific model; it reaches each one through `model_type` in the
+registry. See the [architecture map](docs/architecture.md) for the data flow and the
+dependency rule.
+
 **Project record and agent workflow**: start at [docs/project-state.md](docs/project-state.md);
 see [docs/README.md](docs/README.md) for the documentation index.
 
-**Experiment configs**: see [config/README.md](config/README.md)
+**Experiment configs**: see [config/README.md](config/README.md). Every model reads the same
+`config/template.yml`; `model_type` selects the model.
 
 **Data preprocessing**: see [preproc_scripts/README.md](preproc_scripts/README.md)
 
@@ -35,41 +64,62 @@ If you are having trouble preprocessing the data or reproducing the results, ple
 ### Quick Start (Recommended)
 
 ```bash
-# Using conda (GPU, recommended)
-bash env/env_setup_gpu_py311_cu121_250602.sh
+# uv, Python 3.11, CUDA 12.1, from uv.lock
+uv sync --extra dev
+source .venv/bin/activate
+
+# or conda; installs fragnnet editable with the dev extra
+bash env/env_setup_conda.sh
 conda activate FRAGNNET-GPU
 ```
 
-For development with testing tools:
-```bash
-pip install -e ".[dev]"
-```
+The script takes the Python version, environment name and torch build (`cu121`, `cu118`, `cpu`)
+as optional arguments.
 
 ### Alternative: Manual Pip Installation
 
 ```bash
-# Create virtual environment and install PyTorch
 python -m venv venv
 source venv/bin/activate
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install fragnnet and dev dependencies
+pip install torch_scatter==2.1.2 -f https://data.pyg.org/whl/torch-2.4.1+cu121.html
 pip install -e ".[dev]"
 ```
 
+The analysis scripts under `scripts/` need scikit-learn, which `.[dev]` includes; `.[scripts]`
+installs it without the development tools. Python 3.10-3.12 is supported.
+
+`env/fragnnet_gpu_py311.lock.txt` pins the exact package versions of the reference environment.
 See [INSTALL.md](INSTALL.md) for detailed options, troubleshooting, and HPC cluster setup.
 
-Note that the -e flag is used to install the package in editable mode.
+Note that the -e flag is used to install the package in editable mode. The Cython extensions
+build at install time; after changing a `.pyx` file, rebuild them with
+`python setup.py build_ext --inplace`.
 
-### Install PyTorch-related Dependencies using Script
-
-Use the following script to install PyTorch-related dependencies:
+## Training
 
 ```bash
-python install_lib.py
+python scripts/run_pl_model_fit.py -t config -c <experiment config> [-w online]
 ```
 
-The scripts attempts to detect your CUDA version and install the appropriate packages. There are two supported CUDA versions (11.8 and 12.1). You can also manually specify the CUDA version using `--force-cuda XX.x` or perform a CPU-only installation with `--force-cpu`. Other CUDA versions (i.e. CUDA 12.x) may also install correctly but were not tested. All experiments in the paper were run using CUDA 11.8.
+`-t` is the template directory (`config`), `-c` the experiment config (for example
+`config/graff/nist20_merged_inchikey/s0.yml`), and `-w` the W&B mode (default `disabled`).
+Inference is documented in the [inference guide](docs/guides/run_inference.md).
+
+### Batching options
+
+- `dynamic_batch_sampler` (FraGNNet): batches by fragment-DAG size instead of a fixed spectrum
+  count, to avoid OOM. `dynamic_batch_sampler_mode` is `frag_node` or `frag_edge` and selects
+  whether the budget counts `frag_pyg.num_nodes` or `frag_pyg.num_edges`;
+  `dynamic_batch_sampler_max` is the per-batch budget. It requires
+  `automatic_optimization: False`. The samplers are in
+  [fragnnet_data_sampler.py](src/fragnnet/models/fragnnet/fragnnet_data_sampler.py), and the config
+  checks in [fragnnet_hooks.py](src/fragnnet/models/fragnnet/fragnnet_hooks.py).
+- MASSter bond-size curriculum: MASSter can train first on smaller precursor molecules, ranked by
+  heavy-bond count, then linearly expand the eligible training set. Validation always uses the
+  full split. Set `bond_size_curriculum: True`, `bond_size_curriculum_start_fraction: 0.25`, and
+  `bond_size_curriculum_epochs: 20` to use the recommended 25%-to-full schedule. It requires
+  fixed-size, non-grouped training batches and must reach the full dataset before `max_epochs`.
 
 ## Contributors
 
@@ -78,36 +128,10 @@ The scripts attempts to detect your CUDA version and install the appropriate pac
 
 ## Citation
 
-````bibtex
+```bibtex
 @article{fragnnet,
   title={FraGNNet: A Deep Probabilistic Model for Mass Spectrum Prediction},
   author={Adamo Young, Fei Wang, David Wishart, Bo Wang, Hannes Röst, Russ Greiner},
   year={2024},
 }
-````
-
-  author={Anonymous},
-  year={2025},
-}
-
-## Dynamic batch sampler and formula-based hard negatives
-
-This project supports dynamic batching to avoid OOM and a formula-based hard-negative sampler for contrastive/pairwise training.
-
-- `formula_hard_negative_dynamic_sampler` (bool): when True the runner will attempt to use the combined formula-based hard-negative dynamic batch sampler during training. See the runner integration at [src/fragnnet/runner.py](src/fragnnet/runner.py).
-- `dynamic_batch_sampler_mode` (string): either `frag_node` or `frag_edge`. Passed as `limited_by` to the dynamic batch samplers and selects whether batching budgets are computed from `frag_pyg.num_nodes` (`frag_node`) or `frag_pyg.num_edges` (`frag_edge`). Implementations live in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
-- `dynamic_batch_sampler_max` (int): maximum number of nodes/edges per batch used by dynamic samplers.
-- `formula_hard_negative_min_specs_per_formula` (int): minimum spectra per formula required for formula-based grouping; formulas with fewer spectra are skipped.
-
-### MASSter bond-size curriculum
-
-MASSter can train first on smaller precursor molecules, ranked by heavy-bond count,
-then linearly expand the eligible training set. Validation always uses the full split.
-Set `bond_size_curriculum: True`, `bond_size_curriculum_start_fraction: 0.25`, and
-`bond_size_curriculum_epochs: 20` to use the recommended 25%-to-full schedule. It
-requires fixed-size, non-grouped training batches and must reach the full dataset
-before `max_epochs`.
-
-Notes:
-- `FormulaHardNegativeDynamicBatchSampler` groups spectra by molecular formula then builds dynamic batches that respect the chosen `limited_by` metric (nodes or edges). See `FormulaHardNegativeDynamicBatchSampler` and `SpecMolFragDynamicBatchSampler` in [src/fragnnet/dataset/data_sampler.py](src/fragnnet/dataset/data_sampler.py).
-- The runner enforces valid modes (`frag_node` or `frag_edge`). See the config checks in [src/fragnnet/runner.py](src/fragnnet/runner.py).
+```

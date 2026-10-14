@@ -11,7 +11,7 @@ import math
 import pytest
 import torch as th
 
-from fragnnet.model.loss import get_sparse_cross_entropy_fn
+from fragnnet.loss.cross_entropy import get_sparse_cross_entropy_fn
 
 TOLERANCE = 1e-5
 TOLERANCE_MIN_MZ = 200.0
@@ -225,7 +225,7 @@ def test_per_sample_tolerance_matching_the_global_is_a_no_op(dist: str) -> None:
 def test_sequential_gaussian_truncates_at_the_tolerance_window() -> None:
     """A candidate outside the window contributes nothing, in either implementation.
 
-    ``mog_ce_fn`` previously summed over every candidate while still applying the
+    ``gaussian_ce`` previously summed over every candidate while still applying the
     ``gaussian_renormalize`` truncation correction, so it disagreed with
     ``sparse_cross_entropy_vec`` for candidates in the 1-3 sigma band.
     """

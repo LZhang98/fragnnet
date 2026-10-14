@@ -1,4 +1,4 @@
-"""Tests for script_utils.available_frag_mol_ids.
+"""Tests for available_frag_mol_ids (models/fragnnet/dag/storage.py).
 
 run_inference.py used to enumerate available DAGs with os.listdir(frag_dp), which
 raises NotADirectoryError on the packed-HDF5 backend (frag_dp is a dags.h5 file, not
@@ -12,8 +12,11 @@ import os
 
 import h5py
 
-from fragnnet.utils.frag_utils import PACKED_DAG_INDEX_DATASET, initialize_packed_dag_hdf5
-from fragnnet.utils.script_utils import available_frag_mol_ids
+from fragnnet.models.fragnnet.dag.storage import (
+    PACKED_DAG_INDEX_DATASET,
+    available_frag_mol_ids,
+    initialize_packed_dag_hdf5,
+)
 
 
 def test_folder_backend_returns_mol_id_stems(tmp_path):

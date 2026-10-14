@@ -1,4 +1,4 @@
-from fragnnet.utils.script_utils import pearson_r
+from stats_helpers import pearson_r
 
 import numpy as np
 import torch as th
@@ -14,8 +14,6 @@ if __name__ == "__main__":
     parser.add_argument("--model_types", type=str, nargs="+", default=[
         "fragnnet_d3",
         "fragnnet_d4",
-        "iceberg_inten",
-        "iceberg_inten_opt",
         "neims",
         "massformer",
         "graff",

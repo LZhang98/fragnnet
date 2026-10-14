@@ -1,35 +1,24 @@
-"""Unit tests for the three standalone helpers in spectrum_pl.py.
+"""Unit tests for the batch helpers that SpectrumPL uses (in utils/spec_utils.py since
+reorganization Phase 8, and get_split_fn in pl_model/spectrum_metrics.py), and for SpectrumPL
+hooks that need no model.
 
 Covers the functions touched or added by the feiw_v2 ↔ ccx_run merge:
   - get_split_fn   : merged HEAD assertion + ccx_run th.bincount
-  - list_to_batch_tensor : kept from HEAD
   - ragged_to_batch      : new from ccx_run
 
-The import chain for spectrum_pl requires fragnnet.frag.multi_cut_bfs (a
-Cython extension that may not be compiled). We stub it at module level so
-the rest of the package can be imported normally.
+spectrum_pl no longer imports the fragment Cython extensions (reorganization Phase 3), so this
+file needs no stub for them.
 """
 
-import sys
 import types
 from unittest.mock import MagicMock
 
 import pytest
 import torch
 
-# ---------------------------------------------------------------------------
-# Stub the uncompiled Cython extension before any fragnnet import
-# ---------------------------------------------------------------------------
-if "fragnnet.frag.multi_cut_bfs" not in sys.modules:
-    _m = types.ModuleType("fragnnet.frag.multi_cut_bfs")
-    _m.compute_ccs_multi_cut = MagicMock()
-    _m.get_ring_edge_mask = MagicMock()
-    sys.modules["fragnnet.frag.multi_cut_bfs"] = _m
-
-from fragnnet.pl_model.spectrum_pl import (  # noqa: E402
-    SpectrumPL,
+from fragnnet.pl_model.spectrum_pl import SpectrumPL
+from fragnnet.utils.spec_utils import (
     get_split_fn,
-    list_to_batch_tensor,
     primary_ce_to_batch,
     ragged_to_batch,
     select_context_ce_values,
@@ -134,6 +123,7 @@ def test_seed_dataloader_refreshes_lightning_cached_batch_count():
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
+            model_type="frag_gnn",
             dag_size_curriculum=True,
             bond_size_curriculum=False,
             batch_sampler_type="spec_mol_frag",
@@ -171,6 +161,7 @@ def test_seed_dataloader_refreshes_cached_batch_count_after_resume():
     module = types.SimpleNamespace(
         current_epoch=30,
         hparams=types.SimpleNamespace(
+            model_type="frag_gnn",
             dag_size_curriculum=True,
             bond_size_curriculum=False,
             batch_sampler_type="spec_mol_frag",
@@ -207,6 +198,7 @@ def test_seed_dataloader_advances_outer_curriculum_sampler_at_epoch_99():
     module = types.SimpleNamespace(
         current_epoch=99,
         hparams=types.SimpleNamespace(
+            model_type="frag_gnn",
             dag_size_curriculum=True,
             bond_size_curriculum=False,
             batch_sampler_type="spec_mol_frag",
@@ -241,6 +233,7 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
+            model_type="frag_gnn",
             dag_size_curriculum=False,
             bond_size_curriculum=False,
             batch_sampler_type="spec_mol_frag",
@@ -270,10 +263,11 @@ def test_seed_dataloader_does_not_change_batch_counts_without_curriculum():
 
 
 @pytest.mark.parametrize(
-    ("batch_sampler_type", "masster_batch_sampler"),
-    [("ce_context", False), ("spec_mol_frag", True)],
+    ("model_type", "batch_sampler_type", "masster_batch_sampler"),
+    [("frag_gnn", "ce_context", False), ("masster", "spec_mol_frag", True)],
 )
 def test_seed_dataloader_advances_ce_context_sampler(
+    model_type,
     batch_sampler_type,
     masster_batch_sampler,
 ):
@@ -283,6 +277,7 @@ def test_seed_dataloader_advances_ce_context_sampler(
     module = types.SimpleNamespace(
         current_epoch=2,
         hparams=types.SimpleNamespace(
+            model_type=model_type,
             dag_size_curriculum=False,
             bond_size_curriculum=False,
             batch_sampler_type=batch_sampler_type,
@@ -427,65 +422,6 @@ class TestPrimaryCeToBatch:
 
 
 # ===========================================================================
-# list_to_batch_tensor
-# ===========================================================================
-
-
-class TestListToBatchTensor:
-    """list_to_batch_tensor(inp, pad) pads a list of 1D tensors to a 2D batch."""
-
-    def test_all_same_length_no_padding(self):
-        inp = [torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])]
-        out = list_to_batch_tensor(inp, pad=0.0)
-        assert out.shape == (2, 2)
-        torch.testing.assert_close(out[0], torch.tensor([1.0, 2.0]))
-        torch.testing.assert_close(out[1], torch.tensor([3.0, 4.0]))
-
-    def test_shorter_row_padded_at_end(self):
-        inp = [torch.tensor([1.0, 2.0, 3.0]), torch.tensor([4.0, 5.0])]
-        out = list_to_batch_tensor(inp, pad=0.0)
-        assert out.shape == (2, 3)
-        torch.testing.assert_close(out[0], torch.tensor([1.0, 2.0, 3.0]))
-        torch.testing.assert_close(out[1], torch.tensor([4.0, 5.0, 0.0]))
-
-    def test_pad_value_inf(self):
-        inp = [torch.tensor([1.0, 2.0]), torch.tensor([3.0])]
-        out = list_to_batch_tensor(inp, pad=float("inf"))
-        assert out.shape == (2, 2)
-        assert out[1, 0].item() == 3.0
-        assert out[1, 1].item() == float("inf")
-
-    def test_single_element_list(self):
-        inp = [torch.tensor([5.0, 6.0, 7.0])]
-        out = list_to_batch_tensor(inp, pad=0.0)
-        assert out.shape == (1, 3)
-        torch.testing.assert_close(out[0], torch.tensor([5.0, 6.0, 7.0]))
-
-    def test_dtype_preserved(self):
-        inp = [torch.tensor([1, 2], dtype=torch.long), torch.tensor([3], dtype=torch.long)]
-        out = list_to_batch_tensor(inp, pad=0)
-        assert out.dtype == torch.long
-
-    def test_multiple_rows_different_lengths(self):
-        inp = [torch.ones(5), torch.ones(3), torch.ones(1)]
-        out = list_to_batch_tensor(inp, pad=-1.0)
-        assert out.shape == (3, 5)
-        assert (out[1, 3:] == -1.0).all()
-        assert (out[2, 1:] == -1.0).all()
-
-    def test_output_is_2d(self):
-        inp = [torch.arange(4, dtype=torch.float), torch.arange(2, dtype=torch.float)]
-        out = list_to_batch_tensor(inp, pad=0.0)
-        assert out.ndim == 2
-
-    def test_values_not_mutated(self):
-        """Original tensors are not modified by padding."""
-        t = torch.tensor([1.0, 2.0])
-        list_to_batch_tensor([t, torch.tensor([3.0])], pad=99.0)
-        torch.testing.assert_close(t, torch.tensor([1.0, 2.0]))
-
-
-# ===========================================================================
 # ragged_to_batch
 # ===========================================================================
 
@@ -555,28 +491,24 @@ class TestRaggedToBatch:
         out = ragged_to_batch(feat, batch_idx, pad_value=0)
         assert out.dtype == torch.long
 
-    # --- equivalence with list_to_batch_tensor ------------------------------
+    # --- padding against an explicit expectation ---------------------------
 
-    def test_equivalent_to_list_to_batch_tensor(self):
-        """ragged_to_batch and list_to_batch_tensor must agree on padded values."""
-        groups = [[1.0, 2.0, 3.0], [4.0, 5.0], [6.0]]
-        inp_list = [torch.tensor(g, dtype=torch.float) for g in groups]
-        feat, batch_idx = self._make(*groups)
+    def test_pads_ragged_groups_with_zero(self):
+        """Each group fills its row from the left; the rest of the row is the pad value."""
+        feat, batch_idx = self._make([1.0, 2.0, 3.0], [4.0, 5.0], [6.0])
 
-        out_ragged = ragged_to_batch(feat, batch_idx, pad_value=0.0)
-        out_list = list_to_batch_tensor(inp_list, pad=0.0)
+        out = ragged_to_batch(feat, batch_idx, pad_value=0.0)
 
-        torch.testing.assert_close(out_ragged, out_list)
+        expected = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 0.0], [6.0, 0.0, 0.0]])
+        torch.testing.assert_close(out, expected)
 
-    def test_equivalent_to_list_to_batch_tensor_inf_pad(self):
-        groups = [[1.0, 2.0], [3.0, 4.0, 5.0]]
-        inp_list = [torch.tensor(g, dtype=torch.float) for g in groups]
-        feat, batch_idx = self._make(*groups)
+    def test_pads_ragged_groups_with_inf(self):
+        feat, batch_idx = self._make([1.0, 2.0], [3.0, 4.0, 5.0])
 
-        out_ragged = ragged_to_batch(feat, batch_idx, pad_value=float("inf"))
-        out_list = list_to_batch_tensor(inp_list, pad=float("inf"))
+        out = ragged_to_batch(feat, batch_idx, pad_value=float("inf"))
 
-        torch.testing.assert_close(out_ragged, out_list)
+        expected = torch.tensor([[1.0, 2.0, float("inf")], [3.0, 4.0, 5.0]])
+        torch.testing.assert_close(out, expected)
 
     # --- assertions ---------------------------------------------------------
 

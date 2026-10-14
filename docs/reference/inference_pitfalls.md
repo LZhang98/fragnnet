@@ -1,6 +1,6 @@
 # Inference and DAG-Preprocessing Pitfalls
 
-> **Status:** REFERENCE · **Updated:** 2026-10-06
+> **Status:** REFERENCE · **Updated:** 2026-10-13
 > Fixed bugs, silent-failure traps and measured facts about the inference scripts, the exports and DAG storage, moved here from local agent memory (verified against code 2026-10-06). The usage guide is [run_inference.md](../guides/run_inference.md).
 
 Items marked **(unverified)** came from 2026-09 sessions and were not re-checked on the current
@@ -26,7 +26,7 @@ Both concern the `pred_formula_adducts` export in `process_batch_to_tabular_row`
 
 - **"`frag_formula_cumsizes.cpu()` needs a None-check."** It cannot be None at the annotation
   block: `batch_filter_by_peak_intensity` runs unconditionally first and its rebase dereferences
-  the field (popping it dies earlier in `script_utils.py`). The later None-check serves models
+  the field (popping it dies earlier in `inference/batch_rows.py`). The later None-check serves models
   with no formula axis (NEIMS). A guard was added and then removed as unreachable; a comment
   states the invariant.
 - **"`pred_formula_strs` and `pred_formula_adducts` can disagree in the ragged family."** The two
@@ -54,7 +54,7 @@ the field on that path and read the column's `flag`.
   (`"-H"`); code parsing `pred_formula_adducts` must read the signed spelling itself.
 - `preproc_scripts/inference/02_inf_prepare_spec_df.py` allows only `[M+H]+` and `[M-H]-`;
   `[M+Na]+` inputs were made by rewriting `prec_type`/`prec_mz` on an existing `spec_df`.
-- A debug checkpoint for smoke runs (`config/debug/debug_tiny_inference_smoke.yml`, about 90 s) needs
+- A debug checkpoint for smoke runs (`config/fragnnet/debug/debug_tiny_inference_smoke.yml`, about 90 s) needs
   `sparse_cosine_similarity: True` and `prec_types` / `inst_types` listing **every** value in the
   split, because `prec_type_to_idx` / `inst_type_to_idx` are direct dict lookups (unlike
   `frag_mode`, which has an unknown token). The `_cmf` variant (`include_cmf: True`, about 25 min
@@ -86,7 +86,7 @@ Measured on a 96k-spectrum eval (`jnokddr9`, 212 MB) and the 2.6 GB `9t63zils` v
 
 ## `dags.h5` compression
 
-`dump_dag_hdf5_packed` ([frag_utils.py](../../src/fragnnet/utils/frag_utils.py)) already
+`dump_dag_hdf5_packed` ([dag/storage.py](../../src/fragnnet/models/fragnnet/dag/storage.py)) already
 compresses each per-molecule payload with zlib before writing it into `dag_bytes`; do **not**
 propose an HDF5 `compression="gzip"` filter as if the file were uncompressed. Measured on 185
 drug-like d3/h4 DAGs (150.2 MB raw pickle; stdlib codecs only, since zstd is not installed and
@@ -140,25 +140,29 @@ round trip. This is distinct from the prediction-export size above.
   relaxation and sweeps edges by parent level so each fires once
   (see [fluxmpnn_plan](../plans/fragnnet/fluxmpnn_plan.md)).
 
-## Config precedence at inference (user decision 2026-09-15, restated 2026-09-29)
+## Config precedence at inference
 
-- `get_config_from_ckpt` merges `config/template.yml` only when `--custom_fp` is given, and
-  writes the result onto the checkpoint hparams with a shallow top-level assignment. Neither is a
-  defect. The template supplies defaults, `custom_fp` overrides, and the **checkpoint hparams
-  are the custom config**. `--custom_fp` (the config the checkpoint was trained with) is therefore
-  mandatory; `infer_synced_arr_common.sh` enforces it via `CUSTOM_FP`.
-- A new required key in `config/template.yml` is supplied by that path. Do not add `.get(key,
-  default)`, backfills or a `custom > checkpoint > template` precedence (rejected twice).
-  `MassterPL.load_from_checkpoint` and `get_pl_hparams` plus the constructor are also unsupported
-  loaders; test only `get_config_from_ckpt(..., custom_fp, template_fp)` plus `init_model_from_ckpt`.
-- Accepted side effect: when `custom_fp` does not restate a nested key, the template's value wins
-  over the checkpoint's (e.g. `frag_params.pyg_node_feats` on `9t63zils`).
+The 2026-10-13 request to fix the [codebase audit](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13)
+supersedes the template-over-checkpoint policy recorded on 2026-09-15 and 2026-09-29.
+`get_config_from_ckpt` preserves migrated checkpoint hparams, then recursively merges
+only settings explicitly declared in `custom_fp`. The template validates those keys;
+it does not replace unspecified saved settings or supply arbitrary new defaults.
+Missing legacy keys still require named checkpoint migrations. Selecting another model
+type through an overlay raises before construction.
+
+Full training configs remain valid overlays when paired with their original checkpoint.
+The SYNCED wrappers may require `CUSTOM_FP` as a pairing check; that wrapper requirement
+is separate from the loader's support for checkpoint-only inference. Test both loader
+paths plus `init_model_from_ckpt`. W&B's `init_wandb_ckpt` also requires strict restoration,
+including for compiled checkpoints; incomplete weights are rejected.
 
 ## Known broken or deferred (as of 2026-09-15, unverified since)
 
-- `scripts/eval/run_save_inference_ablations.py` (and `run_save_inference.py`) use the
-  pre-refactor positional argument order and raise `TypeError`. User: "very old script, fix later";
-  leave it.
+- The old evaluation entrypoint API/order failures are repaired in the
+  [2026-10-13 record](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13).
+  The two multi-seed scripts now use the pickle exporter consumed by statistics scripts;
+  every seed is evaluated and saved. `--untransform_spec` is retained as a deprecated
+  option: inference already exports linear normalized intensities.
 - Resume in `run_inference.py` filters `spec_df` by `spec_id`, but the saved column is `id_key`
   (`group_id` when `spec_params["merge"]`), so resume is wrong in merged-spectra mode.
 - The zero-size guard in `IterableSpecMolFragDataset` aborts on a legitimately edgeless sample

@@ -1,8 +1,7 @@
 from fragnnet.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
-from fragnnet.utils.frag_utils import load_frag_d
-from fragnnet.utils.data_utils import composition_to_string
-from fragnnet.utils.spec_utils import calculate_match_mzs
-from fragnnet.iceberg.common.chem_utils import vec_to_formula, element_to_ind
+from fragnnet.utils.dag_format_utils import load_frag_d
+from fragnnet.utils.formula_utils import composition_to_string
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 import numpy as np
 import torch as th
@@ -26,7 +25,6 @@ parser.add_argument(
     nargs="+", 
     default=[
         "fragnnet_d4",
-        "iceberg_inten",
         "graff"
     ]
 )
@@ -155,7 +153,6 @@ if __name__ == "__main__":
                 # formula_spec_logprobs are the logprobs assigned to peaks centered on those formulae in the spectrum
                 # formula_logprobs are the logprobs assigned to those formulae in the formula distribution
                 # these are not the same in FraGNNet, but they are in GrAFF
-                # undefined in ICEBERG
                 if frag_model:
                     pred_formula_batch_idxs = formula_vals["pred_formula_batch_idxs"]
                     pred_formula_logprobs = formula_vals["pred_formula_logprobs"]
@@ -179,10 +176,9 @@ if __name__ == "__main__":
                     pred_formula_str = formula_vals["pred_formula_str"][pred_no_isotope_mask.numpy()]
                 
                 else:
-                    # iceberg model - no formula logprobs!
-                    pred_formula_batch_idxs = formula_vals["pred_formula_batch_idxs"]
-                    pred_formula_mzs = formula_vals["pred_formula_mzs"]
-                    pred_formula_str = formula_vals["pred_formula_str"]
+                    # The local ICEBERG fork, the only other model this script read, was retired
+                    # (fragnnet.registry.RETIRED_MODEL_TYPES).
+                    raise ValueError(f"formula stats support FraGNNet and GRAFF exports, not {model_type!r}")
 
                 m_ann_df_cp = m_ann_df.copy().set_index("group_id")
 

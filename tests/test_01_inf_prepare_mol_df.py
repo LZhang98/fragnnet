@@ -79,8 +79,9 @@ class Test01InfPrepareMolDf:
         smiles_list = ["CCO", "[NH4+]", "CC(=O)O"]
         mol_df = mol_df_module.create_mol_df(smiles_list, ids_list=None, max_heavy_atoms=128)
 
-        # Charged molecules should be filtered
-        assert all(mol_df["charge"] == 0)
+        # Only the charged molecule is filtered; the neutral ones survive in order.
+        assert mol_df["smiles"].tolist() == ["CCO", "CC(=O)O"]
+        assert (mol_df["charge"] == 0).all()
 
     def test_radical_molecules_filtered(self, temp_dir):
         """Test that molecules with radicals are filtered out."""
@@ -89,8 +90,9 @@ class Test01InfPrepareMolDf:
         smiles_list = ["CCO", "[CH3]", "CC(=O)O"]
         mol_df = mol_df_module.create_mol_df(smiles_list, ids_list=None, max_heavy_atoms=128)
 
-        # Radical molecules should be filtered
-        assert all(mol_df["num_radicals"] == 0)
+        # Only the radical molecule is filtered; the neutral ones survive in order.
+        assert mol_df["smiles"].tolist() == ["CCO", "CC(=O)O"]
+        assert (mol_df["num_radicals"] == 0).all()
 
     def test_heavy_atom_limit(self, temp_dir):
         """Test that molecules exceeding heavy atom limit are filtered."""

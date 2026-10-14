@@ -27,10 +27,10 @@ import pandas as pd
 from rdkit import RDLogger
 
 import fragnnet.utils.formula_utils as formula_utils
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.frag.compute_frags import MAX_NUM_NODES
-from fragnnet.utils import data_utils
-from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
+from fragnnet.utils import mol_utils
+from fragnnet.utils.formula_utils import MAX_NUM_NODES
+from fragnnet.utils.mol_utils import compute_mol_df_props
+from fragnnet.utils.parallel_utils import par_apply_series
 
 # Suppress RDKit warnings
 RDLogger.DisableLog("rdApp.*")
@@ -69,7 +69,7 @@ def create_mol_df(
 
     # Convert SMILES to RDKit molecules
     logger.info("Converting SMILES to RDKit molecules...")
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], mol_utils.mol_from_smiles)
 
     # Remove invalid molecules
     initial_count = len(mol_df)
@@ -87,7 +87,7 @@ def create_mol_df(
     )
 
     # filter by out_set_elements
-    allowed_elements = set(frag_utils.ELEMENTS)
+    allowed_elements = set(formula_utils.ELEMENTS)
     mol_df.loc[:, "num_out_set_elements"] = mol_df["formula"].apply(
         lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements)
     )

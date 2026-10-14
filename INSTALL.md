@@ -1,228 +1,153 @@
 # Installation Guide
 
-This project supports multiple installation methods depending on your use case.
+`pyproject.toml` lists the dependencies. Only torch and the PyG extensions (`torch_scatter`,
+`pyg_lib`) depend on the CUDA build, so they come from their own indexes; everything else
+resolves from `pyproject.toml`.
 
-## Quick Start (Recommended for Most Users)
-
-### Using Conda (GPU)
-
-This is the **recommended approach** for GPU development and training.
+## Local GPU (uv)
 
 ```bash
-# Run the environment setup script
-bash env/env_setup_gpu_py311_cu121_250602.sh
+uv sync --extra dev               # creates .venv: Python 3.11, torch 2.4.1+cu121
+source .venv/bin/activate         # or prefix commands with `uv run`
 ```
 
-This script will:
-1. Create a conda environment named `FRAGNNET-GPU`
-2. Install Python 3.11 and all required dependencies
-3. Install PyTorch with CUDA 12.1 support
-4. Install the fragnnet package in editable mode
+`uv.lock` pins every package for Linux x86_64 and Python 3.10-3.12 (`uv sync --python 3.12`).
+The `[tool.uv]` section of `pyproject.toml` sends torch to the PyTorch cu121 index and
+`torch_scatter`/`pyg_lib` to the PyG index, and pins the reference rdkit (2022.9.5; 2023.9.5
+on Python 3.12) and the packages the env and cluster scripts pin (`wandb`, `joblib`,
+`pandarallel`, `pyteomics`). The core stack matches the reference environment; other packages
+are newer than in `env/fragnnet_gpu_py311.lock.txt`. After changing a `.pyx` file, `uv sync`
+rebuilds the extensions.
 
-**Manual activation** (if needed later):
+`uv lock` re-resolves after a dependency change; `uv lock --upgrade-package <name>` upgrades one
+package. For a CUDA 11.8 or CPU build, skip the lock and install into a venv with `uv pip`
+(here `cpu`):
+
 ```bash
+uv venv --python 3.11 && source .venv/bin/activate
+uv pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+uv pip install torch_scatter==2.1.2 pyg_lib==0.4.0 -f https://data.pyg.org/whl/torch-2.4.1+cpu.html
+uv pip install --no-sources -e ".[dev]"
+```
+
+`--no-sources` stops uv from fetching the cu121 builds named in `[tool.uv.sources]`.
+
+## Local GPU (conda)
+
+```bash
+bash env/env_setup_conda.sh            # Python 3.11, env FRAGNNET-GPU, CUDA 12.1
 conda activate FRAGNNET-GPU
 ```
 
-### Available Local GPU Environment Setup Scripts
+Optional positional arguments: Python version (`3.10`, `3.11`, `3.12`), environment name, and
+torch build (`cu121`, `cu118`, `cpu`). For example, `bash env/env_setup_conda.sh 3.12
+FRAGNNET-PY312 cu121`. The script stops if an environment of that name already exists.
 
-Choose based on your CUDA version and Python preference:
+The script installs torch 2.4.1, `torch_scatter` and `pyg_lib` for the chosen build, the
+reference rdkit (2022.9.5, which has no Python 3.12 wheel; 3.12 gets 2023.9.5, the newest
+release `pyproject.toml` allows), then `pip install -e ".[dev]"`.
 
-- **CUDA 12.1, Python 3.11 (Recommended)**: `env/env_setup_gpu_py311_cu121_250602.sh`
-- **CUDA 12.1, Python 3.12**: `env/env_setup_gpu_py312_cu121_251105.sh`
-- **CUDA 11.8, Python 3.10 (Legacy)**: `env/env_setup_gpu_py310_cu118.sh`
+`torch_scatter` is not imported by repository code, but keep it: PyG routes CUDA `max`/`min`
+scatter with gradients through it when it is installed, which changes the gradient at tied maxima
+for `frag_pool_type: max` (see the [reorganization plan, Phase 5](docs/plans/repo_reorg_plan.md#phase-5--packaging)).
+Environments without it are not numerically equivalent.
 
-### HPC/SLURM Cluster Setup (Compute Canada)
+### Exact reference environment
 
-For training on Compute Canada clusters, use the appropriate environment setup script:
-
-- **Python 3.11**: `env/env_cc_setup_py311.sh`
-- **Python 3.10**: `env/env_cc_setup_py310.sh`
-
-**Note**: These scripts create a virtual environment (not conda) and use `--no-index` to install packages from local mirrors without internet access.
+`env/fragnnet_gpu_py311.lock.txt` pins every package of the reference `FRAGNNET-GPU`
+environment (Python 3.11, CUDA 12.1) and names the torch and PyG indexes itself. To reproduce
+it in a fresh Python 3.11 environment:
 
 ```bash
-# For Python 3.11 (recommended)
-bash env/env_cc_setup_py311.sh
-
-# For Python 3.10
-bash env/env_cc_setup_py310.sh
+pip install -r env/fragnnet_gpu_py311.lock.txt
+pip install --no-deps -e .
 ```
 
-## Alternative Installation Methods
-
-### Manual Pip Installation
-
-If you prefer manual installation without conda:
+## Manual pip installation
 
 ```bash
-# Create a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install PyTorch with CUDA support
+source venv/bin/activate
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install the package
-pip install -e .
-```
-
-For development with testing tools:
-```bash
+pip install torch_scatter==2.1.2 -f https://data.pyg.org/whl/torch-2.4.1+cu121.html
 pip install -e ".[dev]"
 ```
 
-This includes pytest, ruff, black, mypy, and other development tools.
+Replace `cu121` with `cu118` or `cpu` in both URLs for another build. Extras:
 
-For the `chemlm` model (a pretrained SMILES language model), also install its pinned
-Hugging Face packages:
+- `dev`: pytest, ruff, black, mypy, wandb, Jupyter, Cython (for in-place rebuilds) and
+  scikit-learn, which the scripts under `scripts/` import (six tests load those scripts).
+- `scripts`: scikit-learn only.
+- `speed`: `torch-linear-assignment` (GPU linear assignment; scipy is the fallback).
+
+## Compute Canada
+
+Training jobs build their own virtualenv; generate them with `scripts/setup_job_cc.py` (see the
+[cluster submission guide](docs/guides/submit_cluster_runs.md)). For an interactive venv on a
+login node, from the repository root:
+
 ```bash
-pip install -e ".[chemlm]"
+bash env/env_setup_cc.sh          # Python 3.11, venv FRAGNNET
+bash env/env_setup_cc.sh 3.10     # Python 3.10
 ```
 
-It loads a local checkpoint directory, by default `data/pretrained/ChemBERTa-100M-MLM`
-(Hugging Face `DeepChem/ChemBERTa-100M-MLM`, revision in its `REVISION` file), and never
-downloads.
+It installs from the cluster wheelhouse (`--no-index`) and loads the `rdkit/2023.09.5` module.
+pip cannot see a module-provided rdkit, so fragnnet itself installs with `--no-deps`.
 
-## Verify Installation
-
-After installation, verify everything works:
+## Verify the installation
 
 ```bash
-# Activate environment (if using conda)
-conda activate FRAGNNET-GPU
-
-# Test basic imports
 python -c "import fragnnet; print('fragnnet imported successfully')"
-
-# Test GPU dependencies
-python -c "import torch; import lightning; import dgl; print(f'GPU available: {torch.cuda.is_available()}')"
-
-# Run tests
+python -c "import torch, lightning; print(f'GPU available: {torch.cuda.is_available()}')"
 pytest tests/ -v
 ```
 
 ## Troubleshooting
 
-### Lightning Module Not Found
-If you see `ModuleNotFoundError: No module named 'lightning'`:
+### Cython extensions
+
+`pip install` builds the extensions in an isolated environment and fetches Cython and numpy
+from `[build-system]`, so neither needs to be preinstalled. After changing a `.pyx` file or
+switching branches, rebuild in place (needs the `dev` extra):
+
 ```bash
-# Install lightning explicitly
-pip install lightning==2.4.0
+python setup.py build_ext --inplace
 ```
 
-### CUDA Version Mismatch
-Check your system CUDA version and use the matching environment script:
+For a clean rebuild (the compiled modules sit in subpackages such as
+`src/fragnnet/models/fragnnet/dag/`, so search the whole tree):
+
 ```bash
-# Check CUDA version
-nvcc --version
-
-# For CUDA 12.1, use:
-bash env/env_setup_gpu_py311_cu121_250602.sh
-
-# For CUDA 11.8, use:
-bash env/env_setup_gpu_py310_cu118.sh
+rm -rf build/ src/fragnnet.egg-info
+find src/fragnnet -name '*.so' -delete
+pip install --no-deps -e . --no-cache-dir
 ```
 
-### Cython Build Issues
-If you see compilation errors during installation:
+### CUDA build mismatch
+
+`torch_scatter` must come from the PyG index page that matches the installed torch version and
+build (`torch-2.4.1+cu121.html` for torch 2.4.1+cu121). Check the build with
+`python -c "import torch; print(torch.__version__, torch.version.cuda)"`.
+
+### Import errors after installation
+
 ```bash
-# Clean previous builds
-rm -rf build/ src/fragnnet/*.so src/fragnnet.egg-info
-
-# Ensure build dependencies are installed
-pip install cython==3.0.12 numpy>=1.24,<2
-
-# Rebuild
-pip install -e . --no-cache-dir
-```
-
-### Import Errors After Installation
-If imports fail after successful installation:
-```bash
-# Verify the package is installed
 pip list | grep fragnnet
-
-# Reinstall in editable mode
 pip install --no-deps -I -e .
 ```
 
-## Which Method Should I Use?
+## Core dependencies
 
-| Use Case | Recommended Method |
-|----------|-------------------|
-| GPU training on local machine (CUDA 12.1) | Run: `bash env/env_setup_gpu_py311_cu121_250602.sh` |
-| GPU training on local machine (CUDA 11.8) | Run: `bash env/env_setup_gpu_py310_cu118.sh` |
-| Manual pip installation | `pip install -e .` (after installing PyTorch manually) |
-| Development + testing (local) | After conda setup, run `pip install -e ".[dev]"` |
-| Training on Compute Canada (Python 3.11) | Run: `bash env/env_cc_setup_py311.sh` |
-| Training on Compute Canada (Python 3.10) | Run: `bash env/env_cc_setup_py310.sh` |
+- Python 3.10-3.12 (the pinned torch and rdkit, and the compiled extensions, do not support 3.13)
+- PyTorch 2.4.1, Lightning 2.4.0, PyG 2.6.1 with `torch_scatter` 2.1.2
+- RDKit 2022.09-2023.09
+- NumPy <2.0, pandas 2.2.3, SciPy 1.15.2
+- Cython 3.0.12 (build time; `dev` extra for in-place rebuilds)
 
-## Compute Canada / HPC Workflows
+See [pyproject.toml](pyproject.toml) for the complete list.
 
-For generating and submitting Fir and Vulcan training jobs, see the canonical
-[cluster submission guide](docs/guides/submit_cluster_runs.md). It covers resource profiles,
-cluster setup requirements, single runs, CV arrays, staging, and persistent outputs.
+## Next steps
 
-## Environment Variables
-
-When using conda environments, VS Code will auto-detect them. To manually select:
-
-1. Open command palette: `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
-2. Search: "Python: Select Interpreter"
-3. Choose `FRAGNNET-GPU` or your active environment
-
-## Development Workflow
-
-For contributors and developers:
-
-1. **Initial setup**:
-   ```bash
-   bash env/env_setup_gpu_py311_cu121_250602.sh
-   conda activate FRAGNNET-GPU
-   ```
-
-2. **Install development dependencies**:
-   ```bash
-   pip install -e ".[dev]"
-   ```
-
-3. **Run tests before committing**:
-   ```bash
-   pytest tests/ -v
-   ```
-
-4. **Code formatting** (optional, for consistency):
-   ```bash
-   ruff check src/ tests/
-   black src/ tests/
-   ```
-
-## Dependencies
-
-### Core Dependencies
-- Python 3.10-3.13
-- PyTorch 2.4.1
-- PyTorch Lightning 2.4.0
-- DGL 2.0.0+ (graph deep learning)
-- RDKit 2022.09-2023.09 (cheminformatics)
-- NumPy <2.0
-- Pandas 2.2.3
-- scikit-learn 1.15.2
-- Cython 3.0.12 (for building fragmentation modules)
-
-### Development Dependencies (optional)
-- pytest (testing)
-- ruff, black, isort (code formatting)
-- mypy (type checking)
-- wandb (experiment tracking)
-- Jupyter notebook
-
-See [pyproject.toml](pyproject.toml) for the complete dependency list.
-
-## Next Steps
-
-- See [docs/guides/finetune_fragnnet.md](docs/guides/finetune_fragnnet.md) for model fine-tuning
-- See [docs/guides/run_inference.md](docs/guides/run_inference.md) for inference pipelines
-- Run tests: `pytest tests/ -v`
-- Check configs: See `config/template.yml` for experiment configuration
+- [docs/guides/finetune_fragnnet.md](docs/guides/finetune_fragnnet.md) for fine-tuning
+- [docs/guides/run_inference.md](docs/guides/run_inference.md) for inference pipelines
+- `config/template.yml` for experiment configuration

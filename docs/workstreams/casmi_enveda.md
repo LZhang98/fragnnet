@@ -1,9 +1,11 @@
 # CASMI 2026, Enveda-180 and shared data quality
 
-> **Status:** HUB · **Updated:** 2026-10-10
+> **Status:** HUB · **Updated:** 2026-10-12
 > CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
 
 ## Where it stands
+
+- **Shared preprocessing audit:** [seven correctness findings](../findings/preproc_scripts_audit_2026_10_12.md), including broken merged molecule/group identities; all fixed in the working tree 2026-10-13 with regression tests (uncommitted). Next: review and commit.
 
 - **RT/CCS:** `RTHead` and `CCSHead` with independent label sets: [GPU debug rerun completed](../plans/masster/masster_rt_ccs_plan.md#separate-head-debug-rerun--completed-2026-10-10): 10 epochs on small train/validation subsets, checkpoint retained. Full Enveda arm remains prepared.
 
@@ -20,6 +22,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FIXED, UNCOMMITTED | Review and commit; rebuild affected merged outputs into new directories |
 | [CASMI train filter](../findings/casmi2026_dataset_2026_10_05.md) | OPEN | Choose filter (subformula suspects at ORB tier vs shifted-peak control, dedup, `riken` rule in section 5.9), then preprocess |
 | CASMI external data (NIST) | OPEN | Competition rules on external data not checked; hidden test energy protocol unknown (section 6) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Full matched multitask/control evaluation; confirm CCS calibration before cross-dataset use |
@@ -48,6 +51,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FINDING (2026-10-13) | Seven correctness findings; fixed with regression tests, uncommitted |
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | RTHead and CCSHead, label audit, completed GPU debug run and full experiment |
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |
@@ -56,7 +60,7 @@
 | [Subformula isotope detection plan](../plans/subformula_isotope_detection_plan.md) | LANDED (2026-10-06) | Pluggable formula source for isotope cleanup |
 | [5 ppm subformula filtering, NIST20-HR](../findings/subformula_filter_ft_qtof.md) | FINDING (2026-10-06) | Census, instrument tolerance, Cl/Na fix |
 | [NIST human review guide](../guides/nist_human_review.md) | GUIDE (linked only) | Manual spectral review procedure |
-| [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of `detect_isotope_peaks` |
+| [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`utils/isotope_cleanup_utils.py`: `detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |
 | [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) | linked only | Per-class SMARTS gate |
 
 Shared data quality (NIST20 diagnostics, subformula filter, isotope detection) is listed here because no other hub owns it; Spectraverse filter screens are in [the Spectraverse hub](spectraverse.md).

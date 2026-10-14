@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 import torch as th
 
+from fragnnet.config import load_config
 from fragnnet.dataset.base_dataset import BaseDataset
 from fragnnet.dataset.rarity_sampling import (
     RAW_CE_COLS,
@@ -37,7 +38,6 @@ from fragnnet.dataset.rarity_sampling import (
     mixture_probabilities,
     molecule_keys,
 )
-from fragnnet.runner import load_config
 
 logger = logging.getLogger(__name__)
 

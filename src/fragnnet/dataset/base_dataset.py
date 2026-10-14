@@ -12,17 +12,9 @@ from tqdm import tqdm
 
 from fragnnet.dataset.property_labels import join_property_labels, join_rt_ccs_labels
 from fragnnet.utils.clean_spectra_utils import clean_spectra
-from fragnnet.utils.data_utils import (
-    CHARGE_FACTOR_MAP,
-    RETIRED_INST_TYPE_HELP,
-    RETIRED_INST_TYPES,
-    fill_missing_ace,
-    fill_missing_nce,
-    get_charge,
-)
+from fragnnet.utils.dag_format_utils import load_frag_d
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from fragnnet.utils.frag_utils import load_frag_d
-from fragnnet.utils.isotope_utils import (
+from fragnnet.utils.isotope_cleanup_utils import (
     _INST_MZ_TOL,
     ISOTOPE_CANDIDATE_RULES,
     dag_formula_source,
@@ -30,9 +22,16 @@ from fragnnet.utils.isotope_utils import (
     estimate_coisolation_fraction_from_precursor,
     subformula_formula_source,
 )
+from fragnnet.utils.migrations import RETIRED_INST_TYPE_HELP, RETIRED_INST_TYPES
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
-from fragnnet.utils.spec_utils import batch_func
+from fragnnet.utils.spec_utils import (
+    CHARGE_FACTOR_MAP,
+    batch_func,
+    fill_missing_ace,
+    fill_missing_nce,
+    get_charge,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +126,35 @@ class BaseDataset(Dataset):
         self._setup_prec_type_to_idx()
         self._setup_inst_type_to_idx()
         self._setup_frag_mode_to_idx()
+
+    def keep_spectra(self, keep: Callable[[pd.DataFrame], pd.Series]) -> int:
+        """Keep the spectra ``keep`` accepts and drop everything that depended on the rest.
+
+        Call it after ``_base_init`` and before preprocessing. ``keep`` is applied to
+        ``spec_df`` and to ``um_spec_df``, so it may only read columns both frames carry
+        (``mol_id``, ``prec_type``, ...): a merged row and the unmerged rows it came from then
+        get the same verdict. Molecules and split rows left without a spectrum go too, and the
+        derived state (isotope cleanup tables, counts) is rebuilt.
+
+        Args:
+            keep: Maps a spectrum frame to a boolean mask aligned with its index.
+
+        Returns:
+            The number of ``spec_df`` rows removed.
+        """
+        spec_mask = keep(self.spec_df)
+        removed = int((~spec_mask).sum())
+        if not removed:
+            return 0
+        self.spec_df = self.spec_df.loc[spec_mask].reset_index(drop=True)
+        self.mol_df = self.mol_df.loc[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
+        self.um_spec_df = self.um_spec_df.loc[keep(self.um_spec_df)].copy()
+        self.split_df = self.split_df.loc[
+            self.split_df["spec_id"].isin(self.um_spec_df["spec_id"])
+        ].copy()
+        self._setup_isotope_peak_cleanup()
+        self._compute_counts()
+        return removed
 
     @staticmethod
     def _setup_dfs(

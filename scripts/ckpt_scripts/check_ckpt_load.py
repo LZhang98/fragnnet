@@ -91,7 +91,7 @@ def _check_one(path: Path, dry_run: bool) -> bool:
         return True
 
     # --- build model ---
-    from fragnnet.utils.pl_utils import get_pl_hparams
+    from fragnnet.utils.migrations import get_pl_hparams
     from fragnnet.utils.setup_utils import get_model_cls
 
     try:

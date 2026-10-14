@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from rdkit import Chem
 
-from fragnnet.frag.masster_templates import _is_connected, formed_bond_count
+from fragnnet.models.masster.candidates.smarts_templates import _is_connected, formed_bond_count
 from scripts.debug.ei.debug_masster_ei_smarts_screen import (
     ChannelCalculator,
     atom_composition,

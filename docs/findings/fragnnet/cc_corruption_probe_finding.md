@@ -1,7 +1,7 @@
 # cc-mask corruption probe: is the fragment identity representation used?
 
-> **Status:** FINDING · **Updated:** 2026-07-16
-> Fragment identity representation IS used (cos 0.82 -> 0.61 under mask randomization); the gap is comparative scoring, not features. Closed.
+> **Status:** FINDING · **Updated:** 2026-10-12
+> Fragment identity representation IS used (cos 0.82 -> 0.61 under mask corruption); the gap is comparative scoring, not features. Closed. **The corruption leaked atoms across molecules (see the first caveat); treat the magnitudes as unverified.**
 
 **Date:** 2026-07-16
 **Script:** `scripts/debug/debug_cc_corruption_eval.py` (on `research/ce_perfrag_features`)
@@ -30,9 +30,9 @@ the `cc` feature — `boundary_pair` keeps the true mask), on a frozen checkpoin
 | 0.20 | 0.7563 |
 | 0.40 | 0.7189 |
 | 0.80 | 0.6511 |
-| 1.00 (fully random) | 0.6106 |
+| 1.00 (all bits inverted, padding included) | 0.6106 |
 
-Monotonic. Fully randomizing the atom-membership mask costs **−0.21 cos (−26% relative)**, and even
+Monotonic. Inverting the atom-membership mask costs **−0.21 cos (−26% relative; magnitude unverified, see Caveats)**, and even
 5% corruption is immediately visible (−0.019).
 
 ## Interpretation
@@ -59,6 +59,22 @@ and argues *against* spending effort on more fragment features or a richer per-f
 
 ## Caveats
 
+- **Cross-molecule contamination (found 2026-10-12).** The flips covered all 128 mask bits,
+  including padding beyond each molecule's atom count, and the model checked bounds only
+  against the batch total. Flipped padding bits of molecules 1–3 in each batch of 4 pulled in
+  atoms of later molecules; those of the last molecule were dropped. NIST20 test-split
+  spectra have a median of 19 heavy atoms (p10 11, p90 34), so about 83% of the 128 bits are
+  padding and most flips at every `frac` were padding (whole-split statistic; the probe's
+  ~2,400-spectrum subset was not measured separately). The table therefore
+  measures added foreign atoms as much as lost membership information, and the `1.00` row is
+  a deterministic inversion (the complement plus foreign atoms), not a random mask. A monotone
+  drop is still evidence the cc pooling is read, but the −0.21 magnitude and the
+  dose-response shape are unverified. The leak is fixed in the
+  [simplification audit](fragnnet_simplification_audit_2026_10_12.md#1-cc-mask-padding-bits-leaked-across-molecules-fixed-in-the-working-tree);
+  rerunning the probe on the fixed code would give the clean curve. Not rerun: the script
+  exists only on `research/ce_perfrag_features`, whose model still has the leak, so a rerun
+  needs the script copied to the fixed branch and its `fragnnet.utils.script_utils` import
+  updated to `fragnnet.inference.runners`.
 - Baseline here is 0.82 on this ~2,400-spectrum FT-heavy subset, higher than the full-test 0.75;
   the *shape* (monotonic, large) is the finding, not the absolute level.
 - FT-dominated subset; not stratified by CE. A sharper version would measure whether the corruption

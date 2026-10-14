@@ -1,6 +1,6 @@
 # Isotope Peak Detection for Training
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-04-20
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > Canonical note for isotope-derived peak cleanup. DAG-based alternatives were tested 2026-04-08 and did not beat this.
 
@@ -478,8 +478,9 @@ from `0.675` to `0.716`.
 
 ## Implementation Notes
 
-- `_expected_mk_ratio` and `_parse_adduct_counts` are importable from
-  `src/fragnnet/utils/spec_utils.py`.
+- `_expected_mk_ratio` and `_parse_adduct_counts` are in
+  `src/fragnnet/utils/isotope_cleanup_utils.py` (was `utils/isotope_utils.py`, then briefly
+  `dataset/isotope_cleanup.py`; the `spec_utils` aliases were removed on 2026-10-12).
 - DAG M+0 lookup uses `formula_peak_mzs[:, 0]`; `idx_to_formula` keys align
   with the row indices of this array.
 - The `DagInfo` helper class in `scripts/debug/isotopes/debug_dag_iso_peak_detection.py`

@@ -186,7 +186,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 32
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 dynamic_batch_sampler: False
 group_sampler: False

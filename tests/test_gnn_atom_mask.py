@@ -7,7 +7,7 @@ learned vector in training only, and leaves every other parameter's initializati
 import pytest
 import torch as th
 
-from fragnnet.model.nn_blocks import GNN
+from fragnnet.layers.gnn import GNN
 
 
 def _encoder(**kwargs) -> GNN:

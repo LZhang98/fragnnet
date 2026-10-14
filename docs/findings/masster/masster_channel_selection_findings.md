@@ -188,7 +188,8 @@ uses sigmoid intensity outputs, then explicitly masks chemically invalid or padd
 zero. A sigmoid is also strictly positive for finite logits. ICEBERG obtains effective sparsity
 primarily from its upstream fragment generator and inference-time fragment threshold rather than
 from the intensity activation. The vendored implementation has the same activation-and-mask
-pattern in [`iceberg/model.py`](../../../src/fragnnet/iceberg/model.py).
+pattern in [`iceberg/model.py`](https://github.com/FraGNNet/frag-gnn/blob/13b1599d3cd85ef8f214799894e527adaf3ddd0a/src/fragnnet/iceberg/model.py)
+(removed 2026-10-11; permalink at the last revision that has it).
 
 [GLACIER](https://github.com/coleygroup/ms-pred/blob/main/src/ms_pred/glacier/joint_model.py)
 similarly separates fragment detection from intensity prediction. Its detected fragment objects

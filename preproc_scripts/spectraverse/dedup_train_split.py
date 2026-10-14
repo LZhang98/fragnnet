@@ -46,7 +46,7 @@ import torch as th
 from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper
+from fragnnet.utils.spec_similarity import calculate_match_mzs, cos_hun_helper
 
 
 def _binned(peaks_list: list, bin_da: float, offset: float) -> csr_matrix:

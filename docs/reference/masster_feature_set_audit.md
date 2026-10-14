@@ -1,6 +1,6 @@
 # MASSter Feature Set Audit
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-09-27 &nbsp;·&nbsp; findings §7.1-§7.8
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12 &nbsp;·&nbsp; findings §7.1-§7.8
 > are **FIXED for MASSter** and are now the default; see §11. §12 and §13 add the 2026-09-22
 > GLACIER parity work: graph features, which both models can now enable, and the candidate
 > token's complement composition.
@@ -26,7 +26,7 @@ MASSter consumes features at five sites. Everything else is derived.
 
 | Site | Code | Inputs |
 |------|------|--------|
-| Precursor GNN | `GNN` in [nn_blocks.py](../../src/fragnnet/model/nn_blocks.py) | `mol_pyg.x` (atom feats), `mol_pyg.edge_attr` (bond feats), optionally `context` |
+| Precursor GNN | `GNN` in [layers/gnn.py](../../src/fragnnet/layers/gnn.py) | `mol_pyg.x` (atom feats), `mol_pyg.edge_attr` (bond feats), optionally `context` |
 | Bond break head | `BondFocusedBreakHead` / `EndpointBondBreakHead` | endpoint atom embeddings, `chemical_bond_attr`, `context` |
 | Charge affinity head | `AtomChargeAffinityHead` | atom embeddings, `context` |
 | Candidate intensity head | `CandidateIntensityTransformerHead` | 3 pooled embeddings + `context` + 3 scalars (+2 optional) |
@@ -190,7 +190,7 @@ numerically against `pool_boundary_bond_embeddings`:
   distinguished within the boundary term.
 
 This is the same degeneracy FraGNNet diagnosed for its `boundary_pair` feature and fixed with
-`CutBondEncoder` ([base_model.py:803](../../src/fragnnet/model/base_model.py#L894)), whose
+`CutBondEncoder` ([cut_bond_encoder.py](../../src/fragnnet/layers/cut_bond_encoder.py)), whose
 docstring states the argument in full: a linear map on a concatenation cannot express a bond
 because bond identity is an interaction, and a linear map commutes through the pool. MASSter's
 version is strictly weaker than the `boundary_pair` that fix replaced — `boundary_pair` at least
@@ -224,7 +224,7 @@ is also absent from the fragment-mass arithmetic, which uses atomic numbers plus
 
 ### 7.8 The featurizer mutates the shared canonical element order
 
-`AtomOneHot.allowable_set` *is* `frag_utils.CANONICAL_ELEMENT_ORDER` (same list object), and
+`AtomOneHot.allowable_set` *is* `formula_utils.CANONICAL_ELEMENT_ORDER` (same list object), and
 `one_hot_encoding(..., encode_unknown=True)` appends `None` to it on first use. After featurizing
 any molecule the shared list is 18 long instead of 17. Harmless today — its two consumers do
 `if elem in elem_d`, and `ELEMENT_TO_IDX`/`IDX_TO_ELEMENT` are built from `ELEMENT_TO_VE`, not
@@ -235,8 +235,8 @@ which is the heavier user of element-ordered formula arrays.
 
 | Group | Count | Feature shape |
 |-------|-------|---------------|
-| Experiment configs under `config/masster/**` and `config/sweeps_merged/masster/**` | 169 | 70 atom / 9 bond |
-| `config/nist20_merged_inchikey/masster/s0.yml` and 5 `config/debug/debug_tiny_masster*.yml` | 6 | template 60 atom / 5 bond |
+| Experiment configs under `config/masster/**` and `config/masster/sweeps_merged/**` | 169 | 70 atom / 9 bond |
+| `config/masster/nist20_merged_inchikey/s0.yml` and 5 `config/debug/debug_tiny_masster*.yml` | 6 | template 60 atom / 5 bond |
 
 The canonical seeded config (`nist20_merged_inchikey/masster/s0.yml`) therefore does not
 match the feature set every experiment arm actually trains with, and produces a different
@@ -315,7 +315,7 @@ tensors mismatch. Nothing was trained or evaluated; these are not measured impro
 | §7.4 degenerate boundary embedding | `masster_boundary_bond_encoder` (default True) reuses FraGNNet's `CutBondEncoder` on the oriented (retained, lost) endpoints. `boundary_bond_endpoint_orientation` recovers the orientation the candidate builders do not emit, by looking both endpoints up in the sparse membership relation; it raises if a boundary bond does not have exactly one endpoint inside its component |
 | §7.5 dead token columns | The intensity head drops the constant per-mask component count and the zeroed charge log-probability when its tokens are unique fragments. The legacy pathway-token mode keeps both, where they are live |
 | §7.7 unread required field | `atom_formal_charges` removed from the `forward` field check. It is still attached to the graph and still unread |
-| §7.8 shared-list mutation | `AtomOneHot.allowable_set` is a copy, so featurizing no longer appends `None` to `frag_utils.CANONICAL_ELEMENT_ORDER` |
+| §7.8 shared-list mutation | `AtomOneHot.allowable_set` is a copy, so featurizing no longer appends `None` to `formula_utils.CANONICAL_ELEMENT_ORDER` |
 
 Measured effect on the feature matrix, same 5,000-molecule NIST20 sample: constant atom columns
 fall from **34/70 (49%) to 30/71 (42%)**. The corrected degree encoding leaves 8 constant columns

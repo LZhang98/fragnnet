@@ -63,7 +63,7 @@ GLACIER_TIMES=(3:00:00 3:00:00 3:00:00)
 GLACIER_OVERRIDES=("" "" "")
 
 FRAGGNN_JOBS=(fg_fa_graph_feature_parity)
-FRAGGNN_CONFIGS=("config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml")
+FRAGGNN_CONFIGS=("config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml")
 FRAGGNN_TIMES=(12:00:00)
 FRAGGNN_OVERRIDES=("")
 

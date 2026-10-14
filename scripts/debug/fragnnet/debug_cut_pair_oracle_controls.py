@@ -14,7 +14,7 @@ sys.path.insert(
 
 from dag_oracle_scores import _tolerance_for_inst_type
 
-from fragnnet.utils.spec_utils import calculate_match_mzs, cos_hun_helper
+from fragnnet.utils.spec_similarity import calculate_match_mzs, cos_hun_helper
 
 CACHE_FP = "/tmp/cut-pair-review-BJ5z6X/cache_500mol.pt"
 PRED_FP = "output/inference_eval/9t63zils/predictions_val.hdf5"

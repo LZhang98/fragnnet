@@ -16,15 +16,15 @@ from types import SimpleNamespace
 import pytest
 import torch as th
 
-from fragnnet.model.loss import (
+from fragnnet.loss.cross_entropy import sparse_cross_entropy_vec
+from fragnnet.loss.spectrum_distance import (
     sparse_cosine_distance_hungarian,
-    sparse_cross_entropy_vec,
     sparse_jensen_shannon_divergence_hungarian,
 )
-from fragnnet.pl_model.fragnnet_pl import FraGNNetPL
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.runner import load_config
-from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.spec_similarity import calculate_match_mzs
 
 # ---------------------------------------------------------------------------
 # calculate_match_mzs — tol_per_true / min_mz_per_true

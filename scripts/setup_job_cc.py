@@ -4,7 +4,7 @@ import re
 import subprocess
 
 # Kept local so this script runs on a login node without the fragnnet package installed.
-# Mirrors ``fragnnet.runner.TEMPLATE_FILENAME``.
+# Mirrors ``fragnnet.config.TEMPLATE_FILENAME``.
 TEMPLATE_FILENAME = "template.yml"
 
 
@@ -41,6 +41,8 @@ GPU_PROFILES = {
         "price": 3.48,
         "notes": "3.4 cores, 82GB (ideal); 3 cores, 70GB (sbatch)",
     },
+    # Default Fir profile: enough for FraGNNet training and inference, half the price of
+    # fir:h100-80gb. See docs/rules/engineering.md section 5.
     "fir:h100-3g.40gb": {
         "cluster": "fir",
         "gpu_label": "H100-3g.40gb",
@@ -48,7 +50,7 @@ GPU_PROFILES = {
         "cpu": 6,
         "mem": 140,
         "price": 6.1,
-        "notes": "6 cores, 144GB (ideal); 6 cores, 140GB (sbatch)",
+        "notes": "6 cores, 144GB (ideal); 6 cores, 140GB (sbatch); DEFAULT for Fir",
     },
     # Narval (A100)
     "narval:a100-40gb": {
@@ -108,6 +110,11 @@ GPU_PROFILES = {
 }
 
 
+# Use this on Fir unless the job needs more: it is enough for FraGNNet training and
+# inference and costs half of fir:h100-80gb. See docs/rules/engineering.md section 5.
+FIR_DEFAULT_PROFILE = "fir:h100-3g.40gb"
+
+
 GPU_PROFILE_ALIASES = {
     # allow selecting by GPU label alone when unambiguous
     "h100-80gb": "fir:h100-80gb",
@@ -157,8 +164,9 @@ def print_gpu_profiles() -> None:
     print("Available --gpu_profile presets:")
     for key in sorted(GPU_PROFILES.keys()):
         p = GPU_PROFILES[key]
+        marker = "  <- default for Fir" if key == FIR_DEFAULT_PROFILE else ""
         print(
-            f"- {key}\t({p['gpu_label']}, cpu={p['cpu']}, mem={p['mem']}G, gres={p['gres_gpu']}, price={p['price']})"
+            f"- {key}\t({p['gpu_label']}, cpu={p['cpu']}, mem={p['mem']}G, gres={p['gres_gpu']}, price={p['price']}){marker}"
         )
 
 
@@ -392,8 +400,6 @@ def main(args):
             "    joblib==1.3.2 \\",
             "    matplotlib \\",
             "    lightning==2.4.0 \\",
-            "    dgl==2.4.0 \\",
-            "    omegaconf \\",
             "    cython==3.0.12 \\",
             "    pandarallel==1.6.5 \\",
             "    h5py\\",
@@ -494,7 +500,6 @@ def main(args):
         "spec_fp",
         "mol_fp",
         "ann_fp",
-        "mces_fp",
         "config",
         "config_template",
         "split_dp",
@@ -503,7 +508,6 @@ def main(args):
         "model_type",
         "finetune",
         "finetune_pretrained_ckpt",
-        "chemlm_ckpt_dp",
     ]
     config_d["config_template"] = config_template_fp
     if custom_config_fp is not None:
@@ -535,14 +539,8 @@ def main(args):
 
     if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
         data_keyword.append("frag_dp")
-    elif config_d["model_type"] in ["iceberg_gen", "iceberg_inten"]:
-        data_keyword.append("magma_dp")
     elif config_d["model_type"] == "graff":
         data_keyword.append("ann_fp")
-    elif config_d["model_type"] == "mces_pretraining":
-        data_keyword.append("mces_fp")
-    elif config_d["model_type"] == "chemlm":
-        data_keyword.append("chemlm_ckpt_dp")
     if config_d.get("model_ckpt") and not os.path.isabs(config_d["model_ckpt"]):
         data_keyword.append("model_ckpt")
     # copy fp if pretraining
@@ -554,20 +552,6 @@ def main(args):
         print(f"> running wandb sweep script with model_type: {config_d['model_type']}")
     else:
         print(f"> model type: {config_d['model_type']}")
-
-    if config_d["model_type"] == "chemlm":
-        # Only chemlm imports these, so every other job keeps the base install. All are in the
-        # Fir wheelhouse (avail_wheels, 2026-09-27). tokenizers 0.20.3, as in FRAGNNET-GPU, is not;
-        # 0.20.0 gives identical token ids on every MSGYM SMILES, canonical and random.
-        script_lines.extend(
-            [
-                "# Hugging Face packages for model_type chemlm",
-                "pip install --no-index transformers==4.46.3 tokenizers==0.20.0 \\",
-                "    huggingface_hub==0.36.2 safetensors==0.8.0 regex || exit 1",
-                "# the tokenizer runs in the main process; this silences its warning on each fork",
-                "export TOKENIZERS_PARALLELISM=false",
-            ]
-        )
 
     # copy data files
     script_lines.extend(["#copy files"])
@@ -710,18 +694,6 @@ def main(args):
                     f"rsync -avL --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
                     f"if [[ ! -f ${{WORKING_DIR}}/{path_value} ]]; then",
                     f'    echo "ERROR: checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
-                    "    exit 1",
-                    "fi",
-                ]
-            )
-        elif name == "chemlm_ckpt_dp":
-            print(f"> adding cmd to copy {name} directory from {path_value} to slurm tmp dir")
-            script_lines.extend(
-                [
-                    f"# copy {name} directory from {path_value} to slurm tmp dir",
-                    f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}",
-                    f"if [[ ! -f ${{WORKING_DIR}}/{path_value}/config.json ]]; then",
-                    f'    echo "ERROR: chemlm checkpoint was not staged: ${{WORKING_DIR}}/{path_value}" >&2',
                     "    exit 1",
                     "fi",
                 ]
@@ -912,7 +884,9 @@ if __name__ == "__main__":
         default=None,
         help=(
             "Apply a preset resource profile (overrides --cpu/--mem and sets --gres). "
-            "Examples: fir:h100-1g.10gb, narval:a100-40gb. Use --list_gpu_profiles to view all."
+            "On Fir use fir:h100-3g.40gb unless the job needs more - it is enough for "
+            "FraGNNet training and inference at half the price of a whole H100. "
+            "Use --list_gpu_profiles to view all."
         ),
     )
     parser.add_argument(
@@ -968,7 +942,7 @@ if __name__ == "__main__":
         help=(
             "Directory containing cv{n}.yml config files for cross-validation array jobs. "
             "Creates a SLURM array job with one task per CV fold (--cv_start to --cv_end). "
-            "Example: --cv_config_dp config/spectraverse/neims --cv_start 0 --cv_end 9"
+            "Example: --cv_config_dp config/neims/spectraverse --cv_start 0 --cv_end 9"
         ),
     )
     parser.add_argument(

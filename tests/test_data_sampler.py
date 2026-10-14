@@ -11,15 +11,13 @@ import torch as th
 from torch.utils.data import DataLoader, RandomSampler
 
 # Load data_sampler directly to avoid package-level import side-effects
-from fragnnet.dataset import (
-    BondCountCurriculumSampler,
+from fragnnet.dataset import BondCountCurriculumSampler, FormulaPrecTypeGroupSampler, GroupSampler
+from fragnnet.models.fragnnet.fragnnet_data_sampler import (
     CEContextDynamicBatchSampler,
     DualGroupDynamicBatchSampler,
-    FormulaPrecTypeGroupSampler,
-    GroupSampler,
-    MassterCEContextDynamicBatchSampler,
     SpecMolFragDynamicBatchSampler,
 )
+from fragnnet.models.masster.masster_data_sampler import MassterCEContextDynamicBatchSampler
 
 # ============================================================================
 # Mock and Helper Classes

@@ -1,6 +1,6 @@
 # Gas-Phase MS/MS Rearrangement SMARTS Review
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-06-20
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
 > Literature survey + SMARTS validation for gas-phase rearrangements.
 
@@ -266,7 +266,7 @@ Analysis of whether each validated rule adds coverage beyond the current multi-c
 | McLafferty nitrile | No | Same: bridge cut on the acyclic β-C bond; H-transfer adjusts the formula. |
 | RDA all-carbon (fused ring) | No | BFS cut=2 with fused `ring_bond_groups` already covers 2-bond cuts within SSSR rings shared with another ring. |
 | RDA heteroatom (fused ring) | No | Same: fused heteroatom rings are included in `ring_bond_groups`. |
-| RDA all-carbon (isolated ring) | **Yes** | Isolated rings (not fused) are filtered out of `ring_bond_groups` in `frag_utils.py` to reduce noise. A cyclohexene or dihydropyranone that is not fused to another ring will not get cut=2. |
+| RDA all-carbon (isolated ring) | **Yes** | Isolated rings (not fused) are filtered out of `ring_bond_groups` in `dag/builder.py` (was `frag_utils.py`) to reduce noise. A cyclohexene or dihydropyranone that is not fused to another ring will not get cut=2. |
 | RDA heteroatom (isolated ring) | **Yes** | Same gap as above. |
 | Retro-ene carbonyl | No | Acyclic: bridge cut on the β-C bond gives the same heavy-atom partition; H-transfer handles the H redistribution. |
 | Cope [3,3] | Not feasible | Isomerization — no fragment ion produced directly. Would require feeding the isomer back into BFS as a new root; current prepass infrastructure does not support this. |

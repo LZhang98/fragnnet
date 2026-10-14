@@ -34,8 +34,7 @@ from oracle_dataset_utils import resolve_dsets_for_spec_fp
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils import data_utils
+from fragnnet.utils import dag_format_utils, parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -806,7 +805,7 @@ def _dag_weighted_recall_for_mol(
     recalls = {int(spec_id): dict.fromkeys(dag_paths, math.nan) for spec_id in group["spec_id"]}
     for label, dag_path in dag_paths.items():
         try:
-            dag = frag_utils.load_frag_d(
+            dag = dag_format_utils.load_frag_d(
                 mol_id,
                 dag_path,
                 is_compressed=is_compressed_by_label[label],
@@ -840,7 +839,7 @@ def collect_dag_weighted_recall(
     spec_df: pd.DataFrame,
     spec_ids: set[int],
     dag_paths: dict[str, str],
-    n_jobs: int = data_utils.JOBLIB_N_JOBS,
+    n_jobs: int = parallel_utils.JOBLIB_N_JOBS,
 ) -> dict[int, dict[str, float]]:
     """Calculate per-spectrum intensity-weighted recall for supplied DAG variants."""
     scoped = spec_df[spec_df["spec_id"].isin(spec_ids)]
@@ -865,7 +864,7 @@ def collect_dag_weighted_recall(
         dag_paths=active_dag_paths,
         is_compressed_by_label=is_compressed_by_label,
     )
-    per_mol = data_utils.par_apply(
+    per_mol = parallel_utils.par_apply(
         mol_inputs,
         worker,
         need_unpack=True,
@@ -2288,7 +2287,7 @@ def main() -> None:
     parser.add_argument(
         "--dag_n_jobs",
         type=int,
-        default=data_utils.JOBLIB_N_JOBS,
+        default=parallel_utils.JOBLIB_N_JOBS,
         help="Parallel molecule workers for D3/D4 wRecall scoring.",
     )
     parser.add_argument(

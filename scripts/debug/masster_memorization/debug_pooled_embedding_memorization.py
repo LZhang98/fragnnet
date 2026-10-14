@@ -62,7 +62,7 @@ ranks every in-head route side by side:
             loses more than validation here.
 
 Validation status. The mechanics are verified end to end on a 128-molecule toy model
-(``config/debug/debug_tiny_masster_cut_features.yml``, hidden 64, 60 epochs, the same
+(``config/masster/debug/debug_tiny_masster_cut_features.yml``, hidden 64, 60 epochs, the same
 ``inchikey_s`` split key production uses). That run is far too small to say anything about
 the production model, but it does show the readout discriminates: corrupting the cc pools
 left the train/validation gap unchanged (gap_closed -0.015) while corrupting the boundary
@@ -100,16 +100,16 @@ import torch as th
 from lightning import seed_everything
 from tqdm import tqdm
 
-import fragnnet.model.masster_model as masster_model_module
-from fragnnet.model.nn_blocks import GINE_GSA
-from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.script_utils import (
+import fragnnet.models.masster.masster_model as masster_model_module
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     init_model_from_ckpt,
     setup_device,
 )
+from fragnnet.layers.gine_gsa import GINE_GSA
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

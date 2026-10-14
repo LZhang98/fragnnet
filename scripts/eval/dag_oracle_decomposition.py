@@ -40,7 +40,7 @@ import pandas as pd
 
 from oracle_dataset_utils import resolve_dsets_for_spec_fp
 
-import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils import parallel_utils
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 # Reuse the oracle machinery from the sibling script rather than reimplementing it.
@@ -170,7 +170,7 @@ def main() -> None:
     parser.add_argument("--bad_threshold", type=float, default=0.3, help="cos_actual below this = 'worst'.")
     parser.add_argument("--limit_mols", type=int, default=None, help="Subsample this many mols for a quick check.")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--n_jobs", type=int, default=data_utils.JOBLIB_N_JOBS)
+    parser.add_argument("--n_jobs", type=int, default=parallel_utils.JOBLIB_N_JOBS)
     parser.add_argument("--out_fp", default=None, help="Optional CSV of the per-spectrum joined table.")
     args = parser.parse_args()
     args.dsets = resolve_dsets_for_spec_fp(args.spec_fp, args.dsets)

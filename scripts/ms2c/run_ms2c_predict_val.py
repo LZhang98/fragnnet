@@ -11,16 +11,16 @@ import time
 
 import pandas as pd
 
-from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import booltype, get_core_count
-from fragnnet.utils.script_utils import (
+from fragnnet.inference.checkpoint import (
     apply_inference_config,
     get_ckpt_path,
     get_config_from_ckpt,
     init_model_from_ckpt,
-    run_inference_tabular,
     setup_device,
 )
+from fragnnet.inference.runners import run_inference_tabular
+from fragnnet.runner import init_dataloader
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 

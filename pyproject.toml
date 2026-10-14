@@ -8,28 +8,28 @@ version = "2025.06.0.dev"
 description = "MS/MS prediction for small molecules"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.10, <=3.13"
+requires-python = ">=3.10,<3.13"
 
 dependencies = [
     "numpy>=1.24,<2",
-    "cython==3.0.12",
     "pandas==2.2.3",
     "rdkit>=2022.09.4, <=2023.09.5",
     "tqdm",
     "scipy==1.15.2",
-    "scikit-learn",
     "joblib>=1.3.2",
     "torch==2.4.1",
     "lightning==2.4.0",
-    "dgl==1.0.4",
     "torch_geometric==2.6.1",
     "torch_scatter==2.1.2",
     "matplotlib",
     "pyteomics",
-    "omegaconf",
     "h5py",
     "pandarallel",
     "pyopenms",
+    # imported by core at module level; previously only pulled in by other packages
+    "pyyaml",
+    "networkx",
+    "pillow",
 ]
 
 [project.optional-dependencies]
@@ -46,19 +46,64 @@ dev = [
     "ruff>=0.1.0",
     "black>=23.0",
     "isort>=5.12",
-    "pre-commit>=3.0"
+    "pre-commit>=3.0",
+    # six tests load scripts that import it
+    "scikit-learn",
+    # `python setup.py build_ext --inplace` rebuilds the extensions in the environment;
+    # `pip install` gets Cython from [build-system] instead
+    "cython==3.0.12",
+]
+
+# analysis and evaluation scripts under scripts/
+scripts = [
+    "scikit-learn",
 ]
 
 speed = [
     "torch-linear-assignment"
 ]
 
-# model_type chemlm (pretrained SMILES language model); imported lazily, so other models
-# do not need it
-chemlm = [
-    "transformers==4.46.3",
-    "tokenizers>=0.20,<0.21"
+# PyG extensions of the reference environment; not on PyPI, so only uv installs them from here.
+# PyG routes CUDA max/min scatter through torch_scatter when installed (INSTALL.md).
+[dependency-groups]
+pyg = [
+    "pyg_lib==0.4.0",
 ]
+
+# uv only (pip ignores this). The lock targets Linux x86_64 with torch 2.4.1+cu121, the
+# reference FRAGNNET-GPU build; other builds use `uv pip install` (INSTALL.md).
+[tool.uv]
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
+]
+default-groups = ["pyg"]
+constraint-dependencies = [
+    # rdkit of the reference environment; it has no Python 3.12 wheel
+    "rdkit==2022.9.5; python_version < '3.12'",
+    # pinned by the env/ and cluster scripts; wandb 0.24 has upload bugs
+    "wandb==0.21.2",
+    "joblib==1.3.2",
+    "pandarallel==1.6.5",
+    "pyteomics==4.7.5",
+]
+# rebuild the Cython extensions when a .pyx changes
+cache-keys = [{ file = "pyproject.toml" }, { file = "setup.py" }, { file = "src/**/*.pyx" }]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torch_scatter = { index = "pyg-cu121" }
+pyg_lib = { index = "pyg-cu121" }
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cu121"
+url = "https://data.pyg.org/whl/torch-2.4.1+cu121.html"
+format = "flat"
+explicit = true
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
@@ -67,7 +112,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
 fragnnet = ["*.pyx", "*.pxd", "*.c", "*.h"]
-"fragnnet.frag" = ["*.cu"]
+"fragnnet.models.masster.candidates" = ["*.cu"]
 
 [tool.ruff]
 line-length = 100

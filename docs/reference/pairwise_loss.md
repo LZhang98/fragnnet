@@ -1,8 +1,8 @@
 # Pairwise Loss & Sampler Design
 
-> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-06-08
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
-> Design of the shipped pairwise loss + sampler (`model/loss.py`, `dataset/data_sampler.py`).
+> Design of the shipped pairwise loss + sampler (`loss/pairwise.py`, `dataset/data_sampler.py`).
 
 ## Overview
 
@@ -19,7 +19,7 @@ ground-truth pattern — encouraging consistent relative structure across predic
 
 ---
 
-## Implemented Loss Functions (`src/fragnnet/model/loss.py`)
+## Implemented Loss Functions (`src/fragnnet/loss/pairwise.py`)
 
 All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matrix.
 
@@ -27,16 +27,15 @@ All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matr
 
 | Function | Config key | Notes |
 |---|---|---|
-| `get_pairwise_cossim()` | `pairwise_cosine_loss_weight` | L2-normalize log-probs → dot product; sparse COO trick avoids 150k-dim dense alloc |
-| `get_pairwise_jss_sim()` | `pairwise_jss_loss_weight` | JSS = 1 − JSD/log(2); computed in log-space for stability |
-| `get_pairwise_cross_entropy()` | `pairwise_cross_entropy_loss_weight` | **Asymmetric** — must fill full [B,B]; missing bins use log(eps) |
+| `pairwise_cosine_similarity()` | `pairwise_cosine_loss_weight` | L2-normalize log-probs → dot product; sparse COO trick avoids 150k-dim dense alloc |
+| `pairwise_jss_similarity()` | `pairwise_jss_loss_weight` | JSS = 1 − JSD/log(2); computed in log-space for stability |
+| `pairwise_cross_entropy()` | `pairwise_cross_entropy_loss_weight` | **Asymmetric** — must fill full [B,B]; missing bins use log(eps) |
 
-### Hungarian / Peak-aligned (slower, more accurate)
+### Hungarian / Peak-aligned (removed)
 
-| Function | Notes |
-|---|---|
-| `get_pairwise_jss_sim_hun()` | m/z-based peak matching before JSS computation |
-| `get_pairwise_cross_entropy_hun()` | m/z-based peak matching before CE computation |
+`get_pairwise_jss_sim_hun()` and `get_pairwise_cross_entropy_hun()` matched peaks by m/z before
+computing the similarity. Nothing called them, and they were deleted on 2026-10-12 (reorganization
+plan Phase 8 step 0); the code is at revision `13b1599d`.
 
 ---
 
@@ -59,7 +58,7 @@ All functions output a `[B, B]` symmetric (or asymmetric for CE) similarity matr
 
 ---
 
-## Existing Configs (`config/pairwise_loss/`)
+## Existing Configs (`config/fragnnet/pairwise_loss/`)
 
 | Config | Loss (weight) | Sampler |
 |---|---|---|
@@ -98,7 +97,7 @@ Proposed: batch ~ formula-grouped  → pairwise matrix has real structure → st
 ### Plan: new config combining both
 
 ```yaml
-# proposed: config/pairwise_loss/fraggnn_d3_ma_mi_nist20_pairwise_cos_formula_sampler.yml
+# proposed: config/fragnnet/pairwise_loss/fraggnn_d3_ma_mi_nist20_pairwise_cos_formula_sampler.yml
 formula_prec_type_group_sampler: True
 formula_prec_type_group_sampler_max_per_group: 5
 dynamic_batch_sampler: True           # still wrap with dynamic to avoid OOM

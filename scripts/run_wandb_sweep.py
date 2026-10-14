@@ -39,6 +39,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logger.info(f"Starting wandb sweep script with args: {args}")
+    # Must be set before the CUDA allocator initialises; a SLURM-level export wins.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     def agent_func():
         logger.info("Initializing run in agent_func()")

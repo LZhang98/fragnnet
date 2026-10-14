@@ -99,7 +99,6 @@ sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 8
 primary_loss_weight: 1.0
-ce_pair_loss_weight: 0.0
 
 # 4. Keep optimization and physical batching identical to the paired control.
 dynamic_batch_sampler: False

@@ -11,10 +11,10 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+from candidate_db import MolCandidateDB
 from tqdm import tqdm
 
 from fragnnet.utils.misc_utils import get_core_count
-from fragnnet.utils.ms2c_utils import MolCandidateDB
 
 
 def tqdm_hook(t):

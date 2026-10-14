@@ -21,7 +21,7 @@ Tests:
 import pytest
 import torch as th
 
-from fragnnet.utils.misc_utils import scatter_reduce
+from fragnnet.utils.scatter_utils import scatter_reduce
 
 # ---------------------------------------------------------------------------
 # Helper: run the trimming logic extracted from fragnnet_model.py forward()

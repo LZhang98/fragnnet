@@ -4,8 +4,9 @@ from PIL import Image
 from rdkit.Chem import MolFromSmiles
 from rdkit.Chem.Draw.rdMolDraw2D import MolDraw2DCairo
 
-from fragnnet.utils.frag_utils import th_long_to_mask, timed_get_dags
-from fragnnet.utils.plot_utils import get_highlighted_bonds
+from fragnnet.models.fragnnet.dag.builder import timed_get_dags
+from fragnnet.utils.formula_utils import th_long_to_mask
+from fragnnet.utils.mol_utils import get_highlighted_bonds
 
 
 def plot_mol_frag_axes(

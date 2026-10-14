@@ -579,7 +579,7 @@ pentan-2-one, where the two candidates are themselves near-isobaric (C4H10 58.07
 
 FraGNNet has had the same input available all along as the `neutral_loss_formula` fragment
 feature, with a written arm
-(`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_neutral_loss.yml`).
+(`config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_neutral_loss.yml`).
 
 *Corrected 2026-09-27* (this paragraph earlier said that arm had never run and that no
 production arm had been trained):
@@ -598,7 +598,7 @@ carry signal on our data. They are registered in `feat_utils.py`, commented into
 `config/template.yml`, and enabled in two matched arms:
 `config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_ring_topology.yml`
 (single-purpose diff from `c4a_base_s1`) and
-`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml`. Both resolve
+`config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all_graph_feature_parity.yml`. Both resolve
 to a **73-dim atom / 16-dim bond** input; the cost is ~9k parameters on FraGNNet (2.79M -> 2.80M)
 and ~3k on MASSter, and no DAG regeneration, because mol graphs are built on the fly.
 **No production arm has been trained**; these are inputs, not results.
@@ -608,9 +608,9 @@ and ~3k on MASSter, and no DAG regeneration, because mol graphs are built on the
 Two debug configs stack **all four** of the 2026-09-22 features at toy width, so one short run
 exercises every new code path -- both feature registries, the widened GNN input, and
 `_element_counts_by_group` feeding the widened intensity token:
-`config/debug/debug_tiny_masster_glacier_feats.yml` (MASSter, unique-fragment mode and
+`config/masster/debug/debug_tiny_masster_glacier_feats.yml` (MASSter, unique-fragment mode and
 the CUDA candidate backend as in the c4a arms, 2 epochs) and
-`config/debug/debug_tiny_fraggnn_graph_feature_parity.yml` (FraGNNet, 5 epochs). Both ran green
+`config/fragnnet/debug/debug_tiny_fraggnn_graph_feature_parity.yml` (FraGNNet, 5 epochs). Both ran green
 on `debug_tinyv4` with `detect_anomaly: true`, loss finite and falling, no NaN.
 
 The features are live rather than silently inert, confirmed three ways. Resolved widths move as
@@ -685,7 +685,7 @@ outside-data pretraining and no pretrained molecular encoder.
 ## Design comparison — FraGNNet / MASSter vs GLACIER (2026-09-21)
 
 Read against `research/masshatter-ion-h-selection` @ `92a0943a`, the production FraGNNet config
-`config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`, and GLACIER Sections 3.2-3.4
+`config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`, and GLACIER Sections 3.2-3.4
 plus Appendices C-D. Architecture only — none of this is a measured result.
 
 | stage | FraGNNet (prod, `pqx7ywc9`) | MASSter | GLACIER |
@@ -694,7 +694,7 @@ plus Appendices C-D. Architecture only — none of this is a measured result.
 | proposal supervision | none (enumeration) | proposal-coverage loss + support BCE | Hungarian set-matching to MAGMa-derived boundary patterns, per-decoder-layer aux losses decayed 0.9 |
 | backbone | GINE x4 @384 on the mol graph | GINE_GSA x2 @384 (1.81M, a measured plateau) | Graphormer, shared, one pass |
 | fragment embedding | pool its own atoms' embeddings via the `cc` mask; `cc_interstage: direct`, `cc_interstage_use_rest: False` (no molecule or complement context) | 3x384 pooled + 128 context | "dynamic embedding" pool + masked TransformerDecoder over its own atoms (eq. 7) |
-| **fragment <-> fragment** | `frag_gnn_type: NodeMLP`, `pyg_edges: False` -> no DAG message passing. Only interaction is **subtracting the per-spectrum max-pooled fragment vector** (`src/fragnnet/model/fragnnet_model.py:1956-1962`) | **ISAB**, 64 inducing points, 3 layers (49.5% of the intensity head) | **full TransformerEncoder over the fragment set** (eq. 8) |
+| **fragment <-> fragment** | `frag_gnn_type: NodeMLP`, `pyg_edges: False` -> no DAG message passing. Only interaction is **subtracting the per-spectrum max-pooled fragment vector** (`src/fragnnet/models/fragnnet/fragnnet_model.py:1925-1930`) | **ISAB**, 64 inducing points, 3 layers (49.5% of the intensity head) | **full TransformerEncoder over the fragment set** (eq. 8) |
 | intensity-head inputs | psi(formula) via `base_formula`, `depth`, `boundary_pair`, h-shift index; `neutral_loss_formula` implemented, off; its arm ran 2026-07-15 (`b7witrjj`), not read | pooled embeddings + `cut_counts` + log1p(size) + component count, **plus log1p(neutral mass), mass/precursor fraction and summed Gasteiger charge since `86268615` (2026-09-20)**, **plus the complement composition since 2026-09-22 (opt-in)** | psi(formula) \|\| **psi(root - formula)** \|\| **OHE(n_broken)** \|\| root token `G` (eq. 14) |
 | output law | **softmax over the joint (fragment x formula) grid** + OOS sink; 9 H-shifts (+/-4) x {CRF, CMF} | charge head -> ion-mode / H-channel head | **independent sigmoids**, 13 H-shifts (+/-6) x {CRF, CMF} = 26, summed at exact m/z then binned (eqs. 15-16) |
 | loss | Gaussian-density CE at **instrument tolerance** (FT 10 ppm / QTOF 20 ppm) | spectral CE (JSS ~= CE) + support BCE | cosine on **0.1 Da bins** + MAGMa teacher-forced auxiliary, weight `w_magma` annealed 1 -> 0 |

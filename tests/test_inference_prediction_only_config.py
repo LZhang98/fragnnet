@@ -14,9 +14,9 @@ and must keep their cleanup behavior.
 import pandas as pd
 import pytest
 
+from fragnnet.inference.checkpoint import apply_inference_config
 from fragnnet.runner import load_config
 from fragnnet.utils.clean_spectra_utils import clean_spectra
-from fragnnet.utils.script_utils import apply_inference_config
 
 CLEANUP_PARAMS = {
     "centroid_peaks",

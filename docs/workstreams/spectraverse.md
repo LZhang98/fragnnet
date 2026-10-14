@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **No new SPV result since the oracle read.** Historical controls (`config/spectraverse/masster/cv0-cv9`, cv0 `ggifzj9m`, cv1 `u46v0k0g`) reach `cos_sim_0.01` 0.458 on 2,048 sampled val spectra; val peaks at epoch 15 and declines to epoch 39.
+- **No new SPV result since the oracle read.** Historical controls (`config/masster/spectraverse/cv0-cv9`, cv0 `ggifzj9m`, cv1 `u46v0k0g`) reach `cos_sim_0.01` 0.458 on 2,048 sampled val spectra; val peaks at epoch 15 and declines to epoch 39.
 - **Why it is stuck** ([oracle ceiling](../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md)): the model reaches 62% of its own emitted-bin ceiling (0.734), so intensity allocation is the largest gap (0.276); 14% of spectra have a subformula ceiling <= 0.5 and score 0.04. Train cosine is 0.590, so the gap is mostly generalization.
 - **Data causes** ([source audit](../findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)): MS-DIAL (20% of spectra) is 46% of the unexplainable block; 33% of spectra have a cosine > 0.99 copy; replicates agree at 0.70-0.76 vs the model's 0.46.
 - **Prepared, nothing submitted (all cv0/cv1, Fir `fir:h100-3g.40gb`, 12 h):** `masster_c0rerun` (fresh control), `masster_short18`, `masster_subceil05`, `masster_merged_nomsdial`, `masster_dedup`, plus the ten-fold `masster_abs005`. The split dirs `data/split/spectraverse_benchmark_{subceil05,nomsdial,dedup}` are local-only and must be copied to Fir.

@@ -12,14 +12,15 @@ import pytest
 import torch as th
 import torch_geometric as pyg
 
-from fragnnet.pl_model import FraGNNetPL
-from fragnnet.utils import script_utils
-from fragnnet.utils.script_utils import (
+from fragnnet.inference import export_columns
+from fragnnet.inference.batch_rows import process_batch_to_tabular_row
+from fragnnet.inference.export_columns import (
     COLUMN_SPECS,
     OUTPUT_SUBSET_OPTIONS,
-    RAGGED_FAMILY_PREFIX,
     selected_column_specs,
 )
+from fragnnet.inference.runners import RAGGED_FAMILY_PREFIX
+from fragnnet.models.fragnnet.fragnnet_pl import FraGNNetPL
 
 # The emitted order, ahead of the annotation and eval-score columns. Frozen here because
 # some readers index positionally; changing it is a breaking change to saved artifacts.
@@ -29,6 +30,8 @@ BASE_COLUMNS = [
     "pred_mzs",
     "pred_ints",
     "pred_oos_prob",
+    "pred_rt",
+    "pred_ccs",
     "frag_formula_peak_idxs",
     "frag_formula_peak_mzs",
     "pred_formula_formula_idxs",
@@ -114,15 +117,15 @@ class TestTable:
         assert sorted(seen) == sorted(c.name for c in COLUMN_SPECS if c.family)
 
     def test_header_matches_the_table(self):
-        columns = script_utils.get_tabular_columns(
+        columns = export_columns.get_tabular_columns(
             HPARAMS, return_formula_str=True, return_cc_hash=True
         )
         assert columns == [c.name for c in selected_column_specs(True, True)]
 
     def test_output_subset_does_not_narrow_the_header(self):
         """Documented contract: out-of-subset columns are emitted as NaN, not dropped."""
-        full = script_utils.get_tabular_columns(HPARAMS, output_subset=None)
-        subset = script_utils.get_tabular_columns(
+        full = export_columns.get_tabular_columns(HPARAMS, output_subset=None)
+        subset = export_columns.get_tabular_columns(
             HPARAMS, output_subset={"pred_mzs", "pred_ints"}
         )
         assert subset == full
@@ -213,20 +216,20 @@ class TestRowMatchesHeader:
     def _emit(one_spectrum, output_set, formula_str, cc_hash, device=th.device("cpu")):
         batch_input, batch_result = one_spectrum
         model = _StubFraGNNet(batch_result)
-        batch_idx_vars, node_idx_vars, formula_idx_vars, _ = script_utils.get_idx_vars(
+        batch_idx_vars, node_idx_vars, formula_idx_vars, _ = export_columns.get_idx_vars(
             output_set,
             model,
             nb_iso=False,
             return_formula_str=formula_str,
             return_cc_hash=cc_hash,
         )
-        columns = script_utils.get_tabular_columns(
+        columns = export_columns.get_tabular_columns(
             HPARAMS,
             return_formula_str=formula_str,
             return_cc_hash=cc_hash,
             output_subset=output_set,
         )
-        batch_rows = script_utils.process_batch_to_tabular_row(
+        batch_rows = process_batch_to_tabular_row(
             batch_input=batch_input,
             model=model,
             device=device,

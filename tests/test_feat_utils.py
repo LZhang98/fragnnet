@@ -9,6 +9,8 @@ import torch as th
 from rdkit import Chem
 from torch_geometric.data import Data
 
+from fragnnet.models.fragnnet.dag.graph import batch_mols_frags, get_frag_graph
+from fragnnet.models.neims.neims_model import get_mol_fp_size
 from fragnnet.utils.feat_utils import (
     AtomCharge,
     AtomChiral,
@@ -28,11 +30,8 @@ from fragnnet.utils.feat_utils import (
     BondRingSize,
     BondStereo,
     MolGraph,
-    batch_mols_frags,
-    get_frag_graph,
     get_mol_feats_sizes,
     get_mol_fp,
-    get_mol_fp_size,
     get_mol_graph,
     one_hot_encoding,
     random_walk_pe,
@@ -575,16 +574,6 @@ class TestMolGraph:
         # At least some bonds should be ring bonds and some chain
         assert (ring_bits[:, 1] == 1).any(), "Expected some ring bonds"
         assert (ring_bits[:, 0] == 1).any(), "Expected some chain bonds"
-
-    def test_get_networkx_graph(self):
-        """Test NetworkX graph creation."""
-        mol_graph = MolGraph()
-        mol = Chem.MolFromSmiles("CCO")
-        g = mol_graph.get_networkx_graph(mol, bigraph=False)
-
-        assert g.number_of_nodes() == 3
-        assert g.number_of_edges() == 2
-
 
 class TestGetMolFeaturesSizes:
     """Tests for get_mol_feats_sizes function."""
@@ -1266,14 +1255,14 @@ class TestSharedElementOrder:
         return Chem.MolFromSmiles("CC(=O)Oc1ccccc1C(=O)O")
 
     def test_featurizing_does_not_grow_the_shared_element_list(self, aspirin_mol):
-        from fragnnet.utils import frag_utils
+        from fragnnet.utils import formula_utils
 
-        before = list(frag_utils.CANONICAL_ELEMENT_ORDER)
+        before = list(formula_utils.CANONICAL_ELEMENT_ORDER)
         AtomOneHot.featurize(aspirin_mol.GetAtomWithIdx(0))
 
-        assert before == frag_utils.CANONICAL_ELEMENT_ORDER
-        assert None not in frag_utils.CANONICAL_ELEMENT_ORDER
-        assert AtomOneHot.allowable_set is not frag_utils.CANONICAL_ELEMENT_ORDER
+        assert before == formula_utils.CANONICAL_ELEMENT_ORDER
+        assert None not in formula_utils.CANONICAL_ELEMENT_ORDER
+        assert AtomOneHot.allowable_set is not formula_utils.CANONICAL_ELEMENT_ORDER
 
 
 class TestGasteigerGraphField:

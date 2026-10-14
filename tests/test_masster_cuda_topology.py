@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 import torch as th
 
-from fragnnet.frag import masster_cuda_utils as cuda_utils
-from fragnnet.frag.masster_candidates import _TopologyInput
-from fragnnet.frag.masster_core import build_component_arrays_raw
-from fragnnet.frag.masster_cuda_topology import (
+from fragnnet.models.masster.candidates import cuda_build as cuda_utils
+from fragnnet.models.masster.candidates.builder import _TopologyInput
+from fragnnet.models.masster.candidates.cuda_topology import (
     CudaTopologyGraph,
     _prepare_inputs,
     build_cuda_topology,
     build_cuda_topology_device_masks,
 )
+from fragnnet.models.masster.candidates.cut_mask_kernels import build_component_arrays_raw
 
 _CUDA = pytest.mark.skipif(not th.cuda.is_available(), reason="CUDA device unavailable")
 

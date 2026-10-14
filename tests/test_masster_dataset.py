@@ -5,7 +5,10 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.dataset import SpecMolDataset
-from fragnnet.utils.formula_utils import masster_has_valid_ion
+from fragnnet.models.masster.masster_dataset_filter import (
+    filter_masster_spectra,
+    masster_has_valid_ion,
+)
 
 
 @pytest.mark.parametrize(
@@ -63,7 +66,7 @@ def test_dataset_filters_pairs_and_recomputes_counts(
     spectrum_dataset: SpecMolDataset,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    spectrum_dataset._filter_masster_spectra(max_h_transfer=0, include_cmf=False)
+    filter_masster_spectra(spectrum_dataset, max_h_transfer=0, include_cmf=False)
 
     assert spectrum_dataset.spec_df["spec_id"].tolist() == [11]
     assert spectrum_dataset.spec_df.index.tolist() == [0]
@@ -78,7 +81,7 @@ def test_dataset_filters_pairs_and_recomputes_counts(
 def test_all_invalid_data_fails_during_dataset_setup(spectrum_dataset: SpecMolDataset) -> None:
     spectrum_dataset.spec_df = spectrum_dataset.spec_df.iloc[[0, 2]]
     with pytest.raises(ValueError, match="dataset has no chemically valid spectra"):
-        spectrum_dataset._filter_masster_spectra(max_h_transfer=0, include_cmf=False)
+        filter_masster_spectra(spectrum_dataset, max_h_transfer=0, include_cmf=False)
 
 
 def test_dataset_filter_runs_before_preprocessing(
@@ -105,4 +108,5 @@ def test_dataset_filter_runs_before_preprocessing(
         model_type="masster",
         masster_max_h_transfer=0,
         masster_include_cmf=False,
+        masster_h_transfer_bound="none",
     )

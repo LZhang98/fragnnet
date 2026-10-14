@@ -25,9 +25,9 @@ import yaml
 from rdkit import Chem
 from torch.utils.data import ConcatDataset, DataLoader, Subset
 
+from fragnnet.inference.checkpoint import apply_inference_config, init_model_from_ckpt
 from fragnnet.runner import load_config
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_CMF_COMP_DIFF, PREC_TYPE_TO_COMP_DIFF
-from fragnnet.utils.script_utils import apply_inference_config, init_model_from_ckpt
 from fragnnet.utils.setup_utils import get_dataset_cls
 
 LOGGER = logging.getLogger(__name__)
@@ -276,7 +276,7 @@ def summarize_pairs(pairs: pd.DataFrame, cache: dict, floor: float) -> tuple:
 def main() -> None:
     """Run bounded, reproducible annotated inference and the deterministic matching audit."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default="config/analysis/masster_candidate_correspondence.yaml")
+    parser.add_argument("--config", default="config/masster/analysis/masster_candidate_correspondence.yaml")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pairs-csv", type=Path, help="Preselected query/training-reference pairs")
     parser.add_argument("--query-split", choices=("train", "val"), default="train")
@@ -391,6 +391,14 @@ def main() -> None:
                 raise ValueError("Unexpected batch order")
             batch = model.transfer_batch_to_device(batch, th.device("cpu"), 0)
             out = model(**batch, return_explainability_tensors=True)
+            if "pred_pathway_scores" in out:  # merged rows: use the per-pathway rows
+                out = {
+                    **out,
+                    "pred_mzs": out["pred_pathway_mzs"],
+                    "pred_ints": out["pred_pathway_scores"],
+                    "pred_logprobs": out["pred_pathway_scores"].log(),
+                    "pred_batch_idxs": out["pred_pathway_batch_idxs"],
+                }
             formulas, precursors, error = reconstruct_formulas(
                 batch, out, model.model.precursor_types
             )

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import torch as th
 
-from fragnnet.model.base_model import ContextEmbedding
+from fragnnet.models.fragnnet.fragnnet_conditioning import ContextEmbedding
 
 
 def _module(dims=(8, 4, 4, 4), hidden=16, out=12):
