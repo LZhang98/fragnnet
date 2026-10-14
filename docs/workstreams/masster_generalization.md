@@ -10,7 +10,7 @@
 - **Open problem:** the validation floor, not the average. 330 spectra / 119 molecules score below 0.05 at instrument tolerance (train sample: 4); 88% are ranking failures with the candidates present. No tested arm (`fa1`, `i3`, cut probe, peak-ranking loss, fragment connectivity) moves a floor chosen by an independent checkpoint.
 - **Single next action:** the computed-energetics information gate. Formal floor coverage is 97% but only 14 / 24 harder channels keep a distance-preserved product pair, so first fix a bounded, target-independent state/calculation policy and a train/calibration/confirmation protocol ([plan](../plans/masster/masster_memorization_route_plan.md#computed-product-ion-energetics-information-gate-2026-10-01-proposed)).
 - **Prepared, not submitted:** `so1` (`i1` + SMARTS templates, aryl-sulfonamide O transfer; Fir stage `smarts`), `fc1`/`fc1p` (configs exist, not in the submitter; local screen not positive).
-- **Working tree:** rare chemistry augmentation plan and hub links are uncommitted; JEPA code and data removal is committed (`6f2fdea2`).
+- **Branch `rare-chemistry-sampling`:** rare chemistry sampler, censuses, configs and plan are committed there, not on main; JEPA code and data removal is committed (`6f2fdea2`).
 - Core architecture/training lives in [masster_core](masster_core.md); retrieval in [msgym](msgym.md); other datasets in [spectraverse](spectraverse.md), [nist23_ei](nist23_ei.md), [casmi_enveda](casmi_enveda.md); the sibling model in [fragnnet](fragnnet.md).
 
 ## Open threads
