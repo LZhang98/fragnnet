@@ -1,9 +1,10 @@
 # Rearrangement peaks in [M+H]+ spectra and mechanism rules that reach them
 
 > **Status:** FINDING · **Updated:** 2026-10-15
-> About 1% of Orbitrap [M+H]+ intensity sits on peaks no bond-cut fragment can make, concentrated in
-> 1-2% of spectra. Thirteen mechanism rules applied with continuation reach 39% of that intensity
-> (null 7%) and 41% of the validation tail's (null 7%). Model-free; no model trained.
+> About 1% of Orbitrap MS/MS intensity sits on peaks no bond-cut fragment can make, concentrated in
+> 1-2% of spectra. Thirteen mechanism rules applied with continuation reach 39% of that intensity on
+> MSGYM+NIST20 [M+H]+ (null 7%) and replicate on NIST23 [M+H]+ (37% vs 7%) and [M-H]- (53% vs 12%).
+> Four more rules pass for [M-H]- and [M+Na]+. Model-free; no model trained.
 
 Plan built on this: [rewire rules in training](../../plans/masster/masster_rewire_rules_training_plan.md).
 
@@ -142,7 +143,9 @@ do not already reach as whole products.
 | `thiadiazole_cs2_extrusion` | alkyl-S-thiadiazole: delete CS2 unit; form C-N | 0.3 / 0.0 | 0.4 / 0.0 | 0.4 | 0.41-0.94 | 12 (4) | 0.38 |
 | **Union** | | **39.0 / 6.8** | **47.4 / 7.0** | **33.2** | 0.54-0.63 | 1,568 (336) | |
 
-The full SMARTS are in `output/rewire_rule_gate_2026_10_15/survivors.json`.
+The full SMARTS are in `output/rewire_rule_gate_2026_10_15/survivors.json`. Every rule, with status
+(admitted, candidate or unreviewed), precursor types and gate numbers, is in
+`output/rewire_rule_gate_2026_10_15/rule_catalog.json`.
 
 **Validation only (union).**
 
@@ -182,6 +185,69 @@ These ceilings include the null-level share and assume an unlimited pool and per
 - **N-only and skeletal rules** were gated but never reviewed. The strongest are aryl N-to-C acyl shift
   (6.1 / 0.5), diarylamine N excision (7.5 / 1.5) and amide N excision (4.5 / 0.8). Gate output:
   `output/rewire_rule_gate_2026_10_15/nitrogen_and_skeletal/r3_full.log`.
+
+## NIST23 replication and other precursor types (2026-10-15)
+
+**Mining.** `--dataset nist23` uses Orbitrap spectra from the `nist23_ma_mi_inchikey` train and val splits.
+- **Held-out molecules dropped:** any molecule whose InChIKey block 1 is in a test split of NIST23 or NIST20
+  `ma_mi`, `nist20_inchikey` or MassSpecGym.
+- **Adducts:** Na, K, Cl, NH4 and formate are kept or lost as a group. Only the molecular part of an ion
+  (`ion_mol`) is tested for connectivity.
+- **Output:** `output/rearrangement_mining_nist23_2026_10_15/<slug>/`.
+
+| Precursor | Molecules | Rearrangement % of intensity | Tail spectra (molecules) | Largest tail loss classes |
+| --- | ---: | ---: | --- | --- |
+| [M+H]+ | 26,966 | 1.21 | 1.25% (1,218) | S+O 38.5%, N+O 20.0%, halogen 15.4%, O-only 10.2% |
+| [M-H]- | 12,188 | 1.16 | 1.55% (630) | S+O 49.6%, N+O 18.1%, P 11.7% |
+| [M+NH4]+ | 2,164 | 1.00 | 1.19% (55) | S+O 48%, N+O 36% |
+| [M+Na]+ | 6,706 | 0.82 | 0.82% (134) | N+O 36%, S+O 32%; 43% of rearrangement intensity keeps Na |
+| [Cat]+ | 250 | 0.96 | 1.34% (9) | halogen 76% |
+| [M+K]+ | 1,249 | 1.55 | 0.70% (13) | 32% of intensity has no formula (solvent/background) |
+| [M+Cl]- | 808 | 0.25 | 0.19% (6) | none of note |
+| [M+CHO2]- | 921 | 0.03 | 0 | none |
+
+- **New molecules:** 16,713 of the NIST23 [M+H]+ molecules, and 752 of its 1,218 tail molecules, were not in
+  the NIST20 run.
+- **[M-H]- losses:** the most common is O2S (222 molecules), then NO (76) and N2 (34).
+- **Not mined:** [M+2H]2+ and in-source fragment precursors.
+
+**The 13 [M+H]+ rules on other data.** Gate runs with unchanged rules, output
+`output/rewire_rule_gate_2026_10_15/transfer/`. Real / null, % of rearrangement intensity.
+
+| Data | All | Tail | Molecules explained (val) |
+| --- | ---: | ---: | ---: |
+| NIST23 [M+H]+ (mostly new molecules) | 36.9 / 7.4 | 44.3 / 7.1 | 1,959 (474) |
+| NIST23 [M-H]- | 53.1 / 12.3 | 56.9 / 12.6 | 675 (168) |
+| NIST23 [M+NH4]+ | 37.2 / 8.4 | 40.0 / 7.9 | 79 (21) |
+| NIST23 [M+Na]+ | 13.3 / 2.6 | 12.7 / 1.9 | 142 (33) |
+
+- **Replication on [M+H]+:** every rule beats its null on NIST23, with the per-molecule CI lower bound > 0.
+- **[M-H]-:** the rules transfer better than on [M+H]+, led by SO2 extrusion (31.3 / 6.3), S-to-O migration
+  (21.9 / 5.5), nitro NO loss (9.2 / 2.3) and acyclic thioether S extrusion (6.9 / 0.3).
+- **[M+Na]+:** the rules do not transfer. Sodiated ions rearrange through Na-bound carboxyl and carbonyl groups.
+
+**New rules (2026-10-15).** Same discovery and two-reviewer process as above, output
+`output/rewire_rule_gate_2026_10_15/adducts/`. Kept by both reviewers:
+
+| Rule | Precursor | Edit | Real / null, all | Real / null, tail | Molecules (val) |
+| --- | --- | --- | ---: | ---: | ---: |
+| `azo_N2_extrusion` | [M-H]- | C-N=N-X: delete N2; form C-X (azo, triazene, diazosulfonate) | 0.98 / 0.02 | 0.84 / 0.00 | 35 (12) |
+| `haloalkyl_sulfonyl_X_to_S` | [M-H]- | 1,3 F/Cl/Br shift from alpha C to sulfonyl S (FSO3-, FSO2- from PFAS sulfonates) | 1.81 / 0.09 | 1.79 / 0.14 | 12 (4) |
+| `dinitrophenol_24_2NO` | [M-H]- | two nitro-nitrite NO losses on 2,4-dinitrophenolates | 0.70 / 0.04 | 0.76 / 0.02 | 9 (2) |
+| `acid_acyl_transfer_5` | [M+Na]+ | carboxyl O attacks the N-acyl carbonyl (5-ring TS); Na kept ([b(n-1)+OH+Na]+ type) | 9.85 / 0.40 | 15.71 / 0.71 | 25 (5), 28 structures |
+
+**Candidates, kept by one reviewer or statistically unproven:**
+- `aryl_sulfoxide_S_to_O` ([M-H]-; 6 structures; S(IV) cases lumped together).
+- `phosphate_pyrophosphate_condensation` ([M-H]-). Against a loose null it is 2.46 / 2.06, with 69% of the
+  weight from 3 inositol-phosphate molecules.
+- `aryl_O_CH2R_excision` ([M+NH4]+; no known mechanism, 57% of its hits are CxHy).
+- Nitroaryl NO+SO2 composites (no null is possible on these small molecules).
+
+**Rejected:**
+- Tetrazole N2 extrusion and generic dinitroarene 2NO loss.
+- Halogen 1,2 and 1,4 shifts, which are below the null.
+- [M+Na]+ ester and carbonate CO2 extrusions.
+- Ether O excisions on [M-H]-.
 
 ## Limits
 
