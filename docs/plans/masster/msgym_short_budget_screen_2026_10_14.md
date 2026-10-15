@@ -1,7 +1,7 @@
 # MSGYM short-schedule and candidate-budget screen
 
-> **Status:** PREPARED · **Updated:** 2026-10-14
-> Six arms on the sweep-leader recipe at 64 epochs (`c64`, `c32`, `u128`, `e1024`, `u128_e1024`, `floor01`); configs and Fir launcher ready, not submitted.
+> **Status:** READ · **Updated:** 2026-10-15
+> Six arms run twice at the same seed (2026-10-14/15). Same-seed reruns differ by up to 0.008 val cosine, so cosine does not separate the arms; wrecall does. 32 epochs is enough; U128, E1024 and floor 0.01 all cost wrecall. See [Results](#results-2026-10-15).
 
 ## Questions
 
@@ -82,3 +82,26 @@ of gradient. Script: [`masster_mask_budget_sweep.py`](../../../scripts/eval/mass
 `--per_sample_output_fp`; launcher
 [`submit_msgym_u_budget_sweep.sh`](../../../scripts/manual_slurm/fir/submit_msgym_u_budget_sweep.sh).
 Local NIST20 smoke (3 batches, U64/U192) passed; MSGYM job not submitted.
+
+## Results (2026-10-15)
+
+Each arm ran twice with identical configs and seed 397623 (A: 2026-10-14 20:43, B: 2026-10-15
+01:55). Values at the best-`val_primary_loss` epoch; Δ against the `c64` A/B mean.
+
+| Arm | min/epoch | val cos A / B | Δ cos (mean) | val wrecall A / B | Δ wrecall | U reached |
+| --- | ---: | --- | ---: | --- | ---: | ---: |
+| `c64` (`u80w840n`, `ixvr0qgk`) | 2.30 | 0.5928 / 0.5926 | — | 0.9013 / 0.9003 | — | 0.68 |
+| `c32` (`gz4fa02d`, `3402ar4d`) | 2.29 | 0.5933 / 0.5958 | +0.0019 | 0.9001 / 0.9017 | +0.0001 | 0.70 |
+| `u128` (`28dptwet`, `w9mjor6f`) | 1.51 | 0.5904 / 0.5866 | −0.0042 | 0.8611 / 0.8635 | −0.0385 | 0.99 |
+| `e1024` (`5esngzcl`, `kt1xn7v5`) | 1.42 | 0.5919 / 0.6000 | +0.0032 | 0.8786 / 0.8786 | −0.0222 | 0.06 |
+| `u128_e1024` (`2m4rb2c2`, `fddrhwcd`) | 1.20 | 0.5864 / 0.5864 | −0.0063 | 0.8590 / 0.8603 | −0.0412 | 0.73 |
+| `floor01` (`c43o9rbn`, `sqj14xmm`) | 2.47 | 0.5861 / 0.5899 | −0.0047 | 0.7881 / 0.8010 | −0.1062 | 0.63 |
+
+- **Same-seed noise.** Identical reruns differ by up to 0.0081 val cosine (`e1024`) and 0.0038
+  (`u128`, `floor01`), on different MIG hosts. The 0.0025 control spread used to plan this screen
+  understates it. Validation wrecall reproduces within 0.0016 except `floor01` (0.013).
+- **Epochs:** `c32` equals `c64` on wrecall and cosine at half the time; the best epoch is 18 in both
+  `c32` replicates.
+- **U, E, floor:** cosine differences are within same-seed noise except `u128_e1024`; the wrecall
+  losses (U128 −0.039, E1024 −0.022, floor −0.106) reproduce in both replicates.
+- Retrieval remains the deciding read before adopting U128 or E1024.

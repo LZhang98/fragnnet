@@ -1,4 +1,8 @@
-"""Mine [M+H]+ peaks that no connected atom set reaches, to find candidate SMARTS families.
+"""Mine peaks that no connected atom set reaches, to find candidate SMARTS families.
+
+Default: Orbitrap [M+H]+ of MassSpecGym + NIST20. ``--precursor`` selects another precursor type
+(adducts are handled as a group kept or lost whole); ``--dataset nist23`` uses NIST23 with a
+molecule-level split and every held-out test molecule removed.
 
 For every Orbitrap [M+H]+ spectrum of MassSpecGym benchmark and NIST20 (``nist20_inchikey``,
 ``i1``'s split), train and val only, each peak at >= 5% of the base peak is classified:
@@ -41,6 +45,36 @@ SOURCES = {
     "msgym": (Path("data/proc/ms_gym_benchmark_1_5"), Path("data/split/ms_gym_benchmark_1_5")),
     "nist20": (Path("data/proc/nist20"), Path("data/split/nist20_inchikey")),
 }
+# [M-H]- lives in NIST20 only; nist20_inchikey holds [M+H]+ spectra, so use the ma_mi split
+# (the [M-H]- G0 gate's split, an independent draw from i1's).
+NEGATIVE_SOURCES = {
+    "nist20": (Path("data/proc/nist20"), Path("data/split/nist20_ma_mi_inchikey")),
+}
+PRECURSOR = "[M+H]+"
+DATASET = "msgym_nist20"
+# precursor type -> (charge, adduct atoms kept or lost as a group, H carried by the adduct group,
+# precursor-ion H minus the neutral molecule's H). The adduct is not bonded in the molecular
+# graph, so only the molecular part of an ion is tested for connectivity.
+ADDUCTS = {
+    "[M+H]+": (1, {}, 0, 1),
+    "[M-H]-": (-1, {}, 0, -1),
+    "[M+Na]+": (1, {"Na": 1}, 0, 0),
+    "[M+K]+": (1, {"K": 1}, 0, 0),
+    "[M+NH4]+": (1, {"N": 1}, 4, 4),
+    "[M+Cl]-": (-1, {"Cl": 1}, 0, 0),
+    "[M+CHO2]-": (-1, {"C": 1, "O": 2}, 1, 1),
+    "[Cat]+": (1, {}, 0, 0),
+    "[M]+": (1, {}, 0, 0),
+}
+# NIST23 split: molecule-level from nist23_ma_mi_inchikey; molecules whose InChIKey block 1 is
+# in any test split we use are dropped, so no held-out molecule informs rule design.
+NIST23 = (Path("data/proc/nist23"), Path("data/split/nist23_ma_mi_inchikey"))
+TEST_SPLITS = (
+    (Path("data/proc/nist23"), Path("data/split/nist23_ma_mi_inchikey")),
+    (Path("data/proc/nist20"), Path("data/split/nist20_ma_mi_inchikey")),
+    (Path("data/proc/nist20"), Path("data/split/nist20_inchikey")),
+    (Path("data/proc/ms_gym_benchmark_1_5"), Path("data/split/ms_gym_benchmark_1_5")),
+)
 INSTRUMENTS = ("ORB", "ORB_F")
 RELATIVE, FLOOR = 1e-5, 200.0
 MIN_REL_INTENSITY = 0.05
@@ -57,6 +91,10 @@ HALOGEN = {"F", "Cl", "Br", "I"}
 TRIVALENT = {"N", "P", "B", "As"}
 TETRAVALENT = {"C", "Si"}
 REACH_CAP = 50_000
+# Per-molecule budget: after this many capped searches, new compositions of the molecule are
+# marked capped without searching (large molecules otherwise run for hours). Capped is never
+# counted as rearrangement, so this only grows the undecided class.
+MAX_CAPPED_SEARCHES = 30
 MAX_MOTIF = 6
 _ORDER = ["C", "H", "N", "O", "P", "S", "F", "Cl", "Br", "I", "Si", "B", "Se", "As", "Na", "K"]
 
@@ -165,30 +203,54 @@ def process_molecule(task) -> dict:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None or any(a.GetSymbol() not in MONO for a in mol.GetAtoms()):
         return {"peaks": [], "rearr": []}
+    charge, adduct_atoms, adduct_h, h_delta = ADDUCTS[PRECURSOR]
     edges = edge_tuple(mol)
     symbols = [a.GetSymbol() for a in mol.GetAtoms()]
     mol_counts = Counter(symbols)
     total_h = sum(a.GetTotalNumHs() for a in mol.GetAtoms())
-    heavy_m2 = any(el in mol_counts for el in ("Cl", "Br", "S"))
+    heavy_m2 = any(el in mol_counts or el in adduct_atoms for el in ("Cl", "Br", "S"))
     elements, comps, masses = sub_compositions(mol_counts)
     h_range = np.arange(0, total_h + 6)
-    ion = (masses[:, None] + h_range[None, :] * H_MASS - ELECTRON).ravel()
-    comp_index = np.repeat(np.arange(len(comps)), len(h_range))
-    h_index = np.tile(h_range, len(comps))
-    keep = rdbe_ok(elements, comps[comp_index], h_index)
-    ion, comp_index, h_index = ion[keep], comp_index[keep], h_index[keep]
+    electron = -charge * ELECTRON
+
+    # Ion table: molecular sub-composition (index into comps, -1 = none) x molecular H, without
+    # the adduct and, for adduct precursors, with the whole adduct group retained.
+    parts = []
+    comp_ids = np.repeat(np.arange(len(comps)), len(h_range))
+    h_ids = np.tile(h_range, len(comps))
+    ok = rdbe_ok(elements, comps[comp_ids], h_ids)
+    base_mass = masses[comp_ids] + h_ids * H_MASS
+    parts.append((base_mass[ok] + electron, comp_ids[ok], h_ids[ok], np.zeros(ok.sum(), bool)))
+    if adduct_atoms or adduct_h:
+        adduct_mass = sum(MONO[el] * n for el, n in adduct_atoms.items()) + adduct_h * H_MASS
+        parts.append((base_mass[ok] + adduct_mass + electron, comp_ids[ok], h_ids[ok], np.ones(ok.sum(), bool)))
+        if adduct_atoms:
+            # The bare adduct ion (e.g. Cl-), no molecular atoms.
+            parts.append((np.array([adduct_mass + electron]), np.array([-1]), np.array([0]), np.array([True])))
+    ion = np.concatenate([p[0] for p in parts])
+    comp_index = np.concatenate([p[1] for p in parts])
+    h_index = np.concatenate([p[2] for p in parts])
+    with_adduct = np.concatenate([p[3] for p in parts])
     order = np.argsort(ion)
-    ion, comp_index, h_index = ion[order], comp_index[order], h_index[order]
+    ion, comp_index, h_index, with_adduct = ion[order], comp_index[order], h_index[order], with_adduct[order]
     reach_cache: dict[int, set[int] | None] = {}
     precursor_heavy = dict(mol_counts)
+    for el, n in adduct_atoms.items():
+        precursor_heavy[el] = precursor_heavy.get(el, 0) + n
+    precursor_h = total_h + h_delta
     peak_rows, rearr_rows = [], []
-
     reached: set[tuple[int, int]] = set()
+    capped_searches = 0
 
     def classify(ci: int, h: int) -> str:
         """Connected within +-4 H, stopping at the first twin; otherwise an exhaustive search."""
+        nonlocal capped_searches
+        if ci < 0:
+            return "adduct"
         if (ci, h) in reached:
             return "connected"
+        if ci not in reach_cache and capped_searches >= MAX_CAPPED_SEARCHES:
+            return "capped"
         if ci not in reach_cache:
             composition = Counter({el: int(c) for el, c in zip(elements, comps[ci]) if c})
             size = int(comps[ci].sum())
@@ -200,6 +262,7 @@ def process_molecule(task) -> dict:
                 return "connected"
             # The search did not stop early, so ``found`` is exhaustive (or None if capped).
             reach_cache[ci] = found
+            capped_searches += found is None
         found = reach_cache[ci]
         if found is None:
             return "capped"
@@ -230,7 +293,7 @@ def process_molecule(task) -> dict:
                     classes.add(classify(int(comp_index[m]), int(h_index[m])))
                     if "connected" in classes:
                         break
-                for name in ("connected", "capped", "h_limit", "rearrangement"):
+                for name in ("connected", "adduct", "capped", "h_limit", "rearrangement"):
                     if name in classes:
                         label = name
                         break
@@ -243,18 +306,28 @@ def process_molecule(task) -> dict:
                 }
             )
             if label == "rearrangement":
-                ci, h = int(comp_index[best]), int(h_index[best])
+                ci, h, kept = int(comp_index[best]), int(h_index[best]), bool(with_adduct[best])
                 heavy = {el: int(c) for el, c in zip(elements, comps[ci]) if c}
-                loss_heavy = {el: precursor_heavy[el] - heavy.get(el, 0) for el in precursor_heavy}
+                ion_heavy = dict(heavy)
+                if kept:
+                    for el, n in adduct_atoms.items():
+                        ion_heavy[el] = ion_heavy.get(el, 0) + n
+                ion_h = h + (adduct_h if kept else 0)
+                loss_heavy = {el: precursor_heavy[el] - ion_heavy.get(el, 0) for el in precursor_heavy}
                 loss_heavy = {el: c for el, c in loss_heavy.items() if c}
+                # The motif search looks for the lost MOLECULAR atoms only.
+                loss_mol = {el: mol_counts[el] - heavy.get(el, 0) for el in mol_counts}
+                loss_mol = {el: c for el, c in loss_mol.items() if c}
                 rearr_rows.append(
                     {
                         "dataset": dataset, "mol_id": mol_id, "spec_id": row.spec_id,
                         "split": row.split, "mz": mz, "weight": weights[p], "rel": inten / base,
-                        "ion": formula_string(heavy, h),
-                        "loss": formula_string(loss_heavy, total_h + 1 - h),
-                        "loss_heavy": formula_string(loss_heavy, 0),
-                        "loss_size": sum(loss_heavy.values()),
+                        "ion": formula_string(ion_heavy, ion_h),
+                        "ion_mol": formula_string(heavy, h),
+                        "adduct_kept": kept,
+                        "loss": formula_string(loss_heavy, precursor_h - ion_h),
+                        "loss_heavy": formula_string(loss_mol, 0),
+                        "loss_size": sum(loss_mol.values()),
                         "ppm": 1e6 * (ion[best] - mz) / mz,
                         "n_formulas": len(matches),
                     }
@@ -293,20 +366,54 @@ def _remove_atoms(mol, atoms) -> Chem.Mol:
     return rw.GetMol()
 
 
+def _test_inchikeys() -> set[str]:
+    keys = set()
+    for data, split_dir in TEST_SPLITS:
+        mol_df = pd.read_pickle(data / "mol_df.pkl").set_index("mol_id")
+        test = pd.read_csv(split_dir / "test_ids.csv")
+        keys |= set(mol_df.loc[test.mol_id.unique(), "inchikey_s"].dropna())
+    return keys
+
+
+def _nist23_spectra() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """NIST23 spectra of PRECURSOR with a molecule-level train/val split, test molecules dropped."""
+    data, split_dir = NIST23
+    mol_df = pd.read_pickle(data / "mol_df.pkl").set_index("mol_id")
+    spec = pd.read_pickle(data / "spec_df.pkl")
+    split = pd.concat(
+        [pd.read_csv(split_dir / f"{name}_ids.csv").assign(split=name) for name in ("train", "val", "test")]
+    )
+    mol_split = split.drop_duplicates("mol_id").set_index("mol_id").split
+    spec = spec[(spec.prec_type == PRECURSOR) & spec.inst_type.isin(INSTRUMENTS)].copy()
+    # Molecules with no split row (adducts the split files omit) count as train.
+    spec["split"] = spec.mol_id.map(mol_split).fillna("train")
+    held_out = _test_inchikeys()
+    spec = spec[(spec.split != "test") & ~spec.mol_id.map(mol_df.inchikey_s).isin(held_out)]
+    return spec, mol_df
+
+
 def load_tasks(limit: int | None) -> list:
     tasks = []
-    for dataset, (data, split_dir) in SOURCES.items():
-        mol_df = pd.read_pickle(data / "mol_df.pkl").set_index("mol_id")
-        spec = pd.read_pickle(data / "spec_df.pkl")
-        spec = spec[(spec.prec_type == "[M+H]+") & spec.inst_type.isin(INSTRUMENTS)]
-        split = pd.concat(
-            [pd.read_csv(split_dir / f"{name}_ids.csv").assign(split=name) for name in ("train", "val")]
-        )
-        spec = spec.merge(split[["spec_id", "split"]], on="spec_id", how="inner")
+    if DATASET == "nist23":
+        spec, mol_df = _nist23_spectra()
+        frames = [("nist23", spec, mol_df)]
+    else:
+        frames = []
+        sources = SOURCES if PRECURSOR == "[M+H]+" else NEGATIVE_SOURCES
+        for dataset, (data, split_dir) in sources.items():
+            mol_df = pd.read_pickle(data / "mol_df.pkl").set_index("mol_id")
+            spec = pd.read_pickle(data / "spec_df.pkl")
+            spec = spec[(spec.prec_type == PRECURSOR) & spec.inst_type.isin(INSTRUMENTS)]
+            split = pd.concat(
+                [pd.read_csv(split_dir / f"{name}_ids.csv").assign(split=name) for name in ("train", "val")]
+            )
+            spec = spec.merge(split[["spec_id", "split"]], on="spec_id", how="inner")
+            frames.append((dataset, spec, mol_df))
+    for dataset, spec, mol_df in frames:
         groups = list(spec.groupby("mol_id"))
         if limit:
             groups = groups[:limit]
-        print(f"{dataset}: {len(spec)} spectra, {len(groups)} molecules", flush=True)
+        print(f"{dataset} {PRECURSOR}: {len(spec)} spectra, {len(groups)} molecules", flush=True)
         tasks += [
             (dataset, mol_id, mol_df.at[mol_id, "smiles"], group[["spec_id", "split", "peaks"]])
             for mol_id, group in groups
@@ -317,12 +424,30 @@ def load_tasks(limit: int | None) -> list:
 
 
 def main() -> None:
+    global PRECURSOR, OUT, DATASET
     parser = argparse.ArgumentParser()
     parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--limit", type=int, default=None, help="molecules per dataset (smoke)")
+    parser.add_argument("--precursor", choices=sorted(ADDUCTS), default="[M+H]+")
+    parser.add_argument("--dataset", choices=["msgym_nist20", "nist23"], default="msgym_nist20")
+    parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
+    # Workers are forked after these are set, so they inherit them.
+    args.out = args.out or OUT
+    PRECURSOR, OUT, DATASET = args.precursor, args.out, args.dataset
     OUT.mkdir(parents=True, exist_ok=True)
     tasks = load_tasks(args.limit)
+    suffix = "_smoke" if args.limit else ""
+    # Every molecule in scope, for rule precision in debug_masster_rewire_rule_gate.py.
+    pd.DataFrame(
+        [
+            {
+                "key": f"{dataset}:{mol_id}", "dataset": dataset, "mol_id": mol_id,
+                "split": group.split.iloc[0], "n_spectra": len(group), "smiles": smiles,
+            }
+            for dataset, mol_id, smiles, group in tasks
+        ]
+    ).to_csv(OUT / f"molecules{suffix}.csv", index=False)
     peaks, rearr = [], []
     with Pool(args.workers, maxtasksperchild=500) as pool:
         for i, result in enumerate(pool.imap_unordered(process_molecule, tasks, chunksize=4)):
@@ -332,7 +457,6 @@ def main() -> None:
                 print(f"{i}/{len(tasks)} molecules", flush=True)
     peaks = pd.DataFrame(peaks)
     rearr = pd.DataFrame(rearr)
-    suffix = "_smoke" if args.limit else ""
     peaks.to_pickle(OUT / f"peaks{suffix}.pkl")
     rearr.to_pickle(OUT / f"rearrangement{suffix}.pkl")
     pd.set_option("display.width", 250)
@@ -349,24 +473,24 @@ def main() -> None:
 
     # 2. Rearrangement losses ranked by molecules, with replication.
     def summarize(d: pd.DataFrame) -> pd.Series:
-        return pd.Series(
+        out = {"mols": d.key.nunique()}
+        for (dataset, split), g in d.groupby(["dataset", "split"]):
+            out[f"mols_{dataset}_{split}"] = g.mol_id.nunique()
+        out.update(
             {
-                "mols": d.key.nunique(),
-                "mols_msgym_train": d[(d.dataset == "msgym") & (d.split == "train")].mol_id.nunique(),
-                "mols_msgym_val": d[(d.dataset == "msgym") & (d.split == "val")].mol_id.nunique(),
-                "mols_nist_train": d[(d.dataset == "nist20") & (d.split == "train")].mol_id.nunique(),
-                "mols_nist_val": d[(d.dataset == "nist20") & (d.split == "val")].mol_id.nunique(),
                 "spectra": d.spec_id.nunique(),
                 "mean_rel": d.rel.mean(),
                 "ambiguous": (d.n_formulas > 1).mean(),
+                "adduct_kept": d.adduct_kept.mean(),
                 "top_motif": d.motif.value_counts().index[0],
             }
         )
+        return pd.Series(out)
 
-    losses = rearr.groupby("loss").apply(summarize, include_groups=False)
+    losses = pd.DataFrame({loss: summarize(d) for loss, d in rearr.groupby("loss")}).T.fillna(0)
     losses = losses.sort_values("mols", ascending=False)
     losses.to_csv(OUT / f"losses{suffix}.csv")
-    print("\nTop rearrangement losses from [M+H]+\n" + losses.head(40).round(2).to_string())
+    print(f"\nTop rearrangement losses from {PRECURSOR}\n" + losses.head(40).round(2).to_string())
 
 
 if __name__ == "__main__":

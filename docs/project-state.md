@@ -27,6 +27,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   `val_cos_sim_0.01` 0.7729 (epochs 54-63): +0.0122 over `i1` (0.7607). Seed spread 0.0042.
 - **Open problem is the floor:** 330 spectra / 119 molecules below 0.05 at instrument tolerance
   (train sample: 4); no tested arm moves it.
+- **Proposed:** [rewire rules in training](plans/masster/masster_rewire_rules_training_plan.md) — 13 gated mechanism rules with continuation reach 39% of rearrangement intensity (null 7%); next is gate G0/G0b, then decisions 1/2/4 ([finding](findings/masster/masster_rearrangement_mining_2026_10_14.md)).
 - **Prepared, not submitted:** `so1` (templates-on sulfonamide O transfer), `fc1`/`fc1p`
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy

@@ -1,6 +1,6 @@
 # MASSter generalization on NIST20 (the `i1` line)
 
-> **Status:** HUB · **Updated:** 2026-10-10
+> **Status:** HUB · **Updated:** 2026-10-15
 > Why MASSter fits training molecules and ranks new ones poorly on unmerged NIST20 `[M+H]+`: the memorization routes, `i1` error analyses, information gates and the SMARTS/excision/isotope/JEPA side threads.
 
 ## Where it stands
@@ -75,6 +75,7 @@
 
 **SMARTS, excision, isotopes**
 
+- [Rearrangement mining](../findings/masster/masster_rearrangement_mining_2026_10_14.md) / [rewire rules plan](../plans/masster/masster_rewire_rules_training_plan.md) — about 1% of [M+H]+ Orbitrap intensity needs a rearrangement, concentrated in a 1.1-1.9% tail of spectra; 13 reviewed mechanism rules with continuation reach 39% of it (null 7%) and lift the val-tail cosine ceiling from 0.652 to 0.782. PROPOSED: after-selection training stage, gated by G0/G0b.
 - [SMARTS pathway](../plans/masster/masster_smarts_pathway_plan.md) / [gates](../findings/masster/masster_smarts_pathway_gates_2026_09_30.md) — CLOSED NULL: G0 +0.00125 < 0.003, G1 STOP, Track B 0 promoted; `p1` code stays built, off.
 - [SMARTS CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md) — templates OFF by default; match standardized molecules; SMARTS vs CUDA-template mismatch is a hard error.
 - [SMARTS on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) — only S=O rules pass, 2-10x weaker than NIST20; none of the 8 disabled rules finds support.
@@ -98,6 +99,7 @@
 | [Cut-intensity probe plan](../plans/masster/masster_cut_intensity_probe.md) | CLOSED NULL (2026-10-01) | Frozen cut-to-intensity probe protocol |
 | [Peak-ranking pilot plan](../plans/masster/masster_peak_ranking_pilot_2026_10_02.md) | CLOSED NULL (2026-10-02) | CPU intensity-head continuation protocol |
 | [Excision channel probe plan](../plans/masster/masster_excision_channel_probe.md) | FINDING (2026-10-06) | Internal-bridge excision diagnostic protocol (completed) |
+| [Rewire rules in training](../plans/masster/masster_rewire_rules_training_plan.md) | PROPOSED (2026-10-15) | Mechanism rules with continuation as an after-selection training stage; G0/G0b gates, a0/a0null arms |
 | [SMARTS pathway plan](../plans/masster/masster_smarts_pathway_plan.md) | CLOSED NULL (2026-09-30) | Pre-registered G0/G1/G2 gates for SMARTS in the pathway |
 | [Isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md) | CLOSED NULL (2026-10-03) | Ceiling for modelling isotope satellites on Enveda/NIST20 |
 | [JEPA embedding plan](../plans/masster/masster_jepa_embedding_plan.md) | CLOSED NULL (2026-10-04) | DreaMS-embedding auxiliary; Gate 1 fails; code removed |
@@ -136,6 +138,7 @@
 | [SMARTS CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md) | FINDING (2026-09-28) | Templates on CUDA; proposal reach |
 | [SMARTS on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) | FINDING (2026-09-29) | Per-class coverage gate on all 41 rules |
 | [SMARTS outlier reach](../findings/masster/masster_smarts_outlier_reach_2026_09_29.md) | FINDING (2026-09-29) | Rules matter on 37 outlier val spectra |
+| [Rearrangement mining](../findings/masster/masster_rearrangement_mining_2026_10_14.md) | FINDING (2026-10-15) | Non-bond-cut peaks in MSGYM+NIST20 [M+H]+; tail profile; 13 gated mechanism rules |
 | [SMARTS pathway gates](../findings/masster/masster_smarts_pathway_gates_2026_09_30.md) | FINDING (2026-09-30) | G0, G1, G2, G2b all fail |
 | [Structural alignment audit](../findings/masster/masster_structural_alignment_audit_2026_09_29.md) | CLOSED NULL (2026-09-29) | Exact connectivity retains little intensity |
 | [Target cleaning cross-eval](../findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md) | SUPERSEDED (2026-09-30) | Cleaned `[M+H]+`/FT target (was CLOSED NULL) |
