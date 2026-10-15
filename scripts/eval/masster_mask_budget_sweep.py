@@ -51,6 +51,14 @@ BASE_METRICS = (
     "selected_mask_count",
     "component_pathway_count",
 )
+# Per-spectrum candidate diagnostics written beside the metrics when per-sample rows are
+# requested; absent keys are skipped so older checkpoints still evaluate.
+PER_SAMPLE_DIAGNOSTICS = (
+    "unique_fragment_target_reached",
+    "unique_fragment_target_fill_fraction",
+    "unique_component_count",
+    "fragment_count_after_cutoff",
+)
 
 
 def validate_mask_budgets(mask_budgets: list[int]) -> list[int]:
@@ -165,6 +173,11 @@ def parse_args() -> argparse.Namespace:
         choices=["online", "offline", "disabled"],
         default="online",
     )
+    parser.add_argument(
+        "--per_sample_output_fp",
+        default=None,
+        help="Optional CSV of per-spectrum metrics for every budget (one row per spectrum).",
+    )
     parser.add_argument("--wandb_group", default=None)
     parser.add_argument("--wandb_name_prefix", default=None)
     return parser.parse_args()
@@ -184,8 +197,12 @@ def evaluate_budget(
     metric_names_to_collect: tuple[str, ...],
     weight_mode: str,
     batch_cutoff: int,
+    per_sample_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, float | int]:
-    """Evaluate one budget with the same loss and auxiliary metrics as validation."""
+    """Evaluate one budget with the same loss and auxiliary metrics as validation.
+
+    When ``per_sample_rows`` is a list, one row per spectrum is appended to it.
+    """
     accumulator = WeightedMetricAccumulator(metric_names_to_collect)
     skipped_batches = 0
     if device.type == "cuda":
@@ -207,6 +224,10 @@ def evaluate_budget(
                 logger.warning("Skipping invalid evaluation batch %d: %s", batch_index, error)
                 continue
             accumulator.update(batch_results, weight_mode)
+            if per_sample_rows is not None:
+                per_sample_rows.extend(
+                    per_sample_batch_rows(batch_results, metric_names_to_collect)
+                )
 
     if device.type == "cuda":
         th.cuda.synchronize(device)
@@ -224,6 +245,31 @@ def evaluate_budget(
         }
     )
     return results
+
+
+def per_sample_batch_rows(
+    batch_results: dict[str, Any],
+    metric_names_to_collect: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Return one row per spectrum with its identifiers, metrics and diagnostics."""
+    unique_ids = batch_results["unique_id"]
+    if isinstance(unique_ids, th.Tensor):
+        unique_ids = unique_ids.reshape(-1).tolist()
+    columns: dict[str, list[Any]] = {
+        "unique_id": list(unique_ids),
+        "smiles": list(batch_results["smiles"]),
+    }
+    for name in ("spec_per_mol", *metric_names_to_collect, *PER_SAMPLE_DIAGNOSTICS):
+        if name not in batch_results or name in columns:
+            continue
+        columns[name] = (
+            batch_results[name].detach().to(dtype=th.float64).reshape(-1).cpu().tolist()
+        )
+    batch_size = len(columns["unique_id"])
+    for name, values in columns.items():
+        if len(values) != batch_size:
+            raise ValueError(f"{name} has {len(values)} values for a {batch_size}-sample batch.")
+    return [{name: values[i] for name, values in columns.items()} for i in range(batch_size)]
 
 
 def init_wandb_run(
@@ -305,6 +351,7 @@ def main() -> None:
 
     # 2. Reload identical weights for each candidate-mask budget and evaluate.
     rows: list[dict[str, Any]] = []
+    sample_rows: list[dict[str, Any]] = []
     for mask_budget in mask_budgets:
         budget_config = copy.deepcopy(config_d)
         budget_config[budget_key] = mask_budget
@@ -321,6 +368,7 @@ def main() -> None:
                 mask_budget,
                 budget_key,
             )
+            budget_sample_rows = [] if args.per_sample_output_fp else None
             result = evaluate_budget(
                 model=model,
                 dataloader=dataloader,
@@ -329,7 +377,11 @@ def main() -> None:
                 metric_names_to_collect=metrics,
                 weight_mode=budget_config["eval_sample_weight"],
                 batch_cutoff=args.batch_cutoff,
+                per_sample_rows=budget_sample_rows,
             )
+            if budget_sample_rows is not None:
+                sample_rows.extend({budget_key: mask_budget, **r} for r in budget_sample_rows)
+                save_rows(sample_rows, args.per_sample_output_fp)
             row = {
                 budget_key: mask_budget,
                 "eval_split": args.eval_split,

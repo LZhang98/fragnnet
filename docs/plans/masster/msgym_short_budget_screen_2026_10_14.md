@@ -70,3 +70,15 @@ at 10.14M parameters. Resolved differences against the leader are exactly the ep
 plus each arm's U, E or floor key. The launcher passes `bash -n`. No GPU smoke: MSGYM
 `spec_df.pkl` is not on the local workstation, so `e1024` and `floor01` (new to the CUDA
 backend recipe) need a first-epoch check on Fir. Nothing submitted.
+
+## Per-molecule U* sweep (prepared 2026-10-14)
+
+The user asked whether U and E should be learned per molecule. First measurement: re-evaluate the
+fixed `c64` checkpoint (`u80w840n`, epoch 21) on val at U = 64/128/192/256/384 (E stays 4096) and
+write one row per spectrum per U, then derive each molecule's U* (smallest U past which recall
+stops improving) and test whether size features predict it. A size rule is preferred over a
+learned stop: `floor01` showed that pruning by the model's own probabilities starves the proposal
+of gradient. Script: [`masster_mask_budget_sweep.py`](../../../scripts/eval/masster_mask_budget_sweep.py)
+`--per_sample_output_fp`; launcher
+[`submit_msgym_u_budget_sweep.sh`](../../../scripts/manual_slurm/fir/submit_msgym_u_budget_sweep.sh).
+Local NIST20 smoke (3 batches, U64/U192) passed; MSGYM job not submitted.
