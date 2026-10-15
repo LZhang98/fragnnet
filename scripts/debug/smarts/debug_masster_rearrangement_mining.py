@@ -27,9 +27,11 @@ Run from the repository root:
 """
 
 import argparse
+import gc
+import multiprocessing as mp
+import resource
 import sys
 from collections import Counter, defaultdict
-from multiprocessing import Pool
 from pathlib import Path
 
 import numpy as np
@@ -270,8 +272,8 @@ def process_molecule(task) -> dict:
             return "rearrangement"
         return "connected" if any(abs(h - value) <= 4 for value in found) else "h_limit"
 
-    for row in spectra.itertuples():
-        peaks = np.asarray(row.peaks, float).reshape(-1, 2)
+    for spec_id, split, peaks in spectra:
+        peaks = np.asarray(peaks, float).reshape(-1, 2)
         if len(peaks) == 0:
             continue
         weights = peaks[:, 1] / peaks[:, 1].sum()
@@ -300,7 +302,7 @@ def process_molecule(task) -> dict:
                 best = min(matches, key=lambda m: abs(ion[m] - mz))
             peak_rows.append(
                 {
-                    "dataset": dataset, "mol_id": mol_id, "spec_id": row.spec_id, "split": row.split,
+                    "dataset": dataset, "mol_id": mol_id, "spec_id": spec_id, "split": split,
                     "mz": mz, "weight": weights[p], "rel": inten / base, "label": label,
                     "n_formulas": len(matches),
                 }
@@ -320,8 +322,8 @@ def process_molecule(task) -> dict:
                 loss_mol = {el: c for el, c in loss_mol.items() if c}
                 rearr_rows.append(
                     {
-                        "dataset": dataset, "mol_id": mol_id, "spec_id": row.spec_id,
-                        "split": row.split, "mz": mz, "weight": weights[p], "rel": inten / base,
+                        "dataset": dataset, "mol_id": mol_id, "spec_id": spec_id,
+                        "split": split, "mz": mz, "weight": weights[p], "rel": inten / base,
                         "ion": formula_string(ion_heavy, ion_h),
                         "ion_mol": formula_string(heavy, h),
                         "adduct_kept": kept,
@@ -375,11 +377,37 @@ def _test_inchikeys() -> set[str]:
     return keys
 
 
+NIST23_CACHE = Path("output/rearrangement_mining_nist23_2026_10_15/cache")
+
+
+def _slug(precursor: str) -> str:
+    return precursor.strip("[]").replace("+", "p").replace("-", "m").replace("]", "")
+
+
+def _write_nist23_cache() -> None:
+    """Load NIST23 once (about 16 GB RSS) and write each precursor's Orbitrap subset.
+
+    Runs in a spawned child process, so the full table's memory is returned when it exits.
+    """
+    spec = pd.read_pickle(NIST23[0] / "spec_df.pkl")
+    spec = spec[spec.inst_type.isin(INSTRUMENTS)][["spec_id", "mol_id", "prec_type", "inst_type", "peaks"]]
+    NIST23_CACHE.mkdir(parents=True, exist_ok=True)
+    for precursor in ADDUCTS:
+        spec[spec.prec_type == precursor].to_pickle(NIST23_CACHE / f"{_slug(precursor)}.pkl")
+
+
 def _nist23_spectra() -> tuple[pd.DataFrame, pd.DataFrame]:
     """NIST23 spectra of PRECURSOR with a molecule-level train/val split, test molecules dropped."""
     data, split_dir = NIST23
     mol_df = pd.read_pickle(data / "mol_df.pkl").set_index("mol_id")
-    spec = pd.read_pickle(data / "spec_df.pkl")
+    cache = NIST23_CACHE / f"{_slug(PRECURSOR)}.pkl"
+    if not cache.exists():
+        child = mp.get_context("spawn").Process(target=_write_nist23_cache)
+        child.start()
+        child.join()
+        if child.exitcode != 0:
+            raise RuntimeError(f"NIST23 cache writer failed with exit code {child.exitcode}")
+    spec = pd.read_pickle(cache)
     split = pd.concat(
         [pd.read_csv(split_dir / f"{name}_ids.csv").assign(split=name) for name in ("train", "val", "test")]
     )
@@ -410,17 +438,50 @@ def load_tasks(limit: int | None) -> list:
             spec = spec.merge(split[["spec_id", "split"]], on="spec_id", how="inner")
             frames.append((dataset, spec, mol_df))
     for dataset, spec, mol_df in frames:
+        spec = spec[["spec_id", "mol_id", "split", "peaks"]]
         groups = list(spec.groupby("mol_id"))
         if limit:
             groups = groups[:limit]
         print(f"{dataset} {PRECURSOR}: {len(spec)} spectra, {len(groups)} molecules", flush=True)
+        # Compact tasks (no DataFrame slices): (spec_id, split, float32 peak array) per spectrum.
         tasks += [
-            (dataset, mol_id, mol_df.at[mol_id, "smiles"], group[["spec_id", "split", "peaks"]])
+            (
+                dataset, mol_id, mol_df.at[mol_id, "smiles"],
+                [
+                    (int(sid), sp, np.asarray(pk, np.float32).reshape(-1, 2))
+                    for sid, sp, pk in zip(group.spec_id, group.split, group.peaks)
+                ],
+            )
             for mol_id, group in groups
         ]
+    del frames
+    gc.collect()
     # Large molecules first, so the pool does not end on a straggler.
     tasks.sort(key=lambda t: -len(t[2]))
     return tasks
+
+
+FLUSH = 2000
+
+
+def _init_worker(precursor: str) -> None:
+    global PRECURSOR
+    PRECURSOR = precursor
+    RDLogger.DisableLog("rdApp.*")
+
+
+def _rss_gb() -> float:
+    own = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    kids = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    return (own + kids) / 1e6
+
+
+def _compact(frame: pd.DataFrame) -> pd.DataFrame:
+    for col in ("mz", "weight", "rel"):
+        frame[col] = frame[col].astype(np.float32)
+    for col in ("dataset", "split", "label"):
+        frame[col] = frame[col].astype("category")
+    return frame
 
 
 def main() -> None:
@@ -443,20 +504,36 @@ def main() -> None:
         [
             {
                 "key": f"{dataset}:{mol_id}", "dataset": dataset, "mol_id": mol_id,
-                "split": group.split.iloc[0], "n_spectra": len(group), "smiles": smiles,
+                "split": spectra[0][1], "n_spectra": len(spectra), "smiles": smiles,
             }
-            for dataset, mol_id, smiles, group in tasks
+            for dataset, mol_id, smiles, spectra in tasks
         ]
     ).to_csv(OUT / f"molecules{suffix}.csv", index=False)
-    peaks, rearr = [], []
-    with Pool(args.workers, maxtasksperchild=500) as pool:
+    # Spawned workers start from a fresh interpreter instead of a fork of this process, so
+    # they do not copy the loaded spectra (copy-on-write pages are touched by the GC). Results
+    # are flushed into compact DataFrames every FLUSH molecules instead of lists of dicts.
+    peak_frames, rearr_frames, peak_buf, rearr_buf = [], [], [], []
+
+    def flush() -> None:
+        if peak_buf:
+            peak_frames.append(_compact(pd.DataFrame(peak_buf)))
+            peak_buf.clear()
+        if rearr_buf:
+            rearr_frames.append(pd.DataFrame(rearr_buf))
+            rearr_buf.clear()
+
+    ctx = mp.get_context("spawn")
+    with ctx.Pool(args.workers, initializer=_init_worker, initargs=(PRECURSOR,), maxtasksperchild=500) as pool:
         for i, result in enumerate(pool.imap_unordered(process_molecule, tasks, chunksize=4)):
-            peaks += result["peaks"]
-            rearr += result["rearr"]
-            if i % 2000 == 0:
-                print(f"{i}/{len(tasks)} molecules", flush=True)
-    peaks = pd.DataFrame(peaks)
-    rearr = pd.DataFrame(rearr)
+            peak_buf += result["peaks"]
+            rearr_buf += result["rearr"]
+            if i % FLUSH == 0:
+                flush()
+                print(f"{i}/{len(tasks)} molecules, {_rss_gb():.1f} GB RSS (self+children peak)", flush=True)
+        flush()
+    del tasks
+    peaks = pd.concat(peak_frames, ignore_index=True) if peak_frames else pd.DataFrame()
+    rearr = pd.concat(rearr_frames, ignore_index=True) if rearr_frames else pd.DataFrame()
     peaks.to_pickle(OUT / f"peaks{suffix}.pkl")
     rearr.to_pickle(OUT / f"rearrangement{suffix}.pkl")
     pd.set_option("display.width", 250)
