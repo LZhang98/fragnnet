@@ -233,6 +233,11 @@ the molecular-networking branch below as the route for rare-element classes.
    paired by molecule with a bootstrap CI, and the share of the A0 − E0 gap E1 closes; non-Br
    val must stay within the 0.0042 seed spread. E2 vs A0 is the usual +0.005 overall screen.
    E1 vs E0 tests periodic properties against `a_mass`, which both keep.
+   **E3 (added 2026-10-15):** E1 without `a_onehot`. In E0/E1 Br's one-hot column gets no
+   gradient, only AdamW decay, so val Br atoms carry residual init noise; E3 removes it, and
+   (period, group, EN, valence, mass) stays unique per element (checked over the 16 heavy
+   elements plus Te). Period stays scalar: a period one-hot would train period 4 on Se/As only.
+   Read E3 − E1 and E3 − E0 on val Br molecules; non-Br val vs E1 prices the lost one-hot.
 5. **Report the unreachable.** Azide, peroxide and boron classes have neither cousins nor pairs;
    report them descriptively with counts and exclude them from promotion claims.
 

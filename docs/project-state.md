@@ -32,7 +32,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy
   and a train/calibration/confirmation protocol.
-- **Prepared:** [rare-element route 1](plans/masster/rare_chemistry_augmentation_plan.md#rare-element-handling-revised-2026-10-14) A0/E0/E1/E2 on `i1` (`a_periodic`, hidden-Br test); the A1/A3 sampling arms were removed 2026-10-14 without running.
+- **Prepared:** [rare-element route 1](plans/masster/rare_chemistry_augmentation_plan.md#rare-element-handling-revised-2026-10-14) A0/E0/E1/E2/E3 on `i1` (`a_periodic`, hidden-Br test; E3 drops `a_onehot`); the A1/A3 sampling arms were removed 2026-10-14 without running.
 
 ## MASSter core
 

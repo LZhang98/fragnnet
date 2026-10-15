@@ -8,14 +8,15 @@
 #   e0  train without Br molecules, i1 features                   (hidden-Br control)
 #   e1  train without Br molecules, + a_periodic                  (control: e0)
 #   e2  full train, + a_periodic                                  (control: a0)
+#   e3  train without Br molecules, + a_periodic, no a_onehot     (controls: e1, e0; added 2026-10-15)
 # READ: e1 - e0 on val Br molecules, paired by molecule; the share of the a0 - e0 gap e1 closes;
 # non-Br val within the 0.0042 seed spread. e2 vs a0: val_cos_sim_0.01_epoch/mean tail mean over
 # epochs 54-63, +0.005 to count on one seed. e0/e1 take ~8% fewer steps per epoch than a0.
 #
 # STAGE (required):
-#   all      a0 e0 e1 e2
-#   route1   e0 e1 e2 (a0 must also run: e0 and e2 are read against it)
-#   a0 | e0 | e1 | e2  one job.
+#   all      a0 e0 e1 e2 e3
+#   route1   e0 e1 e2 e3 (a0 must also run: e0 and e2 are read against it)
+#   a0 | e0 | e1 | e2 | e3  one job.
 #
 # Profile fir:h100-3g.40gb, wall time 5:00:00: the i1 lineage finished 64 epochs in 3.2-3.3 h.
 # j=<job_name> makes a requeued job resume from last.ckpt.
@@ -37,20 +38,22 @@ declare -A JOB_BY_ARM=(
     [e0]=msh_rc_e0_no_br_ob_obf
     [e1]=msh_rc_e1_no_br_periodic_ob_obf
     [e2]=msh_rc_e2_periodic_ob_obf
+    [e3]=msh_rc_e3_no_br_periodic_no_onehot_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [a0]=nist20_rc_a0_control_ob_obf.yml
     [e0]=nist20_rc_e0_no_br_ob_obf.yml
     [e1]=nist20_rc_e1_no_br_periodic_ob_obf.yml
     [e2]=nist20_rc_e2_periodic_ob_obf.yml
+    [e3]=nist20_rc_e3_no_br_periodic_no_onehot_ob_obf.yml
 )
 
 case "${STAGE}" in
-    all) ARMS=(a0 e0 e1 e2) ;;
-    route1) ARMS=(e0 e1 e2) ;;
-    a0|e0|e1|e2) ARMS=("${STAGE}") ;;
+    all) ARMS=(a0 e0 e1 e2 e3) ;;
+    route1) ARMS=(e0 e1 e2 e3) ;;
+    a0|e0|e1|e2|e3) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [all|route1|a0|e0|e1|e2]" >&2
+        echo "Usage: $0 [all|route1|a0|e0|e1|e2|e3]" >&2
         exit 1
         ;;
 esac
