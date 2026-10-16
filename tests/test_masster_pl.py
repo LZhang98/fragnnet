@@ -2026,7 +2026,7 @@ def test_masster_transfer_precomputes_smarts_templates_when_enabled() -> None:
     )
 
     transferred = model.transfer_batch_to_device(
-        {"mol_pyg": mol_pyg, "mol_smiles": np.asarray([smiles])},
+        {"mol_pyg": mol_pyg, "mol_smiles": np.asarray([smiles]), "mol_graph_binary": [mol.ToBinary()]},
         th.device("cpu"),
         0,
     )
@@ -2045,8 +2045,9 @@ def test_smarts_standalone_prediction_matches_lightning_transfer() -> None:
     )
     smiles = "c1ccccc1S(=O)c1ccccc1"
     params = config["mol_params"]
+    mol = Chem.MolFromSmiles(smiles)
     graph = get_mol_graph(
-        Chem.MolFromSmiles(smiles),
+        mol,
         params["pyg_node_feats"],
         params["pyg_edge_feats"],
         params["pyg_pe_embed_k"],
@@ -2055,6 +2056,7 @@ def test_smarts_standalone_prediction_matches_lightning_transfer() -> None:
     batch = {
         "mol_pyg": Batch.from_data_list([graph]),
         "mol_smiles": np.asarray([smiles]),
+        "mol_graph_binary": [mol.ToBinary()],
         "spec_prec_type": th.tensor([model.model.precursor_types.index("[M+H]+")]),
         "spec_nce": th.tensor([25.0]),
         "spec_inst_type": th.tensor([0]),

@@ -154,25 +154,36 @@ _ION_H_REQUIRED_K_METRIC_NAMES = (
 )
 
 
+# Both matchers take the dataset's ``mol_graph_binary`` (``Mol.ToBinary()`` of the molecule the
+# graph is built from), so match atom ids index the graph. Re-parsing ``mol_smiles`` does not
+# reproduce the graph's atom order for some retrieval candidates, nor its tautomer for a few
+# molecules.
+def _graph_mol(mol_binary: bytes) -> Chem.Mol:
+    """The graph's molecule with the ring and valence state that SMILES sanitization leaves.
+
+    A binary does not always carry ring info (multi-component retrieval candidates come back
+    without it), and SMARTS ring queries need it, so both are recomputed.
+    """
+    mol = Chem.Mol(mol_binary)
+    mol.UpdatePropertyCache(strict=False)
+    Chem.GetSymmSSSR(mol)
+    return mol
+
+
 @lru_cache(maxsize=100_000)
 def _cached_masster_templates(
-    smiles: str,
+    mol_binary: bytes,
 ) -> tuple[MassterTemplate, ...]:
     """Match SMARTS once per unique molecule, outside the model hot path."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"invalid molecule SMILES for SMARTS matching: {smiles}")
-    return build_masster_templates(mol)
+    return build_masster_templates(_graph_mol(mol_binary))
 
 
 @lru_cache(maxsize=100_000)
 def _cached_masster_rewire_matches(
-    smiles: str, max_matches_per_rule: int, null: bool
+    mol_binary: bytes, max_matches_per_rule: int, null: bool
 ) -> RewireMatchSet:
     """Match the rewire rules once per unique molecule, outside the model hot path."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"invalid molecule SMILES for rewire matching: {smiles}")
+    mol = _graph_mol(mol_binary)
     if null:
         from fragnnet.models.masster.candidates.rewire_null import build_null_rewire_matches
 
@@ -2587,21 +2598,27 @@ class MassterPL(SpectrumPL, ExportAdapter):
     def _build_static_graph(self, batch: dict[str, Any]) -> MassterStaticGraph:
         """Build CPU topology and optional templates for training or inference."""
         mol_pyg = batch["mol_pyg"]
+        matches_chemistry = self.hparams.masster_smarts_templates or self._rewire_enabled
+        if matches_chemistry and "mol_graph_binary" not in batch:
+            raise KeyError(
+                "SMARTS templates and rewire rules need batch['mol_graph_binary']; build the "
+                "dataset with this model's config (MassterHooks.needs_graph_mol)"
+            )
         return MassterStaticGraph(
             chemical_bond_index=mol_pyg.chemical_bond_index.detach().cpu(),
             atom_batch_indices=mol_pyg.batch.detach().cpu(),
             atom_ptr=mol_pyg.ptr.detach().cpu(),
             smarts_templates=(
-                tuple(_cached_masster_templates(str(smiles)) for smiles in batch["mol_smiles"])
+                tuple(_cached_masster_templates(mol) for mol in batch["mol_graph_binary"])
                 if self.hparams.masster_smarts_templates
                 else None
             ),
             rewire_matches=(
                 tuple(
                     _cached_masster_rewire_matches(
-                        str(smiles), self._rewire_max_matches, self._rewire_null
+                        mol, self._rewire_max_matches, self._rewire_null
                     )
-                    for smiles in batch["mol_smiles"]
+                    for mol in batch["mol_graph_binary"]
                 )
                 if self._rewire_enabled
                 else None

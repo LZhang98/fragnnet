@@ -45,6 +45,7 @@ def test_evaluate_selection_prepares_smarts_templates(
             ]
         ),
         "mol_smiles": [smiles],
+        "mol_graph_binary": [molecule.ToBinary()],
     }
     expected_templates = build_masster_templates(molecule)
     assert expected_templates

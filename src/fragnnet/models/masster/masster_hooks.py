@@ -157,6 +157,10 @@ class MassterHooks(ModelHooks):
             config["masster_h_transfer_bound"],
         )
 
+    def needs_graph_mol(self, config: dict[str, Any]) -> bool:
+        # SMARTS templates and rewire rules index the graph's atoms by substructure match.
+        return bool(config["masster_smarts_templates"] or config["masster_rewire_rules"])
+
     def builds_own_batch_sampler(self, config_d: dict[str, Any]) -> bool:
         return bool(config_d["masster_batch_sampler"])
 

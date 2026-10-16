@@ -19,7 +19,9 @@ from fragnnet.models.masster.candidates.rewire_rules import (
     MASSTER_NUM_REWIRE_RULES,
     REWIRE_RULE_VOCABULARY,
     RewireMatchSet,
+    build_rewire_matches,
 )
+from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.models.masster.rewire_expansion import REWIRE_DIAGNOSTIC_NAMES
 from fragnnet.utils.feat_utils import get_mol_graph
@@ -82,20 +84,22 @@ def _pl(**overrides) -> MassterPL:
 
 def _batch(pl: MassterPL, smiles: tuple[str, ...]) -> dict:
     params = pl.hparams.mol_params
+    mols = [Chem.MolFromSmiles(s) for s in smiles]
     graphs = [
         get_mol_graph(
-            Chem.MolFromSmiles(s),
+            mol,
             params["pyg_node_feats"],
             params["pyg_edge_feats"],
             params["pyg_pe_embed_k"],
             True,
         )
-        for s in smiles
+        for mol in mols
     ]
     n = len(smiles)
     return {
         "mol_pyg": Batch.from_data_list(graphs),
         "mol_smiles": list(smiles),
+        "mol_graph_binary": [mol.ToBinary() for mol in mols],
         "spec_prec_type": th.zeros(n, dtype=th.long),
         "spec_inst_type": th.zeros(n, dtype=th.long),
         "spec_nce": th.full((n,), 30.0),
@@ -203,11 +207,62 @@ def test_static_graph_has_one_cached_match_set_per_spectrum() -> None:
 
 def test_cache_key_includes_the_cap_and_the_null_flag() -> None:
     f = masster_pl_module._cached_masster_rewire_matches
-    assert f(_SULFONE, 8, False) is f(_SULFONE, 8, False)
-    assert f(_SULFONE, 1, False) is not f(_SULFONE, 8, False)
-    assert len(f(_SULFONE, 1, False).matches) <= len(f(_SULFONE, 8, False).matches)
-    with pytest.raises(ValueError, match="invalid molecule"):
-        f("not a smiles", 8, False)
+    sulfone = Chem.MolFromSmiles(_SULFONE).ToBinary()
+    assert f(sulfone, 8, False) is f(sulfone, 8, False)
+    assert f(sulfone, 1, False) is not f(sulfone, 8, False)
+    assert len(f(sulfone, 1, False).matches) <= len(f(sulfone, 8, False).matches)
+
+
+def test_graph_molecule_without_ring_info_still_matches() -> None:
+    # Multi-component retrieval candidates are stored without ring info; SMARTS ring queries on
+    # them raised "RingInfo not initialized" until the matcher recomputed it.
+    mol = Chem.MolFromSmiles("CC.C1CC1." + _SULFONE)
+    edited = Chem.RWMol(mol)
+    edited.RemoveAtom(edited.AddAtom(Chem.Atom(6)))  # an edit resets the ring info
+    binary = edited.GetMol().ToBinary()
+    bare = Chem.Mol(binary)  # keep a reference: RingInfo of a temporary Mol reads freed memory
+    with pytest.raises(RuntimeError):
+        bare.GetRingInfo().NumRings()
+    restored = masster_pl_module._graph_mol(binary)
+    assert restored.GetRingInfo().AtomRings() == mol.GetRingInfo().AtomRings()
+    f = masster_pl_module._cached_masster_rewire_matches
+    expected = build_rewire_matches(mol, max_matches_per_rule=8)
+    assert f(binary, 8, False) == expected and expected.matches
+    assert masster_pl_module._cached_masster_templates(binary) == build_masster_templates(mol)
+
+
+def test_static_graph_requires_the_graph_molecule() -> None:
+    pl = _pl(**_REWIRE_ON)
+    batch = _batch(pl, (_SULFONE,))
+    del batch["mol_graph_binary"]
+    with pytest.raises(KeyError, match="mol_graph_binary"):
+        pl._build_static_graph(batch)
+
+
+def test_matches_index_the_graph_when_smiles_atom_order_differs() -> None:
+    # Retrieval candidates store the raw SMILES next to a standardized mol whose atoms are in
+    # another order; matching on the re-parsed SMILES stopped rewire expansion ("RDKit and graph
+    # atom order disagree"). The graph's own molecule must drive the match.
+    smiles = "CCO." + _SULFONE
+    parsed = Chem.MolFromSmiles(smiles)
+    mol = Chem.RenumberAtoms(parsed, list(reversed(range(parsed.GetNumAtoms()))))
+    assert [a.GetAtomicNum() for a in mol.GetAtoms()] != [a.GetAtomicNum() for a in parsed.GetAtoms()]
+    pl = _pl(**_REWIRE_ON).eval()
+    params = pl.hparams.mol_params
+    graph = get_mol_graph(
+        mol, params["pyg_node_feats"], params["pyg_edge_feats"], params["pyg_pe_embed_k"], True
+    )
+    batch = {
+        **_batch(pl, (smiles,)),
+        "mol_pyg": Batch.from_data_list([graph]),
+        "mol_graph_binary": [mol.ToBinary()],
+    }
+    static_graph = pl._build_static_graph(batch)
+    expected = build_rewire_matches(mol, max_matches_per_rule=pl._rewire_max_matches)
+    assert static_graph.rewire_matches[0] == expected and expected.matches
+    with th.no_grad():
+        output = pl.forward(**batch)
+    assert output["rewire_extra_count"][0] > 0
 
 
 def test_null_flag_routes_to_the_null_builder(monkeypatch) -> None:

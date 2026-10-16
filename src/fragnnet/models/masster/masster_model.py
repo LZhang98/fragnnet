@@ -3212,7 +3212,7 @@ class MassterModel(nn.Module):
         if static_graph is None or static_graph.rewire_matches is None:
             raise ValueError(
                 "rewire-enabled models require static_graph.rewire_matches; use MassterPL with "
-                "mol_smiles or supply matched rewire sets"
+                "mol_graph_binary or supply matched rewire sets"
             )
         precursor_indices = precursor_type_indices.detach().cpu().reshape(-1).tolist()
         if len(static_graph.rewire_matches) != batch_size or len(precursor_indices) != batch_size:
@@ -3849,7 +3849,7 @@ class MassterModel(nn.Module):
             if static_graph is None or static_graph.smarts_templates is None:
                 raise ValueError(
                     "SMARTS-enabled models require static_graph.smarts_templates; "
-                    "use MassterPL with mol_smiles or supply matched templates"
+                    "use MassterPL with mol_graph_binary or supply matched templates"
                 )
             smarts_templates = self._eligible_smarts_templates(
                 static_graph.smarts_templates,

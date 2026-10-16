@@ -671,21 +671,29 @@ The same stage on MassSpecGym, which is [M+H]+ only.
 
 #### Formula-test retrieval (prepared 2026-10-16)
 
-- **Atom-order defect in retrieval shards.** Rewire (and SMARTS) matching re-parses `mol_df.smiles` and
-  indexes the graph built from `mol_df.mol`. Retrieval prepare stores the raw candidate SMILES next to the
+- **Atom-order defect (fixed in code 2026-10-16).** SMARTS and rewire matching re-parsed `mol_smiles` and
+  indexed the graph built from `mol_df.mol`. Retrieval prepare stores the raw candidate SMILES next to the
   ML-standardized mol; for 3,783 formula-test candidates (~1.2%, mostly multi-component; on shard 0, 215
-  reordered and 54 with standardization-changed chemistry) the atom orders disagree and rewire expansion stops
-  ("RDKit and graph atom order disagree"). Training `mol_df` has 0 mismatches. Earlier retrieval checkpoints
-  (`pow075`, `f44tzxoc`, `wd10`) use neither SMARTS nor rewire, so their results stand.
-- **Fix:** [`align_retrieval_shards.py`](../../../scripts/ms2c/align_retrieval_shards.py) copies the shards
-  and, only for mismatched rows, sets `smiles` to the SMILES of the standardized mol and renumbers the mol to
-  its parse order. Graph chemistry is unchanged. Every arm, control included, reads the aligned copy.
-- **Local smoke (aligned shard 0, a0 ep19):** 65,406 candidates scored, none missing; inference 7:39 against
-  2:49 for `f44tzxoc` (2.7x). Shard-0 hit@1 `loglik_cal` 0.426 (`f44tzxoc` 0.428; different lineage, not a
-  comparison). Output: `output/msgym_retrieval/formula_test_aligned/`.
+  reordered and 54 with standardization-changed chemistry) the atom orders disagree and rewire expansion
+  stopped ("RDKit and graph atom order disagree"). Earlier retrieval checkpoints (`pow075`, `f44tzxoc`, `wd10`)
+  use neither SMARTS nor rewire, so their results stand.
+- **Fix:** the dataset emits `mol_graph_binary` (`Mol.ToBinary()` of the graph's own molecule) when
+  `MassterHooks.needs_graph_mol` is true (SMARTS or rewire on), and `MassterPL` matches on it
+  (`_graph_mol` recomputes property cache and symmetrized SSSR: multi-component candidates are stored without
+  ring info). A batch without the key raises. Training effect, measured on every molecule: SMARTS templates
+  identical on MSGYM (16,967) and NIST20 (35,025); rewire matches differ for 1 and 5 molecules, null-rule
+  matches for 3 and 34, all where the stored mol is a different tautomer from its SMILES (matches now follow
+  the graph). Tests: 352 focused MASSter tests pass, plus a dataset emission test and atom-order and
+  ring-info regressions; an adversarial review (3 lenses, refuters) found no defect. The 5 failing reorg
+  tests (`test_reorg_boundary` model_selection golden, 4 `test_reorg_migrations` `get_pl_hparams`) pre-date
+  this and come from the rewire commit `de1cabc4`.
+- **Local smoke (original shard 0, a0 ep19):** 65,406 candidates scored, none missing; `loglik_cal` hit@1
+  0.426 (`f44tzxoc` 0.428; different lineage, not a comparison). Inference 3:39 at eval batch 256 (7:39 at
+  batch 64; `f44tzxoc` 2:49 at 64).
 - **Launcher:** [`submit_msgym_rw_retrieval.sh`](../../../scripts/manual_slurm/fir/submit_msgym_rw_retrieval.sh),
-  1 h on `fir:h100-2g.20gb` (times out -> resubmit resumes), best-`val_primary_loss` checkpoints (W&B run files `ckpt/model-epoch=NNN.ckpt`).
-  Needs the aligned shards under `/scratch/feiw/frag-gnn-data/msgym/aligned/formula_test` first. Not submitted.
+  1 h on `fir:h100-2g.20gb` (a timeout resumes on resubmit), best-`val_primary_loss` checkpoints (linked from
+  the Fir `wandb/` run dirs or fetched from W&B), shared shards `/scratch/feiw/frag-gnn-data/msgym/formula_test`.
+  Needs the Fir checkout at the code fix. Not submitted.
 - **Read:** paired per-query hit@1 for a0 vs control and a0 vs a0null, overall and on rearrangement-tail
   queries; kill if a0 does not beat a0null.
 
