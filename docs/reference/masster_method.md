@@ -1,17 +1,26 @@
 # MASSter method
 
 > **Status:** REFERENCE · **Updated:** 2026-10-16
-> Formal description of the core cut-mask method, unique-fragment formulation, and comparison with FraGNNet.
+> Chemically constrained probabilistic spectrum prediction: core cut-mask method, EI-MS extension, unique-fragment formulation, and comparison with FraGNNet.
 
 ## Overview
 
-MASSter predicts tandem mass spectra from molecular structures by combining learned
-fragment generation with context-dependent intensity estimation. A precursor molecule
+MASSter is a chemically constrained probabilistic model for mass spectrum
+prediction, supporting tandem mass spectra and electron-ionization mass spectra
+(EI-MS). It predicts spectra from molecular structures by combining learned
+fragment proposals with context-dependent intensity allocation. A precursor molecule
 is represented as a graph in which nodes denote atoms and edges denote chemical
 bonds. A graph neural network encodes the intact precursor, and prediction heads use
 the resulting representations together with acquisition metadata, such as collision
 energy and precursor type, to propose fragment candidates and estimate their spectral
 contributions.
+
+The probabilistic formulation distinguishes a proposal distribution over bond-cut
+configurations from an output distribution that allocates normalized spectral
+intensity across valid fragment-ion channels. The proposal probabilities guide
+candidate selection; the intensity model estimates the contributions of the selected
+candidates. These distributions have distinct roles and need not assign the same
+relative weights to fragments.
 
 The description below concerns the core bond-cut proposal and its unique-fragment,
 normalized-output formulation. Optional mechanisms and configuration-dependent
@@ -227,6 +236,21 @@ Contributions assigned to the same spectral mass are aggregated. The final spars
 prediction is normalized over generated valid channels. The implementation also
 supports an alternative nonnegative independent-intensity formulation; the
 probability factorization above describes the normalized formulation.
+
+Here, probability describes the allocation of normalized intensity within a predicted
+spectrum. Equivalently, the aggregated output defines a conditional distribution
+over mass-to-charge values for an intensity-weighted ion observation, given the
+molecule, acquisition context, and selected candidate set. It does not by itself
+define a distribution over complete replicate spectra, their peak counts, or their
+measurement variability. Sampling individual channels from this distribution would
+therefore require additional assumptions to yield a model of replicate spectra.
+The method is described as probabilistic spectrum prediction on this basis.
+
+## Electron-ionization mass spectra
+
+The [MASSter EI-MS method](masster_ei_method.md) describes the nominal-mass EI
+configuration, fragment-ion channels, natural isotope envelopes, training setup,
+and probabilistic interpretation. It uses the shared core formulation defined here.
 
 ## Training
 

@@ -1,7 +1,7 @@
 # MASSter current code-path audit
 
 > **Status:** FINDING · **Updated:** 2026-10-16
-> Selected CPU checks pass apart from two stale config-inventory tests; package lint has four violations. No additional runtime defect confirmed.
+> Config-inventory tests repaired; all 177 MASSter PL tests pass. Package lint findings remain open.
 
 ## Scope
 
@@ -54,3 +54,43 @@ suite was not run. No implementation, test or configuration edits were made by t
 
 Next: repair the obsolete config tests and lint baseline, then validate the native GPU path
 and real-checkpoint inference when the device is available.
+
+
+## Unit-test repair (2026-10-16)
+
+Finding 1 is repaired in `tests/test_masster_pl.py`. The retained merged JSS config is
+resolved through `runner.load_config`, including the template's atom-decoder default.
+The retired warm-up config inventory is replaced with parameterized runtime checks at
+epochs 0, 14, 15 and 16: the shared encoder stays trainable and the intensity head becomes
+trainable after the inclusive epoch-15 boundary. Existing direct-loss and warm-up gradient
+and loss tests remain in place.
+
+Validation with the configured interpreter: `-m pytest tests/test_masster_pl.py -q`
+passed **177 tests**; `-m ruff check tests/test_masster_pl.py --output-format concise`
+and `git diff --check` passed. The full repository suite was not rerun. No production code
+or experiment configs changed. Finding 2 and GPU/real-checkpoint validation remain open.
+
+
+## Batch and padding coverage (2026-10-16)
+
+Added `tests/test_masster_batch_padding.py` with 14 cases covering:
+
+- Three attention/feed-forward layers under induced, full and no-attention modes, with
+  pre- and post-normalization. Unpadded references must match zero padding and large finite
+  positive/negative padding values; real-token input gradients must match and padding
+  gradients must be exactly zero.
+- Shuffled candidate rows with per-spectrum counts 1, 3, 4, 5, 8 and 9. This spans shared
+  buckets and power-of-two boundaries. Batched outputs and input gradients must match
+  singleton references, with exactly zero input gradient in other spectra.
+- End-to-end singleton versus mixed/permuted spectrum predictions for supported legacy and
+  unique-fragment attention combinations. Inputs include a bondless sodium atom, ethanol,
+  a larger aromatic molecule, both precursor types and distinct collision energies.
+
+The deterministic comparisons disable dropout and use evaluation mode; the head tests
+still exercise backward propagation. They do not claim training-mode batch invariance for
+BatchNorm or stochastic regularizers, or validation of every optional attention bias.
+
+Validation: `-m pytest tests/test_masster_batch_padding.py tests/test_masster_heads.py tests/test_masster_attention_and_budget.py tests/test_masster_rewire_model.py -q`
+passed **168 tests, 3 skipped**, using the configured interpreter. Ruff on the new file
+and `git diff --check` passed. No runtime defect was exposed. GPU checks remain unverified;
+no production code changed.

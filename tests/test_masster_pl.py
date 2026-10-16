@@ -165,44 +165,54 @@ def test_nonzero_atom_decoder_layers_fail_at_setup() -> None:
         _build_pl(masster_intensity_atom_decoder_num_layers=4)
 
 
-def test_merged_independent_distance_configs_enable_requested_model() -> None:
-    config_dir = (
-        Path(__file__).parents[1] / "config" / "masster" / "merged" / "channel_selection"
+def test_retained_merged_independent_config_enables_requested_model() -> None:
+    config_path = (
+        Path(__file__).parents[1]
+        / "config"
+        / "masster"
+        / "merged"
+        / "channel_selection"
+        / "nist20_merged_independent_jss_hattr_gaussian.yml"
     )
-    config_paths = sorted(config_dir.glob("nist20_merged_independent_*_hattr_*.yml"))
+    config = runner.load_config(str(config_path.parents[3]), str(config_path), None)
 
-    assert len(config_paths) == 8
-    for config_path in config_paths:
-        with config_path.open() as config_file:
-            config = yaml.safe_load(config_file)
-        assert config["masster_peak_matching"] == "hungarian"
-        assert config["masster_min_ion_h_relative_probability"] == pytest.approx(0.01)
-        assert config["masster_min_ion_h_absolute_probability"] == pytest.approx(0.01)
-        assert config["masster_ion_h_support_binary_logits"] is True
-        assert config["masster_apply_channel_selection_in_training"] is False
-        assert config["masster_channel_support_use_intensity_prior"] is False
-        assert config["masster_proposal_num_mixtures"] == 1
-        # The atom decoder was removed on 2026-09-19; these configs no longer set the key
-        # and inherit the template default of 0.
-        assert "masster_intensity_atom_decoder_num_layers" not in config
-        assert config["masster_proposal_ints_transform"] == "none"
-        if config["loss_type"] == "kl_distance":
-            assert config["masster_kl_epsilon"] == pytest.approx(1.0e-4)
+    assert config["spec_params"]["merge"] is True
+    assert config["loss_type"] == "jss_distance"
+    assert config["masster_intensity_output"] == "independent"
+    assert config["masster_peak_matching"] == "hungarian"
+    assert config["masster_min_ion_h_relative_probability"] == pytest.approx(0.01)
+    assert config["masster_min_ion_h_absolute_probability"] == pytest.approx(0.01)
+    assert config["masster_ion_h_support_binary_logits"] is True
+    assert config["masster_apply_channel_selection_in_training"] is False
+    assert config["masster_channel_support_use_intensity_prior"] is False
+    assert config["masster_proposal_num_mixtures"] == 1
+    assert config["masster_intensity_atom_decoder_num_layers"] == 0
+    assert config["masster_proposal_ints_transform"] == "none"
 
 
-def test_proposal_warmup_configs_enable_proposal_only_epochs_0_through_15() -> None:
-    config_dir = Path(__file__).parents[1] / "config" / "masster" / "merged" / "proposal_warmup"
-    config_paths = sorted(config_dir.glob("*proposal_warmup_e0_15.yml"))
+@pytest.mark.parametrize(
+    ("epoch", "proposal_only"), [(0, True), (14, True), (15, True), (16, False)]
+)
+def test_proposal_warmup_schedule_covers_epochs_0_through_15(
+    epoch: int, proposal_only: bool,
+) -> None:
+    pl, _ = _build_pl(
+        masster_unique_fragment_mode=True,
+        masster_proposal_selection_only=True,
+        masster_proposal_anchored=True,
+        masster_separate_proposal_encoder=False,
+        masster_proposal_loss_weight=0.1,
+        masster_proposal_only_until_epoch=15,
+    )
 
-    assert len(config_paths) == 3
-    for config_path in config_paths:
-        with config_path.open() as config_file:
-            config = yaml.safe_load(config_file)
-        assert config["masster_proposal_only_until_epoch"] == 15
-        assert config["masster_separate_proposal_encoder"] is False
-        assert "shared_proposal_encoder" in config["wandb_tags"]
-        assert "proposal_warmup_epochs_0_15" in config["wandb_tags"]
-        assert config["wandb_name"].endswith("_shared_proposal_warmup_e0_15")
+    pl._apply_staged_training(epoch=epoch)
+
+    assert pl._proposal_only_training is proposal_only
+    assert all(parameter.requires_grad for parameter in pl.model.precursor_encoder.parameters())
+    assert all(
+        parameter.requires_grad is (not proposal_only)
+        for parameter in pl.model.intensity_head.parameters()
+    )
 
 
 def test_baseline_directory_contains_probability_ce_control() -> None:

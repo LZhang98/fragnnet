@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_path_audit_2026_10_16.md): 730 selected CPU tests pass, two stale config-inventory tests fail, 15 skip; package lint has four violations. Rewire output-row sorting regression passes. GPU and real-checkpoint inference unverified.
+- **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_path_audit_2026_10_16.md): retired-config test inventories repaired; all 177 MASSter PL tests pass. Package lint has four violations. Rewire output-row sorting regression passes. Added 14 batch/padding cases; focused suite: 168 passed, 3 skipped. GPU and real-checkpoint inference unverified.
 
 - **Shared codebase audit:** [repairs](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) implemented in the working tree for all six findings and the three rechecked config runtime defects. Focused regressions and the unfiltered CPU suite pass. Next: review; GPU and real-checkpoint evaluation remain unverified.
 
@@ -32,7 +32,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING | Repair retired-config test inventories and lint; GPU and real-checkpoint validation |
+| [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING | Config tests repaired; package lint and GPU/real-checkpoint validation remain open |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | REPAIRED, uncommitted | Review; CPU validation complete, GPU/real-checkpoint evaluation unverified |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; 6 resolved for MASSter (configs retired 2026-10-13); resolve malformed/duplicate YAML next |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING | CPU suite passed; GPU validation remains open |
@@ -83,7 +83,7 @@
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
 | [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING (2026-10-16) | Selected CPU validation, stale config tests, lint baseline and rewire row-order review |
-| [MASSter method](../reference/masster_method.md) | REFERENCE (2026-10-16) | Formal core method, deterministic candidate-selection algorithm, and comparison with FraGNNet |
+| [MASSter method](../reference/masster_method.md) | REFERENCE (2026-10-16) | Chemically constrained probabilistic framing, intensity-distribution semantics, ranked candidate selection, and comparison with FraGNNet |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | FINDING (2026-10-13) | Six findings and three config runtime defects repaired; unfiltered CPU suite passed |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-13) | Four test findings fixed; unfiltered CPU suite passed during codebase repairs |

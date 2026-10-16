@@ -1,6 +1,6 @@
 # MASSter on NIST23 EI (nominal mass)
 
-> **Status:** HUB · **Updated:** 2026-10-06
+> **Status:** HUB · **Updated:** 2026-10-16
 > MASSter on the NIST23 electron-ionization library (`[M]+`, 70 eV, unit resolution, natural isotope envelopes): plan, performance audit, screens.
 
 ## Where it stands
@@ -38,6 +38,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 | [EI performance audit](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | FINDING (2026-10-06) | Stein vs RASSP, support oracle, replicate pairs, priorities |
 | [EI SMARTS screen](../findings/masster/masster_ei_smarts_screen_2026_10_01.md) | CLOSED NULL (2026-10-06) | Three literature families, none admitted |

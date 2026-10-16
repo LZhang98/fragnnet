@@ -36,7 +36,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
-- **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_path_audit_2026_10_16.md): two retired-config inventory tests fail; four package lint violations. Rewire row-order fix passes its regression. **Next:** repair validation baseline; GPU/real-checkpoint validation remains open.
+- **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_path_audit_2026_10_16.md): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
 
 - **Shared codebase audit:** [repairs](findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) for all six findings and three config runtime defects are implemented, uncommitted. Focused checks and the unfiltered CPU suite pass. **Next:** review; GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.
 
