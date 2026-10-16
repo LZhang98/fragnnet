@@ -18,6 +18,17 @@ normalized-output formulation. Optional mechanisms and configuration-dependent
 variants are distinguished explicitly. It describes model operations rather than
 claiming that a particular configuration has been experimentally validated.
 
+![MASSter architecture: molecular encoding, probability-ranked fragment proposals, candidate-set intensity estimation, and spectrum assembly.](../figures/masster_architecture_editable.png)
+
+*Figure 1. MASSter encodes the precursor molecular graph, proposes fragments from
+ranked bond-cut configurations, and estimates their contributions using a
+candidate-set transformer. Chemically valid ion channels provide the masses used
+to assemble the predicted spectrum. The lower panel distinguishes spectral
+supervision of the intensity model from coverage supervision of the proposal model.
+Molecular structures and spectra are schematic.*
+The [editable SVG](../figures/masster_architecture_editable.svg) is available for
+figure revisions.
+
 ## Molecular encoding and bond-cut proposals
 
 Let $G=(V,E)$ denote the precursor molecular graph and $c$ the acquisition context.

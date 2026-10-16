@@ -1,0 +1,219 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="1800" height="960" viewBox="0 0 1800 960">
+<title>MASSter architecture — editable concept</title><desc>Editable text and vector shapes. Molecular graphs and spectra are schematic. Dashed arrows show training supervision, not differentiation through discrete selection.</desc>
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#53647c"/></marker></defs>
+<rect width="1800" height="960" fill="white"/>
+<text x="45" y="62" font-family="Arial, Helvetica, sans-serif" font-size="40" text-anchor="start" font-weight="bold" fill="#13233e">MASSter architecture</text>
+<text x="45" y="95" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="start" font-weight="normal" fill="#53647c">Learn fragment proposals and intensities directly from measured spectra</text>
+<rect x="620" y="125" width="640" height="46" rx="12" fill="#f4f7fc" stroke="#a9ccd3"/>
+<text x="940" y="155" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="normal" fill="#13233e">Collision energy  •  Adduct  •  Instrument</text>
+<path d="M800,171 L800,195 L520,195 L520,260" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1100,171 L1100,195 L1190,195 L1190,280" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="62" cy="230" r="19" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<text x="62" y="237" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="bold" fill="white">1</text>
+<text x="93" y="238" font-family="Arial, Helvetica, sans-serif" font-size="25" text-anchor="start" font-weight="bold" fill="#13233e">Encode the molecule</text>
+<circle cx="417" cy="230" r="19" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<text x="417" y="237" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="bold" fill="white">2</text>
+<text x="448" y="238" font-family="Arial, Helvetica, sans-serif" font-size="25" text-anchor="start" font-weight="bold" fill="#13233e">Propose fragments</text>
+<circle cx="1047" cy="230" r="19" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<text x="1047" y="237" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="bold" fill="white">3</text>
+<text x="1078" y="238" font-family="Arial, Helvetica, sans-serif" font-size="25" text-anchor="start" font-weight="bold" fill="#13233e">Predict intensities</text>
+<circle cx="1437" cy="230" r="19" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<text x="1437" y="237" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="bold" fill="white">4</text>
+<text x="1468" y="238" font-family="Arial, Helvetica, sans-serif" font-size="25" text-anchor="start" font-weight="bold" fill="#13233e">Assemble spectrum</text>
+<path d="M375,270 L375,650" fill="none" stroke="#d2dee5" stroke-width="2" stroke-dasharray="7 6"/>
+<path d="M1005,270 L1005,650" fill="none" stroke="#d2dee5" stroke-width="2" stroke-dasharray="7 6"/>
+<path d="M1395,270 L1395,650" fill="none" stroke="#d2dee5" stroke-width="2" stroke-dasharray="7 6"/>
+<g id="molecule-encoding">
+<path d="M55.0,375.0 L89.5,330.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M89.5,330.0 L143.5,330.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M143.5,330.0 L175.0,375.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M175.0,375.0 L143.5,420.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M143.5,420.0 L89.5,420.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M89.5,420.0 L55.0,375.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M175.0,375.0 L205.0,330.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M205.0,330.0 L250.0,345.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<circle cx="55.0" cy="375.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="89.5" cy="330.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="143.5" cy="330.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="175.0" cy="375.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="143.5" cy="420.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="89.5" cy="420.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="205.0" cy="330.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="250.0" cy="345.0" r="9.0" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<text x="145" y="455" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="middle" font-weight="normal" fill="#13233e">Molecular graph</text>
+<rect x="75" y="500" width="180" height="62" rx="12" fill="#f2fafb" stroke="#a9ccd3"/>
+<text x="165" y="538" font-family="Arial, Helvetica, sans-serif" font-size="20" text-anchor="middle" font-weight="normal" fill="#13233e">Molecular encoder</text>
+<path d="M145,430 L145,490" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M255,532 L290,532 L290,365 L345,365" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="335" cy="395" r="10" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="335" cy="430" r="10" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="335" cy="465" r="10" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<text x="335" y="530" font-family="Arial, Helvetica, sans-serif" font-size="17" text-anchor="middle" font-weight="normal" fill="#13233e">Atom</text>
+<text x="335" y="553" font-family="Arial, Helvetica, sans-serif" font-size="17" text-anchor="middle" font-weight="normal" fill="#13233e">embeddings</text>
+</g>
+<g id="fragment-proposals">
+<rect x="420" y="290" width="165" height="72" rx="12" fill="#f2fafb" stroke="#a9ccd3"/>
+<text x="502" y="320" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="normal" fill="#13233e">Bond-cut</text>
+<text x="502" y="346" font-family="Arial, Helvetica, sans-serif" font-size="21" text-anchor="middle" font-weight="normal" fill="#13233e">probabilities</text>
+<path d="M350,365 L420,330" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="675" y="290" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="middle" font-weight="bold" fill="#13233e">Ranked cut sets</text>
+<path d="M610.0,345.5 L629.55,320.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,320.0 L660.15,320.0" fill="none" stroke="#ee963e" stroke-width="3" stroke-dasharray="7 6"/>
+<path d="M660.15,320.0 L678.0,345.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M678.0,345.5 L660.15,371.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M660.15,371.0 L629.55,371.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,371.0 L610.0,345.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M678.0,345.5 L695.0,320.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M695.0,320.0 L720.5,328.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<circle cx="610.0" cy="345.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="320.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="320.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="678.0" cy="345.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="371.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="371.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="695.0" cy="320.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="720.5" cy="328.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<path d="M610.0,435.5 L629.55,410.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,410.0 L660.15,410.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M660.15,410.0 L678.0,435.5" fill="none" stroke="#ee963e" stroke-width="3" stroke-dasharray="7 6"/>
+<path d="M678.0,435.5 L660.15,461.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M660.15,461.0 L629.55,461.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,461.0 L610.0,435.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M678.0,435.5 L695.0,410.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M695.0,410.0 L720.5,418.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<circle cx="610.0" cy="435.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="410.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="410.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="678.0" cy="435.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="461.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="461.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="695.0" cy="410.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="720.5" cy="418.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<path d="M610.0,525.5 L629.55,500.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,500.0 L660.15,500.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M660.15,500.0 L678.0,525.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M678.0,525.5 L660.15,551.0" fill="none" stroke="#ee963e" stroke-width="3" stroke-dasharray="7 6"/>
+<path d="M660.15,551.0 L629.55,551.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M629.55,551.0 L610.0,525.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M678.0,525.5 L695.0,500.0" fill="none" stroke="#53647c" stroke-width="3"/>
+<path d="M695.0,500.0 L720.5,508.5" fill="none" stroke="#53647c" stroke-width="3"/>
+<circle cx="610.0" cy="525.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="500.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="500.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="678.0" cy="525.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="660.15" cy="551.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="629.55" cy="551.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="695.0" cy="500.0" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="720.5" cy="508.5" r="5.1" fill="#e1ebee" stroke="#35526b" stroke-width="1.7"/>
+<path d="M585,340 L605,340" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="866" y="290" font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle" font-weight="bold" fill="#13233e">Connected components</text>
+<circle cx="835" cy="356" r="8" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="859" cy="340" r="8" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="883" cy="356" r="8" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<path d="M835,356 L859,340" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M859,340 L883,356" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M730,345 L810,345" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="835" cy="446" r="8" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="859" cy="430" r="8" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="883" cy="446" r="8" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<path d="M835,446 L859,430" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M859,430 L883,446" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M730,435 L810,435" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<circle cx="835" cy="536" r="8" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="859" cy="520" r="8" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="883" cy="536" r="8" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<path d="M835,536 L859,520" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M859,520 L883,536" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M730,525 L810,525" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="465" y="605" width="465" height="40" rx="12" fill="#fafbfc" stroke="#a9ccd3"/>
+<text x="697" y="631" font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle" font-weight="normal" fill="#13233e">Merge duplicate fragments into unique candidates</text>
+<path d="M915,440 L955,440 L955,625 L940,625" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+</g>
+<g id="candidate-intensity-model">
+<rect x="1045" y="300" width="325" height="225" rx="12" fill="#edf5fc" stroke="#9ab5d5"/>
+<text x="1207" y="334" font-family="Arial, Helvetica, sans-serif" font-size="23" text-anchor="middle" font-weight="bold" fill="#13233e">Candidate transformer</text>
+<path d="M1090,375 L1325,375" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,375 L1325,430" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,375 L1325,485" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,430 L1325,375" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,430 L1325,430" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,430 L1325,485" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,485 L1325,375" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,485 L1325,430" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<path d="M1090,485 L1325,485" fill="none" stroke="#b8c8d9" stroke-width="1"/>
+<circle cx="1090" cy="375" r="12" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="1325" cy="375" r="12" fill="#008b9a" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="1090" cy="430" r="12" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="1325" cy="430" r="12" fill="#ee963e" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="1090" cy="485" r="12" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<circle cx="1325" cy="485" r="12" fill="#8c61bd" stroke="#35526b" stroke-width="1.7"/>
+<path d="M930,625 L1018,625 L1018,410 L1045,410" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1050" y="555" width="315" height="85" rx="12" fill="#fafcfd" stroke="#a9ccd3"/>
+<text x="1207" y="584" font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle" font-weight="bold" fill="#13233e">Candidate representation</text>
+<text x="1207" y="611" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="middle" font-weight="normal" fill="#13233e">Fragment + complement + cut boundary</text>
+<path d="M1207,555 L1207,532" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+</g>
+<g id="spectrum-assembly">
+<rect x="1430" y="300" width="310" height="72" rx="12" fill="#f2fafb" stroke="#a9ccd3"/>
+<text x="1585" y="330" font-family="Arial, Helvetica, sans-serif" font-size="22" text-anchor="middle" font-weight="bold" fill="#13233e">Ion channels</text>
+<text x="1585" y="356" font-family="Arial, Helvetica, sans-serif" font-size="18" text-anchor="middle" font-weight="normal" fill="#13233e">Charge / hydrogen shifts</text>
+<path d="M1370,410 L1410,410" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1410,410 L1410,337 L1425,337" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1585,372 L1585,405" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M1470,550 L1710,550" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M1470,550 L1470,420" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M1485.0,550 L1485.0,524.0" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M1511.875,550 L1511.875,478.5" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M1538.75,550 L1538.75,505.8" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M1565.625,550 L1565.625,439.5" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M1592.5,550 L1592.5,513.6" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M1619.375,550 L1619.375,465.5" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M1646.25,550 L1646.25,529.2" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M1673.125,550 L1673.125,491.5" fill="none" stroke="#ee963e" stroke-width="3"/>
+<text x="1710" y="574" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="end" font-weight="normal" fill="#13233e">m/z</text>
+<text x="1590" y="600" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="middle" font-weight="normal" fill="#13233e">Aggregate at exact m/z</text>
+<text x="1590" y="628" font-family="Arial, Helvetica, sans-serif" font-size="20" text-anchor="middle" font-weight="bold" fill="#13233e">Predicted spectrum</text>
+</g>
+<g id="training-supervision">
+<rect x="35" y="690" width="1730" height="235" rx="12" fill="#f3f5f8" stroke="#e0e6ed"/>
+<text x="60" y="727" font-family="Arial, Helvetica, sans-serif" font-size="26" text-anchor="start" font-weight="bold" fill="#13233e">Training from spectra</text>
+<text x="1730" y="727" font-family="Arial, Helvetica, sans-serif" font-size="23" text-anchor="end" font-weight="bold" fill="#008b9a">No fragment annotations  •  No teacher forcing</text>
+<path d="M85,868 L265,868" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M85,868 L85,773" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M100.0,868 L100.0,849.0" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M119.375,868 L119.375,815.75" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M138.75,868 L138.75,835.7" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M158.125,868 L158.125,787.25" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M177.5,868 L177.5,841.4" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M196.875,868 L196.875,806.25" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M216.25,868 L216.25,852.8" fill="none" stroke="#374151" stroke-width="3"/>
+<path d="M235.625,868 L235.625,825.25" fill="none" stroke="#374151" stroke-width="3"/>
+<text x="265" y="892" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="end" font-weight="normal" fill="#13233e">m/z</text>
+<text x="175" y="762" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="middle" font-weight="bold" fill="#13233e">Measured spectrum</text>
+<path d="M405,868 L585,868" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M405,868 L405,773" fill="none" stroke="#53647c" stroke-width="2"/>
+<path d="M420.0,868 L420.0,849.0" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M439.375,868 L439.375,815.75" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M458.75,868 L458.75,835.7" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M478.125,868 L478.125,787.25" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M497.5,868 L497.5,841.4" fill="none" stroke="#ee963e" stroke-width="3"/>
+<path d="M516.875,868 L516.875,806.25" fill="none" stroke="#8c61bd" stroke-width="3"/>
+<path d="M536.25,868 L536.25,852.8" fill="none" stroke="#008b9a" stroke-width="3"/>
+<path d="M555.625,868 L555.625,825.25" fill="none" stroke="#ee963e" stroke-width="3"/>
+<text x="585" y="892" font-family="Arial, Helvetica, sans-serif" font-size="16" text-anchor="end" font-weight="normal" fill="#13233e">m/z</text>
+<text x="495" y="762" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="middle" font-weight="bold" fill="#13233e">Predicted spectrum</text>
+<rect x="770" y="765" width="230" height="60" rx="12" fill="white" stroke="#a9ccd3"/>
+<text x="885" y="802" font-family="Arial, Helvetica, sans-serif" font-size="22" text-anchor="middle" font-weight="normal" fill="#13233e">Spectral loss</text>
+<rect x="770" y="845" width="230" height="60" rx="12" fill="white" stroke="#a9ccd3"/>
+<text x="885" y="881" font-family="Arial, Helvetica, sans-serif" font-size="20" text-anchor="middle" font-weight="normal" fill="#13233e">Proposal coverage loss</text>
+<path d="M270,810 L310,810 L310,746 L700,746 L700,785 L760,785" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M590,810 L680,810 L680,805 L760,805" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M270,850 L325,850 L325,915 L700,915 L700,865 L760,865" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1120" y="795" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="start" font-weight="normal" fill="#13233e">Spectral loss → intensity model</text>
+<text x="1120" y="831" font-family="Arial, Helvetica, sans-serif" font-size="19" text-anchor="start" font-weight="normal" fill="#13233e">Coverage loss → proposal model</text>
+<text x="1120" y="885" font-family="Arial, Helvetica, sans-serif" font-size="17" text-anchor="start" font-weight="normal" fill="#53647c">Dashed arrows: training supervision</text>
+<path d="M1000,790 L1020,790 L1020,665 L1230,665 L1230,645" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+<path d="M1000,875 L1040,875 L1040,675 L502,675 L502,650" fill="none" stroke="#53647c" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="7 6"/>
+</g>
+<text x="45" y="950" font-family="Arial, Helvetica, sans-serif" font-size="15" text-anchor="start" font-weight="normal" fill="#68788b">Concept schematic • molecular graphs and spectra are illustrative</text>
+</svg>
