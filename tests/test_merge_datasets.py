@@ -27,6 +27,7 @@ def _write_source(proc_dp, inchikeys, prec_types):
             "group_id": list(range(len(prec_types))),
             "prec_type": prec_types,
             "inst_type": ["QTOF"] * len(prec_types),
+            "frag_mode": ["CID"] * len(prec_types),
         }
     )
     mol_df.to_pickle(proc_dp / "mol_df.pkl")

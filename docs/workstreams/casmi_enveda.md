@@ -1,11 +1,13 @@
 # CASMI 2026, Enveda-180 and shared data quality
 
-> **Status:** HUB · **Updated:** 2026-10-12
-> CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
+> **Status:** HUB · **Updated:** 2026-10-15
+> CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the ZenoTOF CID/EAD libraries, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
 
 ## Where it stands
 
-- **Shared preprocessing audit:** [seven correctness findings](../findings/preproc_scripts_audit_2026_10_12.md), including broken merged molecule/group identities; all fixed in the working tree 2026-10-13 with regression tests (uncommitted). Next: review and commit.
+- **Shared preprocessing audit:** [seven correctness findings](../findings/preproc_scripts_audit_2026_10_12.md), including broken merged molecule/group identities; fixed with regression tests and committed in `bbcdf00c` (2026-10-13).
+
+- **ZenoTOF CID + EAD libraries:** [MultiMS2 and MS-DIAL 5 standards preprocessed](../findings/zenotof_ead_libraries_2026_10_15.md) (steps 1-2, `data/proc/multims2`, `data/proc/msdial5_ead`) with a new `EAD` frag_mode (`ace` = electron kinetic energy) and `frag_mode` in the `group_id` key (uncommitted). CIeaD deferred: no structures in any export. Next: splits and an EAD-aware config.
 
 - **RT/CCS:** `RTHead` and `CCSHead` with independent label sets: [GPU debug rerun completed](../plans/masster/masster_rt_ccs_plan.md#separate-head-debug-rerun--completed-2026-10-10): 10 epochs on small train/validation subsets, checkpoint retained. Full Enveda arm remains prepared.
 
@@ -22,7 +24,8 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FIXED, UNCOMMITTED | Review and commit; rebuild affected merged outputs into new directories |
+| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FIXED (`bbcdf00c`) | Rebuild affected merged outputs into new directories before use |
+| [ZenoTOF CID + EAD libraries](../findings/zenotof_ead_libraries_2026_10_15.md) | STEPS 1-2 DONE, UNCOMMITTED | Review the reader/group-key change; build splits; config with `frag_modes` incl. `EAD`; CIeaD structures from the authors |
 | [CASMI train filter](../findings/casmi2026_dataset_2026_10_05.md) | OPEN | Choose filter (subformula suspects at ORB tier vs shifted-peak control, dedup, `riken` rule in section 5.9), then preprocess |
 | CASMI external data (NIST) | OPEN | Competition rules on external data not checked; hidden test energy protocol unknown (section 6) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Full matched multitask/control evaluation; confirm CCS calibration before cross-dataset use |
@@ -50,7 +53,8 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FINDING (2026-10-13) | Seven correctness findings; fixed with regression tests, uncommitted |
+| [ZenoTOF CID + EAD libraries](../findings/zenotof_ead_libraries_2026_10_15.md) | FINDING (2026-10-15) | MultiMS2, MS-DIAL 5 standards, CIeaD: sources, contents, EAD frag_mode, group key, processed outputs |
+| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FINDING (2026-10-13) | Seven correctness findings; fixed with regression tests, committed in `bbcdf00c` |
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | RTHead and CCSHead, label audit, completed GPU debug run and full experiment |
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |

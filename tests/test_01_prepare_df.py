@@ -386,3 +386,117 @@ def test_preproc_ms_files_reads_ms_dir(tmp_path):
 
     limited_df = module.preproc_ms_files(str(ms_dp), str(meta_fp), set(), 1)
     assert limited_df["dset_spec_id"].tolist() == ["specA_0"]
+
+
+def _multims2_record(usi: str, name: str, inchikey: str, adduct: str, method: str, ce: str,
+                     ion_mode: str) -> str:
+    return (
+        "BEGIN IONS\n"
+        f"COMPOUND_NAME={name}\nSMILES=Nc1ccnc(=O)[nH]1\nINCHI=InChI=1S/C4H5N3O\n"
+        f"INCHIAUX={inchikey}\nFORMULA=C4H5N3O\nEXACTMASS=111.04326\nIONMODE={ion_mode}\n"
+        f"ADDUCT={adduct}\nCOLLISION_ENERGY=[{ce}]\nFRAGMENTATION_METHOD={method}\n"
+        f'SOURCE_SCAN_USI=["{usi}"]\nPRECURSOR_MZ=112.05054\nNUM_PEAKS=2\n'
+        "QUALITY_CHIMERIC=PASSED\n"
+        "51.010137 194.0 \n95.024 1000.0\n"
+        "END IONS\n\n"
+    )
+
+
+@pytest.fixture
+def multims2_mgf_fp(tmp_path: Path) -> Path:
+    """A CID positive scan, an EAD negative scan, and one scan annotated as two compounds."""
+    records = [
+        _multims2_record("mzspec:M:a.mzML:1", "Cytosine", "OPTASPLRGRRNAP-UHFFFAOYSA-N",
+                         "[M+H]+", "CID", "60.0", "positive"),
+        _multims2_record("mzspec:M:b.mzML:2", "Cytosine", "OPTASPLRGRRNAP-UHFFFAOYSA-N",
+                         "[M-H]-", "EAD", "12.0", "negative"),
+        _multims2_record("mzspec:M:c.mzML:3", "Isobar A", "AAAAAAAAAAAAAA-UHFFFAOYSA-N",
+                         "[M+H]+", "CID", "40.0", "positive"),
+        _multims2_record("mzspec:M:c.mzML:3", "Isobar B", "BBBBBBBBBBBBBB-UHFFFAOYSA-N",
+                         "[M+O+H]+", "CID", "40.0", "positive"),
+    ]
+    fp = tmp_path / "multims2_spectra.mgf"
+    fp.write_text("".join(records))
+    return fp
+
+
+def test_process_multims2_maps_columns_and_drops_ambiguous_scans(multims2_mgf_fp: Path):
+    """MultiMS2 rows keep their activation type; a scan assigned to two compounds is dropped."""
+    module = load_prepare_module()
+
+    spec_df = module.process_multims2(str(multims2_mgf_fp))
+
+    assert spec_df["dset_spec_id"].tolist() == ["mzspec:M:a.mzML:1", "mzspec:M:b.mzML:2"]
+    assert spec_df["spec_id"].tolist() == [0, 1]
+    assert spec_df["frag_mode"].tolist() == ["CID", "EAD"]
+    assert spec_df["col_energy"].tolist() == ["60 eV", "12 eV"]
+    assert spec_df["ion_mode"].tolist() == ["P", "N"]
+    assert spec_df["prec_type"].tolist() == ["[M+H]+", "[M-H]-"]
+    assert spec_df["peaks"].iloc[0] == "51.010137 194.0\n95.024 1000.0"
+    assert spec_df["inchikey"].iloc[0] == "OPTASPLRGRRNAP-UHFFFAOYSA-N"
+    for value in module.MSP_KEY_DICT.values():
+        assert value in spec_df.columns
+
+    # step 2 keeps EAD as its own frag_mode and reads the electron energy as ace
+    ead = spec_df.iloc[1]
+    assert spec_parse_utils.parse_inst_info(ead) == ("QTOF", "EAD")
+    assert spec_parse_utils.parse_ace_str(ead["col_energy"]) == pytest.approx(12.0)
+
+
+def test_process_multims2_rejects_unknown_fragmentation(tmp_path: Path):
+    module = load_prepare_module()
+    fp = tmp_path / "bad.mgf"
+    fp.write_text(
+        _multims2_record("mzspec:M:a.mzML:1", "Cytosine", "OPTASPLRGRRNAP-UHFFFAOYSA-N",
+                         "[M+H]+", "ECD", "10.0", "positive")
+    )
+    with pytest.raises(ValueError, match="FRAGMENTATION_METHOD"):
+        module.process_multims2(str(fp))
+
+
+def _msdial5_record(ce: str, peaks: list[tuple[float, float]]) -> str:
+    peak_lines = "".join(f"{mz}\t{inten}\n" for mz, inten in peaks)
+    return (
+        "NAME: Chalcone\nPRECURSORMZ: 209.09609145657\nPRECURSORTYPE: [M+H]+\n"
+        "IONMODE: Positive\nFORMULA: C15H12O\nSuperclass: Phenylpropanoids and polyketides\n"
+        "SMILES: O=C(\\C=C\\C1=CC=CC=C1)C1=CC=CC=C1\nINCHIKEY: DQFBYFPFKXHELB-VAWYXSNFSA-N\n"
+        f"INSTRUMENTTYPE: LC-ESI-QTOF\nCOLLISIONENERGY: {ce}\nRETENTIONTIME: 0.68\nCOMMENT: \n"
+        f"Num Peaks: {len(peaks)}\n{peak_lines}\n"
+    )
+
+
+def test_parse_msdial5_ce_str():
+    """CID keeps its voltage, EAD keeps the electron energy, a CE spread is skipped."""
+    module = load_prepare_module()
+
+    assert module.parse_msdial5_ce_str("CID 20V") == ("CID", "20 eV")
+    assert module.parse_msdial5_ce_str("EAD 15eV CID 10V") == ("EAD", "15 eV")
+    assert module.parse_msdial5_ce_str("CID 40V CES 15V") is None
+    with pytest.raises(ValueError, match="Unrecognised"):
+        module.parse_msdial5_ce_str("HCD 30%")
+
+
+def test_process_msdial5_ead_reads_directory(tmp_path: Path):
+    """One compound file: CID and EAD kept, the CE-spread record skipped, zero peaks removed."""
+    module = load_prepare_module()
+    msp_dp = tmp_path / "subtracted"
+    msp_dp.mkdir()
+    (msp_dp / "150403_0072_Chalcone_POS_3min_Curated.msp").write_text(
+        _msdial5_record("CID 10V", [(77.04, 238.6), (105.03, 0.0), (131.05, 99.0)])
+        + _msdial5_record("CID 10V CES 15V", [(77.04, 100.0)])
+        + _msdial5_record("EAD 15eV CID 10V", [(77.04, 12.0), (209.10, 50.0)])
+    )
+
+    spec_df = module.process_msdial5_ead(str(msp_dp))
+
+    assert spec_df["dset_spec_id"].tolist() == [
+        "150403_0072_Chalcone_POS_3min_Curated|CID 10V",
+        "150403_0072_Chalcone_POS_3min_Curated|EAD 15eV CID 10V",
+    ]
+    assert spec_df["frag_mode"].tolist() == ["CID", "EAD"]
+    assert spec_df["col_energy"].tolist() == ["10 eV", "15 eV"]
+    assert spec_df["peaks"].tolist() == ["77.04 238.6\n131.05 99.0", "77.04 12.0\n209.1 50.0"]
+    assert spec_df["num_peaks"].tolist() == [2, 2]
+    assert spec_df["ion_mode"].tolist() == ["P", "P"]
+    assert spec_df["inchikey"].iloc[0] == "DQFBYFPFKXHELB-VAWYXSNFSA-N"
+    assert spec_parse_utils.parse_inst_info(spec_df.iloc[1]) == ("QTOF", "EAD")

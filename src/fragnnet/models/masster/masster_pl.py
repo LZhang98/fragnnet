@@ -41,6 +41,10 @@ from fragnnet.loss.cross_entropy import (
 from fragnnet.loss.spectrum_distance import sparse_peak_list_distance
 from fragnnet.models.masster.masster_candidate_features import describe_candidate_features
 from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.rewire_rules import (
+    RewireMatchSet,
+    build_rewire_matches,
+)
 from fragnnet.models.masster.candidates.smarts_templates import (
     MassterTemplate,
     build_masster_templates,
@@ -49,6 +53,7 @@ from fragnnet.models.masster.masster_export import masster_annotation_tables
 from fragnnet.models.masster.masster_hooks import migrate_masster_rt_ccs_hparams
 from fragnnet.models.masster.masster_model import MassterModel
 from fragnnet.models.masster.masster_rt_ccs_heads import property_regression_terms
+from fragnnet.models.masster.rewire_expansion import REWIRE_DIAGNOSTIC_NAMES
 from fragnnet.pl_model.output_schema import RETURN_EXPLAINABILITY_TENSORS_DEFAULT
 from fragnnet.pl_model.spectrum_pl import SpectrumPL
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
@@ -158,6 +163,21 @@ def _cached_masster_templates(
     if mol is None:
         raise ValueError(f"invalid molecule SMILES for SMARTS matching: {smiles}")
     return build_masster_templates(mol)
+
+
+@lru_cache(maxsize=100_000)
+def _cached_masster_rewire_matches(
+    smiles: str, max_matches_per_rule: int, null: bool
+) -> RewireMatchSet:
+    """Match the rewire rules once per unique molecule, outside the model hot path."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"invalid molecule SMILES for rewire matching: {smiles}")
+    if null:
+        from fragnnet.models.masster.candidates.rewire_null import build_null_rewire_matches
+
+        return build_null_rewire_matches(mol, max_matches_per_rule=max_matches_per_rule)
+    return build_rewire_matches(mol, max_matches_per_rule=max_matches_per_rule)
 
 
 def _candidate_coverage_by_cut_count(
@@ -902,6 +922,8 @@ class MassterPL(SpectrumPL, ExportAdapter):
     """
 
     hparams: Any
+    # Class default so a shell built without __init__ (sweep fixtures) reads as flag off.
+    _rewire_enabled: bool = False
 
     def __init__(self, **kwargs: Any) -> None:
         migrate_legacy_masster_name(kwargs)
@@ -1019,6 +1041,7 @@ class MassterPL(SpectrumPL, ExportAdapter):
             raise ValueError(
                 "MASSter candidate construction uses native kernels; set compile: False"
             )
+        self._check_rewire_params()
         if (
             self.hparams.masster_proposal_method == "cut_masks"
             and self.hparams.masster_candidate_backend == "cuda"
@@ -1193,6 +1216,11 @@ class MassterPL(SpectrumPL, ExportAdapter):
             include_cmf=self.hparams.masster_include_cmf,
             charge_pooling=self.hparams.masster_charge_pooling,
             use_smarts_templates=self.hparams.masster_smarts_templates,
+            use_rewire_rules=self._rewire_enabled,
+            rewire_max_extra_fraction=self.hparams.masster_rewire_max_extra_fraction,
+            rewire_max_extra=self.hparams.masster_rewire_max_extra,
+            rewire_continuation_cuts=self.hparams.masster_rewire_continuation_cuts,
+            rewire_pair_chunk=self.hparams.masster_rewire_pair_chunk,
             boundary_bond_encoder=self.hparams.masster_boundary_bond_encoder,
             intensity_escape=self.hparams.masster_intensity_escape,
             candidate_features=self.hparams.masster_candidate_features,
@@ -1238,6 +1266,58 @@ class MassterPL(SpectrumPL, ExportAdapter):
         )
         self._proposal_only_training = False
         self._check_ce_params()
+
+    def _check_rewire_params(self) -> None:
+        """Validate the rewire keys and cache what the batch path reads.
+
+        Keys are only type-checked while the flag is off; nothing else reads them then.
+        The ranges the model also enforces (fraction, ceiling, chunk) are checked here so
+        a bad config fails before the model is built.
+
+        Raises:
+            ValueError: If a key has the wrong type or range, the null is requested
+                without the rules, or the rules are combined with a loss that has no
+                meaning for extras (cross-EV fragment loss, ion-mode proposal loss).
+        """
+        hp = self.hparams
+        for name in ("masster_rewire_rules", "masster_rewire_null"):
+            if not isinstance(getattr(hp, name), bool):
+                raise ValueError(f"{name} must be boolean, got {getattr(hp, name)!r}")
+        fraction = hp.masster_rewire_max_extra_fraction
+        if (
+            isinstance(fraction, bool)
+            or not isinstance(fraction, (int, float))
+            or not math.isfinite(fraction)
+            or fraction <= 0
+        ):
+            raise ValueError(
+                f"masster_rewire_max_extra_fraction must be finite and positive, got {fraction!r}"
+            )
+        for name, minimum in (
+            ("masster_rewire_max_extra", 1),
+            ("masster_rewire_max_matches_per_rule", 1),
+            ("masster_rewire_continuation_cuts", 0),
+            ("masster_rewire_pair_chunk", 1),
+        ):
+            value = getattr(hp, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}")
+        if hp.masster_rewire_null and not hp.masster_rewire_rules:
+            raise ValueError("masster_rewire_null requires masster_rewire_rules")
+        if hp.masster_rewire_rules:
+            if hp.cross_ev_fragment_loss_weight > 0.0:
+                raise ValueError(
+                    "masster_rewire_rules rejects cross_ev_fragment_loss_weight > 0 "
+                    "(extras have no cross-view identity)"
+                )
+            if hp.masster_ion_mode_proposal_loss_weight > 0.0:
+                raise ValueError(
+                    "masster_rewire_rules rejects masster_ion_mode_proposal_loss_weight > 0 "
+                    "(extras carry no ion-mode proposal)"
+                )
+        self._rewire_enabled = bool(hp.masster_rewire_rules)
+        self._rewire_max_matches = hp.masster_rewire_max_matches_per_rule
+        self._rewire_null = bool(hp.masster_rewire_null)
 
     def _check_proposal_early_stop_params(self, proposal_only_until_epoch: int | None) -> None:
         """Validate the proposal early-stop epoch and the proposal-only weight decay.
@@ -2022,6 +2102,13 @@ class MassterPL(SpectrumPL, ExportAdapter):
             }
             if candidate_coverage_enabled:
                 loss_values["candidate_wrecall"] = candidate_wrecall
+            if self._rewire_enabled:
+                loss_values.update(
+                    {
+                        name: kwargs[name].detach().to(prediction_reference)
+                        for name in REWIRE_DIAGNOSTIC_NAMES
+                    }
+                )
             # Read unconditionally so a missing timing key fails even with timing disabled.
             timing_values = {name: kwargs[name].detach() for name in _CANDIDATE_TIMING_NAMES}
             if candidate_timing_enabled:
@@ -2133,6 +2220,8 @@ class MassterPL(SpectrumPL, ExportAdapter):
             loss_names.append("candidate_wrecall")
         if candidate_timing_enabled:
             loss_names.extend(_CANDIDATE_TIMING_NAMES)
+        if self._rewire_enabled:
+            loss_names.extend(REWIRE_DIAGNOSTIC_NAMES)
         if channel_support_metrics_enabled:
             loss_names.extend(
                 [
@@ -2227,6 +2316,10 @@ class MassterPL(SpectrumPL, ExportAdapter):
         pool_coverage = self.hparams.masster_fragment_selection == "marginal"
         if pool_coverage:
             coverage_metric_names.add("pool_candidate_wrecall")
+        if self._rewire_enabled:
+            coverage_metric_names.update(
+                {"candidate_wrecall_ordinary", "candidate_wrecall_rewire_gain"}
+            )
         for metric_name in coverage_metric_names:
             self.metric_min_max[metric_name] = None
         self.auxiliary_metric_names.update(coverage_metric_names)
@@ -2241,6 +2334,8 @@ class MassterPL(SpectrumPL, ExportAdapter):
             self.extra_metric_args.append("candidate_cut_counts")
         if pool_coverage:
             self.extra_metric_args.extend(["pool_candidate_mzs", "pool_candidate_batch_idxs"])
+        if self._rewire_enabled:
+            self.extra_metric_args.append("rewire_candidate_is_ordinary_by_cut")
         if self.inst_tol_lookup is not None:
             self.batch_metric_args.add("spec_inst_type")
         base_metric_fn = self.metric_fn
@@ -2287,6 +2382,40 @@ class MassterPL(SpectrumPL, ExportAdapter):
                     tol_per_sample=tol_per_sample,
                     min_mz_per_sample=min_mz_per_sample,
                 )
+            if self._rewire_enabled:
+                # Ordinary channels are the control's candidate set (the same pre-merge mask
+                # as the proposal view); the gain is everything else, merge-gained channels
+                # of ordinary rows included.
+                ordinary_mask = kwargs["rewire_candidate_is_ordinary_by_cut"]
+                ordinary = _candidate_weighted_recall(
+                    true_mzs=kwargs["true_mzs"],
+                    true_ints=kwargs["true_ints"],
+                    true_batch_idxs=kwargs["true_batch_idxs"],
+                    candidate_mzs=kwargs["candidate_mzs_by_cut"][ordinary_mask],
+                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"][ordinary_mask],
+                    batch_size=kwargs["true_prec_mzs"].shape[0],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+                total = _candidate_weighted_recall(
+                    true_mzs=kwargs["true_mzs"],
+                    true_ints=kwargs["true_ints"],
+                    true_batch_idxs=kwargs["true_batch_idxs"],
+                    candidate_mzs=kwargs["candidate_mzs_by_cut"],
+                    candidate_batch_idxs=kwargs["candidate_batch_idxs_by_cut"],
+                    batch_size=kwargs["true_prec_mzs"].shape[0],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
+                )
+                coverage_gain = total - ordinary
+                metrics["candidate_wrecall_ordinary"] = ordinary
+                metrics["candidate_wrecall_rewire_gain"] = coverage_gain
             metrics.update(coverage)
             return metrics
 
@@ -2388,8 +2517,12 @@ class MassterPL(SpectrumPL, ExportAdapter):
         # Standalone inference bypasses Lightning's transfer hook. Match the same
         # templates here when that path has not supplied the CPU graph sidecar.
         static_graph = batch_kwargs.get("masster_static_graph")
-        if self.hparams.masster_smarts_templates and (
-            static_graph is None or static_graph.smarts_templates is None
+        if (
+            self.hparams.masster_smarts_templates
+            and (static_graph is None or static_graph.smarts_templates is None)
+        ) or (
+            self._rewire_enabled
+            and (static_graph is None or static_graph.rewire_matches is None)
         ):
             static_graph = self._build_static_graph(batch_kwargs)
         output = self.model(
@@ -2461,6 +2594,16 @@ class MassterPL(SpectrumPL, ExportAdapter):
             smarts_templates=(
                 tuple(_cached_masster_templates(str(smiles)) for smiles in batch["mol_smiles"])
                 if self.hparams.masster_smarts_templates
+                else None
+            ),
+            rewire_matches=(
+                tuple(
+                    _cached_masster_rewire_matches(
+                        str(smiles), self._rewire_max_matches, self._rewire_null
+                    )
+                    for smiles in batch["mol_smiles"]
+                )
+                if self._rewire_enabled
                 else None
             ),
         )
@@ -2581,6 +2724,17 @@ class MassterPL(SpectrumPL, ExportAdapter):
                 fragment_rule_idxs=(
                     batch_result["fragment_rule_idxs"] if return_rule_provenance else None
                 ),
+                # Absent keys (rewire off) leave the column NaN.
+                fragment_rewire_fragment_idxs=(
+                    batch_result.get("fragment_rewire_fragment_idxs")
+                    if return_rule_provenance
+                    else None
+                ),
+                fragment_rewire_rule_idxs=(
+                    batch_result.get("fragment_rewire_rule_idxs")
+                    if return_rule_provenance
+                    else None
+                ),
             )
             if masster_annotation.num_multi_formula_peaks:
                 warnings.warn(
@@ -2643,3 +2797,9 @@ class MassterPL(SpectrumPL, ExportAdapter):
         n_offset = annotation.node_cumsizes[b_idx]
         return annotation.node_rules[(node_idxs.long() + n_offset).cpu().numpy()].tolist()
 
+    def export_node_rewire_rules(self, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
+        # Same batch-wide node table and lookup as export_node_rules.
+        if annotation is None or annotation.node_rewire_rules is None or node_idxs is None:
+            return np.nan
+        n_offset = annotation.node_cumsizes[b_idx]
+        return annotation.node_rewire_rules[(node_idxs.long() + n_offset).cpu().numpy()].tolist()

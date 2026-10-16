@@ -83,6 +83,18 @@ class MassterHooks(ModelHooks):
             hparams["masster_fragment_selection"] = "mask_order"
         if "masster_selected_fragment_target" not in hparams:
             hparams["masster_selected_fragment_target"] = None
+        # Checkpoints from before the rewire rules were trained with them off.
+        for key, off_value in (
+            ("masster_rewire_rules", False),
+            ("masster_rewire_max_extra_fraction", 0.5),
+            ("masster_rewire_max_extra", 256),
+            ("masster_rewire_max_matches_per_rule", 8),
+            ("masster_rewire_continuation_cuts", 0),
+            ("masster_rewire_pair_chunk", 65536),
+            ("masster_rewire_null", False),
+        ):
+            if key not in hparams:
+                hparams[key] = off_value
 
     def uses_ce_context_sampler(self, config_d: dict[str, Any]) -> bool:
         return (

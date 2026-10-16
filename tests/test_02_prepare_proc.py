@@ -1,9 +1,9 @@
 """Unit tests for preproc_scripts/02_prepare_proc.py module.
 
 Tests validate:
-- group_id construction uses documented key: mol_id + prec_type + inst_type
-- group_id is identical across datasets and CE patterns for the same trio
-- group_id differs when the documented trio changes
+- group_id construction uses documented key: mol_id + prec_type + inst_type + frag_mode
+- group_id is identical across datasets and CE patterns for the same key
+- group_id differs when the precursor type or the fragmentation mode changes
 """
 
 import importlib.util
@@ -186,6 +186,46 @@ def test_group_id_differs_when_precursor_changes(monkeypatch):
     # mol_id and inst_type match, prec_type differs
     assert spec_df[["mol_id", "inst_type"]].nunique().sum() == 2
     assert spec_df[["prec_type"]].nunique().iloc[0] == 2
+
+
+def test_group_id_separates_frag_modes(monkeypatch):
+    """CID and EAD spectra of one molecule, adduct and instrument must not share a group_id,
+    otherwise spectrum merging would sum the two activation types into one target."""
+    module = load_prepare_module()
+    _setup_stubs(monkeypatch, module)
+    monkeypatch.setattr(
+        module.spec_parse_utils, "parse_inst_info", lambda row: ("QTOF", row["frag_mode"])
+    )
+
+    base = {
+        "smiles": "CC",
+        "dset": "multims2",
+        "col_energy_extra_1": None,
+        "col_energy_extra_2": None,
+        "peaks": "100 1.0",
+        "prec_type": "[M+H]+",
+        "spec_type": "MS2",
+        "ion_mode": "P",
+        "col_gas": "",
+        "ri": "",
+        "formula": "",
+        "inchikey": None,
+        "exact_mass": None,
+        "prec_mz": None,
+        "notes": "",
+    }
+    rows = [
+        {**base, "spec_id": 0, "dset_spec_id": "1", "col_energy": "20 eV", "frag_mode": "CID"},
+        {**base, "spec_id": 1, "dset_spec_id": "2", "col_energy": "40 eV", "frag_mode": "CID"},
+        {**base, "spec_id": 2, "dset_spec_id": "3", "col_energy": "12 eV", "frag_mode": "EAD"},
+    ]
+
+    spec_df, _, _, _ = module.preprocess_spec(pd.DataFrame(rows))
+
+    group_by_mode = spec_df.groupby("frag_mode")["group_id"].unique()
+    assert len(group_by_mode["CID"]) == 1
+    assert len(group_by_mode["EAD"]) == 1
+    assert group_by_mode["CID"][0] != group_by_mode["EAD"][0]
 
 
 def test_annotation_merge_uses_dataset_with_dset_spec_id(monkeypatch):

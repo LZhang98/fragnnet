@@ -103,6 +103,22 @@ python preproc_scripts/01_prepare_df.py \
     --jsonl_file=enveda-180/enveda-180-filtered.jsonl.gz
 ```
 
+### MultiMS2 and MS-DIAL 5 (ZenoTOF CID + EAD)
+Both are SCIEX ZenoTOF 7600 libraries with CID and EAD spectra; EAD rows get `frag_mode` `EAD` and
+their `col_energy` is the electron kinetic energy. Sources, counts and what each reader drops are in
+[the dataset finding](../docs/findings/zenotof_ead_libraries_2026_10_15.md).
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+    --input_format=multims2 \
+    --output_name=multims2 \
+    --mgf_file=multims2/MultiMS2/data/multims2_spectra.mgf
+python preproc_scripts/01_prepare_df.py \
+    --input_format=msdial5_ead \
+    --output_name=msdial5_ead \
+    --msp_dir=msdial5_ead/mspformat_716authenticstandards/subtracted
+```
+
 ## Step 2: Processing CSV into Pickle Files
 
 This step  reads the stage-1 CSVs, converts the data into binary format (pickle), writes pickles to `proc_dp` for training and evaluation.
@@ -112,7 +128,7 @@ This step  reads the stage-1 CSVs, converts the data into binary format (pickle)
 	- `mol_id`: integer id linking to `mol_df`.
 	- `prec_type`: standardized precursor/adduct string.
 	- `inst_type`: standardized instrument type: `ORB_F` (Orbitrap Fusion family, e.g. NIST's Lumos), `ORB` (every other Orbitrap: Elite, Velos, unnamed), `QTOF`, `IT`, `QQQ`, `EI`, `Other`. `FT` is retired and refused on load.
-	- `frag_mode`: standardized fragmentation mode.
+	- `frag_mode`: standardized fragmentation mode: `HCD`, `CID`, `EAD` (its `ace` is the electron kinetic energy), `EI`, or `NA`.
 	- `spec_type`: spectrum type (e.g., `MS2`).
 	- `ion_mode`: `P`/`N`.
 	- `dset`: dataset name.
@@ -128,7 +144,7 @@ This step  reads the stage-1 CSVs, converts the data into binary format (pickle)
 	- `formula`: molecular formula from source (dropped before saving when inconsistent with molecule formula).
 	- `inchikey`: full InChIKey from source (dropped before saving when inconsistent).
 	- `exact_mass`: exact mass from source (dropped before saving when inconsistent).
-	- `group_id`: grouping id for spectra sharing compound/precursor context.
+	- `group_id`: grouping id for spectra sharing compound/precursor context: one id per (`mol_id`, `prec_type`, `inst_type`, `frag_mode`), so merging never sums CID and EAD spectra. `frag_mode` joined the key on 2026-10-15; no earlier dataset had a group with two frag modes, so their ids are unchanged.
 
 - `mol_df.pkl` — contains molecule information, one row per unique canonical SMILES:
 	- `smiles`, `mol_id`, `mol` (RDKit Mol object).
@@ -191,6 +207,11 @@ emits `ORB` directly, so no migration is needed on a rebuild.
 python preproc_scripts/02_prepare_proc.py \
     --proc_dp=data/proc/enveda_180 \
     --dsets enveda_180
+```
+### MultiMS2 and MS-DIAL 5
+```bash
+python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets multims2 --proc_dp data/proc/multims2
+python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets msdial5_ead --proc_dp data/proc/msdial5_ead
 ```
 
 ### Relabelling existing Orbitrap spectra (FT → ORB / ORB_F, 2026-09-28)

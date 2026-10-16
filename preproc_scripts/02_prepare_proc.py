@@ -222,11 +222,13 @@ def preprocess_spec(
     ]
     # relabel spec_id (this is to make it unique across datasets)
     spec_df.loc[:, "spec_id"] = np.arange(spec_df.shape[0])
-    # set group_id (group by mol_id + prec_type + inst_type)
+    # set group_id (group by mol_id + prec_type + inst_type + frag_mode)
     # Note: `ce_type` and `dset` are intentionally dropped so groups
     # combine identical molecules/adducts across datasets and CE patterns.
+    # frag_mode keeps CID and EAD spectra of one molecule/adduct/instrument apart; no dataset
+    # built before EAD support has a group with two frag_modes, so their groups are unchanged.
 
-    group_key_cols = ["mol_id", "prec_type", "inst_type"]
+    group_key_cols = ["mol_id", "prec_type", "inst_type", "frag_mode"]
     group_df = (
         spec_df[group_key_cols].drop_duplicates().sort_values(group_key_cols).reset_index(drop=True)
     )

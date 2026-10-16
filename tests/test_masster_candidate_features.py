@@ -870,7 +870,8 @@ def test_candidate_feature_width_sums_spec_widths() -> None:
     assert candidate_feature_width(production, edge_feature_dim=9) == 5
 
     all_features = resolve_candidate_features(list(CANDIDATE_FEATURES_BY_NAME))
-    expected = 1 + 1 + 2 + 1 + COMPOSITION_FEATURE_DIM + 2 * 9 + 2 + (1 + COMPOSITION_FEATURE_DIM)
+    # The last term is c_rewire_edit (rewire arms only; 4 columns).
+    expected = 1 + 1 + 2 + 1 + COMPOSITION_FEATURE_DIM + 2 * 9 + 2 + (1 + COMPOSITION_FEATURE_DIM) + 4
     assert candidate_feature_width(all_features, edge_feature_dim=9) == expected
 
 

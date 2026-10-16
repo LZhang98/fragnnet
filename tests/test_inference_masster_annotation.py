@@ -16,6 +16,7 @@ from test_masster_model import _build_batch, _build_model
 from fragnnet.inference import batch_rows, export_columns
 from fragnnet.models.masster import masster_export
 from fragnnet.models.masster.candidates.builder import MassterStaticGraph
+from fragnnet.models.masster.candidates.rewire_rules import REWIRE_RULE_VOCABULARY
 from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils.formula_utils import ELECTRON_MASS, PERIODIC_TABLE, th_long_to_mask
@@ -341,6 +342,56 @@ def test_tables_need_both_halves_of_the_rule_pairs():
             fragments=[0],
             h_shifts=[0],
             fragment_rule_fragment_idxs=th.tensor([0]),
+        )
+
+
+def test_tables_name_the_rewire_rules_beside_the_smarts_rules():
+    # Fragments 1 and 2 are one {C, C} node: an ordinary fragment (SMARTS rule) and a rewire
+    # extra of the same atom set give ONE node carrying both names, rewire names in
+    # REWIRE_RULE_VOCABULARY order. Fragment 3 has only a rewire rule (spectrum 1); fragment 4 none.
+    tables = _tables(
+        pathway_peaks=[0, 0, 1, 3, 2],
+        peak_batch=[0, 0, 1, 1],
+        ints=[0.2, 0.1, 0.7, 0.6, 0.4],
+        fragments=[1, 2, 0, 3, 4],
+        h_shifts=[0, 0, 0, 0, -2],
+        fragment_rule_fragment_idxs=th.tensor([1]),
+        fragment_rule_idxs=th.tensor([1]),
+        fragment_rewire_fragment_idxs=th.tensor([2, 2, 3]),
+        fragment_rewire_rule_idxs=th.tensor([1, 0, 1]),
+    )
+
+    node_keys = zip(tables.node_batch_idxs.tolist(), _atom_sets(tables.node_ccs))
+    rewire = dict(zip(node_keys, tables.node_rewire_rules.tolist()))
+    names = REWIRE_RULE_VOCABULARY
+    assert rewire == {
+        (0, frozenset({0, 1})): f"{names[0]};{names[1]}",
+        (0, frozenset({0, 1, 2})): "",
+        (1, frozenset({1})): "",
+        (1, frozenset({0, 1})): names[1],
+    }
+    node_keys = zip(tables.node_batch_idxs.tolist(), _atom_sets(tables.node_ccs))
+    smarts = dict(zip(node_keys, tables.node_rules.tolist()))
+    assert smarts[(0, frozenset({0, 1}))] != "" and rewire[(0, frozenset({0, 1}))] != ""
+    assert tables.node_rewire_rules.shape == tables.node_rules.shape
+
+
+def test_tables_without_rewire_pairs_have_no_rewire_names():
+    tables = _tables(
+        pathway_peaks=[0], peak_batch=[0], ints=[1.0], fragments=[0], h_shifts=[0]
+    )
+    assert tables.node_rewire_rules is None
+
+
+def test_tables_need_both_halves_of_the_rewire_pairs():
+    with pytest.raises(ValueError, match="go together"):
+        _tables(
+            pathway_peaks=[0],
+            peak_batch=[0],
+            ints=[1.0],
+            fragments=[0],
+            h_shifts=[0],
+            fragment_rewire_rule_idxs=th.tensor([0]),
         )
 
 

@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-13
+> **Status:** REFERENCE · **Updated:** 2026-10-15
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -18,7 +18,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 | MassSpecGym training and retrieval | [msgym](workstreams/msgym.md) | Many arms PREPARED, none submitted |
 | Spectraverse v1.0.2 | [spectraverse](workstreams/spectraverse.md) | Five arms PREPARED, none submitted |
 | NIST23 EI (nominal) | [nist23_ei](workstreams/nist23_ei.md) | e2/e3/e4 PREPARED |
-| CASMI 2026, Enveda-180, shared data quality | [casmi_enveda](workstreams/casmi_enveda.md) | ACTIVE: CASMI train filter decision |
+| CASMI 2026, Enveda-180, ZenoTOF EAD, shared data quality | [casmi_enveda](workstreams/casmi_enveda.md) | ACTIVE: CASMI train filter decision; EAD libraries at steps 1-2 |
 | FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; pair BCE retired |
 
 ## MASSter generalization on NIST20
@@ -27,7 +27,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
   `val_cos_sim_0.01` 0.7729 (epochs 54-63): +0.0122 over `i1` (0.7607). Seed spread 0.0042.
 - **Open problem is the floor:** 330 spectra / 119 molecules below 0.05 at instrument tolerance
   (train sample: 4); no tested arm moves it.
-- **Proposed:** [rewire rules in training](plans/masster/masster_rewire_rules_training_plan.md) — 13 gated mechanism rules with continuation reach 39% of rearrangement intensity (null 7%); next is gate G0/G0b, then decisions 1/2/4 ([finding](findings/masster/masster_rearrangement_mining_2026_10_14.md)).
+- **Prepared, not submitted:** [rewire rules in training](plans/masster/masster_rewire_rules_training_plan.md) — after-selection stage built and tested (uncommitted); G0 reach 27.7% vs null 7.3%, G0b 1.14x forward at cap 0.5; arms `a0`/`a0d1`/`a0null`, Fir stage `rewire` ([finding](findings/masster/masster_rearrangement_mining_2026_10_14.md)).
 - **Prepared, not submitted:** `so1` (templates-on sulfonamide O transfer), `fc1`/`fc1p`
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy
@@ -88,7 +88,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## CASMI 2026, Enveda-180, shared data
 
-- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md) fixed in the working tree 2026-10-13 (uncommitted), 272 focused tests passed. Next: review and commit; rebuild any merger/inference-merged outputs into new directories before use.
+- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md) fixed and committed (`bbcdf00c`). Rebuild any merger/inference-merged outputs into new directories before use.
+- **ZenoTOF CID + EAD (uncommitted):** [MultiMS2 and MS-DIAL 5 standards](findings/zenotof_ead_libraries_2026_10_15.md) preprocessed to `data/proc/{multims2,msdial5_ead}`; new `EAD` frag_mode, `frag_mode` added to the `group_id` key (existing groups unchanged). CIeaD deferred (no structures). Next: review, splits, EAD-aware config.
 
 - **CASMI 2026:** extracted, not preprocessed. The visible test is a copy of train, so validate
   molecule-disjoint. Dedup drops 17.6% of train; NIST HR would add 34,295 molecules.

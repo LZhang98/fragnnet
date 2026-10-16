@@ -841,6 +841,14 @@ masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; 
 # builds nothing and adds no state_dict key. Requires masster_smarts_templates and
 # masster_unique_fragment_mode.
 masster_rule_pathway_token: False
+# Rewire rules after selection; requirements are validated at model build (docs/plans/masster/masster_rewire_rules_implementation.md).
+masster_rewire_rules: False  # Apply admitted rewire rules (delete/cut/form edits) to every kept fragment; extras are added to the pool.
+masster_rewire_max_extra_fraction: 0.5  # Extras per precursor <= floor(this * kept ordinary fragments); a modelling knob (G0b sweeps 0.25/0.5/1.0).
+masster_rewire_max_extra: 256  # Absolute per-precursor ceiling on extras; a memory bound, not a modelling choice.
+masster_rewire_max_matches_per_rule: 8  # Matches kept per rule per precursor after edit-key dedup, deterministic order; the rest are counted.
+masster_rewire_continuation_cuts: 0  # Depth-1 top-k precursor-bond cuts per product by bond logit; 0 = products only.
+masster_rewire_pair_chunk: 65536  # Element budget of one stage chunk (rows = budget // max(atoms, bonds)); bounds memory, not the result.
+masster_rewire_null: False  # Replace each real match by random same-shape matches (the gate's topology null); needs masster_rewire_rules.
 # Encode each severed bond from its (retained, lost) atom embeddings instead of averaging the
 # two endpoints. The average is degenerate: pooled over a fragment's cut bonds it equals
 # half the mean inside atom plus half the mean outside atom, so cutting a1-b1 + a2-b2 gives a
@@ -859,6 +867,7 @@ masster_boundary_bond_encoder: True
 #   c_nl_composition  18                               log1p complement element counts
 #   c_cut_bonds       2 x edge_feature_dim             severed-bond attributes, sum then mean
 #   c_cut_adjacency   2                                adjacent cut pairs, retained then lost
+#   c_rewire_edit     4                                n_formed, n_internal_cut, n_deleted_heavy, depth of a rewire product (zeros otherwise)
 # The token also carries the pooled fragment/complement/boundary embeddings, the context vector,
 # and -- only when masster_proposal_anchored is off -- the proposal log-probability
 # columns. None of those are governed by this list.

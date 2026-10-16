@@ -1,13 +1,10 @@
 # MASSter: rearrangement rules with continuation in training
 
-> **Status:** PROPOSED · **Updated:** 2026-10-15
-> Nothing built. Phase 0 is model-free or CPU-only gates (reach ceiling with a null-matched control, and a
-> checkpoint-side after-selection expansion with a direct parent-survival measurement). Phase 1 is one
-> backend-agnostic training stage that applies admitted rewire rules to every kept fragment, `mask_order`
-> selection only. "After selection" first is a COST-ORDERING decision, not a ruling on the user's
-> "after selection or as part of selection": in-selection stays open (Phase 2). No rule is admitted yet:
-> the "Admitted rules" table is the OUTPUT of gate G0 and Phase 1 is blocked on it and on the three
-> decisions in "Decisions that gate Phase 1" (each has a default).
+> **Status:** PREPARED · **Updated:** 2026-10-15
+> Built and tested (not committed, not submitted). G0 and G0b pass. Arms `a0`, `a0d1`, `a0null` are configured
+> (cap fraction 0.5, ceiling 256) in `config/masster/mh_rewire_after_selection_2026_10_15/` and wired into the
+> Fir submitter stage `rewire`. Implementation spec and deviations:
+> [masster_rewire_rules_implementation.md](masster_rewire_rules_implementation.md).
 
 Related: [SMARTS pathway plan](masster_smarts_pathway_plan.md) (closed null; templates have no
 continuation), [CUDA audit](../../findings/masster/masster_smarts_cuda_audit_2026_09_27.md),
@@ -536,6 +533,54 @@ the control (best-by-hour first).
   tail intensity; **kill: r < 3%** or depth-1 reach not above null. Between 3% and 10%: stop unless
   R_sel exceeds R_after by a margin that justifies Phase 2. These bars are revisited if P-1 shows a tail SE
   above 0.005 (then the +0.010 floor is not detectable) or if the user supplies a different c.
+- **G0 result (2026-10-15): PASS.** Script
+  [`debug_masster_rewire_reach_ceiling.py`](../../../scripts/debug/smarts/debug_masster_rewire_reach_ceiling.py),
+  output `output/rewire_g0_2026_10_15/`.
+  - **Setup:**
+    - `i1` epoch 59, with hparams migrated OB -> ORB in a scratch copy; `saved_ckpts/` was not edited.
+    - `nist20_inchikey` validation: 687 of 4,222 molecules match one of the 13 [M+H]+ rules
+      (8,831 of 52,020 spectra).
+    - Rules applied to the kept pool (mean 231 fragments).
+  - **Reach.** Percentages are of all validation rearrangement intensity; the null uses the same edit shapes.
+
+    | Subset | R_all | R_after0 | R_after1 | Null (after0 / after1) |
+    | --- | ---: | ---: | ---: | ---: |
+    | Whole validation | 35.3 | 27.7 | 29.7 | 7.3 / 7.8 |
+    | Tail (>= 25%) | 42.8 | 33.4 | 35.8 | 7.2 / 7.6 |
+
+  - **Parent survival:** 0.84 (R_after1 / R_all), above the 0.70 Phase 2 trigger, so in-selection is
+    not triggered.
+  - **Spectra reached:** 1,165 validation spectra get at least one reached rearrangement peak,
+    including 268 of the 582 tail spectra.
+  - **The cap binds.** Before the cap, a matching spectrum gets 66.9 extras on average (p95 169, max
+    782). 42.6% of matching spectra exceed 64, and they hold 16.2 of the 27.7 R_after0 points, so the
+    cap's sort key decides how much reach survives. Even if the cap dropped every product that reaches a
+    peak there, R_after0 would still be 11.5, above the bar.
+  - **Node growth with cap 64, over the whole validation split:** mean +3.3%, which passes the < +10% bar.
+    p95 is +27.7%, which fails the < +25% bar by construction: 17% of spectra match, and each gets
+    64 / 231 = +27.7%. A cap of 56 (+24%), or a relative cap of 0.25 x pool size, would meet the bar.
+    This is the user's decision.
+  - **Not measured here:** stage wall-clock and memory, which need the torch stage (G0b proper), and the
+    cap's sort key, since the parent's proposal log-probability is not exported.
+- **G0b result (2026-10-15): PASS.** Production stage, script
+  [`debug_masster_rewire_g0b.py`](../../../scripts/debug/smarts/debug_masster_rewire_g0b.py), output
+  `output/rewire_g0b_2026_10_15/`. Cap fraction sweep, with the ceiling at 256 and continuation 0:
+
+  | Cap fraction | Reach (% of val rearrangement intensity) | Node growth, whole split / p95 | Forward time vs control |
+  | --- | ---: | --- | ---: |
+  | 0.25 | 27.03 | +3.2% / +25% | 1.134x |
+  | 0.5 | 27.70 | +4.5% / +50% | 1.136x |
+  | 1.0 | 27.72 | +4.9% / +66% | 1.14x |
+  | uncapped | 27.72 | +4.9% / +66% | |
+
+  - **The production stage matches G0:** uncapped reach 27.72% against G0's R_after0 of 27.7%.
+  - **Forward plus backward at 0.5:** 1.108x.
+  - **Peak GPU:** 0.43 GiB at batch 32.
+  - **Null arm:** 4.75% reach at matched node growth.
+  - **Chosen fraction: 0.5.** The user relaxed the p95 node bar on 2026-10-15; wall-clock (<= 1.3x) is the
+    binding cost.
+  - **Not measured:** a0d1 (depth-1) cost, and peak GPU at Fir batch size. i1 peaks near 26.8 GiB on the
+    3g.40gb slice.
 - **G0b checkpoint-side expansion**: run the stage on the existing `i1` checkpoint, val splits
   (`nist20_inchikey`, MassSpecGym), CPU, logging per rule pairs, extras after dedup/validity/cap, merge rate,
   nodes per spectrum (mean, p50, p95, max) and node growth, intensity-weighted recall of the tail peaks, stage

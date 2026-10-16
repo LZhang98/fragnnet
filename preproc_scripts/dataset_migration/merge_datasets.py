@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
         # Rebuild group_id from global identity (same key as 02_prepare_proc.py)
         merged_spec_mol_df['group_id'] = merged_spec_mol_df.groupby(
-            ['mol_id', 'prec_type', 'inst_type'], sort=True, dropna=False
+            ['mol_id', 'prec_type', 'inst_type', 'frag_mode'], sort=True, dropna=False
         ).ngroup()
 
         # Save merged dataframes

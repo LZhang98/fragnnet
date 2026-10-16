@@ -98,3 +98,7 @@ class ExportAdapter:
     def export_node_rules(self, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
         """One spectrum's node SMARTS rule names for ``pred_node_rules``; NaN when unavailable."""
         return np.nan
+
+    def export_node_rewire_rules(self, b_idx: int, node_idxs: Any, annotation: Any) -> Any:
+        """One spectrum's node rewire rule names for ``pred_node_rewire_rules``; NaN when unavailable."""
+        return np.nan

@@ -17,6 +17,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
+    from fragnnet.models.masster.candidates.rewire_rules import RewireMatchSet
     from fragnnet.models.masster.candidates.smarts_templates import MassterTemplate
 
 
@@ -77,6 +78,7 @@ class MassterStaticGraph:
     atom_batch_indices: th.Tensor
     atom_ptr: th.Tensor
     smarts_templates: tuple[tuple[MassterTemplate, ...], ...] | None = None
+    rewire_matches: tuple[RewireMatchSet, ...] | None = None  # one per spectrum; rewire arms only
 
 
 @dataclass(frozen=True)
