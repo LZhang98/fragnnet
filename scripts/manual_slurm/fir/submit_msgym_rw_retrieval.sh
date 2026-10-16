@@ -64,12 +64,25 @@ gen() {  # gen <stages> <arm> <run> <epoch>; prints the job script path
     echo "slurm_scripts/msgym_ret_formula_test_rw_${arm}_${run}_ep${ep}_${stages// /-}.sh"
 }
 
-# 1. Validate inputs before generating anything.
+# 1. Validate inputs before generating anything; fetch missing checkpoints from the W&B run files
+#    (login nodes have internet).
+mkdir -p saved_ckpts/msgym
 for entry in "${CKPTS[@]}"; do
     IFS=: read -r arm run ep <<< "${entry}"
-    for fp in "${MSGYM_DIR}/msgym_rw_${arm}.yml" "saved_ckpts/msgym/rw_${arm}_${run}_ep${ep}.ckpt"; do
-        [ -f "${fp}" ] || { echo "missing: ${fp}" >&2; exit 1; }
-    done
+    [ -f "${MSGYM_DIR}/msgym_rw_${arm}.yml" ] || { echo "missing: ${MSGYM_DIR}/msgym_rw_${arm}.yml" >&2; exit 1; }
+    ckpt="saved_ckpts/msgym/rw_${arm}_${run}_ep${ep}.ckpt"
+    if [ ! -f "${ckpt}" ]; then
+        echo "fetching ${ckpt} from W&B run ${run}" >&2
+        python - "${run}" "${ep}" "${ckpt}" <<'EOF'
+import os, shutil, sys, tempfile
+import wandb
+run_id, ep, out = sys.argv[1:]
+with tempfile.TemporaryDirectory(dir=os.path.dirname(out)) as tmp:
+    f = wandb.Api(timeout=120).run(f"frag-gnn/frag-gnn/{run_id}").file(f"ckpt/model-epoch={ep}.ckpt")
+    shutil.move(f.download(root=tmp, replace=True).name, out)
+EOF
+        [ -s "${ckpt}" ] || { echo "missing: ${ckpt} (W&B download failed)" >&2; exit 1; }
+    fi
 done
 
 # 2. Generate one job per checkpoint, on the aligned shards.
