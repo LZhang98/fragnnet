@@ -231,6 +231,25 @@ def test_graph_molecule_without_ring_info_still_matches() -> None:
     assert masster_pl_module._cached_masster_templates(binary) == build_masster_templates(mol)
 
 
+def test_transfer_keeps_graph_molecules_out_of_the_device_move(monkeypatch) -> None:
+    # Lightning recursed into each bytes object element by element (~30 ms per batch of 64).
+    pl = _pl(**_REWIRE_ON)
+    batch = _batch(pl, (_SULFONE, "CCO"))
+    seen = {}
+    parent = type(pl).__mro__[1].transfer_batch_to_device
+
+    def spy(self, b, device, dataloader_idx):
+        seen["keys"] = set(b)
+        return parent(self, b, device, dataloader_idx)
+
+    monkeypatch.setattr(type(pl).__mro__[1], "transfer_batch_to_device", spy)
+    transferred = pl.transfer_batch_to_device(batch, th.device("cpu"), 0)
+    assert "mol_graph_binary" not in seen["keys"]
+    assert transferred["mol_graph_binary"] == batch["mol_graph_binary"]
+    assert "mol_graph_binary" in batch  # the caller's batch is not modified
+    assert transferred["masster_static_graph"].rewire_matches[0].matches
+
+
 def test_static_graph_requires_the_graph_molecule() -> None:
     pl = _pl(**_REWIRE_ON)
     batch = _batch(pl, (_SULFONE,))

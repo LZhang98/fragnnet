@@ -24,6 +24,7 @@ from fragnnet.models.masster.candidates.rewire_rules import (
     RewireMatchSet,
     RewireRule,
     _pairs,
+    atom_map_numbers,
     build_rewire_matches,
     raw_rule_matches,
 )
@@ -102,7 +103,7 @@ def _rank_key(m: RewireMatch, ranks: list[int]) -> tuple:
 
 
 def _real_sites(mol: Chem.Mol, rule_index: int) -> list[frozenset]:
-    maps = [a.GetAtomMapNum() for a in NULL_PATTERNS[rule_index].GetAtoms()]
+    maps = atom_map_numbers(NULL_PATTERNS[rule_index])
     return [frozenset(h[k] for k in maps if k in h) for h in raw_rule_matches(mol, _PATTERNS[rule_index])]
 
 

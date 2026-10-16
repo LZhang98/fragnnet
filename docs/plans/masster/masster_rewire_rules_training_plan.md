@@ -690,6 +690,12 @@ The same stage on MassSpecGym, which is [M+H]+ only.
 - **Local smoke (original shard 0, a0 ep19):** 65,406 candidates scored, none missing; `loglik_cal` hit@1
   0.426 (`f44tzxoc` 0.428; different lineage, not a comparison). Inference 3:39 at eval batch 256 (7:39 at
   batch 64; `f44tzxoc` 2:49 at 64).
+- **Speed (profiled 2026-10-16, shard 0, batch 64, ms per spectrum; `output/rewire_speed_profile_2026_10_16/`):**
+  forward 2.4 control / 3.3 a0 / 4.6 a0d1, the whole difference being `expand_rewire_candidates` (0.9 / 2.1;
+  launch-bound small ops, `_continue_pieces` 55% of a0d1's). Rule matching on an uncached molecule cost
+  2.9 ms, 96% of it rebuilding the pattern's map-number list per call; caching it per pattern
+  (`atom_map_numbers`) gives identical matches at 0.07 ms (null rules 3.5 -> 0.41 ms). Retrieval pays matching
+  per new candidate; training only in epoch 1 (100k-molecule LRU).
 - **Launcher:** [`submit_msgym_rw_retrieval.sh`](../../../scripts/manual_slurm/fir/submit_msgym_rw_retrieval.sh),
   1 h on `fir:h100-2g.20gb` (a timeout resumes on resubmit), best-`val_primary_loss` checkpoints (linked from
   the Fir `wandb/` run dirs or fetched from W&B), shared shards `/scratch/feiw/frag-gnn-data/msgym/formula_test`.

@@ -2647,7 +2647,13 @@ class MassterPL(SpectrumPL, ExportAdapter):
             ``masster_static_graph``.
         """
         static_graph = self._build_static_graph(batch)
-        transferred = super().transfer_batch_to_device(batch, device, dataloader_idx)
+        # Lightning recurses into bytes as a sequence of ints (~27k elements per batch of 64, ~30 ms);
+        # the molecule binaries stay on the host anyway.
+        host_keys = ("mol_graph_binary",)
+        host_only = {key: batch[key] for key in host_keys if key in batch}
+        device_part = {key: value for key, value in batch.items() if key not in host_keys}
+        transferred = super().transfer_batch_to_device(device_part, device, dataloader_idx)
+        transferred.update(host_only)
         transferred["masster_static_graph"] = static_graph
         return transferred
 

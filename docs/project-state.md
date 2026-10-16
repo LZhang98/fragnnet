@@ -36,6 +36,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
+- **Speed audit:** [current opportunities](findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16): main speed switches already active in `i1`/`i4`; rewire host round-trips/repeated reductions and base packing/loss padding are next profiling targets. CPU regressions pass; current GPU timing unavailable.
+
 - **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_path_audit_2026_10_16.md): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
 
 - **Shared codebase audit:** [repairs](findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) for all six findings and three config runtime defects are implemented, uncommitted. Focused checks and the unfiltered CPU suite pass. **Next:** review; GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.

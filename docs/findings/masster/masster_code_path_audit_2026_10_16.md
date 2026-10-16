@@ -94,3 +94,89 @@ Validation: `-m pytest tests/test_masster_batch_padding.py tests/test_masster_he
 passed **168 tests, 3 skipped**, using the configured interpreter. Ruff on the new file
 and `git diff --check` passed. No runtime defect was exposed. GPU checks remain unverified;
 no production code changed.
+
+## Speed audit of the current path (2026-10-16)
+
+Inspected HEAD `b8546dd2` plus the live working tree. The four pre-existing modified files
+are `candidates/rewire_null.py`, `candidates/rewire_rules.py`, `masster_pl.py` and
+`tests/test_masster_rewire_pl_export.py`, under their current MASSter/test directories.
+These supersede the initial checkout description above. No production changes were made
+in this speed audit. Findings below identify concrete work, not measured current speedups.
+
+Resolved `i1`, `i4` and `a0_rewire_after_selection_ob_obf` through `runner.load_config`:
+all use CUDA candidates, FP32 with TF32 enabled, microbatch 512, loss chunks capped at 64,
+induced candidate attention, ranked mask budget 4096, diagnostics/base-CE logging off,
+and proposal sharing off. The largest historical switches are therefore already active.
+See [earlier measurements](masster_training_speed_2026_09_17.md); their timings are not a
+profile of this revision.
+
+### Opportunities, in implementation order
+
+1. **Rewire: remove avoidable device/host round-trips.**
+   `rewire_expansion.py:424` downloads atom pointers and atomic numbers and compares
+   downloaded bond topology with the host sidecar on every active forward. At line 592,
+   per-spectrum ordinary-fragment counts go GPU → NumPy → GPU solely to compute
+   `min(max_extra, floor(fraction * count + 1e-9))`. Keep that cap calculation on-device
+   and reuse immutable host chemistry/validation from graph preparation. Preserve the
+   float64 rounding and epsilon policy of `extra_limits`, including boundary cases.
+   Additional per-chunk scalar checks and component-label convergence checks
+   (`label_components`, line 132) synchronize CUDA. Use the existing asynchronous
+   validation helper for suitable checks; convergence needs a separate kernel/design,
+   not removal of its correctness condition. This affects rewire arms only.
+
+2. **Rewire: avoid repeatedly sorting the entire growing product pool.**
+   The local `absorb` at `rewire_expansion.py:485` first reduces each chunk and then
+   concatenates it with the full accumulated pool and reduces again. With many chunks,
+   early products are sorted repeatedly; continuation cuts add more absorbs. Benchmark
+   a bounded hierarchical merge or a final reduction if memory permits. Keep exact atom-set
+   deduplication, rule-indicator union, parent ranking and deterministic tie behavior.
+   Small workloads may not benefit. The final extra cap is applied after validity and
+   deduplication, so simply capping intermediate products is not equivalent.
+
+3. **Base path: benchmark candidate packing and compilation of fixed-shape layers.**
+   `_contextualize_by_molecule` (`masster_candidate_transformer.py:1159`) sorts rows,
+   downloads counts, constructs host buckets and performs `isin`/`nonzero` compaction for
+   every bucket, then launches each layer separately per bucket. A GPU-built layout or
+   reuse of producer counts could reduce packing overhead. Compile the fixed-shape
+   attention/feed-forward blocks separately before attempting whole-model compilation:
+   native candidate calls, host lists and ragged outputs remain graph breaks. Attention
+   already uses SDPA/`need_weights=False`, and validation already uses asynchronous CUDA
+   assertions; neither should be proposed as a missing optimization. An earlier packing
+   rewrite failed its end-to-end gate (linked speed finding), so repeat only with evidence
+   from the current workload. Mixed precision needs compatibility work because the native
+   CUDA candidate path currently requires FP32.
+
+4. **Base path: reduce padding in the spectral CE loss.**
+   `loss/cross_entropy.py:559` creates per-chunk `[spectra, max_true, max_pred]` matching
+   tensors. `loss/padding.py:72` already adaptively splits oversized chunks, but it processes
+   spectra in their original order. Internally grouping similar true/predicted peak counts
+   could reduce padded work while preserving the training sampler, with the inverse
+   permutation restoring per-spectrum outputs and tolerances. First measure padding waste
+   and actual chunk count. Increasing `loss_batch_size` alone need not improve throughput.
+
+5. **Conditional: proposal sharing needs a favorable batch, and is not a free switch.**
+   `_shared_proposal_layout` (`masster_model.py:3414`) can share precursor encoding and
+   construction across repeated groups, but itself builds/validates a GPU layout. Measure
+   repeated-group multiplicity first. Current configs do not enable sharing; changing the
+   sampler changes batch composition, and the PL shared-proposal loss merges targets by
+   group (`masster_pl.py:670`). Treat enabling this as a matched training experiment,
+   rather than a behavior-preserving speed repair.
+
+The working-tree transfer optimization in `masster_pl.py:2650` already excludes molecule
+binary bytes from Lightning's recursive device transfer. Preserve it; its comment's timing
+was not independently benchmarked here. CPU candidate threading, cut-bond deduplication,
+unique-fragment transformer tokens and persistent loader workers also already exist.
+
+### Validation and next measurement
+
+Configured interpreter: PyTorch `2.4.1+cu121`; `torch.cuda.is_available()` returned false.
+`tests/test_masster_rewire_pl_export.py` and `tests/test_masster_batch_padding.py` passed
+**49 tests** on CPU. These are regression checks, not performance evidence. No training,
+checkpoint evaluation, GPU benchmark or full-suite run was performed.
+
+Next: use the [full-training benchmark](../../../scripts/debug/bench/benchmark_masster_full_training.py)
+on a supported GPU with fixed batches and source identity, compare base versus rewire stage
+costs, and profile synchronized forward/backward plus optimizer throughput. Prioritize
+the inexpensive rewire cap/host-metadata changes, then the measured dominant base stage.
+Apply the [benchmark guide's](../../guides/benchmark_masster_cpu.md) end-to-end gain gates;
+do not rank work by historical candidate timers alone.

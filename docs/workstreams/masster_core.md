@@ -1,9 +1,11 @@
 # MASSter core model on NIST20
 
-> **Status:** HUB · **Updated:** 2026-10-13
+> **Status:** HUB · **Updated:** 2026-10-16
 > Architecture, training recipe, regularization, losses, candidate/proposal machinery, speed/GPU, the 128-epoch screens and campaign reads, ion-H channel selection, and feature/information audits for MASSter on NIST20.
 
 ## Where it stands
+
+- **Current speed audit:** [opportunities and limits](../findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16): `i1`/`i4` already use the main speed switches. First candidates are rewire host round-trips and repeated product-pool reductions; base attention packing and loss padding need GPU profiling. 49 focused CPU tests pass; no current GPU speedup measured.
 
 - **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_path_audit_2026_10_16.md): retired-config test inventories repaired; all 177 MASSter PL tests pass. Package lint has four violations. Rewire output-row sorting regression passes. Added 14 batch/padding cases; focused suite: 168 passed, 3 skipped. GPU and real-checkpoint inference unverified.
 
@@ -32,6 +34,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| [Current speed audit](../findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16) | FINDING | Profile current base/rewire GPU steps; benchmark behavior-preserving rewire host/cap changes first |
 | [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING | Config tests repaired; package lint and GPU/real-checkpoint validation remain open |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | REPAIRED, uncommitted | Review; CPU validation complete, GPU/real-checkpoint evaluation unverified |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; 6 resolved for MASSter (configs retired 2026-10-13); resolve malformed/duplicate YAML next |
