@@ -35,7 +35,7 @@ Let $G=(V,E)$ denote the precursor molecular graph and $c$ the acquisition conte
 The molecular encoder computes atom representations, which the proposal network
 uses with bond features and context to predict a cleavage logit $\ell_b$ for each
 bond $b$. The corresponding cleavage probability is
-$p_b=\operatorname{sigmoid}(\ell_b)$.
+$p_b=1/(1+\exp(-\ell_b))$.
 
 A binary mask $\mathbf z$ specifies a complete cleavage configuration, with
 $z_b=1$ indicating removal of bond $b$. For a single Bernoulli proposal component,
@@ -146,12 +146,12 @@ the probability that component $F$ retains the charge under mask $\mathbf z$.
 Its unnormalized marginal proposal weight is
 
 $$
-w_F=\sum_{\mathbf z\in\mathcal Z:\,F\in\operatorname{CC}(G\setminus\mathbf z)}
+w_F=\sum_{\mathbf z\in\mathcal Z:\,F\in\mathrm{CC}(G\setminus\mathbf z)}
 q_\theta(\mathbf z\mid G,c)\,
 a_\theta(F\mid\mathbf z,G,c).
 $$
 
-Here, $\operatorname{CC}$ returns the connected components after deleting the
+Here, $\mathrm{CC}$ returns the connected components after deleting the
 selected bonds. These weights are truncated marginals because they sum over retained
 masks rather than the complete mask space. Their normalized values define a
 distribution over the retained fragments. Combining duplicate pathways avoids
