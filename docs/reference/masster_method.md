@@ -134,6 +134,47 @@ The two queue expansions enumerate every nonempty flip subset exactly once. The
 consumer stops when its configured budget or threshold is reached; exhaustive
 enumeration is unnecessary for prediction.
 
+### Comparison with beam search
+
+MASSter's ranked cut-mask enumeration and beam search differ in their search states
+and pruning policies. Ranked enumeration represents every complete cleavage mask
+as a subset of decisions reversed from the MAP mask. The additive flip costs allow
+a priority queue to retrieve configurations in descending probability order. Beam
+search instead expands partial candidates and retains a bounded number of states
+at each step. A discarded state cannot contribute descendants, even when one of
+those descendants would receive a high final score.
+
+| Property | Ranked cut-mask enumeration | Beam search |
+| --- | --- | --- |
+| Search state | Complete mask represented by flips from the MAP decisions | Partial configuration or growing fragment |
+| Expansion | Enumerate flip subsets in increasing total cost | Extend retained states using permitted actions |
+| Pruning | Truncate enumeration at a budget or probability threshold | Retain a fixed-width beam at each expansion step |
+| Ranking guarantee | Exact descending mask probability for a single Bernoulli component | Generally approximate because intermediate pruning can remove promising paths |
+| Search controls | Mask budget or unique-fragment target, enumeration cap, and optional probability floor | Beam width, expansion rules, and stopping criterion |
+
+The exact ordering follows from the single-component proposal's additive
+log-probability structure. It does not establish that the selected masks maximize
+unique-fragment diversity or observed-peak coverage. Required support masks are
+inserted separately from this ordering, and finite-pool mixture ranking does not
+inherit its global guarantee. A budget limits the retained prefix even when
+additional chemically relevant configurations have nonzero proposal probability.
+
+Beam search accommodates scores that depend on an evolving state, such as previous
+cuts, an intermediate molecular structure, or a growing connected fragment. Such
+scores need not admit the additive decomposition used by the core MASSter proposal.
+The tradeoff is that a low-scoring intermediate state can be pruned before reaching
+a high-scoring final candidate. Search quality therefore depends on the beam width
+and the relationship between intermediate and final scores.
+
+MASSter's optional connected-fragment beam grows connected atom sets directly,
+whereas the core procedure ranks global cut masks and extracts their connected
+components. This alternative changes the candidate representation and probability
+semantics in addition to the search procedure. It uses retained-fragment boundary
+scores without the core method's latent mask-pathway marginalization and charge
+allocation. Consequently, it is not an interchangeable approximation to the same
+fragment distribution. The implementation is described in the
+[connected-fragment beam source](../../src/fragnnet/models/masster/candidates/connected_fragment_beam.py).
+
 ## Charge retention and fragment marginalization
 
 For each cut mask, a charge-affinity head scores the resulting components and
