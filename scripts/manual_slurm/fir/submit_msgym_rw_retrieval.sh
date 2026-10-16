@@ -95,8 +95,12 @@ done
 
 # 2. Generate one job per checkpoint, on the aligned shards.
 if [ ! -f "${RUN_DP}/queries.csv" ]; then
-    echo "missing aligned shards ${RUN_DP}. Build them once (CPU, a few minutes) with:" >&2
+    echo "missing aligned shards ${RUN_DP}. Build them once (CPU, a few minutes; the job's RDKit" >&2
+    echo "module and wheelhouse pandas, so the shard pickles load) with:" >&2
+    echo "  module load StdEnv/2023 python/3.11 rdkit/2023.09.5" >&2
+    echo "  source wandb_venv/bin/activate && pip install --no-index pandas" >&2
     echo "  python scripts/ms2c/align_retrieval_shards.py ${SRC_DP} ${RUN_DP}" >&2
+    echo "  deactivate" >&2
     [ -f "${SRC_DP}/queries.csv" ] || echo "  after preparing ${SRC_DP}: bash scripts/manual_slurm/fir/submit_msgym_sb_retrieval.sh submit c32" >&2
     exit 1
 fi
