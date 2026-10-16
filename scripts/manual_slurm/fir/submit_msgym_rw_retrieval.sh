@@ -64,13 +64,21 @@ gen() {  # gen <stages> <arm> <run> <epoch>; prints the job script path
     echo "slurm_scripts/msgym_ret_formula_test_rw_${arm}_${run}_ep${ep}_${stages// /-}.sh"
 }
 
-# 1. Validate inputs before generating anything; fetch missing checkpoints from the W&B run files
-#    (login nodes have internet).
+# 1. Validate inputs before generating anything. A missing checkpoint is linked from the training
+#    job's W&B run directory in this checkout (jobs symlink wandb/ here; delete_checkpoints is off),
+#    else downloaded from the W&B run files (login nodes have internet).
 mkdir -p saved_ckpts/msgym
 for entry in "${CKPTS[@]}"; do
     IFS=: read -r arm run ep <<< "${entry}"
     [ -f "${MSGYM_DIR}/msgym_rw_${arm}.yml" ] || { echo "missing: ${MSGYM_DIR}/msgym_rw_${arm}.yml" >&2; exit 1; }
     ckpt="saved_ckpts/msgym/rw_${arm}_${run}_ep${ep}.ckpt"
+    if [ ! -f "${ckpt}" ]; then
+        found="$(ls -1 wandb/run-*-"${run}"/files/ckpt/model-epoch="${ep}".ckpt 2>/dev/null | tail -n 1 || true)"
+        if [ -n "${found}" ]; then
+            echo "linking ${ckpt} -> ${found}" >&2
+            ln -s "${REPO_ROOT}/${found}" "${ckpt}"
+        fi
+    fi
     if [ ! -f "${ckpt}" ]; then
         echo "fetching ${ckpt} from W&B run ${run}" >&2
         python - "${run}" "${ep}" "${ckpt}" <<'EOF'
