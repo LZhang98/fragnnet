@@ -650,6 +650,45 @@ The same stage on MassSpecGym, which is [M+H]+ only.
 - **How to read it:** against the same-batch control, by validation wrecall and cosine (same-seed noise is up
   to 0.008 cosine) and by retrieval.
 
+#### Validation read (ran 2026-10-16 03:48 UTC, 32 epochs, `fir:h100-3g.40gb`)
+
+| Arm | Run | Wall-clock h (x control) | best val cos 0.01 (epoch) | best-`val_primary_loss` epoch | final wprec / wrecall |
+| --- | --- | --- | --- | --- | --- |
+| control | `rpa6uq8k` | 1.23 (1.00) | 0.5944 (24) | 19 | 0.7574 / 0.9020 |
+| a0 | `oj85dppl` | 1.58 (1.28) | 0.5925 (21) | 19 | 0.7592 / 0.9099 |
+| a0d1 | `16gpi651` | 1.96 (1.59) | 0.5921 (22) | 14 | 0.7625 / 0.9105 |
+| a0null | `47t8i9s0` | 1.59 (1.29) | 0.5923 (16) | 14 | 0.7581 / 0.9046 |
+
+- Cosine: every rewire arm is 0.002 below control, inside same-seed noise. a0 equals a0null (0.5925 vs
+  0.5923). That was expected: the tail is ~1.1% of validation, so even the full tail ceiling (0.652 -> 0.782)
+  moves the whole split by ~+0.0014.
+- wrecall: +0.008 for a0/a0d1, +0.003 for a0null. Part of that gap may be candidate count (a0 keeps more
+  extras than the null in the smoke).
+- Cost: a0d1 at 1.59x control `_runtime` crosses kill (d) with no whole-split gain. `_runtime` includes setup
+  on shared MIG slices, so the ratios are rough.
+- Unaffected by the rewire row-order fix (`5e1bbe9c`): all four configs merge same-m/z rows, and the merge
+  re-sorts by spectrum. The NIST20 Phase 1 configs do not merge and need a checkout at or after that commit.
+
+#### Formula-test retrieval (prepared 2026-10-16)
+
+- **Atom-order defect in retrieval shards.** Rewire (and SMARTS) matching re-parses `mol_df.smiles` and
+  indexes the graph built from `mol_df.mol`. Retrieval prepare stores the raw candidate SMILES next to the
+  ML-standardized mol; for 3,783 formula-test candidates (~1.2%, mostly multi-component; on shard 0, 215
+  reordered and 54 with standardization-changed chemistry) the atom orders disagree and rewire expansion stops
+  ("RDKit and graph atom order disagree"). Training `mol_df` has 0 mismatches. Earlier retrieval checkpoints
+  (`pow075`, `f44tzxoc`, `wd10`) use neither SMARTS nor rewire, so their results stand.
+- **Fix:** [`align_retrieval_shards.py`](../../../scripts/ms2c/align_retrieval_shards.py) copies the shards
+  and, only for mismatched rows, sets `smiles` to the SMILES of the standardized mol and renumbers the mol to
+  its parse order. Graph chemistry is unchanged. Every arm, control included, reads the aligned copy.
+- **Local smoke (aligned shard 0, a0 ep19):** 65,406 candidates scored, none missing; inference 7:39 against
+  2:49 for `f44tzxoc` (2.7x). Shard-0 hit@1 `loglik_cal` 0.426 (`f44tzxoc` 0.428; different lineage, not a
+  comparison). Output: `output/msgym_retrieval/formula_test_aligned/`.
+- **Launcher:** [`submit_msgym_rw_retrieval.sh`](../../../scripts/manual_slurm/fir/submit_msgym_rw_retrieval.sh),
+  1 h on `fir:h100-2g.20gb` (times out -> resubmit resumes), best-`val_primary_loss` checkpoints (W&B run files `ckpt/model-epoch=NNN.ckpt`).
+  Needs the aligned shards under `/scratch/feiw/frag-gnn-data/msgym/aligned/formula_test` first. Not submitted.
+- **Read:** paired per-query hit@1 for a0 vs control and a0 vs a0null, overall and on rearrangement-tail
+  queries; kill if a0 does not beat a0null.
+
 ### Phase 2 (only on the G0b trigger)
 
 In-selection: per match build a virtual molecule whose eligible bonds exclude T (rule cuts plus every bond to

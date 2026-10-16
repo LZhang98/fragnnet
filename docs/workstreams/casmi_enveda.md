@@ -1,6 +1,6 @@
 # CASMI 2026, Enveda-180 and shared data quality
 
-> **Status:** HUB · **Updated:** 2026-10-15
+> **Status:** HUB · **Updated:** 2026-10-16
 > CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the ZenoTOF CID/EAD libraries, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
 
 ## Where it stands
@@ -14,6 +14,7 @@
 - **CASMI 2026:** data extracted to `data/raw/casmi2026/`, nothing preprocessed. The visible `test.parquet` is a verbatim copy of `train.parquet` (Enveda-180 rows); the hidden natural-product test replaces it at Kaggle notebook scoring. Validate only on a molecule-disjoint split of train.
 - **Train quality:** labels consistent; 166k HR spectra are poorly explained by their labelled molecule (70% RIKEN rows labelled plain `QTOF`/`Orbitrap`, mostly unmerged BMDMS-NP replicate scans); the Spectraverse dedup rule drops 17.6% of train; 2,022 multi-peak spectra are filed under two molecules.
 - **Distribution bias:** train is synthetic-heavy (NP median -1.31; Enveda-180 is 66% of molecules at -1.49) against the NP proxy (+1.42); the NP proxy's nearest-neighbour Tanimoto to train has median 0.775. Quality filters fall on NP-like data (19.7% suspects, 33.7% near-duplicates).
+- **Halogens:** [CASMI halogen census](../findings/casmi2026_halogen_census_2026_10_16.md): high-quality MSnLib + Enveda-180 hold 7,558 Br / 25,794 Cl molecules (NIST20 HR 1,837 / 3,662), almost all new, and 354 Br→Cl pairs (NIST20 train: 57); Enveda-180 supplies most.
 - **MSnLib vs NIST:** nearly disjoint (6,432 shared molecules, 13.7% of MSnLib); NIST HR would add 34,295 molecules not in any CASMI train library.
 - **Landed in `09e95e9a`:** finding sections 5.7-5.9 and scripts `scripts/debug/casmi26/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
 - **Enveda-180 baseline** (standalone, ACE only, no EMA; user decisions): `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`, not submitted, needs a second seed.
@@ -53,6 +54,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [CASMI halogen census](../findings/casmi2026_halogen_census_2026_10_16.md) | FINDING (2026-10-16) | Br/Cl/I carriers per library, halogen-aware quality filter, Br→Cl swap pairs vs NIST20 |
 | [ZenoTOF CID + EAD libraries](../findings/zenotof_ead_libraries_2026_10_15.md) | FINDING (2026-10-15) | MultiMS2, MS-DIAL 5 standards, CIeaD: sources, contents, EAD frag_mode, group key, processed outputs |
 | [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FINDING (2026-10-13) | Seven correctness findings; fixed with regression tests, committed in `bbcdf00c` |
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |

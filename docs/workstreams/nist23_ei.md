@@ -5,6 +5,7 @@
 
 ## Where it stands
 
+- **HR-EI raw libraries downloaded:** four sources under `data/raw/hr_ei_ms/`; see [download inventory](#hr-ei-raw-downloads-2026-10-16). Raw files only; structure mapping, cross-library deduplication, and overlap with nominal-EI training remain unchecked.
 - **Best result:** e1 (natural isotopes), [W&B `jeljdikj`](https://wandb.ai/frag-gnn/frag-gnn/runs/jeljdikj) epoch 37, `config/masster/ei/e1_nominal_natural_isotopes.yml`: full `nist23_ei_inchikey` test (51,685 spectra) mean 1 Da cosine 0.869984, Stein weighted similarity 0.886845; 0.899167 on the 26,372 RASSP-eligible spectra (RASSP FormulaNet reports 0.929 on its own NIST17 set, descriptive only).
 - **Isotope effect (one seed):** mean `val_cos_sim_1.0` over epochs 54-63 is 0.867738 (e1) vs 0.859883 (e0 `he3j5y3o`, no isotopes), +0.0079.
 - **Where the gap is:** a 512-spectrum support oracle scores 0.99615 vs the model's 0.88703, so the gap is intensity allocation, not candidate support. Output power/mass tilts do not help. Stein falls from 0.9202 (2-16 atoms) to 0.8556 (>64).
@@ -16,6 +17,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
+| HR-EI prediction benchmark | RAW DOWNLOADED | Map measured species to structures, audit nominal-training overlap, and define accurate-mass evaluation |
 | [Matched intensity arms e2/e3/e4](../plans/masster/masster_ei_nominal_plan.md#matched-intensity-configs-2026-10-01-prepared-not-launched) | PREPARED | Launch with provenance; compare cosine and Stein by size and on the RASSP subset |
 | [Matched RASSP comparison](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | OPEN | Check training overlap and preprocessing; run both models on one eligible split |
 | Mass-aware intensity objective | PROPOSED | Test only if matched arms leave a Stein gap (audit priority 3) |
@@ -43,6 +45,35 @@
 | [EI performance audit](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | FINDING (2026-10-06) | Stein vs RASSP, support oracle, replicate pairs, priorities |
 | [EI SMARTS screen](../findings/masster/masster_ei_smarts_screen_2026_10_01.md) | CLOSED NULL (2026-10-06) | Three literature families, none admitted |
 | [Isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md) | owned by generalization | Closed null for MS/MS; EI isotopes are natural (opposite case) |
+
+## HR-EI raw downloads (2026-10-16)
+
+Original publisher files are stored separately under `data/raw/hr_ei_ms/`:
+
+| Source | Subdirectory | Records in main spectral file | Files and license |
+| --- | --- | ---: | --- |
+| [HREI-MSDB](https://doi.org/10.6084/m9.figshare.29713460) | `hrei_msdb/` | 329 | All 15 deposited files: MSP, SDF, ZIP archives, compound/quality spreadsheets, and information PDF; CC BY 4.0 |
+| [RECETOX Exposome](https://doi.org/10.5281/zenodo.4471217) | `recetox_exposome/` | 386 | MSP spectra and SDF structures; CC-BY-NC per provider |
+| [RECETOX Metabolome](https://doi.org/10.5281/zenodo.5483565) | `recetox_metabolome/` | 265 | MSP spectra and SDF structures; CC-BY-NC per provider |
+| [Castro GC-QTOF](https://zenodo.org/records/5647960) | `castro_gc_qtof/` | 356 | JCAMP and PCDL libraries; CC BY 4.0 in Zenodo API metadata |
+
+RECETOX files were downloaded from the [provider's reference-library page](https://www.recetox.muni.cz/en/services/recetox-central-laboratories/biomarker-analysis-laboratories/recetox-mass-spectrum-reference-library).
+The inventory is 21 payload files totaling 21,798,880 bytes; record counts are
+MSP `Name:` headers or JCAMP `##TITLE=` headers, not deduplicated molecule counts.
+HREI-MSDB subset files and archives overlap its combined library and must not be
+counted as additional independent spectra.
+
+`data/raw/hr_ei_ms/download_manifest_2026_10_16.json` records file URLs, sizes,
+SHA-256 hashes, publisher MD5 hashes where supplied, and licenses. Figshare and
+Zenodo API metadata are saved alongside their libraries. All 21 local file hashes
+were verified, all 17 publisher-supplied MD5 hashes matched, and all seven ZIP
+archives passed CRC checks. Existing top-level RECETOX MSP files were preserved.
+No preprocessing, archive extraction, structure validation, or training was performed.
+
+Before using these data, map derivatized species to their measured structures:
+RECETOX Metabolome uses methoximation/silylation, and Castro includes TMS derivatives
+whose CAS identifiers can describe the original compound. Audit overlap both across
+libraries and against NIST23 nominal-EI training before defining held-out evaluation.
 
 ## Key artifacts
 

@@ -83,6 +83,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## NIST23 EI
 
+- **HR-EI raw data:** four libraries downloaded and integrity-checked ([inventory](workstreams/nist23_ei.md#hr-ei-raw-downloads-2026-10-16)); structure mapping and training-overlap audit remain open.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079
   over e0 (one seed). The gap is intensity allocation (support oracle 0.996).
 - **Next:** record provenance, check full-attention batch-512 memory, run e2/e3/e4, then a
