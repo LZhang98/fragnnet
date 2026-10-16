@@ -22,6 +22,7 @@
 |---|---|---|
 | [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED | MSGYM arms removed 2026-10-14; route 1 is NIST20-only |
 | [MSGYM training arms](../plans/masster/masster_msgym_training_arms_plan.md) | screen RAN 2026-10-03 | Val read in the [arm screen finding](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md); test retrieval done for `wd10`, `pow075`; other arms not retrieval-tested. |
+| [Rewire rules on MSGYM](../plans/masster/masster_rewire_rules_training_plan.md#msgym-screen-2026-10-15) | PREPARED | `submit_msgym_rewire.sh all` on Fir: c32 recipe, arms control/a0/a0d1/a0null; local GPU smoke passed 2026-10-15 |
 | [Short-schedule / budget screen](../plans/masster/msgym_short_budget_screen_2026_10_14.md) | PREPARED | Submit `submit_msgym_short_budget.sh all` on Fir; check `e1024`/`floor01` first epoch. Supersedes the batch-512 U256/E1024 configs below for the budget question. |
 | [U256/E1024 follow-up](../plans/masster/masster_fragment_marginal_selection_plan.md#msgym-u256e1024-follow-up-2026-10-05-prepared-not-run) | PREPARED | Real-data GPU smoke; record launch provenance; matched comparison with U256/E4096. |
 | [48-trial val-loss sweep](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | RAN; leader re-run retrieval-tested | Leader `f44tzxoc` ties `pow075` on formula test. Next: matched control or a seed replicate before any further retrieval run. |

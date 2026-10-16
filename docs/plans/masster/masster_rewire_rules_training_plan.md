@@ -636,6 +636,20 @@ Kill: (a) pool recall gain on the tail < +1 point (no headroom; matches the t1i 
 work only); (c) `a0null` equals `a0` within the tail SE (gain is candidate count, not chemistry); (d)
 whole-split drop > 0.0042 or wall-clock > 1.5x with no tail gain, or step time +15% for a tail gain < T.
 
+### MSGYM screen (2026-10-15)
+
+The same stage on MassSpecGym, which is [M+H]+ only.
+- **Configs:** `config/masster/massspecgym/msgym_rw_{control,a0,a0d1,a0null}.yml`. They copy
+  [`msgym_sb_c32.yml`](../../../config/masster/massspecgym/msgym_sb_c32.yml) (leader recipe at 32 epochs,
+  best epoch 18), with a new W&B group `msgym_masster_rewire_20261015`.
+- **Launcher:** `scripts/manual_slurm/fir/submit_msgym_rewire.sh`, generate-only, 3 h on `fir:h100-3g.40gb`.
+- **Local GPU smoke (2026-10-15):** 256 spectra, batch 32, 1 epoch. All four arms train and validate.
+  - Peak GPU: 1,488 MiB (control), 1,664 (a0), 1,688 (a0d1), 1,592 (a0null).
+  - Extras per spectrum, before cap -> kept: a0 19.2 -> 15.6, a0d1 26.1 -> 17.3, a0null 15.8 -> 13.8.
+  - Logs: `output/rewire_msgym_smoke_2026_10_15/`.
+- **How to read it:** against the same-batch control, by validation wrecall and cosine (same-seed noise is up
+  to 0.008 cosine) and by retrieval.
+
 ### Phase 2 (only on the G0b trigger)
 
 In-selection: per match build a virtual molecule whose eligible bonds exclude T (rule cuts plus every bond to
