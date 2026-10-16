@@ -12,6 +12,7 @@
 #   FRAGNNET_PROFILE (a setup_job_cc.py GPU profile, e.g. fir:h100-2g.20gb),
 #   FRAGNNET_STAGES (subset of "prepare infer score summarize"; default all),
 #   FRAGNNET_SHARDS (space-separated shard indices for infer/score; default all).
+#   FRAGNNET_EVAL_BATCH_SIZE (inference batch; default: the driver's, 256).
 # Setting STAGES or SHARDS adds a suffix to the job name, so one checkpoint can be split into
 # short shard-range jobs. Prepare is not locked: let one job finish it before the others start.
 # The run directory is shared by every checkpoint of one track/fold; re-submitting resumes it.
@@ -47,6 +48,9 @@ EXTRA_KWARGS=()
 if [ -n "${FRAGNNET_STAGES:-}" ]; then
   EXTRA_KWARGS+=("stages=${FRAGNNET_STAGES}")
   JOB="${JOB}_${FRAGNNET_STAGES// /-}"
+fi
+if [ -n "${FRAGNNET_EVAL_BATCH_SIZE:-}" ]; then
+  EXTRA_KWARGS+=("eval_batch_size=${FRAGNNET_EVAL_BATCH_SIZE}")
 fi
 if [ -n "${FRAGNNET_SHARDS:-}" ]; then
   EXTRA_KWARGS+=("shards=${FRAGNNET_SHARDS}")

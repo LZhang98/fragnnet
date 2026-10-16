@@ -32,7 +32,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "${REPO_ROOT}"
 LAUNCHER=scripts/manual_slurm/prepare_msgym_retrieval.sh
 MSGYM_DIR=config/masster/massspecgym
-PROFILE=fir:h100-2g.20gb
+PROFILE="${FRAGNNET_PROFILE:-fir:h100-2g.20gb}"
+# Inference batch by slice (FRAGNNET_EVAL_BATCH_SIZE overrides). Peak allocated memory is ~1.2 GiB
+# at 64 and ~4.0 GiB at 256 (pow075, test shard 0), so ~8 GiB at 512 and ~16 GiB at 1024. A shard
+# that still runs out of memory is retried at half the batch by the driver.
+case "${PROFILE}" in
+    fir:h100-1g.10gb) DEFAULT_BATCH=512 ;;
+    *) DEFAULT_BATCH=1024 ;;
+esac
+export FRAGNNET_EVAL_BATCH_SIZE="${FRAGNNET_EVAL_BATCH_SIZE:-${DEFAULT_BATCH}}"
 export FRAGNNET_TIME="${FRAGNNET_TIME:-1:00:00}"
 # Shards, per-checkpoint scores and the prediction HDF5s all go to scratch. Never fall back to
 # output/ under /project, where rrg-dwishart has no quota (EDQUOT).
@@ -109,7 +117,7 @@ for entry in "${CKPTS[@]}"; do
     IFS=: read -r arm run ep <<< "${entry}"
     JOB_SH+=("$(gen "infer score summarize" "${arm}" "${run}" "${ep}")")
 done
-echo "Generated ${#JOB_SH[@]} checkpoint jobs (${PROFILE}, ${FRAGNNET_TIME})."
+echo "Generated ${#JOB_SH[@]} checkpoint jobs (${PROFILE}, ${FRAGNNET_TIME}, eval batch ${FRAGNNET_EVAL_BATCH_SIZE})."
 echo "Generated scripts hold a W&B credential -- keep them out of shared records."
 
 if [ "${MODE}" = generate ]; then
@@ -122,5 +130,7 @@ for sh in "${JOB_SH[@]}"; do
     echo "$(sbatch --parsable "${sh}")  ${sh}"
 done
 echo "Check: squeue -u \$USER"
+echo "GPU usage per shard: ${RUN_DP}/gpu_usage_rw_*.csv (peak memory, throughput, wall times)"
+echo "Job-level: sacct -j <id> --format=JobID,JobName%50,Elapsed,State,MaxRSS,AllocTRES%60,TRESUsageInMax%80"
 echo "Summaries: ${RUN_DP}/summary_rw_*.csv"
 echo "Predictions: ${RUN_DP}/shard_*/rw_*/predictions_test.hdf5"

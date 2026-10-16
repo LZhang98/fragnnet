@@ -10,9 +10,14 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import pickle
+import socket
 import sys
+import time
+
+import torch as th
 
 from fragnnet.inference.checkpoint import (
     apply_inference_config,
@@ -244,6 +249,43 @@ def get_args():
     return parser.parse_args()
 
 
+def write_gpu_usage(output_save_dp: str, device, infer_s: float, num_predict: int) -> None:
+    """Print and save this run's GPU memory high-water marks and inference throughput.
+
+    Peaks come from the PyTorch allocator (``max_memory_allocated`` / ``max_memory_reserved``),
+    which works on a MIG slice; NVML reports no SM utilization there, so none is recorded.
+    ``device_used_gib`` is the slice's used memory at the end (CUDA context included).
+    Written to ``<output_save_dp>/gpu_usage.json``.
+    """
+    usage = {
+        "host": socket.gethostname(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "infer_s": round(infer_s, 1),
+        "predictions": int(num_predict),
+        "predictions_per_s": round(num_predict / infer_s, 1) if infer_s > 0 else None,
+    }
+    if th.cuda.is_available() and th.device(device).type == "cuda":
+        # Best effort: the predictions are already written, so a failure here must not fail
+        # the run. setup_device returns a bare "cuda" device; the memory API needs an index.
+        try:
+            idx = th.device(device).index
+            idx = th.cuda.current_device() if idx is None else idx
+            gib = 2**30
+            free_b, total_b = th.cuda.mem_get_info(idx)
+            usage.update(
+                device=th.cuda.get_device_name(idx),
+                device_total_gib=round(total_b / gib, 2),
+                device_used_gib=round((total_b - free_b) / gib, 2),
+                peak_allocated_gib=round(th.cuda.max_memory_allocated(idx) / gib, 2),
+                peak_reserved_gib=round(th.cuda.max_memory_reserved(idx) / gib, 2),
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostics only
+            usage["gpu_error"] = repr(exc)
+    print(f">>> GPU usage: {json.dumps(usage)}")
+    with open(os.path.join(output_save_dp, "gpu_usage.json"), "w") as f:
+        json.dump(usage, f, indent=1)
+
+
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
     from pandarallel import pandarallel
@@ -338,6 +380,9 @@ if __name__ == "__main__":
     run_label = args.wandb_run_id or os.path.splitext(os.path.basename(args.model_ckpt))[0]
     output_save_dp = os.path.join(save_dp, run_label)
     os.makedirs(output_save_dp, exist_ok=True)
+    if th.cuda.is_available() and th.device(device).type == "cuda":
+        th.cuda.reset_peak_memory_stats()  # current device; peaks then cover inference only
+    infer_start = time.perf_counter()
     if args.output_format == "hdf5":
         num_predict = run_inference_hdf5(
             model,
@@ -377,6 +422,9 @@ if __name__ == "__main__":
         # Any `*_batch_idxs` array ranges over spectra, whichever subset was requested.
         spectrum_idxs = [v for k, v in results.items() if k.endswith("batch_idxs") and len(v)]
         num_predict = max((int(v.max()) + 1 for v in spectrum_idxs), default=0)
+    infer_s = time.perf_counter() - infer_start
     print(f"\n>>> Saved predictions to: {output_save_dp}")
     print(f">>> Total predictions: {num_predict}")
+    write_gpu_usage(output_save_dp, device, infer_s, num_predict)
     print(">>> Evaluation complete!")
+

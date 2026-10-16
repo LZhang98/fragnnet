@@ -15,9 +15,11 @@ Layout under ``--run_dp`` (data is checkpoint-independent; outputs are per check
     data/                       01_prepare_msgym_retrieval.py export + build-proc of the fold
     queries.csv                 one row per query, with truth_inchikey_s and inst_type
     shard_NNN/                  spec_df.pkl, mol_df.pkl, split/test_ids.csv, candidates.csv
-    shard_NNN/<label>/          predictions_test.hdf5, scores.pkl, inferred / scored markers
+    shard_NNN/<label>/          predictions_test.hdf5, scores.pkl, inferred / scored markers,
+                                gpu_usage.json (peak GPU memory, throughput, wall times)
                                 (<label> is the checkpoint file stem)
     summary_<label>.csv         summarize_retrieval.py output
+    gpu_usage_<label>.csv       one row per shard from its gpu_usage.json
 
 Example::
 
@@ -30,10 +32,12 @@ Example::
 """
 
 import argparse
+import json
 import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +50,7 @@ from fragnnet.utils.misc_utils import booltype
 logger = logging.getLogger(__name__)
 REPO = Path(__file__).resolve().parents[2]
 STAGES = ("prepare", "infer", "score", "summarize")
+MIN_EVAL_BATCH_SIZE = 64  # out-of-memory halving stops here
 
 
 def run(cmd: list[str], log_fp: Path) -> None:
@@ -171,6 +176,40 @@ def prepare(args: argparse.Namespace, config_d: dict, run_dp: Path) -> None:
     q.drop(columns=["smiles"]).to_csv(run_dp / "queries.csv", index=False)
 
 
+def record_usage(out_dp: Path, key: str, value: float) -> None:
+    """Add a driver-side value to the shard's gpu_usage.json: a stage's wall time (subprocess
+    start-up included) or the eval batch size inference finally ran at."""
+    usage_fp = out_dp / "gpu_usage.json"
+    usage = json.loads(usage_fp.read_text()) if usage_fp.exists() else {}
+    usage[key] = round(value, 1) if isinstance(value, float) else value
+    usage_fp.write_text(json.dumps(usage, indent=1))
+
+
+def collect_gpu_usage(run_dp: Path, label: str) -> None:
+    """Write gpu_usage_<label>.csv (one row per shard) and log its peaks and totals.
+
+    Shards inferred before gpu_usage.json existed have no row.
+    """
+    rows = []
+    for usage_fp in sorted(run_dp.glob(f"shard_*/{label}/gpu_usage.json")):
+        rows.append({"shard": usage_fp.parent.parent.name, **json.loads(usage_fp.read_text())})
+    if not rows:
+        return
+    df = pd.DataFrame(rows)
+    out_fp = run_dp / f"gpu_usage_{label}.csv"
+    df.to_csv(out_fp, index=False)
+    parts = [f"{len(df)} shards"]
+    for col in ("peak_reserved_gib", "peak_allocated_gib", "device_total_gib"):
+        if col in df:
+            parts.append(f"max {col} {df[col].max():.2f}")
+    for col in ("infer_wall_s", "score_wall_s", "infer_s"):
+        if col in df:
+            parts.append(f"total {col} {df[col].sum() / 60:.1f} min")
+    if "device" in df:
+        parts.append(f"device {df['device'].iloc[0]}")
+    logger.info("GPU usage (%s): %s", out_fp, ", ".join(parts))
+
+
 def infer_and_score(args: argparse.Namespace, sd: Path, label: str) -> None:
     """Run MASSter inference on one shard, then score its candidates."""
     out_dp = sd / label
@@ -179,25 +218,42 @@ def infer_and_score(args: argparse.Namespace, sd: Path, label: str) -> None:
     # eval_bin_sqrt adds cos_sim_sqrt_<res> next to every binned score.
     if "infer" in args.stages and not (out_dp / "inferred").exists():
         out_dp.mkdir(parents=True, exist_ok=True)
-        run(
-            [sys.executable, str(REPO / "scripts/eval/run_save_inference_eval.py"),
-             "--template_fp", args.template_fp, "--custom_fp", args.custom_fp,
-             "--model_ckpt", args.model_ckpt, "--eval_split", "test",
-             "--save_dp", str(sd), "--eval_batch_size", str(args.eval_batch_size),
-             "--min_peak_int", "-1", "--output_subset", "pred_mzs", "pred_ints",
-             "--auxiliary_scores", *args.auxiliary_scores,
-             "--override", f"spec_fp={sd / 'spec_df.pkl'}", f"mol_fp={sd / 'mol_df.pkl'}",
-             f"split_dp={sd / 'split'}", "eval_bin_sqrt=True"],
-            out_dp / "infer.log",
-        )  # fmt: skip
+        start = time.perf_counter()
+        # A CUDA out-of-memory retries the shard at half the batch, and the smaller batch is kept
+        # for the rest of this run, so a large default costs at most one failed attempt per halving.
+        while True:
+            try:
+                run(
+                    [sys.executable, str(REPO / "scripts/eval/run_save_inference_eval.py"),
+                     "--template_fp", args.template_fp, "--custom_fp", args.custom_fp,
+                     "--model_ckpt", args.model_ckpt, "--eval_split", "test",
+                     "--save_dp", str(sd), "--eval_batch_size", str(args.eval_batch_size),
+                     "--min_peak_int", "-1", "--output_subset", "pred_mzs", "pred_ints",
+                     "--auxiliary_scores", *args.auxiliary_scores,
+                     "--override", f"spec_fp={sd / 'spec_df.pkl'}", f"mol_fp={sd / 'mol_df.pkl'}",
+                     f"split_dp={sd / 'split'}", "eval_bin_sqrt=True"],
+                    out_dp / "infer.log",
+                )  # fmt: skip
+                break
+            except RuntimeError:
+                oom = "OutOfMemoryError" in (out_dp / "infer.log").read_text(errors="replace")
+                if not oom or args.eval_batch_size <= MIN_EVAL_BATCH_SIZE:
+                    raise
+                (out_dp / "infer.log").rename(out_dp / f"infer_oom_b{args.eval_batch_size}.log")
+                args.eval_batch_size //= 2
+                logger.warning("%s: CUDA out of memory; retrying at eval_batch_size %d",
+                               sd.name, args.eval_batch_size)  # fmt: skip
         if not pred_fp.is_file() or pred_fp.stat().st_size == 0:
             raise RuntimeError(f"inference wrote no predictions: {pred_fp}")
+        record_usage(out_dp, "infer_wall_s", time.perf_counter() - start)
+        record_usage(out_dp, "eval_batch_size", args.eval_batch_size)
         (out_dp / "inferred").touch()
 
     # 2. Per-candidate retrieval scores against the benchmark query spectra.
     if "score" in args.stages and not (out_dp / "scored").exists():
         if not (out_dp / "inferred").exists():
             raise RuntimeError(f"cannot score {sd}: inference has not finished")
+        start = time.perf_counter()
         run(
             [sys.executable, str(REPO / "scripts/eval/score_retrieval_candidates.py"),
              "--candidates", str(sd / "candidates.csv"), "--query_spec_df", args.query_spec_fp,
@@ -205,6 +261,7 @@ def infer_and_score(args: argparse.Namespace, sd: Path, label: str) -> None:
              "--inmodel_scores", *args.inmodel_scores, "--out", str(out_dp / "scores.pkl")],
             out_dp / "score.log",
         )  # fmt: skip
+        record_usage(out_dp, "score_wall_s", time.perf_counter() - start)
         (out_dp / "scored").touch()
         if not args.keep_predictions:
             pred_fp.unlink()
@@ -224,7 +281,11 @@ def main() -> None:
     parser.add_argument("--stages", nargs="+", default=list(STAGES), choices=STAGES)
     parser.add_argument("--shards", nargs="*", type=int, default=None, help="default: all")
     parser.add_argument("--queries_per_shard", type=int, default=500)
-    parser.add_argument("--eval_batch_size", type=int, default=64)
+    # 256 (was 64): pow075 formula-test shard 0 on an 8 GB RTX 2070 SUPER ran the prediction loop
+    # 1.53x faster (108.8 s vs 166.5 s) at peak_allocated 3.96 GiB (1.22 at 64); 512 ran out of
+    # memory there. 0.77% of spectra differ from batch 64 (max 0.0094 cosine), within GPU
+    # run-to-run noise. Fits a 1g.10gb slice; try 512 only on 2g.20gb or larger.
+    parser.add_argument("--eval_batch_size", type=int, default=256)
     parser.add_argument(
         "--auxiliary_scores", nargs="+", default=["cos_sim", "cos_hun"]
     )
@@ -266,6 +327,7 @@ def main() -> None:
         for i, sd in enumerate(shard_dps):
             logger.info("shard %d/%d: %s", i + 1, len(shard_dps), sd.name)
             infer_and_score(args, sd, label)
+        collect_gpu_usage(run_dp, label)
 
     # 3. hit@k with molecule-bootstrap intervals, overall and per instrument.
     if "summarize" in args.stages:
