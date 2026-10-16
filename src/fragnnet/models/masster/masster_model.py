@@ -4915,8 +4915,24 @@ class MassterModel(nn.Module):
                 base_pred_logprobs = base_pred_logprobs[emitted_rows] + isotope_log_shares.to(
                     base_pred_logprobs
                 )
+        merges_rows = self.mass_mode == "nominal" or self.merge_same_mz_rows
+        row_order = None
+        if rewire_rows is not None and not merges_rows:
+            # Rewire extras are appended after every ordinary fragment, so their rows follow all
+            # spectra's ordinary rows. The losses slice rows by per-spectrum counts and need them
+            # grouped by spectrum (the merge below re-sorts by spectrum on its own). The sort is
+            # stable, so each spectrum keeps its own row order and spectra without extras are
+            # unchanged.
+            row_order = th.argsort(pred_batch_idxs, stable=True)
+            pred_mzs = pred_mzs[row_order]
+            pred_batch_idxs = pred_batch_idxs[row_order]
+            pred_logprobs = pred_logprobs[row_order]
+            if pred_intensities is not None:
+                pred_intensities = pred_intensities[row_order]
+            if base_pred_logprobs is not None:
+                base_pred_logprobs = base_pred_logprobs[row_order]
         merged_pathway_scores = None
-        if self.mass_mode == "nominal" or self.merge_same_mz_rows:
+        if merges_rows:
             # 7. At nominal mass many pathways land on the same integer of a spectrum. The loss
             # and metrics see only (m/z, probability), so merging those rows is exact, and it
             # divides the loss's target-by-prediction work several-fold. merge_same_mz_rows
@@ -5083,6 +5099,8 @@ class MassterModel(nn.Module):
             if emitted_rows is not None:
                 pathway_rows = {name: rows[emitted_rows] for name, rows in pathway_rows.items()}
                 pathway_rows["pred_pathway_isotope_offsets"] = isotope_offsets
+            if row_order is not None:
+                pathway_rows = {name: rows[row_order] for name, rows in pathway_rows.items()}
             if merged_pathway_scores is not None:
                 pathway_rows.update(merged_pathway_scores)
             output.update(

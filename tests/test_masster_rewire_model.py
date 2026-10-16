@@ -329,6 +329,52 @@ def test_mixed_batch_equals_per_spectrum_runs() -> None:
             assert _same(mixed["rewire_is_extra"][row_mask], single["rewire_is_extra"])
 
 
+def test_prediction_rows_stay_grouped_by_spectrum_and_the_loss_is_per_spectrum() -> None:
+    """Extras of an earlier spectrum must not land after a later spectrum's rows.
+
+    The vectorized loss slices prediction rows by per-spectrum counts (it assumes them sorted),
+    so unsorted rows would silently pair one spectrum's predictions with another's targets.
+    Exact mass without merge_same_mz_rows is the path that does not re-sort on its own.
+    """
+    from fragnnet.loss.cross_entropy import sparse_cross_entropy_vec
+
+    smiles = (_SULFONE, "CCO", _METHYL_SULFONE)
+    batch, _, on = _pair(smiles)
+    assert not on.merge_same_mz_rows and on.mass_mode == "exact"
+    on.eval()
+
+    def loss(out, n):
+        # Targets: every third predicted m/z of each spectrum, equal weights.
+        true_mzs, true_batch = [], []
+        for index in range(n):
+            rows = out["pred_mzs"][out["pred_batch_idxs"] == index][::3]
+            true_mzs.append(rows)
+            true_batch.append(th.full_like(rows, index, dtype=th.long))
+        true_mzs, true_batch = th.cat(true_mzs), th.cat(true_batch)
+        counts = th.bincount(true_batch, minlength=n).to(out["pred_logprobs"])
+        true_logprobs = -counts.log()[true_batch]
+        ios, _, _, _ = sparse_cross_entropy_vec(
+            true_mzs, true_logprobs, true_batch,
+            out["pred_mzs"], out["pred_logprobs"], out["pred_batch_idxs"],
+            th.full((n,), -30.0), tolerance=1e-5, relative=True, tolerance_min_mz=200.0,
+            oos_tolerance_multiple=3.0, gaussian_renormalize=True, loss_batch_size=n,
+        )
+        return ios
+
+    with th.no_grad():
+        mixed = _run(on, batch, smiles)
+        assert mixed["rewire_is_extra"][mixed["ion_h_fragment_batch_idxs"] == 0].any()
+        batch_idxs = mixed["pred_batch_idxs"]
+        assert bool((batch_idxs[1:] >= batch_idxs[:-1]).all())
+        mixed_loss = loss(mixed, len(smiles))
+        for index, molecule in enumerate(smiles):
+            single = _run(on, _build_batch((molecule,)), (molecule,))
+            rows = batch_idxs == index
+            # Same rows in the same order as the spectrum run alone.
+            assert _same(mixed["pred_mzs"][rows], single["pred_mzs"])
+            assert th.allclose(mixed_loss[index], loss(single, 1)[0], atol=1e-5)
+
+
 def test_multi_adduct_azo_rule_is_adduct_specific() -> None:
     smiles = (_AZOBENZENE, _AZOBENZENE)
     batch, _, on = _pair(smiles)
