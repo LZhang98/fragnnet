@@ -79,6 +79,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [MASSter method](../reference/masster_method.md) | REFERENCE (2026-10-16) | Formal core method, deterministic candidate-selection algorithm, and comparison with FraGNNet |
 | [Shared codebase audit](../findings/codebase_audit_2026_10_13.md) | FINDING (2026-10-13) | Six findings and three config runtime defects repaired; unfiltered CPU suite passed |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
 | [Unit test audit](../findings/unit_test_audit_2026_10_12.md) | FINDING (2026-10-13) | Four test findings fixed; unfiltered CPU suite passed during codebase repairs |

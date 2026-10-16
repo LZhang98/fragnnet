@@ -60,6 +60,7 @@ Data preprocessing commands (including Spectraverse folds) are in
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
 | [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |
+| [masster_method.md](reference/masster_method.md) | Formal MASSter method, probability-ranked candidate-selection algorithm, and comparison with FraGNNet. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Isotope-peak cleanup for training. |
 | [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
