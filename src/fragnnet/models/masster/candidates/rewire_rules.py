@@ -3,6 +3,12 @@
 Each rule is a mapped SMARTS plus an edit (delete atoms, cut bonds, form bonds). The 17 rules are the ``admitted``
 entries of the rule gate catalog (``output/rewire_rule_gate_2026_10_15/rule_catalog.json``, gitignored), copied here.
 The vocabulary is separate from ``MASSTER_RULE_VOCABULARY`` and append-only. Pure Python and RDKit, no torch.
+
+Status: PROTOTYPE. Applied only with ``masster_rewire_rules: true`` (off by default and in the
+current recipe). The MSGYM screen ran 2026-10-16: on validation every arm is within noise of the
+control and a0 equals a0null on cosine; retrieval and the NIST20 arms are prepared
+(docs/plans/masster/masster_rewire_rules_training_plan.md). `REWIRE_RULE_VOCABULARY` is imported by
+export code whether or not the rules are on.
 """
 
 from __future__ import annotations

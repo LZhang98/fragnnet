@@ -6,6 +6,9 @@
 # cython: wraparound=False
 """Compiled CPU kernels for MASSter candidate generation.
 
+Status: PRODUCTION for the CPU backend (template default). The CUDA backend does not call
+these kernels; the benchmark-only `cuda_topology_hybrid` reaches them through the CPU selector.
+
 Each kernel here is the hot-path equivalent of a pure-Python routine in
 ``reference_cut_masks.py`` / ``builder.py``. They exist because
 candidate generation runs per molecule per training step, so the Python-level

@@ -1,4 +1,12 @@
-"""Precompute SMARTS-defined atom partitions for MASSter."""
+"""Precompute SMARTS-defined atom partitions for MASSter.
+
+Status: OPT-IN. Template cuts and their assemblies are built only with
+``masster_smarts_templates: true`` (off by default and in the current recipe), on either
+candidate backend; ``masster_rule_pathway_token`` also requires it. The SMARTS pathway plan
+is a CLOSED NULL (docs/plans/masster/masster_smarts_pathway_plan.md); the code stays for
+prepared arms such as `so1` and the Enveda-180 re-check. `MASSTER_RULE_VOCABULARY` is
+imported by production training and export code whether or not templates are on.
+"""
 
 from __future__ import annotations
 

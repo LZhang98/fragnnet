@@ -3,6 +3,10 @@
 A port of the gate's ``topology_null_smarts`` / ``null_matches`` (scripts/debug/smarts/debug_masster_rewire_rule_gate.py,
 debug_masster_rewire_reach_ceiling.py). Elements and bond orders are wildcarded, terminal atoms stay terminal, non-terminal
 atoms stay non-terminal. The draw is deterministic per (canonical SMILES, rule name). Pure Python and RDKit.
+
+Status: PROTOTYPE, a control arm only (a0null, MSGYM and NIST20). Used only with
+``masster_rewire_null: true``, which needs ``masster_rewire_rules``. Never part of a production
+model.
 """
 
 from __future__ import annotations

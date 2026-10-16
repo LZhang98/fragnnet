@@ -1,4 +1,9 @@
-"""Compiler discovery shared by optional MASSter CUDA prototypes."""
+"""Compiler discovery, nvcc builds and library loading for MASSter's native CUDA kernels.
+
+Status: PRODUCTION, used by `cuda_mask_ranking` and `cuda_topology` for the CUDA backend.
+The cache filename hashes the `.cu` source, so editing a kernel, even a comment in it,
+forces one recompile per cache directory.
+"""
 
 from __future__ import annotations
 

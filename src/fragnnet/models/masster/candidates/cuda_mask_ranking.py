@@ -1,7 +1,8 @@
-"""Optional exact CUDA selector for finite FP32 single-component logits.
+"""Exact CUDA selector for finite FP32 single-component logits.
 
-The CPU selector remains the default. Compilation is lazy and importing this module
-does not require a CUDA device or toolkit. The candidate builder selects this module explicitly.
+Status: PRODUCTION, the mask-ranking stage of the CUDA backend (`cuda_candidates`). The CPU
+selector remains the template default. Compilation is lazy and importing this module does
+not require a CUDA device or toolkit.
 """
 
 from __future__ import annotations

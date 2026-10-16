@@ -4,6 +4,10 @@ This module translates one logit per precursor bond into ranked global cut
 masks and connected-component fragments. It intentionally has no fragmentation
 depth: the number of broken bonds in a mask is determined only by its learned
 probability.
+
+Status: TEST REFERENCE; no production code imports it. `iter_ranked_cut_masks` is the
+pure-Python heap ranker the Cython top-k kernel is checked against. The other public
+functions wrap the Cython kernels in dataclasses for the tests.
 """
 
 from __future__ import annotations

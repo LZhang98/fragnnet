@@ -1,4 +1,11 @@
-"""Batch top-ranked bond masks into sparse MASSter component tensors."""
+"""Batch top-ranked bond masks into sparse MASSter component tensors.
+
+Status: PRODUCTION. `build_masster_candidates` is the entry point for every MASSter run. It
+dispatches to the CUDA backend in `cuda_candidates` (``masster_candidate_backend: cuda``, the
+current recipe) or runs the CPU backend here (the template default, and the reference the CUDA
+backend must reproduce exactly). `MassterStaticGraph`, `MassterCandidateBatch`,
+`MassterCandidateTimings` and the mask-probability scoring are shared by both backends.
+"""
 
 from __future__ import annotations
 

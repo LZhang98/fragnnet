@@ -3,6 +3,9 @@
 It builds the same integer candidate arrays as the Cython reference using bounded mask tiles. The
 native library is compiled lazily with an existing CUDA toolkit into a /tmp cache;
 importing this module does not require a CUDA device, compiler, or binary.
+
+Status: PRODUCTION, the topology stage of the CUDA backend (`cuda_candidates`). The
+benchmark-only `cuda_topology_hybrid` also calls it on CPU-selected masks.
 """
 
 from __future__ import annotations

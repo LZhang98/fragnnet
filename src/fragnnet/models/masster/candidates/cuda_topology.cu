@@ -1,4 +1,5 @@
-// Optional, integer-only CUDA topology prototype. Loaded explicitly by the Python wrapper.
+// Integer-only topology: production stage of the CUDA candidate backend, loaded by
+// cuda_topology.py.
 #include <cuda_runtime.h>
 #include <stdint.h>
 
