@@ -8,6 +8,9 @@ Before planning or editing:
 1. Always read and follow [engineering rules](docs/rules/engineering.md).
    For Python changes, also read [Python and ML rules](docs/rules/python.md).
    For documentation changes, also read [documentation rules](docs/rules/documentation.md).
+   For formal academic writing (such as theses and manuscripts), also read
+   [formal writing rules](docs/writing_rule.md). These writing rules do not apply to
+   plans, task records, progress updates, or routine project documentation.
    Before writing or citing checkpoints or run outputs, read [artifact storage rules](docs/rules/artifacts.md).
 2. Read [current project state](docs/project-state.md), then the relevant
    [workstream hub](docs/workstreams/) and the plans it links.
