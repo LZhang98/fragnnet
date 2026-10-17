@@ -4,7 +4,8 @@ Fits ONE UMAP (Morgan radius 2, 2048 bits, Jaccard) on a molecule sample drawn s
 dataset contributes up to ``--per_dataset`` molecules, so all panels share coordinates. Each
 panel shows that dataset's sampled molecules over the grey union; a second figure marks the
 Br, Cl and I carriers per dataset. Input is ``collect_mols.py`` output. Runs in the
-``umap-viz`` conda env (umap-learn 0.5.7, RDKit 2024.09); ``FRAGNNET-GPU`` has no UMAP.
+``umap-viz`` conda env (umap-learn 0.5.7, RDKit 2024.09); ``FRAGNNET-GPU`` has no UMAP. Saves
+``umap_model.pkl`` for ``project.py``.
 
 Usage (from the repository root):
     conda run -n umap-viz python scripts/debug/dataset_umap/plot_umap.py \
@@ -15,6 +16,7 @@ Usage (from the repository root):
 import argparse
 import json
 import pickle
+import sys
 import time
 from pathlib import Path
 
@@ -25,44 +27,22 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import umap  # noqa: E402
-from rdkit import Chem, DataStructs, RDLogger  # noqa: E402
-from rdkit.Chem import rdFingerprintGenerator  # noqa: E402
 
-RDLogger.DisableLog("rdApp.*")
-
-ORDER = ["NIST20 HR", "NIST23 HR", "MassSpecGym", "Spectraverse", "MSnLib", "Enveda-180", "CASMI NP proxy", "HMDB"]
-# Reference categorical palette slots 1-8 in ORDER: a dataset keeps its colour in every figure.
-DATASET_COLORS = dict(
-    zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"])
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import (  # noqa: E402
+    DATASET_COLORS,
+    DATASET_GREY,
+    FP_BITS,
+    HALOGEN_COLORS,
+    INK,
+    ORDER,
+    base_map,
+    fingerprints,
+    in_view,
+    note,
+    style,
+    view_limits,
 )
-HALOGEN_COLORS = {"Cl": "#2a78d6", "Br": "#eb6834", "I": "#1baf7a"}  # reference palette slots 1-3
-GREY = "#e4e3de"
-DATASET_GREY = "#9a998f"
-INK, MUTED = "#1a1a19", "#6b6a63"
-
-
-def fingerprints(smiles: list[str], n_bits: int) -> np.ndarray:
-    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=n_bits)
-    out = np.zeros((len(smiles), n_bits), dtype=bool)
-    for i, smi in enumerate(smiles):
-        mol = Chem.MolFromSmiles(smi)
-        if mol is not None:
-            DataStructs.ConvertToNumpyArray(gen.GetFingerprint(mol), arr := np.zeros(n_bits, dtype=np.uint8))
-            out[i] = arr.astype(bool)
-    return out
-
-
-def style(ax, title: str, subtitle: str) -> None:
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.set_title(title, loc="left", fontsize=11, color=INK, fontweight="semibold", pad=14)
-    ax.text(0, 1.005, subtitle, transform=ax.transAxes, fontsize=8, color=MUTED, va="bottom")
-
-
-def note(ax, text: str) -> None:
-    ax.text(0.99, 0.01, text, transform=ax.transAxes, fontsize=8, color=MUTED, ha="right", va="bottom")
 
 
 def main() -> None:
@@ -70,7 +50,7 @@ def main() -> None:
     ap.add_argument("--mols_fp", type=Path, required=True)
     ap.add_argument("--out_dp", type=Path, required=True)
     ap.add_argument("--per_dataset", type=int, default=25000)
-    ap.add_argument("--n_bits", type=int, default=2048)
+    ap.add_argument("--n_bits", type=int, default=FP_BITS)
     ap.add_argument("--n_neighbors", type=int, default=30)
     ap.add_argument("--min_dist", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=20261016)
@@ -107,21 +87,14 @@ def main() -> None:
     datasets = [d for d in ORDER if d in totals.index]
     nrow = 2
     ncol = int(np.ceil((len(datasets) + 1) / nrow))
-    # Small disconnected clusters stretch the full range and squeeze the main cloud; zoom in and
-    # report how many points fall outside the view.
-    pct = [args.view_pct, 100 - args.view_pct]
-    lims = [np.percentile(keys[c], pct) for c in ("x", "y")]
-    lims = [lo_hi + np.array([-0.08, 0.08]) * (lo_hi[1] - lo_hi[0]) for lo_hi in lims]
-    in_view = keys["x"].between(*lims[0]) & keys["y"].between(*lims[1])
-    off_view = f"{int((~in_view).sum()):,} of {len(keys):,} sampled molecules lie outside the view"
+    lims = view_limits(keys, args.view_pct)
+    off_view = f"{int((~in_view(keys, lims)).sum()):,} of {len(keys):,} sampled molecules lie outside the view"
 
     def grid():
         fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 4.4 * nrow), facecolor="white")
         axes = axes.ravel()
         for ax in axes:
-            ax.set_xlim(*lims[0])
-            ax.set_ylim(*lims[1])
-            ax.scatter(keys["x"], keys["y"], s=0.2, c=GREY, linewidths=0, rasterized=True)
+            base_map(ax, keys, lims)
         return fig, axes
 
     def dot_size(n: int, small: float) -> float:

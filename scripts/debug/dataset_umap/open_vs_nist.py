@@ -18,7 +18,7 @@ Usage (from the repository root):
 
 import argparse
 import json
-from multiprocessing import Pool
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -28,44 +28,25 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
-from rdkit import Chem, DataStructs, RDLogger  # noqa: E402
-from rdkit.Chem import rdFingerprintGenerator  # noqa: E402
 
-RDLogger.DisableLog("rdApp.*")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import (  # noqa: E402
+    DATASET_COLORS,
+    INK,
+    MUTED,
+    NIST,
+    NP_PROXY,
+    SIMILARITY_BINS,
+    base_map,
+    mol_info,
+    nearest,
+    similarity_bin,
+    style,
+    view_limits,
+)
 
-NIST = ["NIST20 HR", "NIST23 HR"]
 PROXY_LIB = "enveda-np-examples"
-BINS = [(1.0, 1.01, "same 2D molecule or identical fingerprint"), (0.7, 1.0, "close analogue ≥0.7"),
-        (0.4, 0.7, "related 0.4–0.7"), (0.0, 0.4, "no analogue <0.4")]
-BIN_COLORS = ["#2a78d6", "#1baf7a", "#eda100", "#e34948"]  # reference palette slots 1, 3, 4, 8
-GREY, INK, MUTED = "#e4e3de", "#1a1a19", "#6b6a63"
-
-_REF: list = []
-
-
-def _fp(smiles: str):
-    mol = Chem.MolFromSmiles(smiles)
-    gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
-    return gen.GetFingerprint(mol) if mol is not None else None
-
-
-def _init(ref_smiles: list[str]) -> None:
-    global _REF
-    _REF = [fp for fp in map(_fp, ref_smiles) if fp is not None]
-
-
-def _nn(smiles_chunk: list[str]) -> list[float]:
-    out = []
-    for smi in smiles_chunk:
-        fp = _fp(smi)
-        out.append(max(DataStructs.BulkTanimotoSimilarity(fp, _REF)) if fp is not None else np.nan)
-    return out
-
-
-def nearest(query: list[str], ref: list[str], workers: int) -> np.ndarray:
-    chunks = [query[i : i + 200] for i in range(0, len(query), 200)]
-    with Pool(workers, initializer=_init, initargs=(ref,)) as pool:
-        return np.array([v for part in pool.map(_nn, chunks) for v in part])
+BIN_LABELS = [b[2] for b in SIMILARITY_BINS]
 
 
 def counts(frame: pd.DataFrame) -> dict:
@@ -91,17 +72,12 @@ def main() -> None:
     casmi = casmi.drop_duplicates()
     # CASMI libraries not already in mols.parquet; 2D key recomputed with RDKit as collect_mols does.
     extra = casmi[~casmi["ingest_lib"].isin(["pluskal_ms2", "enveda-180", PROXY_LIB])]
-    rows = []
-    for lib, smi in extra.itertuples(index=False):
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            continue
-        sym = {a.GetSymbol() for a in mol.GetAtoms()}
-        rows.append({"dataset": f"CASMI {lib}", "ik14": Chem.MolToInchiKey(mol)[:14], "smiles": smi,
-                     "Br": "Br" in sym, "Cl": "Cl" in sym, "I": "I" in sym})
-    allm = pd.concat([mols, pd.DataFrame(rows)], ignore_index=True)
+    info = pd.DataFrame([mol_info(smi) for smi in extra["normalized_smiles"]],
+                        columns=["smiles", "ik14", "Br", "Cl", "I"], index=extra.index)
+    rows = info.assign(dataset="CASMI " + extra["ingest_lib"]).dropna(subset=["ik14"])
+    allm = pd.concat([mols, rows[["dataset", "ik14", "smiles", "Br", "Cl", "I"]]], ignore_index=True)
     is_nist = allm["dataset"].isin(NIST)
-    is_proxy = allm["dataset"] == "CASMI NP proxy"
+    is_proxy = allm["dataset"] == NP_PROXY
     open_m = allm[~is_nist & ~is_proxy]
     nist_m = allm[is_nist]
     open_keys, nist_keys = set(open_m["ik14"]), set(nist_m["ik14"])
@@ -118,13 +94,12 @@ def main() -> None:
     nist_u = nist_m.drop_duplicates("ik14").copy()
     nist_u["nn_open"] = nearest(nist_u["smiles"].tolist(), ref_open["smiles"].tolist(), args.workers)
     nist_u.loc[nist_u["ik14"].isin(open_keys), "nn_open"] = 1.0
-    nist_u["bin"] = pd.cut(nist_u["nn_open"], [0, 0.4, 0.7, 0.999999, 1.01], right=False,
-                           labels=[b[2] for b in BINS[::-1]])
+    nist_u["bin"] = similarity_bin(nist_u["nn_open"]).to_numpy()
     nist_u.to_parquet(args.umap_dp / "nist_nn_open.parquet", index=False)
-    report["nist_nn_open_bins"] = nist_u["bin"].value_counts().reindex([b[2] for b in BINS]).to_dict()
+    report["nist_nn_open_bins"] = nist_u["bin"].value_counts().reindex(BIN_LABELS).to_dict()
     for el in ("Br", "Cl", "I"):
         sub = nist_u[nist_u[el]]
-        report[f"nist_{el}_nn_open_bins"] = sub["bin"].value_counts().reindex([b[2] for b in BINS]).to_dict()
+        report[f"nist_{el}_nn_open_bins"] = sub["bin"].value_counts().reindex(BIN_LABELS).to_dict()
 
     proxy = allm[is_proxy].drop_duplicates("ik14")
     proxy_open = nearest(proxy["smiles"].tolist(), ref_open["smiles"].tolist(), args.workers)
@@ -150,40 +125,36 @@ def plot(umap_dp: Path, nist_u: pd.DataFrame) -> None:
     """Open data on the joint map, and NIST molecules by their nearest open neighbour."""
     coords = pd.read_parquet(umap_dp / "umap_coords.parquet")[["ik14", "x", "y"]]
     sampled = pd.read_parquet(umap_dp / "umap_sampled_mols.parquet")
-    lims = [np.percentile(coords[c], [2, 98]) for c in ("x", "y")]
-    lims = [lo_hi + np.array([-0.08, 0.08]) * (lo_hi[1] - lo_hi[0]) for lo_hi in lims]
+    lims = view_limits(coords, 2.0)
     fig, axes = plt.subplots(1, 2, figsize=(16, 8.4), facecolor="white")
     for ax in axes:
-        ax.set_xlim(*lims[0])
-        ax.set_ylim(*lims[1])
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        ax.scatter(coords["x"], coords["y"], s=0.2, c=GREY, linewidths=0, rasterized=True)
+        base_map(ax, coords, lims)
     # HMDB has no spectra: drawn as its own layer, never counted as open MS/MS data.
-    open_pts = sampled[~sampled["dataset"].isin(NIST + ["CASMI NP proxy", "HMDB"])].drop_duplicates("ik14")
+    open_color, hmdb_color = DATASET_COLORS["NIST20 HR"], DATASET_COLORS["HMDB"]
+    open_pts = sampled[~sampled["dataset"].isin(NIST + [NP_PROXY, "HMDB"])].drop_duplicates("ik14")
     hmdb_pts = sampled[sampled["dataset"] == "HMDB"]
     if len(hmdb_pts):
-        axes[0].scatter(hmdb_pts["x"], hmdb_pts["y"], s=0.3, c="#e34948", alpha=0.35, linewidths=0, rasterized=True)
-    axes[0].scatter(open_pts["x"], open_pts["y"], s=0.3, c="#2a78d6", alpha=0.5, linewidths=0, rasterized=True)
-    proxy_pts = sampled[sampled["dataset"] == "CASMI NP proxy"]
-    axes[0].scatter(proxy_pts["x"], proxy_pts["y"], s=10, c="#6250d6", linewidths=0, label="CASMI NP proxy")
-    axes[0].scatter([], [], s=30, c="#2a78d6", label="Open data (MSGYM, Spectraverse, MSnLib, Enveda-180)")
+        axes[0].scatter(hmdb_pts["x"], hmdb_pts["y"], s=0.3, c=hmdb_color, alpha=0.35, linewidths=0, rasterized=True)
+    axes[0].scatter(open_pts["x"], open_pts["y"], s=0.3, c=open_color, alpha=0.5, linewidths=0, rasterized=True)
+    proxy_pts = sampled[sampled["dataset"] == NP_PROXY]
+    axes[0].scatter(proxy_pts["x"], proxy_pts["y"], s=10, c=DATASET_COLORS[NP_PROXY], linewidths=0, label=NP_PROXY)
+    axes[0].scatter([], [], s=30, c=open_color, label="Open data (MSGYM, Spectraverse, MSnLib, Enveda-180)")
     if len(hmdb_pts):
-        axes[0].scatter([], [], s=30, c="#e34948", label="HMDB (structures only, no spectra; under open data)")
+        axes[0].scatter([], [], s=30, c=hmdb_color, label="HMDB (structures only, no spectra; under open data)")
     axes[0].legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
-    axes[0].set_title("Open data only (sampled molecules on the joint map)", loc="left", fontsize=12, color=INK)
-    nist_pts = coords.merge(nist_u[["ik14", "bin"]], on="ik14")
-    for (_lo, _hi, label), color in list(zip(BINS, BIN_COLORS)):
+    style(axes[0], "Open data only", "Sampled molecules on the joint map")
+    # Bins come from the similarity, not the stored label, so older nist_nn_open.parquet files re-plot.
+    bins = similarity_bin(nist_u["nn_open"]).to_numpy()
+    nist_pts = coords.merge(nist_u[["ik14"]].assign(bin=bins), on="ik14")
+    for _lo, _hi, label, color in SIMILARITY_BINS:
         sub = nist_pts[nist_pts["bin"] == label]
-        n_all = int((nist_u["bin"] == label).sum())
+        n_all = int((bins == label).sum())
         axes[1].scatter(sub["x"], sub["y"], s=0.6, c=color, alpha=0.7,
                         linewidths=0, rasterized=True)
         axes[1].scatter([], [], s=30, c=color, label=f"{label}: {n_all:,} of {len(nist_u):,}")
     axes[1].legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK,
                    title="NIST20 ∪ NIST23 HR molecule, nearest open neighbour (Tanimoto)", title_fontsize=9)
-    axes[1].set_title("What open data covers of NIST", loc="left", fontsize=12, color=INK)
+    style(axes[1], "What open data covers of NIST", "Coloured by the nearest open-data molecule")
     fig.text(0.01, 0.01, "Map shows the UMAP sample (25,000 per dataset); counts in the legend are all molecules. "
              "Red is drawn last, on top.",
              fontsize=8, color=MUTED)
