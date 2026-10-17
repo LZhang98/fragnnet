@@ -32,7 +32,8 @@ RDLogger.DisableLog("rdApp.*")
 ORDER = ["NIST20 HR", "NIST23 HR", "MassSpecGym", "Spectraverse", "MSnLib", "Enveda-180", "CASMI NP proxy"]
 HIGHLIGHT = "#2a78d6"
 HALOGEN_COLORS = {"Cl": "#2a78d6", "Br": "#eb6834", "I": "#1baf7a"}  # reference palette slots 1-3
-GREY = "#d4d3cd"
+GREY = "#e4e3de"
+DATASET_GREY = "#9a998f"
 INK, MUTED = "#1a1a19", "#6b6a63"
 
 
@@ -56,6 +57,10 @@ def style(ax, title: str, subtitle: str) -> None:
     ax.text(0, 1.005, subtitle, transform=ax.transAxes, fontsize=8, color=MUTED, va="bottom")
 
 
+def note(ax, text: str) -> None:
+    ax.text(0.99, 0.01, text, transform=ax.transAxes, fontsize=8, color=MUTED, ha="right", va="bottom")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mols_fp", type=Path, required=True)
@@ -65,6 +70,8 @@ def main() -> None:
     ap.add_argument("--n_neighbors", type=int, default=30)
     ap.add_argument("--min_dist", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=20261016)
+    ap.add_argument("--view_pct", type=float, default=2.0, help="Zoom to this..100-this percentile")
+    ap.add_argument("--reuse_coords", action="store_true", help="Re-plot from saved coordinates")
     args = ap.parse_args()
     args.out_dp.mkdir(parents=True, exist_ok=True)
 
@@ -74,44 +81,55 @@ def main() -> None:
         g.sample(n=min(len(g), args.per_dataset), random_state=args.seed) for _, g in df.groupby("dataset")
     )
     keys = sampled.drop_duplicates("ik14")[["ik14", "smiles"]].reset_index(drop=True)
-    t0 = time.time()
-    fps = fingerprints(keys["smiles"].tolist(), args.n_bits)
-    print(f"{len(keys)} molecules fingerprinted in {time.time() - t0:.0f}s", flush=True)
-    t0 = time.time()
-    # No random_state: a fixed seed makes umap-learn single-threaded. Coordinates are saved instead.
-    reducer = umap.UMAP(n_neighbors=args.n_neighbors, min_dist=args.min_dist, metric="jaccard", low_memory=True)
-    xy = reducer.fit_transform(fps)
-    print(f"UMAP fit in {time.time() - t0:.0f}s", flush=True)
-    keys["x"], keys["y"] = xy[:, 0], xy[:, 1]
-    keys.to_parquet(args.out_dp / "umap_coords.parquet", index=False)
+    coords_fp = args.out_dp / "umap_coords.parquet"
+    if args.reuse_coords:
+        keys = keys.merge(pd.read_parquet(coords_fp)[["ik14", "x", "y"]], on="ik14", validate="1:1")
+    else:
+        t0 = time.time()
+        fps = fingerprints(keys["smiles"].tolist(), args.n_bits)
+        print(f"{len(keys)} molecules fingerprinted in {time.time() - t0:.0f}s", flush=True)
+        t0 = time.time()
+        # No random_state: a fixed seed makes umap-learn single-threaded. Coordinates are saved instead.
+        reducer = umap.UMAP(n_neighbors=args.n_neighbors, min_dist=args.min_dist, metric="jaccard", low_memory=True)
+        xy = reducer.fit_transform(fps)
+        print(f"UMAP fit in {time.time() - t0:.0f}s", flush=True)
+        keys["x"], keys["y"] = xy[:, 0], xy[:, 1]
+        keys.to_parquet(coords_fp, index=False)
     sampled = sampled.merge(keys[["ik14", "x", "y"]], on="ik14")
     sampled.to_parquet(args.out_dp / "umap_sampled_mols.parquet", index=False)
 
     datasets = [d for d in ORDER if d in totals.index]
     ncol = 4
     nrow = int(np.ceil((len(datasets) + 1) / ncol))
-    lims = (np.percentile(keys["x"], [0.2, 99.8]), np.percentile(keys["y"], [0.2, 99.8]))
+    # Small disconnected clusters stretch the full range and squeeze the main cloud; zoom in and
+    # report how many points fall outside the view.
+    pct = [args.view_pct, 100 - args.view_pct]
+    lims = [np.percentile(keys[c], pct) for c in ("x", "y")]
+    lims = [lo_hi + np.array([-0.08, 0.08]) * (lo_hi[1] - lo_hi[0]) for lo_hi in lims]
+    in_view = keys["x"].between(*lims[0]) & keys["y"].between(*lims[1])
+    off_view = f"{int((~in_view).sum()):,} of {len(keys):,} sampled molecules lie outside the view"
 
     def grid():
         fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 4.4 * nrow), facecolor="white")
         axes = axes.ravel()
         for ax in axes:
-            ax.set_xlim(*(lims[0] + np.array([-0.5, 0.5])))
-            ax.set_ylim(*(lims[1] + np.array([-0.5, 0.5])))
-            ax.scatter(keys["x"], keys["y"], s=0.3, c=GREY, linewidths=0, rasterized=True)
+            ax.set_xlim(*lims[0])
+            ax.set_ylim(*lims[1])
+            ax.scatter(keys["x"], keys["y"], s=0.2, c=GREY, linewidths=0, rasterized=True)
         return fig, axes
 
     # Figure 1: where each dataset sits.
     fig, axes = grid()
     for ax, name in zip(axes, datasets):
         sub = sampled[sampled["dataset"] == name]
-        size = 6 if len(sub) < 1000 else (1.2 if len(sub) < 20000 else 0.6)
-        ax.scatter(sub["x"], sub["y"], s=size, c=HIGHLIGHT, alpha=0.6, linewidths=0, rasterized=True)
+        size = 6 if len(sub) < 1000 else 0.25
+        ax.scatter(sub["x"], sub["y"], s=size, c=HIGHLIGHT, alpha=0.5, linewidths=0, rasterized=True)
         n = int(totals.loc[name, "molecules"])
         style(ax, name, f"{n:,} molecules" + (f", {len(sub):,} plotted" if len(sub) < n else ""))
     overlap = df.groupby("ik14")["dataset"].nunique()
     style(axes[len(datasets)], "All datasets (grey)", f"{len(keys):,} unique sampled molecules; "
           f"{int((overlap > 1).sum()):,} of {len(overlap):,} in 2+ datasets")
+    note(axes[len(datasets)], off_view)
     for ax in axes[len(datasets) + 1:]:
         ax.set_visible(False)
     fig.suptitle("Chemical space by dataset: joint UMAP of Morgan fingerprints (r=2, 2048 bits, Jaccard)",
@@ -125,17 +143,19 @@ def main() -> None:
     for ax, name in zip(axes, datasets):
         sub = sampled[sampled["dataset"] == name]
         parts = []
+        ax.scatter(sub["x"], sub["y"], s=0.2, c=DATASET_GREY, linewidths=0, rasterized=True)
         for el in ("Cl", "Br", "I"):
             hal = sub[sub[el]]
-            ax.scatter(hal["x"], hal["y"], s=2.5 if len(hal) > 2000 else 6, c=HALOGEN_COLORS[el], alpha=0.75,
+            ax.scatter(hal["x"], hal["y"], s=1.0 if len(sub) >= 1000 else 8, c=HALOGEN_COLORS[el], alpha=0.8,
                        linewidths=0, rasterized=True)
             parts.append(f"{el} {int(totals.loc[name, el]):,}")
         style(ax, name, "  ·  ".join(parts) + " molecules")
     legend_ax = axes[len(datasets)]
-    style(legend_ax, "All datasets (grey)", "Halogen carriers drawn over all sampled molecules")
+    style(legend_ax, "All datasets (light grey)", "Dark grey in each panel: that dataset's own molecules")
+    note(legend_ax, off_view)
     for el, color in HALOGEN_COLORS.items():
         legend_ax.scatter([], [], s=30, c=color, label={"Cl": "Cl carrier", "Br": "Br carrier", "I": "I carrier"}[el])
-    legend_ax.legend(loc="lower left", frameon=False, fontsize=9, labelcolor=INK)
+    legend_ax.legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
     for ax in axes[len(datasets) + 1:]:
         ax.set_visible(False)
     fig.suptitle("Halogen carriers by dataset (same joint UMAP; datasets over 25,000 molecules are subsampled)",

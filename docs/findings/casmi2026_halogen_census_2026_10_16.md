@@ -73,6 +73,24 @@ Enveda-180 contains no iodine.
 - **The HQ flag is a candidate label filter**, not proof of a correct label. RIKEN Br is the only
   large source whose spectra mostly fail it.
 
+## Chemical-space UMAP of all datasets
+
+[`collect_mols.py`](../../scripts/debug/dataset_umap/collect_mols.py) (`FRAGNNET-GPU`) and
+[`plot_umap.py`](../../scripts/debug/dataset_umap/plot_umap.py) (separate `umap-viz` conda env:
+umap-learn 0.5.7, scikit-learn 1.5; `FRAGNNET-GPU` has no UMAP) fit one joint UMAP (Morgan r=2,
+2048 bits, Jaccard) on up to 25,000 molecules per dataset (103,322 unique). The sample is seeded and
+the fit is not. Figures `umap_by_dataset.png` and `umap_halogens_by_dataset.png` are in
+`output/dataset_umap_2026_10_16/`, with the coordinates.
+
+Molecules, all rows (2D InChIKey block): NIST20 HR 26,800; NIST23 HR 44,831; MassSpecGym 16,957;
+Spectraverse 44,234; MSnLib 46,821; Enveda-180 182,941; MSnLib + Enveda-180 227,487 (6,489 in NIST20 ∪ NIST23 HR).
+
+- Enveda-180 and MSnLib fill the lower block of the map. NIST20/23 are densest in the upper right,
+  and a large part of the lower block has little NIST coverage. MassSpecGym and Spectraverse span both.
+- The NP proxy sits mostly in the upper arms and outlying clusters, where Enveda-180 is nearly absent.
+- NIST20/23 Br and I carriers cluster in the upper-right region. Enveda-180 and MSnLib Br carriers
+  spread through the lower block, so they add Br chemistry in a different region, not more of the same.
+
 ## Not checked
 
 - Spectrum-level Br↔Cl correspondence (step 3a of the
