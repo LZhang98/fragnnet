@@ -228,7 +228,6 @@ def test_nominal_isotope_model_loads_exact_checkpoints_strict() -> None:
     ("kwargs", "message"),
     [
         ({"mass_mode": "binned"}, "mass_mode"),
-        ({"isotope_envelope": "natural"}, "requires mass_mode='nominal'"),
         ({**NATURAL, "isotope_max_order": 0}, "isotope_max_order"),
         ({**NATURAL, "isotope_min_ratio": 0.2}, "isotope_min_ratio"),
     ],

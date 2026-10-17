@@ -1,7 +1,7 @@
 # MASSter EI-MS method
 
-> **Status:** REFERENCE · **Updated:** 2026-10-16
-> Chemically constrained probabilistic prediction of nominal-mass electron-ionization spectra with natural isotope envelopes.
+> **Status:** REFERENCE · **Updated:** 2026-10-17
+> Chemically constrained probabilistic EI prediction with nominal or exact-mass natural isotope output.
 
 ## Overview
 
@@ -9,7 +9,8 @@ MASSter predicts electron-ionization mass spectra (EI-MS) from molecular structu
 by allocating normalized intensity across structurally defined fragment-ion channels.
 A learned bond-cut proposal distribution selects candidate fragments, and a
 candidate-set transformer estimates their spectral contributions. Natural isotope
-envelopes distribute each channel's contribution across nominal mass offsets.
+envelopes distribute each channel's contribution across nominal offsets or exact
+isotopologue masses, according to the configured mass mode.
 
 The [core MASSter method](masster_method.md) defines the molecular encoder,
 Bernoulli cut-mask probabilities, deterministic probability-ranked enumeration,
@@ -88,6 +89,31 @@ that coincide at the same integer mass are summed. The result is a distribution
 of normalized intensity over nominal m/z values, with the same within-spectrum
 probabilistic interpretation as the tandem-MS formulation.
 
+## Exact-mass isotope output
+
+With `masster_mass_mode: exact` and `masster_isotope_envelope: natural`, each
+channel is expanded into its natural isotope fine structure. Exact mass increments
+are computed from elemental isotope masses relative to each element's most abundant
+isotope. The spectral assembly equation above then uses the exact base ion mass
+and an isotopologue-specific increment in place of the integer expression
+$m_0(F,h)+k$. Electron-mass corrections remain in the base channel mass.
+
+Different isotopologues with the same nominal offset remain distinct: for example,
+carbon-13 and nitrogen-15 substitution contribute different exact M+1 masses.
+The maximum order still limits the signed nominal offset; intermediate offsets that
+can return to the retained window through negative/positive cancellation are kept.
+In exact mode, the minimum-share threshold applies to each fine-structure row,
+followed by normalization to conserve each channel's intensity. Nominal mode
+retains its existing aggregate-envelope semantics and tensor implementation.
+
+The exact chemistry calculation is cached on CPU by ion composition. Natural
+abundances are fixed; emitted scores remain differentiable. This path introduces
+no learned parameters or persistent checkpoint buffers. Ordinary spectrum outputs
+include isotope peaks. Explanatory tabular exports remain explicitly unsupported
+for isotope rows, because their current formula schema cannot label isotope states.
+Internal pathway annotations carry both signed nominal isotope offsets and, in
+exact mode, exact isotope mass increments.
+
 ## EI training and scope
 
 The EI setup uses the proposal-selection-only training formulation described in the
@@ -110,4 +136,13 @@ The [natural-isotope EI configuration](../../config/masster/ei/e1_nominal_natura
 defines this setup. The [EI design record](../plans/masster/masster_ei_nominal_plan.md)
 and [EI workstream](../workstreams/nist23_ei.md) distinguish implementation behavior
 from completed experiments and unresolved validation.
+
+The [HR-EI exclusion plan](../plans/masster/hr_ei_isotopes_holdout_plan.md) records a
+separate nominal-training split that excludes resolvable external HR-EI reference
+connectivities, alternative supplied identities, and RECETOX native parent structures.
+The fresh-training configuration is
+[`e5_hr_ei_holdout_nominal.yml`](../../config/masster/ei/e5_hr_ei_holdout_nominal.yml).
+It retains nominal targets and natural isotope output during training; exact-mass
+natural isotope output is selected for HR-EI evaluation. A checkpoint previously
+trained on the excluded molecules is unsuitable for a held-out claim.
 

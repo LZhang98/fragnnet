@@ -61,7 +61,7 @@ Data preprocessing commands (including Spectraverse folds) are in
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
 | [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |
 | [masster_method.md](reference/masster_method.md) | Formal MASSter method, probability-ranked candidate-selection algorithm, and comparison with FraGNNet. |
-| [masster_ei_method.md](reference/masster_ei_method.md) | Probabilistic MASSter EI-MS method, nominal ion channels, natural isotope assembly, and training setup. |
+| [masster_ei_method.md](reference/masster_ei_method.md) | Probabilistic MASSter EI-MS method, nominal/exact ion channels, natural isotope assembly, and training setup. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Isotope-peak cleanup for training. |
 | [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |

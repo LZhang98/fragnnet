@@ -6,7 +6,9 @@ processed ``mol_df.pkl`` files hold RDKit objects; ``plot_umap.py`` runs in ``um
 
 Datasets: NIST20 HR and NIST23 HR (``dset`` prefix ``nist20_hr``/``nist23_hr``), MassSpecGym
 benchmark 1.5, Spectraverse, and from CASMI 2026 train MSnLib (``pluskal_ms2``), Enveda-180 and
-the natural-product proxy ``enveda-np-examples``.
+the natural-product proxy ``enveda-np-examples``. Optionally HMDB (``--hmdb_fp``: the PubChem
+property CSV of HMDB-deposited CIDs, columns CID/SMILES/InChIKey; hmdb.ca blocks scripted
+downloads, and the PubChem copy has no detected/expected status). HMDB has no spectra.
 
 Usage (from the repository root):
     PYTHONPATH=src python scripts/debug/dataset_umap/collect_mols.py \
@@ -52,6 +54,7 @@ def main() -> None:
     ap.add_argument("--casmi_train_fp", type=Path, default=Path("data/raw/casmi2026/train.parquet"))
     ap.add_argument("--out_fp", type=Path, required=True)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--hmdb_fp", type=Path, default=None)
     args = ap.parse_args()
 
     frames = []
@@ -61,6 +64,9 @@ def main() -> None:
     for name, lib in CASMI.items():
         counts = casmi.loc[casmi["ingest_lib"] == lib, "normalized_smiles"].value_counts()
         frames.append(counts.rename_axis("smiles").reset_index(name="n_spectra").assign(dataset=name))
+    if args.hmdb_fp is not None:
+        hmdb = pd.read_csv(args.hmdb_fp, usecols=["SMILES"]).dropna().drop_duplicates()
+        frames.append(pd.DataFrame({"smiles": hmdb["SMILES"], "n_spectra": 0, "dataset": "HMDB"}))
     df = pd.concat(frames, ignore_index=True)
 
     with Pool(args.workers) as pool:

@@ -817,14 +817,17 @@ masster_h_transfer_bound: valence
 # eval_mz_bin_res: [1.0]. Candidate features keep exact masses.
 # See docs/plans/masster/masster_ei_nominal_plan.md.
 masster_mass_mode: exact  # ["exact", "nominal"]
-# Isotope rows. none: one row per emitted pathway. natural (needs masster_mass_mode: nominal):
-# each emitted pathway is split over nominal offsets by the natural isotope pattern of its ion
-# composition, conserving its probability; right for EI, which has no isolation step. Candidate,
+# Isotope rows. none: one row per emitted pathway. natural: each emitted pathway is split
+# by its ion composition's natural isotope pattern. Nominal mode emits integer offsets;
+# exact mode emits isotope fine structure at exact mass increments (CPU-cached chemistry).
+# Each channel conserves its probability. Natural envelopes are appropriate for EI without
+# precursor isotope selection. The nominal mode remains the fast tensor implementation.
+# Candidate,
 # proposal and dense channel outputs stay monoisotopic, so candidate_wrecall does not count
 # isotope peaks.
 masster_isotope_envelope: none  # ["none", "natural"]
 masster_isotope_max_order: 4  # largest absolute nominal offset of an isotope row
-masster_isotope_min_ratio: 0.001  # isotope rows under this share of their pathway are dropped
+masster_isotope_min_ratio: 0.001  # per nominal row or exact isotopologue share; then renormalize
 # Merge prediction rows of one spectrum that share a 4-decimal m/z (probabilities summed), as
 # nominal mode always does; the annotation export keeps one row per pathway. Required with an
 # exact-mass MASSter and ints_transform other than none: training learns the transformed

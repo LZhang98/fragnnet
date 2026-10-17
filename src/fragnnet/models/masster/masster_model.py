@@ -44,6 +44,25 @@ from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pai
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder
+from fragnnet.models.masster.candidates.builder import (
+    MassterCandidateBatch,
+    MassterStaticGraph,
+    build_masster_candidates,
+)
+from fragnnet.models.masster.candidates.connected_fragment_beam import (
+    build_connected_fragment_beam_candidates,
+)
+from fragnnet.models.masster.candidates.rewire_rules import (
+    MASSTER_NUM_REWIRE_RULES,
+    REWIRE_RULE_SPEC_HASHES,
+    filter_rewire_matches,
+)
+from fragnnet.models.masster.candidates.smarts_templates import (
+    MASSTER_NUM_RULES,
+    MASSTER_RULE_NAME_HASHES,
+    MassterTemplate,
+    filter_masster_templates,
+)
 from fragnnet.models.masster.masster_candidate_features import (
     COMPOSITION_FEATURE_DIM,
     COMPOSITION_HYDROGEN_COLUMN,
@@ -59,29 +78,6 @@ from fragnnet.models.masster.masster_candidate_transformer import (
     CandidateIntensityTransformerHead,
     candidate_graph_edges,
 )
-from fragnnet.models.masster.candidates.builder import (
-    MassterCandidateBatch,
-    MassterStaticGraph,
-    build_masster_candidates,
-)
-from fragnnet.models.masster.candidates.connected_fragment_beam import (
-    build_connected_fragment_beam_candidates,
-)
-from fragnnet.models.masster.candidates.rewire_rules import (
-    MASSTER_NUM_REWIRE_RULES,
-    REWIRE_RULE_SPEC_HASHES,
-    filter_rewire_matches,
-)
-from fragnnet.models.masster.rewire_expansion import (
-    EDIT_FEATURE_DIM,
-    expand_rewire_candidates,
-)
-from fragnnet.models.masster.candidates.smarts_templates import (
-    MASSTER_NUM_RULES,
-    MASSTER_RULE_NAME_HASHES,
-    MassterTemplate,
-    filter_masster_templates,
-)
 from fragnnet.models.masster.masster_component_pooling import (
     boundary_bond_endpoint_orientation,
     component_membership_rows,
@@ -90,6 +86,7 @@ from fragnnet.models.masster.masster_component_pooling import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
+from fragnnet.models.masster.masster_exact_isotopes import exact_isotope_pattern
 from fragnnet.models.masster.masster_nominal_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
@@ -108,6 +105,10 @@ from fragnnet.models.masster.masster_proposal_heads import (
     IonModeProposalHead,
 )
 from fragnnet.models.masster.masster_rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
+from fragnnet.models.masster.rewire_expansion import (
+    EDIT_FEATURE_DIM,
+    expand_rewire_candidates,
+)
 from fragnnet.utils.formula_utils import (
     CANONICAL_ELEMENT_ORDER,
     H_MASS,
@@ -1446,8 +1447,8 @@ class MassterModel(nn.Module):
                 (probabilities summed) in ``exact`` mode too. Exact for the loss (coincident
                 Gaussians) and the metrics; needed when the targets are intensity-transformed,
                 so evaluation untransforms each m/z's sum.
-            isotope_envelope: ``none`` emits one row per pathway. ``natural`` (requires
-                ``nominal``) splits each emitted pathway over nominal offsets by the natural
+            isotope_envelope: ``none`` emits one row per pathway. ``natural`` splits each
+                emitted pathway over nominal offsets or exact isotope fine structure by the natural
                 isotope pattern of its ion composition (fragment atoms, the channel's
                 hydrogens, the adduct's atoms), conserving its probability. Candidate,
                 proposal and dense channel outputs stay monoisotopic.
@@ -1804,8 +1805,6 @@ class MassterModel(nn.Module):
                 f"isotope_envelope must be one of {ISOTOPE_ENVELOPES}, got {isotope_envelope!r}"
             )
         if isotope_envelope != "none":
-            if mass_mode != "nominal":
-                raise ValueError("isotope_envelope requires mass_mode='nominal'")
             if isotope_max_order < 1:
                 raise ValueError("isotope_max_order must be at least 1")
             if not 0.0 <= isotope_min_ratio < 1.0 / (2 * isotope_max_order + 1):
@@ -2385,6 +2384,11 @@ class MassterModel(nn.Module):
                     column = int(composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)])
                     adduct_composition_deltas[precursor_index, mode, column] += count
         order = self.isotope_max_order
+        self.register_buffer(
+            "isotope_adduct_composition_deltas", adduct_composition_deltas, persistent=False
+        )
+        if self.mass_mode == "exact":
+            return
         heavy_columns, heavy_tables = [], []
         for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
             if element == "H":
@@ -2410,9 +2414,6 @@ class MassterModel(nn.Module):
         convolution_map = (
             (offsets[:, None, None] + offsets[None, :, None] - order) == offsets[None, None, :]
         ).float()
-        self.register_buffer(
-            "isotope_adduct_composition_deltas", adduct_composition_deltas, persistent=False
-        )
         self.register_buffer(
             "isotope_heavy_columns", th.tensor(heavy_columns, dtype=th.long), persistent=False
         )
@@ -2515,6 +2516,47 @@ class MassterModel(nn.Module):
         totals = row_patterns.new_zeros(row_patterns.shape[0]).index_add(0, source_rows, kept)
         log_shares = th.log(kept) - th.log(totals[source_rows])
         return source_rows, columns - order, log_shares
+
+    def _exact_isotope_rows(
+        self,
+        fragment_compositions: th.Tensor,
+        fragment_precursor_types: th.Tensor,
+        row_fragments: th.Tensor,
+        row_modes: th.Tensor,
+        row_shifts: th.Tensor,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        """Expand ion rows into natural exact-mass isotopologues.
+
+        Returns row indices, signed nominal offsets, exact mass increments (float64),
+        and log shares. Chemistry is cached on CPU; scores stay differentiable on device.
+        """
+        counts = fragment_compositions[row_fragments] + self.isotope_adduct_composition_deltas[
+            fragment_precursor_types[row_fragments], row_modes
+        ]
+        counts = counts.clone()
+        counts[:, COMPOSITION_HYDROGEN_COLUMN] += row_shifts
+        unique, inverse = th.unique(counts, dim=0, return_inverse=True)
+        patterns = [
+            exact_isotope_pattern(
+                tuple((element, count) for element, count in zip(CANONICAL_ELEMENT_ORDER, values)
+                      if count),
+                self.isotope_max_order,
+                self.isotope_min_ratio,
+            )
+            for values in unique.cpu().tolist()
+        ]
+        source_rows, offsets, shifts, shares = [], [], [], []
+        for row, pattern_index in enumerate(inverse.cpu().tolist()):
+            for offset, shift, share in patterns[pattern_index]:
+                source_rows.append(row)
+                offsets.append(offset)
+                shifts.append(shift)
+                shares.append(share)
+        return (
+            row_fragments.new_tensor(source_rows), row_fragments.new_tensor(offsets),
+            th.tensor(shifts, device=counts.device, dtype=th.float64),
+            th.tensor(shares, device=counts.device, dtype=th.float64).log(),
+        )
 
     def _transferable_hydrogen_shifts(
         self,
@@ -4897,14 +4939,21 @@ class MassterModel(nn.Module):
             # 6. Isotope rows: every emitted pathway becomes one row per isotope offset, with its
             # probability split by natural abundance. The channel diagnostics above stay
             # monoisotopic.
-            emitted_rows, isotope_offsets, isotope_log_shares = self._isotope_rows(
+            isotope_args = (
                 fragment_compositions,
                 precursor_type_indices[fragment_batch_indices],
                 fragment_channel_indices.flatten()[selected_flat_valid],
                 mode_channel_indices.flatten()[selected_flat_valid],
                 h_channel_shifts.flatten()[selected_flat_valid],
             )
-            pred_mzs = pred_mzs[emitted_rows] + isotope_offsets.to(pred_mzs)
+            if self.mass_mode == "exact":
+                emitted_rows, isotope_offsets, isotope_mass_shifts, isotope_log_shares = (
+                    self._exact_isotope_rows(*isotope_args)
+                )
+                pred_mzs = pred_mzs[emitted_rows].double() + isotope_mass_shifts
+            else:
+                emitted_rows, isotope_offsets, isotope_log_shares = self._isotope_rows(*isotope_args)
+                pred_mzs = pred_mzs[emitted_rows] + isotope_offsets.to(pred_mzs)
             pred_batch_idxs = pred_batch_idxs[emitted_rows]
             pred_logprobs = pred_logprobs[emitted_rows] + isotope_log_shares.to(pred_logprobs)
             if pred_intensities is not None:
@@ -5099,6 +5148,8 @@ class MassterModel(nn.Module):
             if emitted_rows is not None:
                 pathway_rows = {name: rows[emitted_rows] for name, rows in pathway_rows.items()}
                 pathway_rows["pred_pathway_isotope_offsets"] = isotope_offsets
+                if self.mass_mode == "exact":
+                    pathway_rows["pred_pathway_isotope_mass_shifts"] = isotope_mass_shifts
             if row_order is not None:
                 pathway_rows = {name: rows[row_order] for name, rows in pathway_rows.items()}
             if merged_pathway_scores is not None:

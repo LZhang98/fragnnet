@@ -1,11 +1,13 @@
 # MASSter on NIST23 EI (nominal mass)
 
-> **Status:** HUB · **Updated:** 2026-10-16
+> **Status:** HUB · **Updated:** 2026-10-17
 > MASSter on the NIST23 electron-ionization library (`[M]+`, 70 eV, unit resolution, natural isotope envelopes): plan, performance audit, screens.
 
 ## Where it stands
 
-- **HR-EI raw libraries downloaded:** four sources under `data/raw/hr_ei_ms/`; see [download inventory](#hr-ei-raw-downloads-2026-10-16). Raw files only; structure mapping, cross-library deduplication, and overlap with nominal-EI training remain unchecked.
+- **Exact isotope output and excluded split prepared:** [plan](../plans/masster/hr_ei_isotopes_holdout_plan.md). Natural exact-mass fine structure is implemented and CPU-tested; fresh e5 uses the HR-EI-excluded split. Next: train e5 from scratch, then evaluate the held-out references.
+- **Frozen checkpoint HR-EI evaluation:** [finding](../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md): all mapping-consistent records included regardless of training overlap; exact monoisotopic outputs evaluated. Exact isotope output is now implemented; see the preparation plan above.
+- **HR-EI raw audit complete:** [peak/structure/overlap findings](../findings/masster/hr_ei_raw_audit_2026_10_17.md). All four peak tables parse; HREI-MSDB/Exposome are first mapping candidates. Metadata defects, derivative handling, and local training overlap require exclusions; no final benchmark yet.
 - **Best result:** e1 (natural isotopes), [W&B `jeljdikj`](https://wandb.ai/frag-gnn/frag-gnn/runs/jeljdikj) epoch 37, `config/masster/ei/e1_nominal_natural_isotopes.yml`: full `nist23_ei_inchikey` test (51,685 spectra) mean 1 Da cosine 0.869984, Stein weighted similarity 0.886845; 0.899167 on the 26,372 RASSP-eligible spectra (RASSP FormulaNet reports 0.929 on its own NIST17 set, descriptive only).
 - **Isotope effect (one seed):** mean `val_cos_sim_1.0` over epochs 54-63 is 0.867738 (e1) vs 0.859883 (e0 `he3j5y3o`, no isotopes), +0.0079.
 - **Where the gap is:** a 512-spectrum support oracle scores 0.99615 vs the model's 0.88703, so the gap is intensity allocation, not candidate support. Output power/mass tilts do not help. Stein falls from 0.9202 (2-16 atoms) to 0.8556 (>64).
@@ -17,7 +19,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| HR-EI prediction benchmark | RAW DOWNLOADED | Map measured species to structures, audit nominal-training overlap, and define accurate-mass evaluation |
+| [HR-EI-excluded fresh training](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED | Train e5 without prior weights; exact isotope inference overlay is ready. Castro identities remain unresolved |
 | [Matched intensity arms e2/e3/e4](../plans/masster/masster_ei_nominal_plan.md#matched-intensity-configs-2026-10-01-prepared-not-launched) | PREPARED | Launch with provenance; compare cosine and Stein by size and on the RASSP subset |
 | [Matched RASSP comparison](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | OPEN | Check training overlap and preprocessing; run both models on one eligible split |
 | Mass-aware intensity objective | PROPOSED | Test only if matched arms leave a Stein gap (audit priority 3) |
@@ -40,6 +42,9 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Exact isotopes and HR-EI exclusion](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED (2026-10-17) | Natural exact-mass output, conservative excluded split, and fresh e5 recipe |
+| [Frozen checkpoint HR-EI evaluation](../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md) | FINDING (2026-10-17) | Exact-mass monoisotopic outputs on three experimental HR-EI libraries; no training-overlap exclusion |
+| [HR-EI raw audit](../findings/masster/hr_ei_raw_audit_2026_10_17.md) | FINDING (2026-10-17) | Peak tables, derivative mappings, metadata defects, and local nominal-training overlap |
 | [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 | [EI performance audit](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | FINDING (2026-10-06) | Stein vs RASSP, support oracle, replicate pairs, priorities |

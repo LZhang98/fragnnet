@@ -91,6 +91,69 @@ Spectraverse 44,234; MSnLib 46,821; Enveda-180 182,941; MSnLib + Enveda-180 227,
 - NIST20/23 Br and I carriers cluster in the upper-right region. Enveda-180 and MSnLib Br carriers
   spread through the lower block, so they add Br chemistry in a different region, not more of the same.
 
+## Without NIST, and where HMDB sits (2026-10-17)
+
+[`open_vs_nist.py`](../../scripts/debug/dataset_umap/open_vs_nist.py): "open" = all CASMI train
+libraries except `enveda-np-examples`, plus MassSpecGym and Spectraverse; 276,303 molecules (Br 8,541,
+Cl 29,899, I 370) against NIST20 ∪ NIST23 HR 46,717 (Br 3,905, Cl 6,854, I 915). 34,220 NIST
+molecules are absent from open data. Nearest open neighbour of each NIST molecule (Morgan r=2,
+Tanimoto): identical 27%, ≥0.7 11%, 0.4–0.7 51%, <0.4 10%. For NIST Br molecules only 8% are
+identical or ≥0.7. All 250 NP-proxy molecules are already in open data, so the proxy cannot measure
+what NIST adds for the hidden test.
+
+HMDB: the PubChem copy of the HMDB deposit (216,227 CIDs, 196,995 2D keys; hmdb.ca blocks scripted
+downloads; no detected/expected status), in `data/raw/hmdb/`. Exact overlap: 87% of NP-proxy
+molecules, 29% MassSpecGym, 26% NIST20 HR, 23% Spectraverse, 17% NIST23 HR, 10% MSnLib, and 6
+Enveda-180 molecules. 7.0% of HMDB molecules have a spectrum in these datasets, 8,574 through NIST.
+[`hmdb_fit.py`](../../scripts/debug/dataset_umap/hmdb_fit.py), 10,000 seeded HMDB molecules, fraction
+with a neighbour ≥ 0.7:
+
+| Reference | All | Long chain (72%) | Other (28%) |
+| --- | ---: | ---: | ---: |
+| NIST20 ∪ NIST23 HR | 0.81 | 0.90 | 0.57 |
+| Spectraverse | 0.75 | 0.82 | 0.58 |
+| MassSpecGym | 0.23 | 0.20 | 0.30 |
+| MSnLib | 0.11 | 0.07 | 0.19 |
+| Enveda-180 | 0.001 | 0.000 | 0.001 |
+| All of the above | 0.86 | 0.93 | 0.67 |
+
+"Long chain" = eight consecutive acyclic CH2, mostly enumerated lipids. The rule misses
+polyunsaturated chains, so "other" still holds lipids. Lipid series share most fingerprint bits,
+so ≥ 0.7 overstates their coverage. Enveda-180's median nearest neighbour to HMDB is 0.23
+(spot-checked against an independent 40k-molecule recomputation; NIST20 to Enveda-180 is 0.31): it is
+a separate chemical space from human metabolites. Outputs are in `output/dataset_umap_hmdb_2026_10_17/`.
+
+**HMDB on the map.** A joint UMAP fit with HMDB (`output/dataset_umap_hmdb_2026_10_17/`) failed
+spectral initialisation, because HMDB lipid series form disconnected components. It took 64 min and
+scattered HMDB as islands, so it is not usable. Instead
+[`project_hmdb.py`](../../scripts/debug/dataset_umap/project_hmdb.py) projects 24,990 HMDB molecules
+(including the 10,000 similarity sample) onto the MS/MS-only map with `reducer.transform`
+(`output/dataset_umap_proj_2026_10_17/umap_hmdb_projected.png`). 76% land on a few small lipid
+islands, mostly Spectraverse with a few NIST molecules. One island of 88 training molecules
+(cardiolipin and phospholipid-like) receives 10,761 HMDB molecules. 89% of off-cloud HMDB is
+long-chain; of the 24% inside the main cloud, 18% is. HMDB's lipid bulk therefore sits on a
+handful of library lipids, and Enveda-180 touches none of it.
+
+## Candidate open training set: Spectraverse + MSnLib + Enveda-180 (2026-10-17)
+
+[`combo_coverage.py`](../../scripts/debug/dataset_umap/combo_coverage.py); output
+`output/dataset_umap_hmdb_2026_10_17/combo_coverage.json`. Spectraverse already holds 15,569 MSnLib
+molecules (its `MSnLib` source). Only 1,330 Spectraverse molecules are MS-DIAL-only, so dropping
+MS-DIAL changes every coverage number below by under 0.01.
+
+| Set | Molecules | Br | HMDB ≥0.7: all / non-lipid | NIST sample ≥0.7 | NIST Br <0.4 |
+| --- | ---: | ---: | --- | ---: | ---: |
+| Spectraverse + MSnLib | 75,486 | 2,046 | 0.758 / 0.598 | 0.344 | 0.304 |
+| + Enveda-180 | 256,141 | 8,281 | 0.758 / 0.598 | 0.350 | 0.269 |
+| NIST20 ∪ NIST23 HR | 46,717 | 3,905 | 0.807 / 0.573 | — | — |
+| All + NIST | — | — | 0.858 / 0.672 | — | — |
+
+NIST sample: 5,000 seeded NIST20 ∪ NIST23 HR molecules (428 Br). Enveda-180 is 71% of the
+combination's molecules but adds no HMDB coverage. It adds +0.006 NIST coverage. It lowers the
+share of NIST Br molecules without a 0.4 analogue from 0.304 to 0.269. Its value is halogen
+counts and Br↔Cl pairs, not HMDB or NIST chemistry. Spectraverse supplies nearly all the
+HMDB-like coverage; for non-lipid HMDB it matches NIST (0.598 vs 0.573).
+
 ## Not checked
 
 - Spectrum-level Br↔Cl correspondence (step 3a of the

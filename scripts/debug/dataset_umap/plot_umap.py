@@ -14,6 +14,7 @@ Usage (from the repository root):
 
 import argparse
 import json
+import pickle
 import time
 from pathlib import Path
 
@@ -29,8 +30,11 @@ from rdkit.Chem import rdFingerprintGenerator  # noqa: E402
 
 RDLogger.DisableLog("rdApp.*")
 
-ORDER = ["NIST20 HR", "NIST23 HR", "MassSpecGym", "Spectraverse", "MSnLib", "Enveda-180", "CASMI NP proxy"]
-HIGHLIGHT = "#2a78d6"
+ORDER = ["NIST20 HR", "NIST23 HR", "MassSpecGym", "Spectraverse", "MSnLib", "Enveda-180", "CASMI NP proxy", "HMDB"]
+# Reference categorical palette slots 1-8 in ORDER: a dataset keeps its colour in every figure.
+DATASET_COLORS = dict(
+    zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"])
+)
 HALOGEN_COLORS = {"Cl": "#2a78d6", "Br": "#eb6834", "I": "#1baf7a"}  # reference palette slots 1-3
 GREY = "#e4e3de"
 DATASET_GREY = "#9a998f"
@@ -95,12 +99,14 @@ def main() -> None:
         print(f"UMAP fit in {time.time() - t0:.0f}s", flush=True)
         keys["x"], keys["y"] = xy[:, 0], xy[:, 1]
         keys.to_parquet(coords_fp, index=False)
+        with open(args.out_dp / "umap_model.pkl", "wb") as fh:  # for reducer.transform of new datasets
+            pickle.dump(reducer, fh)
     sampled = sampled.merge(keys[["ik14", "x", "y"]], on="ik14")
     sampled.to_parquet(args.out_dp / "umap_sampled_mols.parquet", index=False)
 
     datasets = [d for d in ORDER if d in totals.index]
-    ncol = 4
-    nrow = int(np.ceil((len(datasets) + 1) / ncol))
+    nrow = 2
+    ncol = int(np.ceil((len(datasets) + 1) / nrow))
     # Small disconnected clusters stretch the full range and squeeze the main cloud; zoom in and
     # report how many points fall outside the view.
     pct = [args.view_pct, 100 - args.view_pct]
@@ -118,24 +124,57 @@ def main() -> None:
             ax.scatter(keys["x"], keys["y"], s=0.2, c=GREY, linewidths=0, rasterized=True)
         return fig, axes
 
-    # Figure 1: where each dataset sits.
+    def dot_size(n: int, small: float) -> float:
+        return 6 if n < 1000 else small
+
+    # Largest sample first so smaller datasets stay visible on top.
+    overlay_order = sorted(datasets, key=lambda d: -int((sampled["dataset"] == d).sum()))
+    overlap = df.groupby("ik14")["dataset"].nunique()
+    overlay_sub = (f"{len(keys):,} unique sampled molecules; {int((overlap > 1).sum()):,} of "
+                   f"{len(overlap):,} in 2+ datasets. Drawn largest first, so later datasets cover earlier ones")
+
+    def overlay(ax, small: float, legend_size: float, legend: bool = True) -> None:
+        for name in overlay_order:
+            sub = sampled[sampled["dataset"] == name]
+            ax.scatter(sub["x"], sub["y"], s=dot_size(len(sub), small), c=DATASET_COLORS[name], alpha=0.5,
+                       linewidths=0, rasterized=True)
+        for name in datasets:
+            ax.scatter([], [], s=legend_size, c=DATASET_COLORS[name], label=name)
+        if legend:
+            ax.legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
+
+    # Figure 1: where each dataset sits, one colour per dataset.
     fig, axes = grid()
     for ax, name in zip(axes, datasets):
         sub = sampled[sampled["dataset"] == name]
-        size = 6 if len(sub) < 1000 else 0.25
-        ax.scatter(sub["x"], sub["y"], s=size, c=HIGHLIGHT, alpha=0.5, linewidths=0, rasterized=True)
+        ax.scatter(sub["x"], sub["y"], s=dot_size(len(sub), 0.25), c=DATASET_COLORS[name], alpha=0.5,
+                   linewidths=0, rasterized=True)
         n = int(totals.loc[name, "molecules"])
         style(ax, name, f"{n:,} molecules" + (f", {len(sub):,} plotted" if len(sub) < n else ""))
-    overlap = df.groupby("ik14")["dataset"].nunique()
-    style(axes[len(datasets)], "All datasets (grey)", f"{len(keys):,} unique sampled molecules; "
-          f"{int((overlap > 1).sum()):,} of {len(overlap):,} in 2+ datasets")
+    overlay(axes[len(datasets)], 0.25, 30, legend=False)
+    style(axes[len(datasets)], "All datasets overlaid", "Drawn largest first; smaller datasets on top")
     note(axes[len(datasets)], off_view)
+    fig.legend(*axes[len(datasets)].get_legend_handles_labels(), loc="lower center", ncol=len(datasets),
+               frameon=False, fontsize=10, labelcolor=INK)
     for ax in axes[len(datasets) + 1:]:
         ax.set_visible(False)
     fig.suptitle("Chemical space by dataset: joint UMAP of Morgan fingerprints (r=2, 2048 bits, Jaccard)",
                  x=0.01, ha="left", fontsize=13, color=INK)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.tight_layout(rect=(0, 0.04, 1, 0.97))
     fig.savefig(args.out_dp / "umap_by_dataset.png", dpi=150)
+    plt.close(fig)
+
+    # Figure 1b: the overlay alone, large.
+    fig, ax = plt.subplots(figsize=(10, 10), facecolor="white")
+    ax.set_xlim(*lims[0])
+    ax.set_ylim(*lims[1])
+    overlay(ax, 0.6, 40)
+    style(ax, "Chemical space of all datasets: joint UMAP of Morgan fingerprints (r=2, 2048 bits, Jaccard)",
+          overlay_sub)
+    ax.title.set_y(1.02)
+    note(ax, off_view)
+    fig.tight_layout()
+    fig.savefig(args.out_dp / "umap_all_datasets.png", dpi=150)
     plt.close(fig)
 
     # Figure 2: halogen carriers per dataset (Cl first so rarer Br and I draw on top).

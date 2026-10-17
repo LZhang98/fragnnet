@@ -1,0 +1,5 @@
+# Inference overlay for a nominal-trained EI checkpoint: exact isotope fine structure.
+# Pass as the inference custom config; retain the checkpoint's other settings.
+# Ordinary spectrum output is supported; isotope explanatory tables are not.
+masster_mass_mode: exact
+masster_isotope_envelope: natural
