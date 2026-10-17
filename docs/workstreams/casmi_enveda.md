@@ -16,7 +16,7 @@
 - **Distribution bias:** train is synthetic-heavy (NP median -1.31; Enveda-180 is 66% of molecules at -1.49) against the NP proxy (+1.42); the NP proxy's nearest-neighbour Tanimoto to train has median 0.775. Quality filters fall on NP-like data (19.7% suspects, 33.7% near-duplicates).
 - **Halogens:** [CASMI halogen census](../findings/casmi2026_halogen_census_2026_10_16.md): high-quality MSnLib + Enveda-180 hold 7,558 Br / 25,794 Cl molecules (NIST20 HR 1,837 / 3,662), almost all new, and 354 Br→Cl pairs (NIST20 train: 57); Enveda-180 supplies most.
 - **MSnLib vs NIST:** nearly disjoint (6,432 shared molecules, 13.7% of MSnLib); NIST HR would add 34,295 molecules not in any CASMI train library.
-- **Landed in `09e95e9a`:** finding sections 5.7-5.9 and scripts `scripts/debug/casmi26/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
+- **Landed in `09e95e9a`:** finding sections 5.7-5.9 and scripts `scripts/debug/casmi_enveda/{casmi26_mol_distribution,msnlib_nist_coverage}.py`.
 - **Enveda-180 baseline** (standalone, ACE only, no EMA; user decisions): `config/masster/enveda/enveda_180_inchikey_811_unmerged_mh_mmh_ace_fourier.yml`, not submitted, needs a second seed.
 - **Combined split:** manifest exists (seed 42, 80/10/10, zero molecule overlap); no loader reads it as one dataset.
 - **Single next action:** decide the CASMI train filter (drop suspects, near-duplicates, low-res rows, keep good BMDMS-NP scans), then preprocess to a split.
@@ -71,7 +71,7 @@ Shared data quality (NIST20 diagnostics, subformula filter, isotope detection) i
 
 ## Key artifacts
 
-- CASMI: `data/raw/casmi2026/{train,test}.parquet`; `output/casmi26_train_check_2026_10_05/`, `output/casmi26_mol_distribution_2026_10_06/`, `output/msnlib_nist_coverage_2026_10_06/`; scripts `scripts/debug/casmi26/{casmi26_train_stats,casmi26_train_duplicates,casmi26_mol_distribution,msnlib_nist_coverage}.py`; notebook `notebooks/data_notebooks/casmi26_train.ipynb`. pyarrow 25.0.1 is in `FRAGNNET-GPU` (user approved).
+- CASMI: `data/raw/casmi2026/{train,test}.parquet`; `output/casmi26_train_check_2026_10_05/`, `output/casmi26_mol_distribution_2026_10_06/`, `output/msnlib_nist_coverage_2026_10_06/`; scripts `scripts/debug/casmi_enveda/{casmi26_train_stats,casmi26_train_duplicates,casmi26_mol_distribution,msnlib_nist_coverage}.py`; notebook `notebooks/data_notebooks/casmi26_train.ipynb`. pyarrow 25.0.1 is in `FRAGNNET-GPU` (user approved).
 - Enveda-180: `data/raw/enveda-180/`, `data/df/enveda_180_df.csv`, `data/proc/enveda_180/` (1,158,293 spectra / 183,476 molecules), split `data/split/enveda_180_inchikey_811` (143,568 / 17,946 / 17,946 molecules; 640,475 / 79,881 / 80,152 spectra); config `config/masster/enveda/`. Step 2 peaks at 23.3 GB RSS plus swap locally.
 - Combined split: `data/split/pcdl_nist23_enveda_180_inchikey_811/manifest.json` (241,917 molecules: 193,529 / 24,192 / 24,191); builder `preproc_scripts/dataset_migration/build_combined_split_manifest.py`.
 - NIST20 quality: `data/eval/oracle_cos_nist20_default/zero_coverage_spectra.csv`, `data/uwpr/nist20_uwpr_hits_feasibility.csv`, `scripts/eval/{dag_oracle_scores,uwpr_feasibility}.py`.

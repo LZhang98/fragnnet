@@ -43,7 +43,7 @@ mkdir -p "${SCRIPT_DIR}" "${OUTPUT_DIR}"
 
 python scripts/setup_job_cc.py \
     --job_name "${JOB_NAME}" \
-    --python_script_fp scripts/eval/masster_mask_budget_sweep.py \
+    --python_script_fp scripts/debug/masster_core/masster_mask_budget_sweep.py \
     --frag_gnn_dp "${REPO_ROOT}" \
     --script_dp "${SCRIPT_DIR}" \
     --job_dp "${JOB_DIR}" \

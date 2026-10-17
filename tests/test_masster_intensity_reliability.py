@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from scripts.eval.masster_intensity_reliability import audit
+from scripts.debug.masster_memorization.masster_intensity_reliability import audit
 
 
 def test_census_flags_identical_copies_without_claiming_independence():

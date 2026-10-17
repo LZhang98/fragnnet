@@ -95,10 +95,10 @@ from fragnnet.utils.setup_utils import get_dataset_cls
 
 # Support both the script entry point and imports from pytest.
 try:
-    from .debug_masster_base_peak_errors import SAVE_FLOOR, map_targets, merge_channels
+    from .debug_masster_base_peak_errors import SAVE_FLOOR, _identity, map_targets, merge_channels
     from .debug_masster_base_peak_tables import BASE_SMARTS, MoleculeChemistry, clustered_bootstrap
 except ImportError:
-    from debug_masster_base_peak_errors import SAVE_FLOOR, map_targets, merge_channels
+    from debug_masster_base_peak_errors import SAVE_FLOOR, _identity, map_targets, merge_channels
     from debug_masster_base_peak_tables import BASE_SMARTS, MoleculeChemistry, clustered_bootstrap
 
 RDLogger.DisableLog("rdApp.*")
@@ -626,11 +626,6 @@ def parse_mol_ids(value: str) -> np.ndarray:
         return np.asarray([int(t) for t in tokens], dtype=np.int64)
     except ValueError as error:
         raise ValueError(f"--mol_ids holds a non-integer token: {error}") from error
-
-
-def _identity(path: str) -> dict:
-    data = Path(path).read_bytes()
-    return {"path": path, "bytes": len(data), "md5": hashlib.md5(data).hexdigest()}
 
 
 def select_spectra(specs: pd.DataFrame, sides_of: object, args: argparse.Namespace) -> list[int]:

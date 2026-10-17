@@ -61,13 +61,19 @@ from fragnnet.utils.spec_utils import batched_bin_func
 
 try:
     from .debug_masster_base_peak_errors import (
+        _identity,
         descending_ranks,
         map_targets,
         merge_channels,
     )
     from .debug_masster_base_peak_tables import clustered_bootstrap, pair_relation
 except ImportError:  # executed as a script
-    from debug_masster_base_peak_errors import descending_ranks, map_targets, merge_channels
+    from debug_masster_base_peak_errors import (
+        _identity,
+        descending_ranks,
+        map_targets,
+        merge_channels,
+    )
     from debug_masster_base_peak_tables import clustered_bootstrap, pair_relation
 
 LOGGER = logging.getLogger(__name__)
@@ -472,11 +478,6 @@ def load_arrays(directory: Path, names: list[str] | None = None) -> dict[str, np
                 directory / f"{name}.bin", dtype=np.dtype(m["dtype"]), mode="r", shape=shape
             )
     return out
-
-
-def _identity(path: str) -> dict:
-    data = Path(path).read_bytes()
-    return {"path": path, "bytes": len(data), "md5": hashlib.md5(data).hexdigest()}
 
 
 def merge_config(base: dict, own: dict) -> tuple[dict, dict]:

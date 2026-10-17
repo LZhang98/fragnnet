@@ -7,7 +7,7 @@
 Generate a ranked queue and visual report:
 
 ```bash
-python scripts/eval/nist_bad_data_review.py \
+python scripts/debug/oracle/nist_bad_data_review.py \
   --spec_fp data/proc/nist20/spec_df.pkl \
   --mol_fp data/proc/nist20/mol_df.pkl \
   --uwpr_feasibility_csv \

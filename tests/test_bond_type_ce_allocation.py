@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("rdkit")
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "bond_type_ce_allocation.py"
+SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "debug" / "masster_memorization" / "bond_type_ce_allocation.py"
 SPEC = importlib.util.spec_from_file_location("bond_type_ce_allocation", SCRIPT_PATH)
 BT = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

@@ -11,7 +11,7 @@ import torch as th
 from fragnnet.utils.spec_similarity import cos_sim_helper
 from fragnnet.utils.spec_utils import batched_bin_func
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "matched_intensity_filter.py"
+SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "debug" / "masster_memorization" / "matched_intensity_filter.py"
 SPEC = importlib.util.spec_from_file_location("matched_intensity_filter", SCRIPT_PATH)
 MIF = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
