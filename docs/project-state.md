@@ -16,7 +16,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 | MASSter generalization on NIST20 (`i1` line) | [masster_generalization](workstreams/masster_generalization.md) | ACTIVE: computed-energetics gate is next |
 | MASSter core (architecture, training, speed) | [masster_core](workstreams/masster_core.md) | Prepared arms; no scheduled work |
 | MassSpecGym training and retrieval | [msgym](workstreams/msgym.md) | Many arms PREPARED, none submitted |
-| Spectraverse v1.0.2 | [spectraverse](workstreams/spectraverse.md) | Five arms PREPARED, none submitted |
+| Spectraverse v1.0.2 / v1.0.3 | [spectraverse](workstreams/spectraverse.md) | Five v1.0.2 arms PREPARED, none submitted; v1.0.3 preprocessed |
 | NIST23 EI (nominal) | [nist23_ei](workstreams/nist23_ei.md) | e2/e3/e4 PREPARED |
 | CASMI 2026, Enveda-180, ZenoTOF EAD, shared data quality | [casmi_enveda](workstreams/casmi_enveda.md) | ACTIVE: CASMI train filter decision; EAD libraries at steps 1-2 |
 | FraGNNet and the DAG | [fragnnet](workstreams/fragnnet.md) | Dormant; pair BCE retired |
@@ -82,6 +82,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Prepared, not submitted (cv0/cv1):** `masster_c0rerun` and the [dedup arm](plans/masster/spectraverse_dedup_plan.md).
   The `short18`/`subceil05`, `merged_nomsdial` and ten-fold `abs005` plans were retired
   2026-10-18 (configs remain; resume notes in the [hub](workstreams/spectraverse.md)).
+- **v1.0.3 preprocessed 2026-10-18** (464,228 spectra, ten folds in `data/split/spectraverse_1_0_3_benchmark`); no config or train run yet ([hub](workstreams/spectraverse.md)).
 - **Next:** copy `data/split/spectraverse_benchmark_dedup` to Fir (md5 check), launch, read
   against `masster_c0rerun`.
 

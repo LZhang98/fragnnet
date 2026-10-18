@@ -373,11 +373,14 @@ At 10 ppm, the model leaves 23% of measured intensity unmatched, versus 3% on HR
 of predicted intensity has no measured match. Three causes are measured; the counterfactual scores
 change only the stated ions:
 
-1. **m/z 149.045 (C4H13O2Si2+) looks like a reference artifact.** It is ≥10% of base in 145 of 250 spectra
+1. **m/z 149.045 (C4H13O2Si2+) is much stronger than in NIST23.** It is ≥10% of base in 145 of 250 spectra
    and the base peak in 12%. The 176 records whose connectivity is in NIST23 have it at mean 30.5%
    of base (median 17%), while the NIST23 spectra of the same molecules have mean 3.5%. It is the base peak in
    the glucose, mannose, galactose, succinic and maleic acid TMS spectra. Removing that one measured peak raises
-   the mean from 0.5726 to 0.5927.
+   the mean from 0.5726 to 0.5927. RECETOX annotates it as [C4H13O2Si2]+ (Me2Si=O+–SiMe2OH), so it
+   is measured signal, not contamination. It equals 147 + H2O − CH4, and 147 is weaker in RECETOX than in
+   NIST23 (mean 0.125 vs 0.225 of base). An ion–molecule reaction with residual water during C-trap
+   storage would explain both (hypothesis, not tested).
 2. **m/z 147 gets the wrong composition.** The measured ion is 147.0656 (C5H15OSi2+, the TMS-migration ion
    Me3Si–O=SiMe2+). It contains two Si and no backbone carbon, so it is not a connected substructure and
    the bond-cut candidates cannot generate it. The nominal-trained model instead puts that intensity at
@@ -389,9 +392,32 @@ change only the stated ions:
 
 The remaining gap to Exposome (0.706) also includes larger molecules (median molecular ion about
 400, see the bins above). The 147 composition problem would need Si–O–Si migration candidates; the 149
-artifact needs a reference-cleaning decision, not a model change. Diagnostic script:
+ion looks instrument-specific, so a NIST-trained model will not learn it. Diagnostic script:
 `/tmp/claude-1002/-home-feiw-gitRepos-frag-gnn/f9050d06-e4a4-4b6e-92ba-b61bdf7696c3/scratchpad/metabolome_diag.py`
 (session scratch; numbers above are reproduced inline).
+
+#### Isotope output against the HR references
+
+e5 emits natural exact-mass fine structure at inference, computed analytically from each predicted ion
+composition (order ≤4, share ≥0.001; no learned isotope parameters). At 10 ppm it raises intensity recall by
+0.095/0.196/0.177 and cosine by +0.022/+0.094/−0.004 (HREI-MSDB/Exposome/Metabolome). On Metabolome,
+cosine falls slightly in the >0.5 nominal-cosine strata and only 42% of spectra improve.
+
+- **Instrument resolution is not the cause.** Merging predicted peaks closer than an Orbitrap FWHM
+  (R = 30k–120k at m/z 200, scaled by √(200/m)) changes 10 ppm scores by ≤0.001 (5 ppm by ≤0.007).
+  Merging within 3–8 mDa onto the strongest peak changes scores by ≤0.002.
+- **The Metabolome reference isotope peaks look incomplete or merged.** In the raw Alanine_2TMS record, one
+  peak at 74.04636 (the 29Si mass of Me3Si+) holds 8.7% of m/z 73. That is about the summed expected 29Si
+  (≈5.1%) and 13C (≈3.3%) shares, and there is no peak at the 13C mass (74.0502), although a 60k Orbitrap
+  resolves 3.8 mDa at m/z 74. Pooled over Metabolome, the 30Si M+2 of Me3Si+ (75.0437) carries 0.018% of
+  measured intensity versus 0.56% predicted. Isotope output therefore moves intensity onto peaks
+  the reference does not report.
+- **Exposome masses are offset.** Its peak annotations list theoretical masses about 7 ppm above the
+  reported ones (Anthracene: 74.0151 vs 74.01565, 75.02296 vs 75.023475). That explains its 5→10 ppm
+  sensitivity.
+
+An isotope pattern is only as right as the composition it comes from. Where the composition is wrong (m/z 147 above),
+the pattern is wrong too. Scripts: session scratch `resolution_merge.py`; ratio checks are inline.
 
 #### TMS vs non-TMS
 

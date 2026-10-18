@@ -1,10 +1,11 @@
 # Spectraverse (SPV) workstream
 
 > **Status:** HUB · **Updated:** 2026-10-18
-> MASSter on Spectraverse v1.0.2 (488,797 spectra, ten MCES folds): pipeline, data audits, filter screens, and the prepared training arms.
+> MASSter on Spectraverse v1.0.2 (488,797 spectra, ten MCES folds): pipeline, data audits, filter screens, and the prepared training arms. v1.0.3 (464,228 spectra) is preprocessed through the benchmark folds; nothing trained on it.
 
 ## Where it stands
 
+- **v1.0.3 preprocessed 2026-10-18** (commands, counts and md5s in the [preproc README](../../preproc_scripts/README.md#spectraverse-v103)): `data/df_spectraverse_1_0_3/`, `data/proc/spectraverse_1_0_3/`, `data/split/spectraverse_1_0_3_benchmark/cv0-cv9` (built with `--fold-fp`; v1.0.3 `TITLE`s are sparse, so `--mgf-fp` refuses it). No config points at it yet, and no dedup or other train-side variant has been rebuilt.
 - **No new SPV result since the oracle read.** Historical controls (`config/masster/spectraverse/cv0-cv9`, cv0 `ggifzj9m`, cv1 `u46v0k0g`) reach `cos_sim_0.01` 0.458 on 2,048 sampled val spectra; val peaks at epoch 15 and declines to epoch 39.
 - **Why it is stuck** ([oracle ceiling](../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-oracle-cosine-ceiling)): the model reaches 62% of its own emitted-bin ceiling (0.734), so intensity allocation is the largest gap (0.276); 14% of spectra have a subformula ceiling <= 0.5 and score 0.04. Train cosine is 0.590, so the gap is mostly generalization.
 - **Data causes** ([source audit](../findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape)): MS-DIAL (20% of spectra) is 46% of the unexplainable block; 33% of spectra have a cosine > 0.99 copy; replicates agree at 0.70-0.76 vs the model's 0.46.
@@ -18,6 +19,8 @@
 | --- | --- | --- |
 | [Dedup train](../plans/masster/spectraverse_dedup_plan.md) | PREPARED | Copy `spectraverse_benchmark_dedup/`, check md5s, launch; if it wins, build merged on the dedup split |
 | Recall window calibration | OPEN | Calibrate on trusted fragment assignments plus shifted-mass controls before changing any loss window ([recall finding](../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-recall-at-instrument-tolerance)) |
+| v1.0.3 training | OPEN | Point a config at `data/proc/spectraverse_1_0_3` and `data/split/spectraverse_1_0_3_benchmark`; decide which train-side variants to rebuild |
+| v1.0.2 `ion_mode` labels | OPEN, harmless so far | Stored `data/proc/spectraverse/spec_df.pkl` labels 30,550 `[M+Cl]-`/`[M+HCOOH-H]-`/`[M+CH3COOH-H]-` spectra `P` (reader fixed 2026-10-18); only the `--ion_modes` split filter reads it. Rebuild or patch before filtering v1.0.2 by ion mode |
 | Quaternary-ammonium candidate gap (m/z 60.0808) | OPEN, small (0.26% of spectra) | Decide on a `valence` bound change ([`[M]+` finding](../findings/masster/spectraverse_masster_findings.md#masster-m-handling-on-spectraverse)) |
 
 ## Settled — read before re-proposing
@@ -52,7 +55,7 @@
 
 ## Key artifacts
 
-- Data: `data/raw/spectraverse/` (v1.0.2 MGF md5 `50803b37...ef6895`; v1.0.0/1.0.1 under `spectraverse-1.0.{0,1}/`), `data/proc/spectraverse/` (`spec_source.csv`, `subformula_ceiling.csv`), `data/split/spectraverse_benchmark{,_dedup,_nomsdial,_subceil05}/`. Do not join `data/df/spectraverse_df.csv` (different build).
+- Data: `data/raw/spectraverse/` (v1.0.2 MGF md5 `50803b37...ef6895`; as of 2026-10-18 only `spectraverse-1.0.3/` is on the workstation, md5 `52ed27db...a004aa`), `data/proc/spectraverse/` (`spec_source.csv`, `subformula_ceiling.csv`), `data/split/spectraverse_benchmark{,_dedup,_nomsdial,_subceil05}/`. v1.0.3: `data/{df_spectraverse_1_0_3,proc/spectraverse_1_0_3,split/spectraverse_1_0_3_benchmark}/`. Do not join `data/df/spectraverse_df.csv` (different build).
 - Dedup train md5: cv0 `cc7ec07b...`, cv1 `74e513f1...`; short/clean: cv0 `43749a16...`, cv1 `cb46ac1c...`.
 - Configs: `config/spectraverse/{masster,masster_c0rerun,masster_short18,masster_subceil05,masster_merged_nomsdial,masster_dedup,masster_abs005}/`.
 - Scripts: `preproc_scripts/spectraverse/{build_benchmark_split,clean_train_split,dedup_train_split,source_filter_split}.py`; `scripts/debug/spectraverse/{spectraverse_oracle_ceiling,spectraverse_data_check,analyze_spectraverse_recall}.py`; tests `tests/test_spectraverse_{mgf_reader,benchmark_split,dedup}.py`.

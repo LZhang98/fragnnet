@@ -82,6 +82,26 @@ and only warns when an MGF has no fold field at all (v1.0.0/v1.0.1).
 overwritten. A new `--output_name` would not do instead: step 2 labels the `dset` column with the
 `--dsets` name, and the Spectraverse configs and splits select the dataset `spectraverse`.
 
+`ion_mode` comes from the sign after the adduct's closing bracket. Before 2026-10-18 the reader gave
+`P` to any adduct containing a `+`, so `[M+Cl]-`, `[M+HCOOH-H]-` and `[M+CH3COOH-H]-` were labelled
+`P`; the stored v1.0.2 `data/proc/spectraverse/spec_df.pkl` (30,550 such spectra) still is. Only the
+`--ion_modes` split filter reads the column.
+
+#### Spectraverse v1.0.3
+`data/raw/spectraverse/spectraverse-1.0.3/spectraverse-1.0.3.mgf` (md5
+`52ed27db2d5b764a636fb2ce246004aa`, 464,228 records) has the same header keys as v1.0.2. Its `TITLE`
+numbers are unique but sparse (1..665,783), so `dset_spec_id` is no longer the record index.
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+    --input_format=spectraverse \
+    --output_format=csv \
+    --raw_data_dp=data/raw \
+    --output_dp=data/df_spectraverse_1_0_3 \
+    --output_name=spectraverse \
+    --mgf_file=spectraverse/spectraverse-1.0.3/spectraverse-1.0.3.mgf
+```
+
 **Never join `data/df/spectraverse_df.csv` or `data/df/spectraverse_fold_*.csv` to the current
 `data/proc/spectraverse`.** They are an older build (v1.0.0 era; `INDEX` and `FOLD_*` keys, 8-digit
 titles, 478,530 rows) whose `spec_id`/`dset_spec_id` do not match the current ones. See
@@ -202,6 +222,19 @@ record (488,797). `inst_type` comes from the MGF `INSTRUMENT_TYPE` (`orbitrap` g
 The stored `spec_df.pkl` was built on 2026-05-04 with the retired `FT` label; it was relabelled in place
 to `OB`/`ORB` on 2026-09-28 and renamed to `ORB` on 2026-10-01 (the two sections below). A fresh run
 emits `ORB` directly, so no migration is needed on a rebuild.
+
+#### Spectraverse v1.0.3
+```bash
+python preproc_scripts/02_prepare_proc.py \
+    --df_dp=data/df_spectraverse_1_0_3 \
+    --proc_dp=data/proc/spectraverse_1_0_3 \
+    --dsets spectraverse \
+    --skip_standardize
+```
+Built 2026-10-18: 464,228 spectra (none dropped; all debug pickles empty), 44,300 molecules, 96,537
+groups. `inst_type`: `ORB` 317,727, `QTOF` 119,871, `Other` 20,688, `NA` 5,942. `ion_mode`: `P`
+334,367, `N` 129,861, matching the MGF `IONMODE`. 232,506 spectra have an `ace`; `nce*` are NaN as
+in v1.0.2. md5: `spec_df.pkl` `a2a0fb63...1e56c3d`, `mol_df.pkl` `f797f152...a60e`.
 ### Enveda-180
 ```bash
 python preproc_scripts/02_prepare_proc.py \
@@ -363,6 +396,19 @@ all 30 files, but its `mol_id` and `group_id` columns are a stale permutation of
 `spec_df.pkl`/`mol_df.pkl` numbering (about half the rows disagree). That is harmless, because the
 loaders select spectra by `spec_id` only; do not join on those two columns. The splits derived from it
 (variants below) inherit the same columns.
+
+For v1.0.3 use `--fold-fp`: `--mgf-fp` requires `TITLE` to equal the record index and refuses the
+sparse v1.0.3 titles. `stats.json` then has a null `mgf_md5`; the MGF md5 is in Step 1 above.
+
+```bash
+python preproc_scripts/spectraverse/build_benchmark_split.py \
+    --spec-fp data/proc/spectraverse_1_0_3/spec_df.pkl \
+    --fold-fp data/df_spectraverse_1_0_3/spectraverse_fold.csv \
+    --dst-split-dp data/split/spectraverse_1_0_3_benchmark
+```
+The ten folds are disjoint over 44,234 2D InChIKeys and each `cv<k>` covers every `spec_id` once.
+cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. The train-side
+variants below were not rebuilt for v1.0.3.
 
 #### Spectraverse train-side variants
 Each reads `data/split/spectraverse_benchmark` and the current `data/proc/spectraverse/spec_df.pkl` and
