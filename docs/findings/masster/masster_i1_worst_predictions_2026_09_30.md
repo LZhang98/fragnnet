@@ -663,7 +663,7 @@ test on `i1`@59
 ## Next steps (training arms not built)
 
 **2026-10-01 follow-up:** the proposed frozen cut-to-intensity check is now complete and
-[CLOSED NULL](masster_cut_intensity_probe_2026_10_01.md). Both ambiguity-preserving train-only
+CLOSED NULL (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_cut_intensity_probe_2026_10_01.md`). Both ambiguity-preserving train-only
 probes select zero correction on separate tuning molecules; no training arm is justified by
 that additive gate. The original options below remain hypotheses, not established remedies.
 

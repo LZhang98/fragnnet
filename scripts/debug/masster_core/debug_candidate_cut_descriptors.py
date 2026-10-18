@@ -2,7 +2,7 @@
 
 Two questions, one population.
 
-1. The cut-set topology numbers in ``docs/plans/masster/masster_cut_set_features_plan.md`` (96.8% of
+1. The cut-set topology numbers in ``95341fce:docs/plans/masster/masster_cut_set_features_plan.md, removed 2026-10-18`` (96.8% of
    fragments cut at >= 2 bonds, 55.4% with two cuts sharing a ring) were measured on the depth-3
    BFS DAG, where the cut count is bounded by enumeration depth. The plan says to recompute them
    on real MASSter candidates before quoting them. This does that.

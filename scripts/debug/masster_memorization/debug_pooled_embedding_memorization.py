@@ -73,7 +73,7 @@ exactly the identity under both attention types) and one end-to-end pass on a 6-
 checkpoint of the same config, which had not overfit and so says nothing about memorization.
 
 Results and their interpretation:
-``docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md`` (section 7.1b).
+``95341fce:docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md, removed 2026-10-18`` (section 7.1b).
 
 Usage:
     python scripts/debug/masster_memorization/debug_pooled_embedding_memorization.py \

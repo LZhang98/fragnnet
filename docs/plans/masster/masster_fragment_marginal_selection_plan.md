@@ -18,7 +18,7 @@ rather than only the kept prefix.
 Accept the mechanism when, on the merged `c4a_base` lineage at 128 epochs:
 
 1. `f2` (marginal K128 from a U256 pool) reaches validation cosine within the
-   [128-epoch screen gate](../../findings/masster/masster_architecture_arms_epoch128_2026_09_22.md)
+   128-epoch screen gate (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md`)
    (±0.005 of the 0.7270 control tail mean) at lower hours per epoch than the control, and
 2. `f2` beats `f1` (mask-order U128) on both `val_candidate_wrecall` and cosine.
 
@@ -86,7 +86,7 @@ The current fragment probability is itself a partial sum: `fragment_log_probabil
 [masster_model.py](../../../src/fragnnet/model/masster_model.py) is a log-sum over only the
 pathways enumerated before the stop. A fixed-checkpoint cutoff on it cost 0.0075 cosine while
 retaining 99.58% of proposal mass
-([channel selection findings](../../findings/masster/masster_channel_selection_findings.md)), so it is not
+(channel selection findings (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_channel_selection_findings.md`)), so it is not
 a usable ranking as it stands.
 
 ## Design
@@ -135,7 +135,7 @@ introduced.
 - `masster_fragment_selection: mask_order` (the default) runs the same computation as before.
 - SMARTS templates: marginal mode rejects them. If they return, force their products outside K.
   Only two runs ever enabled them and the CUDA backend refuses them.
-- Correlated cuts (pairwise energies, [bond-cut EBM plan](masster_bond_cut_ebm_plan.md)); this
+- Correlated cuts (pairwise energies, bond-cut EBM plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_bond_cut_ebm_plan.md`)); this
   is its per-fragment efficiency arm.
 
 ## Configuration
@@ -271,7 +271,7 @@ controls do not log `val_candidate_wrecall`.
    faster and loses 0.009.
 4. **A second same-seed pair.** `f1` and `f5` differ only in validation-diagnostic keys and land
    0.0015 apart on the tail mean. That is wider than the 0.0004 floor from the one duplicate
-   pair in the [screen read-out §3.1](../../findings/masster/masster_architecture_arms_epoch128_2026_09_22.md).
+   pair in the screen read-out §3.1 (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md`).
    Keep the ±0.005 gate.
 
 Read-only W&B query, no GPU used. The U128 speed result is n=1 per arm, from wall-clock on

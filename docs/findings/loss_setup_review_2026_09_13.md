@@ -4,7 +4,7 @@
 > CPU counterexamples reverified at `551a64ae`. A second pass audited the working-tree changes themselves and fixed four defects in them, including a vectorized-JSD NaN. A third pass fixed the mirror of the leak term's batch-size defect in three more functions and collapsed two duplicated guards. **`jss_hun*` is not comparable across this change.** OOS and formula-validity fixes remain pending.
 >
 > **Proposal coverage:** this review is canonical for the blind-spot counterexample; it is
-> consolidated with three other reviews, and re-run against live code, in [MASSter proposal loss — consolidated audit](masster/masster_proposal_loss_audit_2026_09_22.md).
+> consolidated with three other reviews, and re-run against live code, in MASSter proposal loss — consolidated audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_proposal_loss_audit_2026_09_22.md`).
 
 ## Current assessment: tighter objectives (2026-09-21)
 
@@ -85,10 +85,10 @@ occurrence probabilities; increasing its weight does not fix its attribution amb
    evaluation predictions; it is not just a reporting option.
 3. Preserve the primary full-spectrum objective and test targeted soft ranking supervision
    where supported dominant peaks are misordered. The existing
-   [FT contender-pair plan](../plans/fragnnet/ft_contender_pair_minimal_training_plan.md) and shipped
+   FT contender-pair plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/ft_contender_pair_minimal_training_plan.md`) and shipped
    `ce_pair_loss_weight` path provide the narrow starting point for unmerged CE-resolved
    spectra. They do not provide a merged-spectrum solution. For merged spectra, the
-   [global mass-ranking proposal](../plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md#target-a--confidence-weighted-global-base-mass-ranking)
+   global mass-ranking proposal (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md`)
    is an untested alternative, requiring its coverage/ambiguity gates first.
 4. Use observed soft ratios between disjoint, supported mass groups: with predicted summed
    intensities `p_a, p_b`, target `t = q_a/(q_a+q_b)`, and
@@ -105,7 +105,7 @@ occurrence probabilities; increasing its weight does not fix its attribution amb
    weak-peak recall, false intensity, and retrieval. Use the existing roadmap's validation
    gates, with an identical sampler at zero pair weight for CE-context comparisons.
 
-The [campaign read-out](masster/masster_campaign_readout_2026_09_21.md) reports loss-family
+The campaign read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md`) reports loss-family
 differences within replicate variation. That is historical recorded evidence, not a fresh
 W&B query in this audit. It argues against another broad CE/JSD/KL sweep without a measured
 mechanism. The older sibling-ranking plan is a distinct node-marginal proposal, not an
@@ -137,7 +137,7 @@ JS gain resolves it toward the pairing that actually minimizes JSD. **Do not com
 | The same observed-only `batch_size` inference the leak term was fixed for survived in `sparse_hellinger_distance` and in both Hungarian JSD paths, in the mirror direction: a trailing spectrum holding predictions but no observed peaks. Measured on `true_batch_idxs=[0]`, `pred_batch_idxs=[0, 1]`: Hellinger raised a bare `AssertionError` from `scatter_logsumexp`, and the vectorized JSD returned shape `(1,)` for two spectra, silently dropping one from the per-spectrum loss. | All three now size the batch from both peak lists through `_spectra_in_batch`, which raises when both lists are empty. Such a spectrum shares no support, so it scores 1.0; Hellinger returns `[0.0, 1.0]` and both JSD paths return `[~0, 1.0]`. Scalar and vectorized JSD stay bit-identical (`max |diff| = 0`) over 40 random well-formed batches. `sparse_cosine_distance_hungarian` keeps the old inference: it predates this change and nothing here touches it. |
 | The `spectral_leak_loss_weight`/`spectral_ce_auxiliary_weight` validation was byte-identical in `fragnnet_pl.py` and `masster_pl.py`, and the half/bfloat16 upcast guard was repeated at three sites in `spec_utils.py`. Either could be changed in one place only. | Collapsed into `validate_hellinger_auxiliary_weights` in `loss.py` and `_as_scoring_dtype` in `spec_utils.py`. The existing parametrized rejection tests for both models pass against the shared validator unchanged. |
 | The MASSter CE auxiliary divided by `pred_totals[pred_batch_idxs]` and clamped the quotient, which cannot repair a NaN. Reachable only through a spectrum whose predicted intensities sum to zero, which `sparse_peak_list_distance` rejects first on the same branch, so the guard rested on a non-local invariant. | Clamps the divisor instead of the quotient, at the division site. |
-| The leak term ran an unbatched per-spectrum Python loop with three to four `.item()` synchronizations per spectrum, about 1.5-2k device syncs per step at batch 512. The same pattern is what `masster_loss_audit_2026_09_19.md` attributes the CE/JSS gap to. | Rewritten as the chunked padded form already used by the vectorized JSD, keyed on `loss_batch_size`; no per-spectrum synchronization remains. Chunk invariance is tested. |
+| The leak term ran an unbatched per-spectrum Python loop with three to four `.item()` synchronizations per spectrum, about 1.5-2k device syncs per step at batch 512. The same pattern is what `masster_loss_audit_2026_09_19.md` (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_loss_audit_2026_09_19.md`) attributes the CE/JSS gap to. | Rewritten as the chunked padded form already used by the vectorized JSD, keyed on `loss_batch_size`; no per-spectrum synchronization remains. Chunk invariance is tested. |
 
 Checked and cleared:
 
@@ -216,7 +216,7 @@ separate decision about the whole FraGNNet loss family.
 Reviewed clean revision `fe417a2f990a7041f80d63306cdc5f3f1512c051`, model/Lightning
 loss wiring, shared loss helpers, representative checked-in configurations, and the
 [historical model roadmap](../README.md#removed-historical-plans) and
-[MASSter plan](../plans/masster/masster_improvement_plan.md).
+MASSter plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_improvement_plan.md`).
 Configurations below establish available setups, not the identity of a running experiment.
 No model code, configuration, data, environment, or training state was changed.
 
@@ -371,7 +371,7 @@ less identifiable, so better training loss alone is insufficient evidence of imp
   separately normalizes positive and negative mass. Two targets `[0.5,0.5]` have
   optimal sigmoids `[0.5,0.5]`; adding 98 zero-target channels shifts those same two
   optimal sigmoids to `[0.99,0.99]`. This known limitation is recorded in the
-  [support plan](../plans/masster/masster_ion_h_channel_selection_plan.md). Validate support
+  support plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ion_h_channel_selection_plan.md`). Validate support
   and final-intensity threshold curves before selecting a floor or changing BCE.
 - **A 0.1 coefficient does not establish a 10% gradient contribution.** Measure
   weighted per-term gradient norms and their agreement on shared parameters. Also
@@ -392,7 +392,7 @@ less identifiable, so better training loss alone is insufficient evidence of imp
 ## Recommended order and acceptance checks
 
 **Live-evidence follow-up (2026-09-13):** the
-[proposal review](masster/masster_proposal_review_2026_09_13.md#recent-matched-loss-runs-do-not-establish-kl-superiority)
+proposal review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_proposal_review_2026_09_13.md`)
 now verifies an existing matched JSS/KL pair in W&B. Its results are close, with no
 established KL advantage. The synthetic gradient mechanism above remains valid, but
 another JSS/KL training comparison is not the next default action. Preserve selection-only

@@ -139,7 +139,7 @@ re-derived here.
 `n1`-`n4` change only the CE input (`ce_insert_type` or `int_embedder`). `sp0`/`sp1` test the
 CE-context sampler and a shared proposal. They are read in the
 [QET finding](masster_qet_projection_candidate_union_2026_09_26.md) and the
-[shared-proposal audit](masster_shared_proposal_pathway_audit_2026_09_26.md). Their current state
+shared-proposal audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md`). Their current state
 is in corrections 4 and 5.
 
 ## Corrections to the record
@@ -229,7 +229,7 @@ is in corrections 4 and 5.
     - Recorded as never run, but ran and are null: `e6_ring_topology_cut_bond` (`kc04u2cd`,
       +0.0015), `c4a_ring_topology` (`3gqgkl4x`, −0.0027) and `c4a_complement_composition`
       (`lxf97tck`, +0.0012). The claim appears in at least five docs, including the
-      [cut-set plan](../../plans/masster/masster_cut_set_features_plan.md) and the architecture
+      cut-set plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`) and the architecture
       review todo.
     - Tier D of the 4 h campaign: only `c4d_drop02` and `c4d_drop_head03` ran (−0.0033 and
       +0.0019, never read). `c4d_drop03`, `c4d_wd10` and `c4d_drop_mol03` have no run.

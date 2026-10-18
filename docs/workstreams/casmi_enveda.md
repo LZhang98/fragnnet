@@ -30,8 +30,6 @@
 | CASMI external data (NIST) | OPEN | Competition rules on external data not checked; hidden test energy protocol unknown (section 6) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Full matched multitask/control evaluation; confirm CCS calibration before cross-dataset use |
 | [Enveda-180 baseline](../findings/enveda_180_dataset_2026_09_25.md#10-baseline-config-and-run-state-2026-09-2728-from-project-state-handoff) | PREPARED | Second seed, then submit; re-check SMARTS rules on Enveda-180 (see generalization hub) |
-| [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED | Bounded-memory multi-source loader and model-specific filters |
-| [NIST20 data-quality validation](../plans/nist_data_quality_plan.md) | DEFERRED | Independent contaminant false-removal check before any peak stripping; precursor-mass sanity filter |
 
 ## Settled — read before re-proposing
 
@@ -45,9 +43,13 @@
   - [`[M+Br]-` support](../findings/enveda_180_dataset_2026_09_25.md#8-mbr--support-2026-09-25-uncommitted) — added to the adduct tables; 25 Enveda and 224 NIST23 spectra; the split needs regenerating to include them.
   - [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) — only S=O rules pass, 2-10x weaker than NIST20 (owned by the generalization hub).
 - **Shared data quality**
-  - [NIST20 zero-coverage](../plans/nist_data_quality_plan.md) — only 255 spectra (0.069%); 16 are lipid precursor-annotation errors; UWPR flags are a sensitivity label, not ground truth.
+  - NIST20 zero-coverage (removed 2026-10-18; `git show 95341fce:docs/plans/nist_data_quality_plan.md`) — only 255 spectra (0.069%); 16 are lipid precursor-annotation errors; UWPR flags are a sensitivity label, not ground truth.
   - [5 ppm subformula filter](../findings/subformula_filter_ft_qtof.md) — NIST20-HR census by FT/QTOF; the Cl/Na budget fix reaches MASSter.
   - Subformula isotope source (removed 2026-10-13; `git show e65339ed:docs/plans/subformula_isotope_detection_plan.md`) — matches the DAG source (F1 0.808 vs 0.805; 99.2% identical decisions); no DAG or `frag_dp` needed.
+- **Retired 2026-10-18:** 2 documents of this workstream removed; summaries and open items in [retired documents](../history/retired_docs.md#casmi_enveda).
+- Combined PCDL+NIST23+Enveda-180 — retired 2026-10-18 while PREPARED (`git show 95341fce:docs/plans/combined_pcdl_nist23_enveda_180_dataset.md`); if revived: bounded-memory multi-source loader and model-specific filters.
+- NIST20 data-quality validation — retired 2026-10-18 while DEFERRED (`git show 95341fce:docs/plans/nist_data_quality_plan.md`); if revived: independent contaminant false-removal check before any peak stripping; precursor-mass sanity filter.
+- Combined PCDL+NIST23+Enveda-180 split manifest: `data/split/pcdl_nist23_enveda_180_inchikey_811` (rebuild with `preproc_scripts/dataset_migration/build_combined_split_manifest.py`); no loader reads it yet (needs bounded-memory multi-source loading with source-local `spec_id` remapping).
 
 ## All documents
 
@@ -58,8 +60,6 @@
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | RTHead and CCSHead, label audit, completed GPU debug run and full experiment |
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |
-| [Combined PCDL+NIST23+Enveda-180](../plans/combined_pcdl_nist23_enveda_180_dataset.md) | PREPARED (2026-10-06) | Shared split manifest and loader gap |
-| [NIST20 data-quality plan](../plans/nist_data_quality_plan.md) | DEFERRED (2026-10-06) | Zero-coverage and contaminant diagnostics |
 | [5 ppm subformula filtering, NIST20-HR](../findings/subformula_filter_ft_qtof.md) | FINDING (2026-10-06) | Census, instrument tolerance, Cl/Na fix |
 | [NIST human review guide](../guides/nist_human_review.md) | GUIDE (linked only) | Manual spectral review procedure |
 | [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`utils/isotope_cleanup_utils.py`: `detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |

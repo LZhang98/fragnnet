@@ -263,7 +263,7 @@ Read the test fold once, after freezing.
 - Queries without a CE, and `[M+Na]+` queries, need a separate CE and adduct policy, such as a CE
   grid with a max over it. They are excluded here.
 
-**Related.** [Energy-based spectrum reranking](energy_based_spectrum_reranking_plan.md) reranks
+**Related.** Energy-based spectrum reranking (removed 2026-10-18; `git show 95341fce:docs/plans/energy_based_spectrum_reranking_plan.md`) reranks
 alternative intensity allocations for one molecule. This plan ranks molecules. They share the
 `--min_intensity -1` export contract.
 

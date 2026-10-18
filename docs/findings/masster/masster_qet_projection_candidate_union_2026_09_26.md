@@ -417,7 +417,7 @@ Change from each energy's own set, val:
 - **The union is mostly isomers.** Covering everything the union covers takes a median of 26
   fragments (p90 62, p99 109; 128 or fewer for 99.7% of molecules). Of the median 392 union
   fragments, 135 add a channel m/z that higher-ranked ones lack. This is the
-  [identity-supervision finding's](masster_identity_supervision_2026_09_22.md) 2.75 connected
+  identity-supervision finding's (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_identity_supervision_2026_09_22.md`) 2.75 connected
   fragments per formula, seen from the candidate budget.
 - **Skipping same-m/z isomers is the large lever, and it needs no targets.** `dedup` at 128
   covers 0.9428, more than each energy's own 256 (+0.0027, SE 0.0003), and no NCE bin loses more

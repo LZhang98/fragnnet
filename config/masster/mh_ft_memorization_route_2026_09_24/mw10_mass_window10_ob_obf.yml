@@ -32,8 +32,8 @@
 # 24 epochs) fa_h4, full attention with 4 heads, was the best run: +0.0086 over the control mean.
 # That screen also cut the heads to 4; this arm keeps i1's 8, so it changes one key.
 # fa1 is also the control for mz1, and the full-attention arm F of the hierarchical fragment graph
-# plan (docs/plans/masster/masster_hierarchical_fragment_graph_plan.md).
-# Finding: docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md (section 3)
+# plan (95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, removed 2026-10-18).
+# Finding: 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18 (section 3)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 #
 # PARAMETERS AND INITIALIZATION. Full attention has no latent block and no inducing tokens: the

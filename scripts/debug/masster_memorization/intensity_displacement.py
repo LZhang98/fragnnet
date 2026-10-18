@@ -1,6 +1,6 @@
 """Phase 0 of the intensity-displacement plan: where does misplaced predicted intensity go?
 
-See ``docs/plans/masster/masster_intensity_displacement_plan.md`` §4. Works offline on
+See ``95341fce:docs/plans/masster/masster_intensity_displacement_plan.md, removed 2026-10-18`` §4. Works offline on
 MASSter inference exports (``run_save_inference_eval.py`` HDF5, full candidate set) and dumped
 eval targets (pickles with ``spec_id``, ``mol_id``, ``nce``, ``prec_mz``, ``peaks``). All quantities
 live in the candidate space of the ranking decomposition: candidates sharing an exact m/z (5

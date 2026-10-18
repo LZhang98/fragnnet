@@ -3,7 +3,7 @@
 > **Status:** FINDING · **Updated:** 2026-09-22
 > The biggest unused input in this repository is not a feature. **NIST ships an expert formula assignment for 95.8% of peaks carrying 99.4% of intensity, on 68.4% of our spectra, and it never reaches the training loss** — only the GrAFF baseline reads `ann_df`. Measured against our DAG, ~8% of annotated intensity is scored as explained by a formula whose heavy-atom skeleton NIST disagrees with and the DAG cannot build.
 
-Companion to [feature headroom](feature_headroom_2026_09_22.md), which closed the question for
+Companion to feature headroom (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`), which closed the question for
 descriptor features. This asks the complementary question: not "what could we compute", but
 **"what do we already have and throw away"**.
 
@@ -12,11 +12,11 @@ descriptor features. This asks the complementary question: not "what could we co
 | source | size | used today |
 |---|---|---|
 | **NIST peak annotations** (`ann_df.pkl`, `ann_products` / `ann_losses` / `ann_isotopes`) | 397,057 spectra = **68.4%** of the `ma_mi` subset; **95.8%** of peaks; **99.4%** of intensity | `src/fragnnet/graff/` (a baseline) and isotope-detection tuning. **Never in FraGNNet or MASSter training** |
-| **ClassyFire taxonomy** (`data/classyfire/nist20_mol_classyfire.pkl`) | **100%** of 35,025 molecules: 20 superclasses, 341 classes, 795 subclasses, 1,497 direct parents, plus a **2,301-term substituent inventory**, mean 21.9 terms/molecule | never a model input. A [pretraining plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md) exists, PROPOSED / NOT STARTED |
+| **ClassyFire taxonomy** (`data/classyfire/nist20_mol_classyfire.pkl`) | **100%** of 35,025 molecules: 20 superclasses, 341 classes, 795 subclasses, 1,497 direct parents, plus a **2,301-term substituent inventory**, mean 21.9 terms/molecule | never a model input. A pretraining plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/classyfire_atom_pretraining_plan.md`) exists, PROPOSED / NOT STARTED |
 | **DAG route structure** (`in_degree`, `out_degree` fragment features) | implemented; 87.7% of nodes are multi-parent, so `in_degree` has real variance | present only in `config/template.yml` (commented) and one debug config. **Never in a production run** |
 | **Replicate spectra** (`group_id` + identical mol/adduct/instrument/CE) | 26,205 cells with ≥2 replicates, covering **12.1%** of spectra | merging only; no per-peak reliability weight |
 | `res` (per-spectrum resolution) | 13 codes, varies *within* instrument | unused; the loss tolerance is per-instrument |
-| `col_gas`, `ce_type`, `*_extra_*` | He is 0.5%, no stepped spectra, 100% null | measurably dead — see [feature headroom](feature_headroom_2026_09_22.md) |
+| `col_gas`, `ce_type`, `*_extra_*` | He is 0.5%, no stepped spectra, 100% null | measurably dead — see feature headroom (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`) |
 
 ## The headline: our coverage includes credit for the wrong molecule
 
@@ -36,7 +36,7 @@ oracle metric, while the composition doing the explaining is one NIST says is no
 composition NIST does name cannot be built by the DAG at all. The loss sees m/z and intensity
 only, so on that slice the model is actively rewarded for the wrong assignment. This is a
 shortcut the training signal cannot distinguish from the truth — the concrete form of the
-concern in [feature headroom](feature_headroom_2026_09_22.md#second-pass-shortcut-learning-2026-09-22).
+concern in feature headroom (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`).
 
 **Checks this survived.** The ion-formula convention is verified, not assumed: the neutral-atom
 mass of `ann_products` matches NIST's own `ann_exact_mzs` to within one electron mass on
@@ -67,7 +67,7 @@ on the size of the effect**. The direction is not in doubt; the magnitude is.
    have never been exercised in training (`num_isotopes` is 1 everywhere, every DAG `isoFalse`).
 4. **ClassyFire as conditioning.** Per-class cosine gaps of +0.10 are a standing priority item
    and the labels are already computed for every molecule. The taxonomy is derivable from
-   structure in principle, so by the [derivability argument](feature_headroom_2026_09_22.md) it
+   structure in principle, so by the derivability argument (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`) it
    adds inductive bias rather than information — but the substituent inventory is a curated
    2,301-term vocabulary, far beyond the handful of SMARTS flags that probe tested.
 5. **`in_degree` / route multiplicity.** A fragment reachable by many routes is a different

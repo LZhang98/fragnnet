@@ -1,7 +1,7 @@
 # SMARTS pathway gates G0, G1, G2, G2b: every arm fails its gate
 
 > **Status:** FINDING · **Updated:** 2026-09-30
-> Phase 1 of the [SMARTS pathway plan](../../plans/masster/masster_smarts_pathway_plan.md), run
+> Phase 1 of the SMARTS pathway plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`), run
 > 2026-09-29/30 on the local workstation. The decision rules were fixed before any result, and
 > two adversarial verifiers per gate recomputed the headline numbers from the artifacts. They
 > found no blocking issue.

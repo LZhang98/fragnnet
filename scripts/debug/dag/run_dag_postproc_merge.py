@@ -2,7 +2,7 @@
 the leaf-depth nodes from ``--extra_tar`` whose ``(base_formula, h_min, h_max)`` key
 is not already present anywhere in the base molecule's DAG.
 
-Background (see conversation record / docs/plans/fragnnet/bond_breakability_mask_plan.md lineage):
+Background (see conversation record / 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18 lineage):
 ``base_tar`` is expected to be the plain d3 DAG (``..._smpFalse``) and ``extra_tar``
 the unrestricted-ring-opening multi-cut BFS DAG (``..._mbfs_old``), whose extra
 ring-opened fragments were shown to add real (non-random, chance-corrected) signal

@@ -1,6 +1,6 @@
 """Can an identity-blind, bond-local learner order a novel molecule's bonds better than MASSter?
 
-Gate for arm 2A of ``docs/plans/masster/masster_intensity_displacement_plan.md``. The
+Gate for arm 2A of ``95341fce:docs/plans/masster/masster_intensity_displacement_plan.md, removed 2026-10-18``. The
 bond-type check found 59% of the val-train bond-level gap between bond types inside a
 molecule, 26% within a type and 16% at the precursor. 2A adds a local lability prior to the
 fragment score; this script asks, offline, whether such a prior carries information the model

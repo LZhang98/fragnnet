@@ -1,6 +1,6 @@
 # ARM p1_rule_pathway_token -- t1i plus each candidate's SMARTS rule provenance in its intensity
 # token, 2026-09-29. NOT SUBMITTED: run only after a positive G1, and after t1i.
-# Plan: docs/plans/masster/masster_smarts_pathway_plan.md (Track A)
+# Plan: 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18 (Track A)
 # t1i_smarts_templates.yml with masster_rule_pathway_token: true and W&B naming.
 #
 # WHAT IT ADDS. Per unique fragment, a 0/1 indicator for each rule of MASSTER_RULE_VOCABULARY

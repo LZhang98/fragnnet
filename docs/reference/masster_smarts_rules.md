@@ -19,7 +19,7 @@ Related records:
 - [2026-09-28 primary-literature follow-up](../notes/masster_excision_literature_2026_09_28.md):
   an uncovered N-phenylbenzamide O-transfer branch, and mass coverage versus product
   connectivity. Its candidates have not been gated.
-- [SMARTS pathway plan](../plans/masster/masster_smarts_pathway_plan.md): planned use of these
+- SMARTS pathway plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`): planned use of these
   rules inside the MASSter pathway (rule provenance to the intensity head, gated rule steps on
   candidates, `[M-H]-`), including `t1i`, the first templates-on arm.
 - [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md):
@@ -229,7 +229,7 @@ Candidates not admitted:
 - **ChemFrag's 32 rearrangement transforms, all closed (2026-09-28):** 26 change no
   heavy-atom bond. Thioether cyclization (#16) scores below random, and every Wagner–Meerwein
   fragment has a formula twin
-  ([triage](../findings/masster/chemfrag_rearrangement_triage_2026_09_14.md#unique-coverage-check-2026-09-28)).
+  (triage (removed 2026-10-18; `git show 95341fce:docs/findings/masster/chemfrag_rearrangement_triage_2026_09_14.md`)).
 
 ### Existing rules under the gate
 
@@ -382,7 +382,7 @@ Three EI candidate families were screened; **none is admitted**. Anisoyl fluorid
 narrow para-hydroxyazobenzene products add no nominal coverage beyond ordinary cuts and
 natural isotope support. The N-H aromatic-acyl arylsulfonamide O-transfer candidate has
 seven training molecules and no validation support. The production allowlist and guards
-remain unchanged. See the [screen finding](../findings/masster/masster_ei_smarts_screen_2026_10_01.md)
+remain unchanged. See the screen finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_ei_smarts_screen_2026_10_01.md`)
 for exact SMARTS scope, null controls, isotope collisions and limits. This closes the
 coverage screen only; it does not establish an intensity-model null.
 

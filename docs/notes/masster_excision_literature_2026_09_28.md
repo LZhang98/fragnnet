@@ -93,7 +93,7 @@ operator specification was obtained, so this is not an exact reproduction propos
 
 ## Subsequent coverage probe
 
-The [continuation gate](../findings/masster/masster_excision_continuation_gate_2026_09_28.md)
+The continuation gate (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_excision_continuation_gate_2026_09_28.md`)
 subsequently tested generic bridge losses over c0 candidates on train and frozen validation
 families. Aromatic nitro NO-loss continuations confirmed. A follow-up primary source,
 [Pandeti et al., 2017](https://pubs.rsc.org/en/content/articlepdf/2017/ra/c7ra08312b), reports

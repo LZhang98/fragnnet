@@ -20,7 +20,7 @@ relationships between measured spectra, rather than descriptors to correct one c
 
 ## Frozen design and coverage
 
-See the [plan](../../plans/masster/masster_cross_molecule_supervision_gate.md),
+See the plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cross_molecule_supervision_gate.md`),
 [script](../../../scripts/debug/masster_memorization/debug_masster_cross_molecule_gate.py), and standalone
 [analysis configuration](../../../config/analysis/masster_cross_molecule_gate.yaml).
 
@@ -145,4 +145,4 @@ training runner's model-config schema.
 The user subsequently requested reverting the cm0–2 training code. That implementation and its
 launch/config/test integration have been removed; the census diagnostic, evidence and historical
 artifacts remain. No full pilot run or validation gain was measured. See the
-[stopped plan](../../plans/masster/masster_cross_molecule_supervision_gate.md).
+stopped plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cross_molecule_supervision_gate.md`).

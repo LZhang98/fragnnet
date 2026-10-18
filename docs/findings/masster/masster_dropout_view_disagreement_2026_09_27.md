@@ -322,7 +322,7 @@ both splits:
 - **Distillation from an EMA teacher (note §6).** The note omits the closest measured case.
   - `u3` (Switch EMA: the average fed back into the training weights every few epochs) lost
     −0.0089 against `u2`, with train loss 0.16 higher throughout
-    ([ranking-transfer plan](../../plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted)).
+    (ranking-transfer plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md`)).
   - An EMA-teacher consistency term is a soft form of that feedback. `u3` is a prior against it,
     not proof.
   - The out-of-fold teacher in the note is unaffected.
@@ -339,7 +339,7 @@ both splits:
      budget resolves to another isomer. The pathway counts and m/z values match, but their
      multiplicities differ.
    - Run-to-run nondeterminism was recorded before
-     ([regularization audit](masster_regularization_audit_2026_09_19.md)). The practical point is
+     (regularization audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_regularization_audit_2026_09_19.md`)). The practical point is
      new: any two-pass method (R-Drop, SAM, consistency to a teacher) must reuse one candidate set.
      Aligning two passes by candidate row is invalid, so compare by m/z group.
 2. **The logged 0.01-Da cosine is edge-sensitive for low-precision targets.**

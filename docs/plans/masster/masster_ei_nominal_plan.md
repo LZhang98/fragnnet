@@ -97,7 +97,7 @@ sample is 12,158 spectra whose molecular ion is at least 30% of the base peak.
   fragment should carry its full natural envelope.
 - This is the opposite of Enveda MS/MS. There M+1 co-isolates at 0.93 (positive) and 0.48
   (negative), and halogen M+2 is a per-molecule switch, which closed the
-  [isotope envelope plan](masster_isotope_envelope_plan.md).
+  isotope envelope plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_isotope_envelope_plan.md`).
 - **A fixed natural prior, with no learned scale, is the EI model.**
 
 ## Design (Stage 1)
@@ -370,7 +370,7 @@ extrusion. Research definitions stay in the probe pending evidence.
 - Complete: no admission. Anisoyl and narrow azo products add zero validation mass support;
   sulfonamide transfer has seven train examples and none in validation. Final artifacts are
   `output/masster_ei_smarts_2026_10_01/`; the earlier directory is a superseded pilot.
-- [Results, exact scope, validation and limitations](../../findings/masster/masster_ei_smarts_screen_2026_10_01.md).
+- Results, exact scope, validation and limitations (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_ei_smarts_screen_2026_10_01.md`).
   Next: retain candidates outside production; any intensity/pathway experiment needs a
   separate gate.
 

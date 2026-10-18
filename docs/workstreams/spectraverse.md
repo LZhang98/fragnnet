@@ -8,7 +8,7 @@
 - **No new SPV result since the oracle read.** Historical controls (`config/masster/spectraverse/cv0-cv9`, cv0 `ggifzj9m`, cv1 `u46v0k0g`) reach `cos_sim_0.01` 0.458 on 2,048 sampled val spectra; val peaks at epoch 15 and declines to epoch 39.
 - **Why it is stuck** ([oracle ceiling](../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md)): the model reaches 62% of its own emitted-bin ceiling (0.734), so intensity allocation is the largest gap (0.276); 14% of spectra have a subformula ceiling <= 0.5 and score 0.04. Train cosine is 0.590, so the gap is mostly generalization.
 - **Data causes** ([source audit](../findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)): MS-DIAL (20% of spectra) is 46% of the unexplainable block; 33% of spectra have a cosine > 0.99 copy; replicates agree at 0.70-0.76 vs the model's 0.46.
-- **Prepared, nothing submitted (all cv0/cv1, Fir `fir:h100-3g.40gb`, 12 h):** `masster_c0rerun` (fresh control), `masster_short18`, `masster_subceil05`, `masster_merged_nomsdial`, `masster_dedup`, plus the ten-fold `masster_abs005`. The split dirs `data/split/spectraverse_benchmark_{subceil05,nomsdial,dedup}` are local-only and must be copied to Fir.
+- **Prepared, nothing submitted (all cv0/cv1, Fir `fir:h100-3g.40gb`, 12 h):** `masster_c0rerun` (fresh control) and `masster_dedup`; the split dir `data/split/spectraverse_benchmark_dedup` is local-only and must be copied to Fir. The `short18`/`subceil05`, `merged_nomsdial` and `abs005` plans were retired 2026-10-18 (configs and split dirs remain; see Settled).
 - **Pipeline** (2026-10-06, committed in `c5bf610a`): `01_prepare_df.py` reads v1.0.2 and `build_benchmark_split.py` rebuilds all 30 fold files.
 - **Next action:** copy the three split dirs to Fir and launch the five arms next to the control; read each against `masster_c0rerun` (best-epoch `val_cos_sim_0.01_epoch/mean`, last-5 tail; seed spread 0.0042; both folds positive).
 
@@ -16,10 +16,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Short-schedule and clean-train arms](../plans/masster/spectraverse_short_clean_arms_plan.md) | PREPARED | Copy `spectraverse_benchmark_subceil05/`, launch 3 arms x cv0/cv1 |
-| [Merged train, no MS-DIAL](../plans/masster/spectraverse_merged_train_plan.md) | PREPARED | Copy `spectraverse_benchmark_nomsdial/` (cluster code needs `merge_train_only`), launch; if it wins, split merge-only vs MS-DIAL-drop |
 | [Dedup train](../plans/masster/spectraverse_dedup_plan.md) | PREPARED | Copy `spectraverse_benchmark_dedup/`, check md5s, launch; if it wins, build merged on the dedup split |
-| [Fixed +/-0.05 Da arm](../plans/masster/spectraverse_abs005_training_plan.md) | PREPARED | Record launch provenance, compare cv0/cv1 before other folds |
 | Recall window calibration | OPEN | Calibrate on trusted fragment assignments plus shifted-mass controls before changing any loss window ([recall finding](../findings/masster/spectraverse_recall_tolerance_2026_10_01.md)) |
 | Quaternary-ammonium candidate gap (m/z 60.0808) | OPEN, small (0.26% of spectra) | Decide on a `valence` bound change ([`[M]+` finding](../findings/masster/spectraverse_mplus_handling_2026_10_01.md)) |
 
@@ -37,15 +34,17 @@
   - [Recall at instrument tolerance](../findings/masster/spectraverse_recall_tolerance_2026_10_01.md) — flat 10 ppm to instrument tolerance lifts peak recall 0.462/0.410 to 0.542/0.540; +/-0.1 Da gives 0.822/0.780 but is not a calibrated window.
 - **Ceiling**
   - [Oracle ceiling](../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md) — 0.458 vs 0.734 emitted-bin, 0.803 instrument-tolerance, 0.855 all-subformula; isotope rows add <= 0.019. MSGYM has the same 63% efficiency but a flat val curve.
+- **Retired 2026-10-18:** 3 documents of this workstream removed; summaries and open items in [retired documents](../history/retired_docs.md#spectraverse).
+- Short-schedule and clean-train arms — retired 2026-10-18 while PREPARED (`git show 95341fce:docs/plans/masster/spectraverse_short_clean_arms_plan.md`); if revived: copy `spectraverse_benchmark_subceil05/`, launch 3 arms x cv0/cv1.
+- Merged train, no MS-DIAL — retired 2026-10-18 while PREPARED (`git show 95341fce:docs/plans/masster/spectraverse_merged_train_plan.md`); if revived: copy `spectraverse_benchmark_nomsdial/` (cluster code needs `merge_train_only`), launch; if it wins, split merge-only vs MS-DIAL-drop.
+- Fixed +/-0.05 Da arm — retired 2026-10-18 while PREPARED (`git show 95341fce:docs/plans/masster/spectraverse_abs005_training_plan.md`); if revived: record launch provenance, compare cv0/cv1 before other folds.
+- **User decisions (2026-10-03):** merge the TRAIN split only (val/test stay per-spectrum) and drop MS-DIAL from training only; `merge_train_only` lives in `BaseDataset._base_init` (`tests/test_merge_train_only.py`) and must be on the Fir checkout. A new arm uses fixed +/-0.05 Da ([recall finding](../findings/masster/spectraverse_recall_tolerance_2026_10_01.md)).
 
 ## All documents
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Short/clean arms plan](../plans/masster/spectraverse_short_clean_arms_plan.md) | PREPARED (2026-10-06) | `masster_c0rerun`, `masster_short18`, `masster_subceil05` x cv0/cv1 |
-| [Merged-train plan](../plans/masster/spectraverse_merged_train_plan.md) | PREPARED (2026-10-06) | `merge_train_only` consensus per molecule/adduct/instrument, MS-DIAL dropped; 70,368 / 71,435 groups, 220 epochs |
 | [Dedup plan](../plans/masster/spectraverse_dedup_plan.md) | PREPARED (2026-10-06) | Drops 106,019 spectra (21.7%); cv0 train 387,399 to 306,087 |
-| [+/-0.05 Da arm plan](../plans/masster/spectraverse_abs005_training_plan.md) | PREPARED (2026-10-06) | Ten fold configs; also holds the control-config record |
 | [Oracle ceiling](../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md) | FINDING (2026-10-06) | Where the cosine gap sits |
 | [Source/replicate audit](../findings/masster/spectraverse_source_replicate_audit_2026_10_03.md) | FINDING (2026-10-06) | Sources, MS-DIAL, duplicates, folds, reproducible pipeline |
 | [Na/K subformula read](../findings/masster/spectraverse_subformula_filter_2026_10_03_na_k.md) | FINDING (2026-10-06) | Why K/Na spectra are unexplained |

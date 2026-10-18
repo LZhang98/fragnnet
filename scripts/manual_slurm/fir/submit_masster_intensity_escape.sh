@@ -1,6 +1,6 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the 2026-09-22 intensity-escape campaign.
-# Plan: docs/plans/masster/masster_supervised_escape_plan.md.
+# Plan: 95341fce:docs/plans/masster/masster_supervised_escape_plan.md, removed 2026-10-18.
 #
 # STAGE selects which arms are generated:
 #   ladder  e0 + e1, both seeds -- the full 4-job one-knob ladder. This is the default and the

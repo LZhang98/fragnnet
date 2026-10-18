@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the 2026-09-22 candidate-token campaign.
-# Plan: docs/plans/masster/masster_cut_set_features_plan.md.
-# Measurement behind it: docs/findings/masster/masster_candidate_cut_descriptors_2026_09_22.md.
+# Plan: 95341fce:docs/plans/masster/masster_cut_set_features_plan.md, removed 2026-10-18.
+# Measurement behind it: 95341fce:docs/findings/masster/masster_candidate_cut_descriptors_2026_09_22.md, removed 2026-10-18.
 #
 # STAGE selects which arms are generated:
 #   all       all seven arms (default).

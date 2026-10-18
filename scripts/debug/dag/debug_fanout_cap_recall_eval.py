@@ -1,18 +1,18 @@
-"""Step 3 of docs/plans/fragnnet/dag_full_recall_tractability_plan.md: measure actual depth-4 formula
+"""Step 3 of 95341fce:docs/plans/fragnnet/dag_full_recall_tractability_plan.md, removed 2026-10-18: measure actual depth-4 formula
 recall retained vs. node reduction under a per-parent fan-out cap, comparing three
 candidate-ranking functions on the SAME held-out molecules:
 
 1. "hand-mined" -- the (in_ring, element_pair, alpha_hetero) bucket-loss table already
    verified by debug_dag_bond_descriptor_stats.py (values hardcoded below from
-   docs/plans/fragnnet/bond_breakability_mask_plan.md's Step 3 table; that script still exists and can
+   95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18's Step 3 table; that script still exists and can
    reproduce them).
 2. "learned" -- the logistic-regression scorer prototyped in
    debug_learned_bond_scorer_prototype.py, trained here on the same train/test molecule
    split (GroupShuffleSplit, seed=42) so evaluation is on genuinely held-out molecules.
 3. "naive" -- random tie-break at matched K, averaged over a few seeds, per
-   docs/plans/fragnnet/dag_fanout_cap_plan.md's still-open "step 2" sensitivity check.
+   95341fce:docs/plans/fragnnet/dag_fanout_cap_plan.md, removed 2026-10-18's still-open "step 2" sensitivity check.
 
-IMPORTANT CONTEXT: docs/plans/fragnnet/dag_fanout_cap_plan.md cites a K=8 baseline (16.24% node
+IMPORTANT CONTEXT: 95341fce:docs/plans/fragnnet/dag_fanout_cap_plan.md, removed 2026-10-18 cites a K=8 baseline (16.24% node
 reduction / 6.30% recall loss) attributed to a script
 `debug_dag_fanout_cap_node_reduction.py` that does not exist anywhere in this repo or its
 git history. Those numbers cannot be reproduced or verified. This script is a fresh,
@@ -49,7 +49,7 @@ from debug_dag_bond_descriptor_stats import bond_bucket, decode_cc  # noqa: E402
 from debug_dag_bond_radius_env_stats import bond_env_bucket, bond_env_str, boundary_bond_pairs  # noqa: E402
 from debug_learned_bond_scorer_prototype import build_examples  # noqa: E402
 
-# Hardcoded from docs/plans/fragnnet/bond_breakability_mask_plan.md's Step 3 table (verified, reproducible
+# Hardcoded from 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18's Step 3 table (verified, reproducible
 # via debug_dag_bond_descriptor_stats.py, which still exists in this repo).
 BUCKET_LOSS_RANK = {
     (False, "XX", False): 0.03,

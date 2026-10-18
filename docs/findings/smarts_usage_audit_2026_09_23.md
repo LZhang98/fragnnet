@@ -23,7 +23,7 @@
    concentrated in 1,429 molecules (4.1%). It is large per molecule (aminobenzothiazole
    `[M-H]-`: 27% of a spectrum). SMARTS is a coverage device, and coverage is not what
    limits either model on this split
-   ([overfit read-out](masster/masster_overfit_readout_2026_09_22.md)).
+   (overfit read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md`)).
 4. **Four defects, one of them silent**, plus two provenance traps in the DAG stats that
    past comparisons relied on (§3, §4).
 
@@ -36,7 +36,7 @@
 | MASSter `fragment_selection: marginal`, `connected_fragment_beam` | new 2026-09-23 selection | Also refuse SMARTS (`masster_model.py:1351-1396`). |
 | MASSter standalone inference | `script_utils` uses `to_device`, not the PL hook | Silently drops SMARTS mechanisms (code audit §1 (removed 2026-10-13; `git show e65339ed:docs/findings/masster/masster_code_audit.md`)); still open. |
 | FraGNNet DAG prepass (`FRAG_RULES` + `NL_RULES`, all or nothing) | `smarts_prepass` at DAG build → `..._smpTrue` DAGs | Production configs (`fraggnn_d3_ma_mi_nist20_amolc_all.yml`, all four `ce_pair_2026_09_23` arms) read `..._smpFalse`. Only `new_dags/..._prepass.yml` and `d3_new_features/..._prepass_new_mol_feats.yml` (`alvhehe2`, lost) read `smpTrue`. |
-| FraGNNet node features | — | No rule identity reaches the model (`prepass_rule_id` removed 2026-04-14). The only prepass signal is the depth one-hot, which is wrong for prepass nodes while `num_cut_bonds` is off ([feature headroom](feature_headroom_2026_09_22.md)). |
+| FraGNNet node features | — | No rule identity reaches the model (`prepass_rule_id` removed 2026-04-14). The only prepass signal is the depth one-hot, which is wrong for prepass nodes while `num_cut_bonds` is off (feature headroom (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`)). |
 | Atom/bond/molecule features | — | No SMARTS-based feature in `feat_utils.py`; MACCS keys are NEIMS-only. |
 
 Past the proposal probability, the MASSter rule index goes nowhere. It is not a candidate

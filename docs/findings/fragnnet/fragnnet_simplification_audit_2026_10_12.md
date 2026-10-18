@@ -159,7 +159,7 @@ its depth semantics differ, as documented in the
 cached/fallback node-edge metadata loading at lines 134, 326, and 402. A small shared reader
 could help, but preserve the dual-group path's reuse of an already-loaded sample when group
 metadata is absent. Keep the three distinct batching policies intact, especially the prepared
-[CE-context experiment](../../plans/fragnnet/ft_contender_pair_minimal_training_plan.md).
+CE-context experiment (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/ft_contender_pair_minimal_training_plan.md`).
 
 `mol_context_input_only` at model lines 1389–1397 runs the full molecular GNN and then
 discards its result in favor of `input_project`. An early branch can skip wasted work for

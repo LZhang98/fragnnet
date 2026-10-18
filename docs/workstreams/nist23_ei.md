@@ -30,13 +30,14 @@
 ## Settled — read before re-proposing
 
 - **Setup decisions (user):** nominal `nist23_ei`, not the SHR set; select on `val_cos_sim_1.0`; model isotopes; `loss_tolerance_abs` 0.5 ([plan](../plans/masster/masster_ei_nominal_plan.md)).
-- [EI SMARTS screen](../findings/masster/masster_ei_smarts_screen_2026_10_01.md) — CLOSED NULL: anisoyl fluoride and para-hydroxyazobenzene add zero coverage; sulfonamide O-transfer +2.414% on seven train molecules, no val examples.
+- EI SMARTS screen (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_ei_smarts_screen_2026_10_01.md`) — CLOSED NULL: anisoyl fluoride and para-hydroxyazobenzene add zero coverage; sulfonamide O-transfer +2.414% on seven train molecules, no val examples.
 - [H-shift screen](../plans/masster/masster_ei_nominal_plan.md#ei-h-transfer-width-screen-2026-09-30-session-retain-4-for-now) — keep +/-4: L1 coverage 0.9040 at +/-2, 0.9339 at +/-3, 0.9482 at +/-4; +/-6 adds 1.31 points and 0.00314 cosine ceiling.
 - [e1 annotation read](../plans/masster/masster_ei_nominal_plan.md#e1-checkpoint-annotation-read-2026-10-01-4-used-6-unresolved) — H+/-4 carries 3.10% of predicted intensity; dropping it costs 0.0010 cosine.
 - [Fragment-count penalty](../plans/masster/masster_ei_nominal_plan.md#fragment-count-penalty-decision-2026-10-01-do-not-add-yet) — do not add: the loss cannot see which fragment explains a peak.
 - [Test metrics by size](../plans/masster/masster_ei_nominal_plan.md#full-test-performance-by-molecule-size-2026-10-01) — unweighted cosine nearly flat by size; Stein declines. >48 atoms is extrapolation, not a RASSP-matched subset.
 - [Output tilts](../findings/masster/masster_ei_performance_audit_2026_10_01.md) — peak powers 0.6-1.4 and m/z^alpha tilts all score below 0.88703.
 - Related MASSter conventions live in [MASSter core](masster_core.md); EI SMARTS Enveda per-class gate is in [MASSter generalization](masster_generalization.md).
+- **Retired 2026-10-18:** 1 document of this workstream removed; summaries and open items in [retired documents](../history/retired_docs.md#nist23_ei).
 
 ## All documents
 
@@ -49,8 +50,6 @@
 | [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 | [EI performance audit](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | FINDING (2026-10-06) | Stein vs RASSP, support oracle, replicate pairs, priorities |
-| [EI SMARTS screen](../findings/masster/masster_ei_smarts_screen_2026_10_01.md) | CLOSED NULL (2026-10-06) | Three literature families, none admitted |
-| [Isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md) | owned by generalization | Closed null for MS/MS; EI isotopes are natural (opposite case) |
 
 ## HR-EI raw downloads (2026-10-16)
 

@@ -96,8 +96,8 @@ group and tags. 40 epochs as in `masster_subceil05`, so the arm takes 79% of the
 1. Copy `data/split/spectraverse_benchmark_dedup/` to the Fir checkout and check the md5s.
 2. `setup_job_cc.py --cv_config_dp config/spectraverse/masster_dedup --cv_start 0 --cv_end 1 --cv_use_job_id`
    on `fir:h100-3g.40gb` (12 h), next to the
-   [short/clean arms](spectraverse_short_clean_arms_plan.md) and the
-   [merged-train arm](spectraverse_merged_train_plan.md).
+   short/clean arms (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_short_clean_arms_plan.md`) and the
+   merged-train arm (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_merged_train_plan.md`).
 3. Record job IDs and W&B runs here.
 
 ## Read

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Fir jobs for the proposal early-stop arms, 2026-09-23.
-# Plan: docs/plans/masster/masster_proposal_early_stop_plan.md
-#       docs/findings/masster/masster_overfit_readout_2026_09_22.md, section 3
+# Plan: 95341fce:docs/plans/masster/masster_proposal_early_stop_plan.md, removed 2026-10-18
+#       95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18, section 3
 #
 # Question: the validation PROPOSAL term turns at epochs 26-47 while the spectrum term keeps
 # improving to 52-120. Does stopping (freeze) or decaying (proposal-only wd) the proposal-only

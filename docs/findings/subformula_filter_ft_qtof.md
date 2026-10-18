@@ -267,7 +267,7 @@ separate quantities and must not be substituted for each other.
 
 ### Implication for MASSter and EBM priorities
 
-The [proposal review](masster/masster_proposal_review_2026_09_13.md) records roughly 94% candidate
+The proposal review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_proposal_review_2026_09_13.md`) records roughly 94% candidate
 weighted recall for filtered merged MASSter runs. Against this saved D4 reference, that is
 numerically about two percentage points lower, so the observed MASSter coverage is strong.
 The two values are **not a matched gap estimate**: target merging/cleaning, evaluation IDs,

@@ -5,7 +5,7 @@ Covers the fixes recorded in ``docs/reference/masster_feature_set_audit.md`` §7
 token, the constant token columns in unique-fragment mode, and the unread required graph field.
 
 Also covers the two 2026-09-22 candidate-token changes from
-``docs/plans/masster/masster_cut_set_features_plan.md``: the severed bonds' own input features,
+``95341fce:docs/plans/masster/masster_cut_set_features_plan.md, removed 2026-10-18``: the severed bonds' own input features,
 which mean pooling over atom endpoints destroys, and per-atom dropout on the component pool,
 which attacks the identity shortcut that pooling leaves behind.
 

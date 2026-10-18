@@ -11,7 +11,7 @@
 # tests the same key on a lineage where that pattern has not been measured. Siblings on this
 # lineage: h1_head_dropout02 and h2_head_dim128 (allocator capacity); the boundary-dropout arm u1
 # was dropped 2026-09-24 because blocking one head input can reroute the lookup.
-# Plan: docs/plans/masster/masster_ranking_transfer_plan.md.
+# Plan: 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md, removed 2026-10-18.
 #
 # CONTROL: the existing run 3bej6fq7 (f0_mh_ft_control.yml, raw target, seed 397623, 64 epochs):
 # this file is that config plus ONE key and wandb naming, verified through load_config. No new

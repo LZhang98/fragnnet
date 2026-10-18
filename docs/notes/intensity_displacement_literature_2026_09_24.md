@@ -2,7 +2,7 @@
 
 > **Status:** NOTE · **Updated:** 2026-09-27
 > A literature search for the
-> [intensity-displacement plan](../plans/masster/masster_intensity_displacement_plan.md),
+> intensity-displacement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_intensity_displacement_plan.md`),
 > read against its Phase 0 finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`).
 > It covers three areas: forward MS/MS predictors, fragmentation energetics, and proteomics
 > intensity models. §7 is a second pass that corrects two first-pass claims. Generic

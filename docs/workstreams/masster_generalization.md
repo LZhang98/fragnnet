@@ -21,8 +21,6 @@
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) (dated log: [history](../history/masster_memorization_route_plan_log.md)) | ACTIVE | Energetics gate protocol (above); coverage run `so1` when the user decides |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING | State/calculation policy, missing-feature handling, independent selector, effect size, before any fit |
 | [Transfer-oriented (MLDG-style) training](../plans/masster/masster_memorization_route_plan.md#transfer-oriented-training-for-covered-ranking-failures-2026-10-01-deferred) | DEFERRED | Only a cheap head-gradient conflict check on training-only batches, if revived |
-| [Intensity displacement](../plans/masster/masster_intensity_displacement_plan.md) | DEFERRED | Re-derive premises on `i1` first; one cheap hashed-environment retry of the bond-local learner is open |
-| [Ranking transfer](../plans/masster/masster_ranking_transfer_plan.md) | DEFERRED | EMA already carried into `i3`/`i4`; gates 2-3 unread, no step pursued |
 | [Intensity reliability](../plans/masster/masster_intensity_reliability_plan.md) | DEFERRED | P2-P5 not run; needs replicate provenance upstream |
 | [Experiment reopening audit](../findings/experiment_reopening_audit_2026_09_28.md) | FINDING | Untested alternatives: out-of-fold ensemble distillation, narrower R-Drop and smooth-CE follow-ups |
 | [Dropout-view disagreement](../findings/masster/masster_dropout_view_disagreement_2026_09_27.md) | FINDING | User choice: R-Drop arm pair on `i1`, or 8-view head averaging at inference (+0.0031, no training) |
@@ -35,14 +33,14 @@
 - [Worst predictions](../findings/masster/masster_i1_worst_predictions_2026_09_30.md) — rank by `cos_hun_inst_tol` (instrument tolerance), not 0.01 Da bins; 497 of 903 "worst" logged spectra score >= 0.5.
 - [Memorization routes](../plans/masster/masster_memorization_route_plan.md) — try many routes, never a single-input block (identity reaches every head input); seed spread 0.0042; `i1` is the control for new arms.
 - [SMARTS goal](../findings/masster/masster_smarts_outlier_reach_2026_09_29.md) — raise the lower bound (outlier spectra); NIST20 only, no MONA; 8 rules commented out, re-check on Enveda-180.
-- [JEPA removal](../plans/masster/masster_jepa_embedding_plan.md) — code, data and `dreams` env removed 2026-10-04 (user); other null features deliberately kept.
-- [Cross-molecule code](../plans/masster/masster_cross_molecule_supervision_gate.md) — `cm0`-`cm2` reverted at the user's request; census and artifacts kept; never run.
+- JEPA removal (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_jepa_embedding_plan.md`) — code, data and `dreams` env removed 2026-10-04 (user); other null features deliberately kept.
+- Cross-molecule code (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cross_molecule_supervision_gate.md`) — `cm0`-`cm2` reverted at the user's request; census and artifacts kept; never run.
 
 **The train/val gap and what moved it**
 
 - [`i1` memorization read](../findings/masster/masster_i1_memorization_read_2026_09_28.md) — instrument input narrows the eval gap 0.183 to 0.158; about 86% remains; Lumos bias fixed.
 - [Attempts audit](../findings/masster/masster_memorization_attempts_audit_2026_09_27.md) — read first for any memorization arm; +0.003 gate is about one standard error.
-- [Plan review](../findings/masster/masster_memorization_plan_review_2026_09_27.md) — separate held-out promotion from mechanistic criteria; route corruption measures dependence only.
+- Plan review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_memorization_plan_review_2026_09_27.md`) — separate held-out promotion from mechanistic criteria; route corruption measures dependence only.
 - [Route plan, current summary](../plans/masster/masster_memorization_route_plan.md#current-summary) — `i3` +0.0102 and `i4` pass; full attention +0.0044 just under the gate; route removal, noise, masks, windows and m/z/loss positions all null or worse.
 - [Literature](../notes/memorization_literature_2026_09_24.md) and [methods note](../notes/masster_generalization_methods_2026_09_27.md) — ranked list; decision C constant LR; R-Drop/SAM gates.
 - [Dropout-view disagreement](../findings/masster/masster_dropout_view_disagreement_2026_09_27.md) — 8-view mean beats best flattened eval by +0.0031 on `i1`; centered-logit penalty not buildable as specified.
@@ -59,13 +57,13 @@
 
 **Closed information gates and probes (NIST20, frozen `i1`)**
 
-- [Cut-score probe](../findings/masster/masster_cut_intensity_probe_2026_10_01.md) — additive boundary-score correction selects zero; closes this form, not every cut-supervision design.
-- [Peak-ranking pilot](../findings/masster/masster_peak_ranking_pilot_2026_10_02.md) — tuning selects zero ranking weight; full-data end-to-end untested.
-- [Structural alignment](../findings/masster/masster_structural_alignment_audit_2026_09_29.md) — exact connectivity keeps 0.85% of measured intensity on unfamiliar queries; stop.
-- [Reference information gate](../findings/masster/masster_reference_information_gate_2026_09_29.md) — ion corrections select zero; loss alignment lowers cosine (0.6287 vs 0.6385).
-- [Candidate correspondence](../findings/masster/masster_candidate_correspondence_2026_09_29.md) — coverage advantage does not predict accuracy gain; [transfer plan](../plans/masster/masster_candidate_transfer_plan.md) STOPPED.
+- Cut-score probe (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_cut_intensity_probe_2026_10_01.md`) — additive boundary-score correction selects zero; closes this form, not every cut-supervision design.
+- Peak-ranking pilot (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_peak_ranking_pilot_2026_10_02.md`) — tuning selects zero ranking weight; full-data end-to-end untested.
+- Structural alignment (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_structural_alignment_audit_2026_09_29.md`) — exact connectivity keeps 0.85% of measured intensity on unfamiliar queries; stop.
+- Reference information gate (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_reference_information_gate_2026_09_29.md`) — ion corrections select zero; loss alignment lowers cosine (0.6287 vs 0.6385).
+- [Candidate correspondence](../findings/masster/masster_candidate_correspondence_2026_09_29.md) — coverage advantage does not predict accuracy gain; transfer plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_candidate_transfer_plan.md`) STOPPED.
 - [Cross-molecule gate](../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md) — soft relationship signal +0.050 at Tanimoto <= 0.4; hard shared-winner labels unsupported; never trained.
-- [Local context allocation](../plans/masster/masster_local_context_allocation_plan.md) — frozen-token probe stopped at A1 epoch 17; local term <= +0.001.
+- Local context allocation (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_local_context_allocation_plan.md`) — frozen-token probe stopped at A1 epoch 17; local term <= +0.001.
 
 **QET / NCE input and instruments**
 
@@ -76,12 +74,17 @@
 **SMARTS, excision, isotopes**
 
 - [Rearrangement mining](../findings/masster/masster_rearrangement_mining_2026_10_14.md) / [rewire rules plan](../plans/masster/masster_rewire_rules_training_plan.md) — about 1% of [M+H]+ Orbitrap intensity needs a rearrangement, concentrated in a 1.1-1.9% tail of spectra; 13 reviewed mechanism rules with continuation reach 39% of it (null 7%) and lift the val-tail cosine ceiling from 0.652 to 0.782. PREPARED: built and tested; G0/G0b pass; arms a0/a0d1/a0null ready to submit (stage `rewire`).
-- [SMARTS pathway](../plans/masster/masster_smarts_pathway_plan.md) / [gates](../findings/masster/masster_smarts_pathway_gates_2026_09_30.md) — CLOSED NULL: G0 +0.00125 < 0.003, G1 STOP, Track B 0 promoted; `p1` code stays built, off.
+- SMARTS pathway (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`) / [gates](../findings/masster/masster_smarts_pathway_gates_2026_09_30.md) — CLOSED NULL: G0 +0.00125 < 0.003, G1 STOP, Track B 0 promoted; `p1` code stays built, off.
 - [SMARTS CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md) — templates OFF by default; match standardized molecules; SMARTS vs CUDA-template mismatch is a hard error.
 - [SMARTS on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) — only S=O rules pass, 2-10x weaker than NIST20; none of the 8 disabled rules finds support.
-- [Excision](../findings/masster/masster_excision_continuation_gate_2026_09_28.md) — only the aromatic nitro NO-loss family confirms (+0.648% class intensity); no channel built.
-- [Isotope envelope](../plans/masster/masster_isotope_envelope_plan.md) — CLOSED NULL: perfect monoisotopic + best scalar envelope recovers 0.0047 cosine against a 0.005 gate.
-- [JEPA embedding](../plans/masster/masster_jepa_embedding_plan.md) — CLOSED NULL: `j1a` +0.0000, `j1b` -0.0003, `j2` -0.0031 against `i1`.
+- Excision (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_excision_continuation_gate_2026_09_28.md`) — only the aromatic nitro NO-loss family confirms (+0.648% class intensity); no channel built.
+- Isotope envelope (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_isotope_envelope_plan.md`) — CLOSED NULL: perfect monoisotopic + best scalar envelope recovers 0.0047 cosine against a 0.005 gate.
+- JEPA embedding (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_jepa_embedding_plan.md`) — CLOSED NULL: `j1a` +0.0000, `j1b` -0.0003, `j2` -0.0031 against `i1`.
+- **Retired 2026-10-18:** 17 documents of this workstream removed; summaries and open items in [retired documents](../history/retired_docs.md#masster_generalization).
+- Intensity displacement — retired 2026-10-18 while DEFERRED (`git show 95341fce:docs/plans/masster/masster_intensity_displacement_plan.md`); if revived: re-derive premises on `i1` first; one cheap hashed-environment retry of the bond-local learner is open.
+- Ranking transfer — retired 2026-10-18 while DEFERRED (`git show 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md`); if revived: EMA already carried into `i3`/`i4`; gates 2-3 unread, no step pursued.
+- SMARTS pathway: the only open route is user decision D2, targeting the template subset (G0 subset value 0.022) instead of the whole split.
+- Judge memorization arms on replicated held-out performance; gap closure and route sensitivity are separate mechanistic claims.
 
 ## All documents
 
@@ -90,28 +93,15 @@
 | [Rare chemistry augmentation](../plans/masster/rare_chemistry_augmentation_plan.md) | PREPARED (2026-10-14) | Shared NIST20/MSGYM rarity census, capped sampling, conditional replicate augmentation and confirmation gates; sampler removed 2026-10-14, route 1 prepared |
 | [Memorization-route plan](../plans/masster/masster_memorization_route_plan.md) | ACTIVE (2026-10-06) | Route-removal arm queue, gates, current summary; open energetics and MLDG designs |
 | [Memorization-route log](../history/masster_memorization_route_plan_log.md) | REFERENCE (2026-10-06) | Verbatim dated log of every arm, read and build (batches 1-5, `i1` stack, ladders, `ce1`/`ce2`) |
-| [Intensity displacement plan](../plans/masster/masster_intensity_displacement_plan.md) | DEFERRED (2026-10-06) | Phase 0 / 1.4b on retired `f0`/`f1`; arm 2A not submitted |
-| [Ranking-transfer plan](../plans/masster/masster_ranking_transfer_plan.md) | DEFERRED (2026-10-06) | `u2` EMA, `h1`, `h2`, `u3` arms; EMA carried into `i3` |
 | [Intensity reliability plan](../plans/masster/masster_intensity_reliability_plan.md) | DEFERRED (2026-10-06) | Ladder-aware replicate noise, P1 census, uncertainty ensembles |
-| [Local context allocation plan](../plans/masster/masster_local_context_allocation_plan.md) | STOPPED (2026-10-06) | Constrained context correction; Stage 1 probe stopped by the user |
-| [Candidate transfer plan](../plans/masster/masster_candidate_transfer_plan.md) | STOPPED (2026-09-29) | Candidate correspondence and reference-intensity transfer; Gate B negative |
-| [Cross-molecule supervision gate plan](../plans/masster/masster_cross_molecule_supervision_gate.md) | STOPPED (2026-09-30) | cm0-2 census-gated training pilot; code reverted |
-| [Cut-intensity probe plan](../plans/masster/masster_cut_intensity_probe.md) | CLOSED NULL (2026-10-01) | Frozen cut-to-intensity probe protocol |
-| [Peak-ranking pilot plan](../plans/masster/masster_peak_ranking_pilot_2026_10_02.md) | CLOSED NULL (2026-10-02) | CPU intensity-head continuation protocol |
-| [Excision channel probe plan](../plans/masster/masster_excision_channel_probe.md) | FINDING (2026-10-06) | Internal-bridge excision diagnostic protocol (completed) |
 | [Rewire rules in training](../plans/masster/masster_rewire_rules_training_plan.md) | PREPARED (2026-10-15) | Mechanism rules with continuation as an after-selection training stage; G0/G0b pass; a0/a0d1/a0null configured, not submitted |
 | [Rewire rules implementation spec](../plans/masster/masster_rewire_rules_implementation.md) | PREPARED (2026-10-15) | File-by-file spec of the built stage, its tests and deviations |
-| [SMARTS pathway plan](../plans/masster/masster_smarts_pathway_plan.md) | CLOSED NULL (2026-09-30) | Pre-registered G0/G1/G2 gates for SMARTS in the pathway |
-| [Isotope envelope plan](../plans/masster/masster_isotope_envelope_plan.md) | CLOSED NULL (2026-10-03) | Ceiling for modelling isotope satellites on Enveda/NIST20 |
-| [JEPA embedding plan](../plans/masster/masster_jepa_embedding_plan.md) | CLOSED NULL (2026-10-04) | DreaMS-embedding auxiliary; Gate 1 fails; code removed |
 | [Candidate correspondence](../findings/masster/masster_candidate_correspondence_2026_09_29.md) | FINDING (2026-09-29) | Endpoint and NCE-band coverage audits |
 | [Cross-molecule gate](../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md) | FINDING (2026-09-29) | Training-only census of transferable spectral relationships |
 | [Rare chemistry census](../findings/masster/rare_chemistry_class_census_2026_10_10.md) | FINDING (2026-10-10) | Shared NIST20/MSGYM class-rarity census; A1 exposure shift, A3 fails support gate |
 | [Element-swap census](../findings/masster/rare_chemistry_element_swap_census_2026_10_14.md) | FINDING (2026-10-14) | Measured same-group swap pairs: 57 Br→Cl training pairs on NIST20; none usable for Se/As/Si or on MSGYM |
-| [Cut-intensity probe](../findings/masster/masster_cut_intensity_probe_2026_10_01.md) | CLOSED NULL (2026-10-01) | Additive cut-score correction selects zero |
 | [Dropout-view disagreement](../findings/masster/masster_dropout_view_disagreement_2026_09_27.md) | FINDING (2026-09-28) | R-Drop and logit-penalty pricing; 8-view averaging |
 | [Energetics feasibility](../findings/masster/masster_energetics_feasibility_2026_10_02.md) | FINDING (2026-10-02) | xTB feasibility, joint-state coverage 97%, geometry limits |
-| [Excision continuation gate](../findings/masster/masster_excision_continuation_gate_2026_09_28.md) | FINDING (2026-09-28) | Nitro NO-loss family confirms; bridge excision unsupported |
 | [Fragment-connectivity screen](../findings/masster/masster_fragment_connectivity_local_screen_2026_09_29.md) | FINDING (2026-09-29) | `fc1` local screen, not positive |
 | [`i1` base-peak errors](../findings/masster/masster_i1_base_peak_errors_2026_09_28.md) | FINDING (2026-09-28) | Step 1: wrong base-peak table, hedging biases |
 | [`i1` fragment pairs](../findings/masster/masster_i1_fragment_pairs_2026_09_30.md) | FINDING (2026-09-30) | Ambiguity-preserving pair table, 52,020 val spectra |
@@ -122,17 +112,13 @@
 | [`i1` worst predictions](../findings/masster/masster_i1_worst_predictions_2026_09_30.md) | FINDING (2026-10-06) | Floor of 330 spectra; ranking failure; `so1` arm |
 | [Isomer split Step 0](../findings/masster/masster_isomer_split_step0_2026_10_01.md) | FINDING (2026-10-01) | Within-peak isomer split gate |
 | [Memorization attempts audit](../findings/masster/masster_memorization_attempts_audit_2026_09_27.md) | FINDING (2026-09-27) | Every arm aimed at the gap, re-derived from code and W&B |
-| [Memorization plan review](../findings/masster/masster_memorization_plan_review_2026_09_27.md) | FINDING (2026-09-27) | Review of diagnosis and next experiments |
 | [Metadata usage audit](../findings/masster/masster_metadata_usage_audit_2026_10_03.md) | FINDING (2026-10-03) | CE/adduct/instrument/mode vs published models |
-| [Peak-ranking pilot](../findings/masster/masster_peak_ranking_pilot_2026_10_02.md) | CLOSED NULL (2026-10-02) | Explicit ranking loss gives no gain |
 | [QET projection / candidate union](../findings/masster/masster_qet_projection_candidate_union_2026_09_26.md) | FINDING (2026-09-28) | QET head gates; NCE input; `n4` fourier |
-| [Reference information gate](../findings/masster/masster_reference_information_gate_2026_09_29.md) | CLOSED NULL (2026-09-29) | Aligned reference intensities do not help `i1` |
 | [SMARTS CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md) | FINDING (2026-09-28) | Templates on CUDA; proposal reach |
 | [SMARTS on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) | FINDING (2026-09-29) | Per-class coverage gate on all 41 rules |
 | [SMARTS outlier reach](../findings/masster/masster_smarts_outlier_reach_2026_09_29.md) | FINDING (2026-09-29) | Rules matter on 37 outlier val spectra |
 | [Rearrangement mining](../findings/masster/masster_rearrangement_mining_2026_10_14.md) | FINDING (2026-10-15) | Non-bond-cut peaks in MSGYM+NIST20 [M+H]+; tail profile; 13 gated mechanism rules |
 | [SMARTS pathway gates](../findings/masster/masster_smarts_pathway_gates_2026_09_30.md) | FINDING (2026-09-30) | G0, G1, G2, G2b all fail |
-| [Structural alignment audit](../findings/masster/masster_structural_alignment_audit_2026_09_29.md) | CLOSED NULL (2026-09-29) | Exact connectivity retains little intensity |
 | [Breakdown-curve form fit](../findings/breakdown_curve_form_fit_2026_09_26.md) | FINDING (2026-09-26) | Two-parameter QET form on NIST20 CE series |
 | [Orbitrap CE scales](../findings/nist_orbitrap_instrument_ce_scales_2026_09_28.md) | FINDING (2026-10-01) | Elite vs Lumos; `ORB`/`ORB_F`; `i1`/`i2` |
 | [Experiment reopening audit](../findings/experiment_reopening_audit_2026_09_28.md) | FINDING (2026-09-28) | 125 records screened for directions worth reopening |

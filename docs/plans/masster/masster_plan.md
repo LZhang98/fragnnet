@@ -42,7 +42,7 @@ source win. Dated stage records (Stages 1-4) and the 2026-08-20 base-CE measurem
   cuts, ring-system factorization), 6.2 template channel for new-bond products, 7.2
   bounded-cardinality support augmentation, section 9 risks.
 - **Next step.** None scheduled from this plan; new proposal or backbone work starts from the
-  [improvement plan](masster_improvement_plan.md) and the [architecture review todo](masster_architecture_review_todo.md).
+  improvement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_improvement_plan.md`) and the architecture review todo (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_architecture_review_todo.md`).
 
 ## Current implementation snapshot (source-verified 2026-09-21)
 
@@ -112,9 +112,9 @@ precursor graph + spectrum metadata
 - The connected-fragment beam, shared-across-CE proposals, proposal-only warmup,
   channel hard selection, and alternate intensity/loss formulations are implemented
   experimental controls. Their measured status and next checks belong in the linked
-  findings and newer plans, especially the [improvement plan](masster_improvement_plan.md),
+  findings and newer plans, especially the improvement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_improvement_plan.md`),
   [loss review](../../findings/loss_setup_review_2026_09_13.md), and
-  [campaign read-out](../../findings/masster/masster_campaign_readout_2026_09_21.md).
+  campaign read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md`).
 
 ### Documentation boundary
 
@@ -1663,7 +1663,7 @@ set the spectrum loss can assign probability to. It is not importance sampling,
 it does not estimate the full mask marginal, and retained masks carry no
 correction weight. Its proposal distribution has no tractable per-mask
 likelihood, so it is not a foundation for the active correlated-cut work. The
-[superseded RL exploration plan](masster_rl_exploration_plan.md) retains the
+superseded RL exploration plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_rl_exploration_plan.md`) retains the
 likelihood and estimator analysis; Section 6.1.2 defines the current decision path.
 
 **Implemented 2026-08-16.** The default `bounded_additive` mode preserves all
@@ -1824,7 +1824,7 @@ Stages 1-4 (probability translator, bond/charge heads, H-transfer / ion-mode hea
   fragment formula channels, and spectrum aggregation conventions.
 - `src/fragnnet/iceberg/pl_model.py` — precedent for learned probabilistic
   generation, although its autoregressive atom-removal mechanism is not reused.
-- `docs/plans/fragnnet/dag_full_recall_tractability_plan.md` — records why static bond
+- `95341fce:docs/plans/fragnnet/dag_full_recall_tractability_plan.md, removed 2026-10-18` — records why static bond
   ranking inside a fixed DAG did not solve the earlier node-budget problem. The
   present proposal instead ranks complete cut masks and directly generates a
   flat fragment set.

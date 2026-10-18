@@ -6,7 +6,7 @@ CE-specific target and a leave-one-CE-out context average, and measures exact no
 stability across adjacent CE levels.
 
 The constants below intentionally pin the provisional ``9t63zils`` checkpoint export and the
-base-peak analysis inputs used by ``fragment_intensity_ranking_findings.md``. Change the prediction,
+base-peak analysis inputs used by ``95341fce:docs/findings/fragnnet/fragment_intensity_ranking_findings.md, removed 2026-10-18``. Change the prediction,
 metadata, and output paths together when repeating the test on a matched GINE-1 checkpoint.
 
 Usage:

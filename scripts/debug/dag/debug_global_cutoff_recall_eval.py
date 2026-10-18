@@ -1,4 +1,4 @@
-"""Step 4 of docs/plans/fragnnet/dag_full_recall_tractability_plan.md: test whether the MECHANISM change
+"""Step 4 of 95341fce:docs/plans/fragnnet/dag_full_recall_tractability_plan.md, removed 2026-10-18: test whether the MECHANISM change
 alone -- global (not per-parent) cutoff with max-over-redundant-routes, modeled on
 the ICEBERG fork's autoregressive generation loop (src/fragnnet/iceberg/pl_model.py, removed
 2026-10-11; see revision 13b1599d) -- recovers the recall

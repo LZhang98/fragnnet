@@ -32,7 +32,7 @@ model's validation error the family predicts on molecules the correction never s
 ``context`` family (``g`` of ``log p`` and context alone) is the calibration baseline; a family
 earns information only by its gain over that.
 
-Rule provenance (G1 of ``docs/plans/masster/masster_smarts_pathway_plan.md``). ``extract`` also
+Rule provenance (G1 of ``95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18``). ``extract`` also
 saves, per candidate peak, the float64 ``mz`` and ``rule_x``: whether the peak's m/z is a valid
 production ion channel (``MassterModel._fragment_masses_and_valid_channels`` with the template's
 cut count and formed-bond count) of either side of an eligible SMARTS template of the molecule.

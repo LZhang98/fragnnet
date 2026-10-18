@@ -4,7 +4,7 @@
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml, same seed (397623), same
 # 128-epoch box. The existing c4a_base_s1/s2 runs are the control (tail mean 0.7270, the two
 # replicates spanning 0.0007); read the 118-127 tail mean against them with the +/-0.005 gate of
-# docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md.
+# 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18.
 #
 # All three arms also switch on masster_candidate_coverage_metrics and
 # masster_candidate_cut_diagnostics. Both are monitoring only: they add validation

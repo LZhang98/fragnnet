@@ -8,7 +8,7 @@
 
 Can fixed ion/loss formula rules locate two observable outcomes in each of two molecules,
 providing a basis for supervision of how their intensity ratio changes? This tests the coverage
-needed by the [candidate-transfer plan](../../plans/masster/masster_candidate_transfer_plan.md).
+needed by the candidate-transfer plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_candidate_transfer_plan.md`).
 It does not identify shared mechanisms or independently validate fragment structures.
 
 Use frozen `i1_inst_ob_obf` (`i50ig7rf`), epoch 59. Sample 120 query identities from the
@@ -206,7 +206,7 @@ No model fitting, new training run, or changes to staged cm0–2 were made.
 
 ## Incremental-information follow-up (2026-09-29)
 
-The [fresh validation-query gate](masster_reference_information_gate_2026_09_29.md) is complete
+The fresh validation-query gate (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_reference_information_gate_2026_09_29.md`) is complete
 and negative for the tested correction. Ion alignment selects zero residual in both folds; loss
 alignment degrades cosine. The coverage findings above remain valid, but they do not justify
 promoting this candidate-transfer recipe. See the linked result for controls and limitations.

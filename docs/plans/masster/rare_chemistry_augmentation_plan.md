@@ -176,7 +176,7 @@ structured substitutions and aligned donor combinations as hypotheses to validat
 measured analogues remain outside the benchmark-subset scope. The cm0–2 cross-molecule training
 integration, configs, launcher, manifest preparation and pilot tests were **removed/reverted
 at the user's request on 2026-09-30**, as recorded in the
-[cross-molecule plan](masster_cross_molecule_supervision_gate.md). Census code and
+cross-molecule plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cross_molecule_supervision_gate.md`). Census code and
 findings remain; this exploration does not restore the removed training implementation.
 
 ## Rare-element handling (revised 2026-10-14)
@@ -375,7 +375,7 @@ shows that doing so improves reliability; shared family/parent evidence is corre
 
 #### Preregistered mapped coverage gate
 
-The [structural-alignment audit](../../findings/masster/masster_structural_alignment_audit_2026_09_29.md)
+The structural-alignment audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_structural_alignment_audit_2026_09_29.md`)
 retained **38.00%** of measured query intensity with formula matching but only **0.85%** with
 unambiguous connectivity on its unfamiliar-query cohort. Edit mapping is unmeasured and is
 not mathematically bounded by those numbers: it changes the correspondence rule and may
@@ -435,8 +435,8 @@ the stopped formula-alignment or cm0–2 training recipes unchanged.
 - Our [cross-molecule census](../../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md)
   found soft measured relationships; strongest-outcome agreement was weak. Its training pilot
   was removed at user request, never measured as a training null.
-- [Formula-aligned corrections](../../findings/masster/masster_reference_information_gate_2026_09_29.md)
-  did not improve frozen i1, and [exact structural matching](../../findings/masster/masster_structural_alignment_audit_2026_09_29.md)
+- Formula-aligned corrections (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_reference_information_gate_2026_09_29.md`)
+  did not improve frozen i1, and exact structural matching (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_structural_alignment_audit_2026_09_29.md`)
   retained little useful measured intensity. That audit explicitly left mass-shifted analogies
   untested. The new hypothesis is edit-conditioned correspondence across changed formulas,
   rather than another exact-match or naive intensity-copying experiment.

@@ -7,7 +7,7 @@
 # masster_candidate_coverage_metrics and masster_candidate_cut_diagnostics at their
 # default (off), so its hours per epoch compare directly with c4a_base_s1/s2 (50.1 / 49.2 s per
 # epoch). Read the 118-127 tail mean against that control with the +/-0.005 gate of
-# docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md.
+# 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18.
 #
 # Plan and reading rules: docs/plans/masster/masster_fragment_marginal_selection_plan.md.
 wandb_name: nist20_ma_mi_merged_fast_batch512_cuda_lb64_f5_mask_order_u128_ctlmon

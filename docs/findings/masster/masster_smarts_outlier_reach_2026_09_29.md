@@ -90,7 +90,7 @@ Log: `output/smarts_outliers_2026_09_29/lower_tail_log.txt`.
 - **The tail is about four times as frequent in `[M-H]-`:** 0.39% of its spectra reach ≥10%
   (606 of 156,532), against 0.10% in `[M+H]+` (361 of 367,379). `[M-H]-` has no trained model
   yet.
-- **G0 in the [SMARTS pathway plan](../../plans/masster/masster_smarts_pathway_plan.md)** gates
+- **G0 in the SMARTS pathway plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`)** gates
   `t1i` on the whole-split coverage ceiling. That gate measures the average, not the outliers
   this goal targets.
 

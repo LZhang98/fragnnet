@@ -132,7 +132,7 @@ All three Zenodo MGFs are downloaded and md5-verified, under
   Spectraverse asks users to train only on its data, but it does not forbid filtering it. A
   train-side filter or merge is a modelling choice, and held-out folds must stay untouched.
 - Merged spectra: the paper says NPLIB1's merged spectra "may not resemble individual spectra".
-  Our [merged-train arm](../plans/masster/spectraverse_merged_train_plan.md) merges train only
+  Our merged-train arm (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_merged_train_plan.md`) merges train only
   and scores per spectrum, so its evaluation is unaffected.
 
 Check script (in repo): `scripts/debug/spectraverse/spectraverse_data_check.py` covers the md5, the spec_df

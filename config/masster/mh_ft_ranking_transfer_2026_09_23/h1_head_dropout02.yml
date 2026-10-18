@@ -3,14 +3,14 @@
 # attention and feed-forward blocks). Encoder (mol_dropout 0.1) and proposal heads are unchanged, as
 # the audit asks: the global drop03 arm raised all three subsystems at once and underfit.
 #
-# WHY. The shortcut audit (docs/findings/masster/masster_overfit_readout_2026_09_22.md §7,
+# WHY. The shortcut audit (95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18 §7,
 # updates 2026-09-23/24) leaves one measured shortcut on unmerged [M+H]+/FT: a per-molecule
 # allocation lookup. Train ranking gap 0.011 vs val 0.121 on 6h67zps9. Exposure is flat, the
 # precursor prior is a fallback, and the candidate-set fingerprint is under 11%. Molecule identity
 # reaches every head input through the shared atom embeddings, so blocking one input (the dropped
 # boundary-dropout arms) can reroute the lookup. This arm limits the allocator itself: every route
 # through the intensity head loses capacity (§7.2 item 3).
-# Plan: docs/plans/masster/masster_ranking_transfer_plan.md.
+# Plan: 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md, removed 2026-10-18.
 #
 # CONTROL: the existing run 3bej6fq7 (f0_mh_ft_control.yml, raw target, seed 397623, 64 epochs).
 # This file is that config plus ONE key and wandb naming, verified through load_config.

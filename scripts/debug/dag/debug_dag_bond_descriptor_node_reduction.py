@@ -2,7 +2,7 @@
 depth 4, using the same (in_ring, element_pair, alpha_hetero) bond descriptor as
 debug_dag_bond_descriptor_stats.py. That script measured the *recall-loss* side of the
 masking tradeoff; this measures the *node-reduction* side
-(docs/plans/fragnnet/bond_breakability_mask_plan.md step 4).
+(95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18 step 4).
 
 A depth-4 node survives a masking policy iff at least one of its incoming routes (parent
 edges / multi-bond cuts) uses no bond from the masked bucket set - mirrors the recall

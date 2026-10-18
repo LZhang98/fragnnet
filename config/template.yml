@@ -838,7 +838,7 @@ masster_include_cmf: True
 masster_charge_pooling: logsumexp  # ["logsumexp", "logmeanexp"]
 masster_smarts_templates: False  # Force the MASSter allowlist's template cuts; add their assemblies.
 # SMARTS rule provenance in the intensity token (arm p1;
-# docs/plans/masster/masster_smarts_pathway_plan.md, Track A). Per candidate, a 0/1 indicator
+# 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18, Track A). Per candidate, a 0/1 indicator
 # for each rule of MASSTER_RULE_VOCABULARY that produces it (either side of the template),
 # through a zero-initialized, bias-free projection added right after input_projection. False
 # builds nothing and adds no state_dict key. Requires masster_smarts_templates and
@@ -914,7 +914,7 @@ masster_boundary_local_layers: 0
 # Training-only dropout on the CutBondEncoder hidden layer (arm k1). Requires
 # masster_boundary_bond_encoder: True.
 masster_boundary_encoder_dropout: 0.0
-# Retained-fragment branch (arm fc1; docs/plans/masster/masster_hierarchical_fragment_graph_plan.md).
+# Retained-fragment branch (arm fc1; 95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, removed 2026-10-18).
 # 0 disables the whole branch: no module built, nothing computed in forward, zero new token
 # columns, zero new state_dict keys, bit-identical to every existing checkpoint. k > 0 runs a
 # k-layer plain GINE over each candidate's OWN retained bonds (chemical bonds with both

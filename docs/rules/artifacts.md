@@ -25,7 +25,7 @@
 - Give every local run a unique `job_id`: `<arm>_<seed>`, or add a date suffix. Lightning
   does not overwrite a checkpoint with the same name. It writes `model-epoch=000-v1.ckpt`
   beside it, so `-v1` files mean two runs collided. Reusing a name also resumes the old
-  checkpoint ([shared-proposal audit](../findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md)).
+  checkpoint (shared-proposal audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md`)).
 - Do not write anything else into `ckpts/`. A loose `ckpts/<run_id>.ckpt` belongs in
   `saved_ckpts/` (§2.2).
 - Do not put pytest temp dirs (`--basetemp`) or copies of test checkpoints under

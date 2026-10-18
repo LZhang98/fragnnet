@@ -394,8 +394,8 @@ python preproc_scripts/spectraverse/split_by_adduct.py --adducts "[M+H]+" "[M-H]
 ```
 
 Plans: [dedup](../docs/plans/masster/spectraverse_dedup_plan.md),
-[subformula-ceiling arms](../docs/plans/masster/spectraverse_short_clean_arms_plan.md),
-[merged train with MS-DIAL dropped](../docs/plans/masster/spectraverse_merged_train_plan.md).
+subformula-ceiling arms (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_short_clean_arms_plan.md`),
+merged train with MS-DIAL dropped (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_merged_train_plan.md`).
 The resulting train sizes are in each variant's `stats.json`.
 
 ### Enveda-180

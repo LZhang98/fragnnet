@@ -14,10 +14,10 @@ Existing evidence already favors model/generalization error over measurement var
 The immediate task is to correct the existing estimates, add dominant-pair stability, and
 prioritize transfer. Uncertainty follows the existing ensemble finding, not a new dispersion head.
 
-This extends the [intensity-displacement plan](masster_intensity_displacement_plan.md).
+This extends the intensity-displacement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_intensity_displacement_plan.md`).
 The [generalization literature review](../../notes/masster_generalization_methods_2026_09_27.md)
 owns detailed R-Drop and representation-learning recipes; the
-[memorization review](../../findings/masster/masster_memorization_plan_review_2026_09_27.md)
+memorization review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_memorization_plan_review_2026_09_27.md`)
 owns the critique of identity-removal experiments. This document owns the reliability diagnostic
 and the choice among the following three directions.
 
@@ -127,7 +127,7 @@ of magnitude below the +0.003 experiment gate. Treat this as a rounding-headroom
 that cohort/metric, not a demonstrated model gain or a universal bound. Missing eV (21.3% in
 the latest report) and inconsistent conversion on the second ladder further undermine treating
 eV as one interchangeable input scale. This agrees with keeping the
-[feature-headroom audit](../../findings/feature_headroom_2026_09_22.md) as the metadata baseline.
+feature-headroom audit (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`) as the metadata baseline.
 
 Energy mismatch can inflate apparent replicate noise, but the historical ~10% noise share is
 not a proven population upper bound: changing the key also changes cohorts, pair weights and

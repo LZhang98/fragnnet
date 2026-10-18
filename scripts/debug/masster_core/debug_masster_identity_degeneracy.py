@@ -19,7 +19,7 @@ unrestricted multi-cut masks can build. Composition ambiguity is therefore a low
 MASSter, and so is substructure degeneracy.
 
 Results and their interpretation:
-``docs/findings/masster/masster_identity_supervision_2026_09_22.md``.
+``95341fce:docs/findings/masster/masster_identity_supervision_2026_09_22.md, removed 2026-10-18``.
 
 Usage:
     python scripts/debug/masster_core/debug_masster_identity_degeneracy.py

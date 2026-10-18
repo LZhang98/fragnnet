@@ -1,6 +1,6 @@
 """G0 coverage ceiling of the registered MASSter SMARTS templates on a whole split.
 
-Plan: docs/plans/masster/masster_smarts_pathway_plan.md (section 4, gate G0). For every
+Plan: 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18 (section 4, gate G0). For every
 spectrum of a precursor type (``[M-H]-`` by default) this measures how much the
 disconnected sides of the eligible templates could raise the candidate-space cosine ceiling
 of the base-peak decomposition, ``oracle = ||T_covered|| / ||T||``.

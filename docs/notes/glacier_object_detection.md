@@ -730,7 +730,7 @@ GLACIER eq. 14's three inputs map onto existing code:
 So for FraGNNet this is a **config edit, not a build**. For MASSter, absolute mass arrived
 2026-09-20 as a template default; composition, the neutral-loss complement, a sinusoidal/RBF mass
 encoding and any pairwise `dm_ij` attention bias are still absent — see
-[architecture review](../plans/masster/masster_architecture_review_todo.md), whose "mass-blind" section is amended for this.
+architecture review (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_architecture_review_todo.md`), whose "mass-blind" section is amended for this.
 
 ### 3. Proposal: ours is strictly more expressive, and it is not the bottleneck
 

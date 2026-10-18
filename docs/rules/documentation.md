@@ -17,7 +17,7 @@
   | `docs/reference/` | Detailed current system behavior |
   | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASSter findings in `masster/`, cross-model and shared-data findings at top level |
   | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASSter plans in `masster/`, cross-model plans at top level |
-  | `docs/history/` | Frozen verbatim logs moved out of live documents; never the canonical home of a fact |
+  | `docs/history/` | Frozen verbatim logs moved out of live documents, and `retired_docs.md` (summaries of removed documents); never the canonical home of a current fact |
   | `docs/notes/` | Scratch and literature notes |
   | `docs/figures/` | Figures referenced by documentation |
   | `docs/rules/` | Shared constraints |
@@ -86,6 +86,9 @@ and audits whose fixes have all landed; an audit with an open item stays. When r
   as it is.
 - Move any still-open consequence (data to rebuild, validation not yet run) into the hub or
   `docs/project-state.md` first.
+- Add the document's summary (question, verdict with key numbers and run IDs, open items) to
+  `docs/history/retired_docs.md` under its workstream, and turn an "Open threads" row into a
+  Settled line saying it was retired and what the next step would be if revived.
 
 ## Adding, moving, or renaming a document
 

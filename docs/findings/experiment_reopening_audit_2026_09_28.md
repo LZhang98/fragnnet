@@ -76,7 +76,7 @@ when that omission is relevant to its mechanism or there is another concrete cha
 
 **Previous record.** Static fragment descriptors, directional cut encoders, bond-set pooling,
 and candidate adjacency were explored or proposed. The
-[cut-set screen](../plans/masster/masster_cut_set_features_plan.md) found no promoted feature
+cut-set screen (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`) found no promoted feature
 arm: adjacency +0.0032, raw cut-bond features -0.0010, their combination +0.0021.
 The local boundary encoder `r1` gave -0.0029. These do not test a GNN running on each retained
 fragment's internal bonds. Historical static-fragment code describes static aggregates plus a
@@ -178,10 +178,10 @@ Canonical sources: [CE/QET](masster/masster_qet_projection_candidate_union_2026_
 [instrument correction](nist_orbitrap_instrument_ce_scales_2026_09_28.md),
 [dropout follow-up](masster/masster_dropout_view_disagreement_2026_09_27.md),
 [local attention screen](../plans/masster/masster_memorization_route_plan.md),
-[EBM gate](../plans/energy_based_spectrum_reranking_plan.md),
-[ClassyFire plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md),
+EBM gate (removed 2026-10-18; `git show 95341fce:docs/plans/energy_based_spectrum_reranking_plan.md`),
+ClassyFire plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/classyfire_atom_pretraining_plan.md`),
 ChemBERTa results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`),
-[prepass confound](feature_headroom_2026_09_22.md),
+prepass confound (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`),
 [cross-adduct gate](cross_adduct_loss_headroom_2026_09_17.md).
 
 ## Keep closed or deprioritized for the current objective
@@ -206,15 +206,15 @@ ChemBERTa results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_
 | FraGhost/global companion as a default new model | Recovered proposal has no matched current-protocol gain. MASSter already has global and candidate attention; benchmark complementarity before building another large model. |
 
 Sources: [FluxMPNN](../plans/fragnnet/fluxmpnn_plan.md),
-[sibling diagnostic correction](../plans/fragnnet/sibling_ranking_target_plan.md),
+sibling diagnostic correction (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md`),
 [attempts audit](masster/masster_memorization_attempts_audit_2026_09_27.md),
 [latest batch read](../plans/masster/masster_memorization_route_plan.md),
-[architecture results](masster/masster_architecture_arms_epoch128_2026_09_22.md),
-[shared proposals](masster/masster_shared_proposal_pathway_audit_2026_09_26.md),
-[excision](masster/masster_excision_continuation_gate_2026_09_28.md),
-[ChemFrag triage](masster/chemfrag_rearrangement_triage_2026_09_14.md),
-[isotope gate](../plans/masster/masster_isotope_envelope_plan.md),
-[teacher retraction](masster/masster_identity_supervision_2026_09_22.md).
+architecture results (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md`),
+shared proposals (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md`),
+excision (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_excision_continuation_gate_2026_09_28.md`),
+ChemFrag triage (removed 2026-10-18; `git show 95341fce:docs/findings/masster/chemfrag_rearrangement_triage_2026_09_14.md`),
+isotope gate (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_isotope_envelope_plan.md`),
+teacher retraction (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_identity_supervision_2026_09_22.md`).
 
 ## Corrections and execution boundary
 

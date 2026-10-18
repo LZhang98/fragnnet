@@ -3,7 +3,7 @@
 # passes an EMPTY edge set to the branch's GINE, so no message crosses a retained bond. Isolates
 # whether any fc1 gain comes from propagation over the retained-fragment graph, or just from the
 # extra per-atom retained-bond-degree / boundary-cut-bond-count features and the two pooled
-# reductions alone -- the control docs/plans/masster/masster_hierarchical_fragment_graph_plan.md
+# reductions alone -- the control 95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, removed 2026-10-18
 # asks for ("a pooled control gets the same features, markers, reductions, and comparable
 # parameters, but no retained-edge messages"). 2026-09-29.
 #

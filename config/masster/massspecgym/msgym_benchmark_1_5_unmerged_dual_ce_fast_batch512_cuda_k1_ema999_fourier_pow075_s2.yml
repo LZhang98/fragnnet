@@ -113,13 +113,13 @@
 # 4. masster_intensity_norm_placement: pre. `a1_prenorm` (q4t4udee) is the only clean
 #    single-key PASS of the 128-epoch merged screen: +0.0056 tail mean (118-127) against the
 #    0.7270 control, parameter-identical, and it halves the calibration drift.
-#    docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18
 #
 # 5. Cosine LR to 1% of peak with the template's 1000-step linear warmup, i.e. arm
 #    `d3_cosine_warmup1000` (rcfzf67p): best <=127 0.7357 against a 0.7286 control mean; d1/d2
 #    (no warmup) reached 0.7329/0.7326. n=1. lr_total_steps = 128 x 194 = 24,832; change it
 #    with max_epochs. The schedule clamps at the floor, so an overshoot is harmless.
-#    docs/findings/masster/masster_overfit_readout_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18
 #    4 + 5 together are UNTESTED: every NIST20 read above changed one of them alone, and a7
 #    showed attention-side gains are not additive.
 #

@@ -54,10 +54,11 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
   0.0007, gate ±0.005). Real levers: `a1_prenorm` +0.0056, cosine LR decay `d3` 0.7357 (n=1).
-- **Prepared:** full-length `wd10` and its `trainaux` control (`fir:h100-80gb`); `a4`,
-  `a5_ce_pair_bias`, `b4`. Ion-H Phase 2 is blocked on a recoverable checkpoint.
+- **Prepared:** full-length `wd10` and its `trainaux` control (`fir:h100-80gb`). The attention
+  (`a4`/`a5`/`b4`), architecture-review and Ion-H plans were retired 2026-10-18; their resume
+  steps are in the [hub](workstreams/masster_core.md).
 - **RT/CCS:** [Separate RTHead/CCSHead GPU debug run completed](plans/masster/masster_rt_ccs_plan.md); full Enveda arm prepared, heads default off.
-- **Next:** an `a1_prenorm` seed replicate. Otherwise, core levers go through the `i1` stack.
+- **Next:** core levers go through the `i1` stack (an `a1_prenorm` seed replicate is the cheapest open confirmation if architecture work resumes).
 
 ## MassSpecGym
 
@@ -78,10 +79,11 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Stuck at** `cos_sim_0.01` 0.458 (cv0 `ggifzj9m`, cv1 `u46v0k0g`). The causes are intensity
   allocation (62% of the emitted-bin ceiling) and 14% unexplainable spectra (MS-DIAL is 46% of
   those).
-- **Prepared, not submitted (cv0/cv1):** `masster_c0rerun`, `short18`, `subceil05`,
-  `merged_nomsdial`, `dedup`, plus the ten-fold `abs005`.
-- **Next:** copy `data/split/spectraverse_benchmark_{subceil05,nomsdial,dedup}` to Fir, launch,
-  read against `masster_c0rerun`.
+- **Prepared, not submitted (cv0/cv1):** `masster_c0rerun` and the [dedup arm](plans/masster/spectraverse_dedup_plan.md).
+  The `short18`/`subceil05`, `merged_nomsdial` and ten-fold `abs005` plans were retired
+  2026-10-18 (configs remain; resume notes in the [hub](workstreams/spectraverse.md)).
+- **Next:** copy `data/split/spectraverse_benchmark_dedup` to Fir (md5 check), launch, read
+  against `masster_c0rerun`.
 
 ## NIST23 EI
 

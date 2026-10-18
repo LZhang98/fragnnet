@@ -472,7 +472,7 @@ Phase 1 delivers `model_cls`, `dataset_cls`, the alias table, `RETIRED_MODEL_TYP
      - `config/README.md:114-120` (already-dead ICEBERG links → retirement note and ms-pred pointer);
      - `preproc_scripts/README.md` Steps 5-6 (mark retired, point to the archive SHA, renumber if needed);
      - `INSTALL.md:99` and `:207`;
-     - `docs/findings/masster/masster_channel_selection_findings.md:191`: repoint to a permalink at the archive SHA. Path-only citations in plans stay as historical.
+     - `95341fce:docs/findings/masster/masster_channel_selection_findings.md, removed 2026-10-18:191`: repoint to a permalink at the archive SHA. Path-only citations in plans stay as historical.
    - **Local checkpoints:** the two local ICEBERG checkpoints get a provenance note naming the archive SHA and are not loaded in the main environment.
 3. **Move MassFormer and GRAFF molecule handling out of `SpecMolDataset`.** The `mol_params.mf`/`graff` keys stay.
    - **Why a subclass override is not enough.** Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()` returns `SpecMolDataset.collate_fn`, which calls `SpecMolDataset._special_collate` by name ([spec_mol_dataset.py:242-298](../../src/fragnnet/dataset/spec_mol_dataset.py#L242)).

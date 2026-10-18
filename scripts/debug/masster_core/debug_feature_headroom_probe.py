@@ -13,7 +13,7 @@ lower bound on what the production encoders can derive: FraGNNet runs 4 GINE lay
 MASSter adds exact per-graph global attention, both strictly more expressive than a
 two-hop mean.
 
-Results and their interpretation: ``docs/findings/feature_headroom_2026_09_22.md``.
+Results and their interpretation: ``95341fce:docs/findings/feature_headroom_2026_09_22.md, removed 2026-10-18``.
 
 Usage:
     python scripts/debug/masster_core/debug_feature_headroom_probe.py

@@ -38,7 +38,7 @@ supplements the pooled precursor atom embeddings. The prior was low:
 - [step 2](masster_i1_postcut_information_gate_2026_09_29.md) found hand-built post-cut
   descriptors worth at most about +0.001 cosine on held-out molecules;
 - another session's
-  [retained-fragment plan](../../plans/masster/masster_hierarchical_fragment_graph_plan.md)
+  retained-fragment plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md`)
   deferred the branch on that evidence.
 
 The user chose on 2026-09-29 to build and screen it anyway, as the direct test.

@@ -43,7 +43,7 @@
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
    in [migrations.py](../src/fragnnet/utils/migrations.py) renames them wherever a config is loaded.
-   MASSter also offers [FastGNN-style connected-fragment proposals](plans/masster/masster_fast_gnn_proposal.md),
+   MASSter also offers FastGNN-style connected-fragment proposals (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_fast_gnn_proposal.md`),
    sharing its chemistry and intensity model while changing proposal score semantics.
    MASSter defaults to CPU candidate construction; its optional CUDA backend performs exact
    selection and topology for the supported modes. See the

@@ -5,7 +5,7 @@
 
 ## Scope and conclusion
 
-This review follows the [proposal coverage review](masster_proposal_review_2026_09_13.md)
+This review follows the proposal coverage review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_proposal_review_2026_09_13.md`)
 and its roughly 6% uncovered filtered target intensity. Prioritize candidates applicable to
 the current protonated, positive-ion screen. This is a targeted literature check, not an
 exhaustive survey or evidence that rearrangements explain the entire deficit.

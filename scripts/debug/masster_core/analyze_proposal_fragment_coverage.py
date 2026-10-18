@@ -1,7 +1,7 @@
 """Compare `connected_fragment_beam` and `cut_masks` candidate selection on the same logits.
 
 Reproduces the measurements recorded in
-`docs/findings/masster/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md`. Both selectors
+`95341fce:docs/findings/masster/connected_fragment_beam_reuse_and_equivalence_2026_09_17.md, removed 2026-10-18`. Both selectors
 receive identical bond logits and a matched *unique-fragment* budget, so only the selection
 objective differs. Three scans are available:
 

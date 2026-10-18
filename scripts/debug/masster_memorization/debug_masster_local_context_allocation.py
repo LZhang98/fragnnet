@@ -1,6 +1,6 @@
 """Frozen-token allocation probe: a local cut scorer plus a penalized context correction.
 
-Stage 1 of docs/plans/masster/masster_local_context_allocation_plan.md, on fixed MASSter
+Stage 1 of 95341fce:docs/plans/masster/masster_local_context_allocation_plan.md, removed 2026-10-18, on fixed MASSter
 representations. For one checkpoint (a "producer") the eval-mode forward is run once per
 manifest split and cached: every chemically valid candidate fragment with its final
 contextualized intensity-transformer token, the checkpoint's allocation logit, its valid ion/H

@@ -60,4 +60,4 @@ Using the saved nearest-candidate errors from the same 512 spectra per fold as t
 
 ## Follow-up training decision (2026-10-01)
 
-The user selected fixed ±0.05 Da for a new SPV MASSter training arm. The ten prepared configs and checks are recorded in the [training plan](../../plans/masster/spectraverse_abs005_training_plan.md). This decision does not make the wider-window matches chemically validated; the historical instrument-tolerance configs and completed runs remain the control. No full training run has started.
+The user selected fixed ±0.05 Da for a new SPV MASSter training arm. The ten prepared configs and checks are recorded in the training plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_abs005_training_plan.md`). This decision does not make the wider-window matches chemically validated; the historical instrument-tolerance configs and completed runs remain the control. No full training run has started.

@@ -3,7 +3,7 @@
 # atom/bond features plus a per-(fragment, atom) retained-bond degree and boundary-cut-bond
 # count, pooled twice (all retained atoms; cut-site atoms only) and added to the intensity token
 # as a zero-initialized residual right after input_projection. 2026-09-29.
-# Plan: docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, "Retained-fragment
+# Plan: 95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, removed 2026-10-18, "Retained-fragment
 # branch: bounded first version".
 #
 # QUESTION. Does message-passing on a candidate's own retained bond graph move base-peak

@@ -13,7 +13,7 @@ by the enumeration depth, so the cut-count DISTRIBUTION is an artifact of that e
 not MASSter's. MASSter ranks unrestricted multi-bond cut masks, so it sees at least as many
 multi-cut candidates. Re-run against real candidate batches before quoting the distribution.
 
-Results and their interpretation: ``docs/plans/masster/masster_cut_set_features_plan.md``.
+Results and their interpretation: ``95341fce:docs/plans/masster/masster_cut_set_features_plan.md, removed 2026-10-18``.
 
 Usage:
     python scripts/debug/masster_core/debug_cut_set_topology.py

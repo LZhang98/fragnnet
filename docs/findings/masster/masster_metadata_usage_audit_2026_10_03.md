@@ -52,7 +52,7 @@ How the context is routed:
 - **Proposal heads.** The bond, atom and mixture heads get `context.detach()` when
   `proposal_selection_only` is True and proposal input gradients are disabled (MM:3265, 3382).
   They see CE and instrument as input, but their own loss cannot shape it. The
-  [head-input asymmetry finding](masster_head_input_asymmetry_2026_09_22.md) measured −0.011
+  head-input asymmetry finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md`) measured −0.011
   to −0.013 when gradients were connected.
 - **GNN.** Encodes the molecule metadata-blind (MM:3203).
 - **Off in the references.** Optional CE-FiLM and CE-pair attention bias on the intensity head

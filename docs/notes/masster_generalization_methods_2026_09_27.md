@@ -2,7 +2,7 @@
 
 > **Status:** NOTE · **Updated:** 2026-09-28
 > Primary-source search and repository cross-check following the
-> [memorization review](../findings/masster/masster_memorization_plan_review_2026_09_27.md).
+> memorization review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_memorization_plan_review_2026_09_27.md`).
 > No training launched. The MASSter adaptations below are proposals, not published results
 > on this architecture. Existing run status comes from local records, without a W&B refresh.
 > *2026-09-28:* the two-view disagreement gate ran on four weight sets
@@ -288,7 +288,7 @@ explicitly; report it rather than silently renormalizing it away.
 
 - The closest measured case is `u3`, Switch EMA, which feeds the average back into the training
   weights. It lost −0.0089 against `u2`, with train loss 0.16 higher throughout
-  ([ranking-transfer plan](../plans/masster/masster_ranking_transfer_plan.md#switch-ema-arm-u3-built-2026-09-25-not-submitted)).
+  (ranking-transfer plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md`)).
 - A consistency term to the same run's EMA teacher is a soft form of that feedback, so `u3` counts
   against it. It does not bear on out-of-fold teachers.
 
