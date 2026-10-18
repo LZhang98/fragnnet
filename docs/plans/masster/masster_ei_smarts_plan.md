@@ -190,12 +190,15 @@ If T1 passes, it goes into the EI recipe. The tier-2 rules then follow the same 
 - 204/217 intensity in sugars: these ions are reachable, so this is allocation.
 - ESI use of T1: TMS derivatives are a GC-EI chemistry.
 
-## Open decisions for the user
+## Decisions (user, 2026-10-18)
 
-1. Whether the model-free G0-HR read may use RECETOX Metabolome, which is also the HR-EI evaluation set. The rule is
-   fixed before the read.
-2. Whether the tier-2 `[M]+` extension of existing rewire rules belongs in this plan or a separate one.
-3. Where the e6 arms run. EI has no Fir submitter stage, and the data may not be on Fir.
+1. **Gate on NIST23, not on the HR-EI references.** The model-free gates run on NIST23 EI (train and val peaks;
+   test structures counted only), so RECETOX Metabolome stays a pure evaluation set. Because NIST23 is nominal, T1's
+   evidence comes from composition reach, peak support against the topology null, and 148/147 isotope consistency,
+   not from nominal added coverage.
+2. **The e6 arms run on Fir.** The submitter must stage and md5-check the EI data, which may not be on Fir yet.
+3. Tier-2 scope was not decided. The NIST23 gate evaluates the existing rewire rules under `[M]+` as well, as a
+   measurement only. Production enables `[M]+` for T1 alone.
 
 ## Progress
 
