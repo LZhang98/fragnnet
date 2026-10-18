@@ -1,6 +1,6 @@
 # Current project state
 
-> **Status:** REFERENCE · **Updated:** 2026-10-17
+> **Status:** REFERENCE · **Updated:** 2026-10-18
 > Dashboard: one block per workstream, replaced (not appended) on every handoff. Details live in
 > the [workstream hubs](workstreams/); the pre-2026-10-06 dated handoff is frozen in
 > [history/handoff_log.md](history/handoff_log.md).
@@ -85,7 +85,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## NIST23 EI
 
-- **HR-EI preparation:** [exact isotope output and excluded split](plans/masster/hr_ei_isotopes_holdout_plan.md) implemented and CPU-tested; fresh e5 and inference overlay prepared. Next: train e5 from scratch; prior e1 remains contaminated for the HR references.
+- **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/hr_ei_e5_holdout_eval_2026_10_18.md): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079
   over e0 (one seed). The gap is intensity allocation (support oracle 0.996).
 - **Next:** record provenance, check full-attention batch-512 memory, run e2/e3/e4, then a

@@ -136,11 +136,16 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=20261001)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--config", default="config/masster/ei/e1_nominal_natural_isotopes.yml",
+        help="experiment config whose spec/mol/split paths select the spectra",
+    )
+    parser.add_argument("--spec-ids", type=Path, help="CSV with a spec_id column; overrides sampling")
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(f"output already exists: {args.output}")
     args.output.mkdir(parents=True)
-    config = load_config("config/template.yml", "config/masster/ei/e1_nominal_natural_isotopes.yml", [])
+    config = load_config("config/template.yml", args.config, [])
     config["num_workers"] = 0
     config["eval_batch_size"] = args.batch_size
     device = th.device("cuda" if th.cuda.is_available() else "cpu")
@@ -151,7 +156,12 @@ def main() -> None:
     all_specs = pd.read_pickle(config["spec_fp"])
     split_ids = pd.read_csv(Path(config["split_dp"]) / f"{args.split}_ids.csv")["spec_id"]
     selected = all_specs[all_specs.spec_id.isin(split_ids)]
-    if not args.all:
+    if args.spec_ids is not None:
+        wanted = set(pd.read_csv(args.spec_ids)["spec_id"])
+        if not wanted <= set(selected.spec_id):
+            raise ValueError(f"--spec-ids has spectra outside the {args.split} split")
+        selected = selected[selected.spec_id.isin(wanted)]
+    elif not args.all:
         selected = selected.drop_duplicates("mol_id").sample(
             args.n_molecules, random_state=args.seed
         )
@@ -257,7 +267,8 @@ def main() -> None:
             {
                 "checkpoint": str(args.checkpoint),
                 "checkpoint_sha256": _file_sha256(args.checkpoint),
-                "source_config": "config/masster/ei/e1_nominal_natural_isotopes.yml",
+                "source_config": args.config,
+                "spec_ids_file": str(args.spec_ids) if args.spec_ids else None,
                 "n_molecules": int(selected.mol_id.nunique()),
                 "seed": args.seed,
                 "split": args.split,

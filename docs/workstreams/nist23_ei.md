@@ -1,11 +1,11 @@
 # MASSter on NIST23 EI (nominal mass)
 
-> **Status:** HUB · **Updated:** 2026-10-17
+> **Status:** HUB · **Updated:** 2026-10-18
 > MASSter on the NIST23 electron-ionization library (`[M]+`, 70 eV, unit resolution, natural isotope envelopes): plan, performance audit, screens.
 
 ## Where it stands
 
-- **Exact isotope output and excluded split prepared:** [plan](../plans/masster/hr_ei_isotopes_holdout_plan.md). Natural exact-mass fine structure is implemented and CPU-tested; fresh e5 uses the HR-EI-excluded split. Next: train e5 from scratch, then evaluate the held-out references.
+- **Held-out HR-EI result (e5):** [finding](../findings/masster/hr_ei_e5_holdout_eval_2026_10_18.md): e5 `eugy8s9n`@45, trained on the [HR-EI-excluded split](../plans/masster/hr_ei_isotopes_holdout_plan.md). It is lower than e1 only on molecules e1 trained on (memorization); HREI-MSDB and Exposome are unchanged on unseen molecules. Same molecules: e5 matches NIST23 better than the HR libraries do on HREI-MSDB/Metabolome (0.934/0.882 vs 0.904/0.759), so most of the HR gap is the difference between libraries, a systematic m/z intensity bias. Exposome is real model error. Metabolome also has a 149.045 artifact and Si2 ions outside the candidate space. Next: decide on reference cleaning; e5 seed.
 - **Frozen checkpoint HR-EI evaluation:** [finding](../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md): all mapping-consistent records included regardless of training overlap; exact monoisotopic outputs evaluated. Exact isotope output is now implemented; see the preparation plan above.
 - **HR-EI raw audit complete:** [peak/structure/overlap findings](../findings/masster/hr_ei_raw_audit_2026_10_17.md). All four peak tables parse; HREI-MSDB/Exposome are first mapping candidates. Metadata defects, derivative handling, and local training overlap require exclusions; no final benchmark yet.
 - **Best result:** e1 (natural isotopes), [W&B `jeljdikj`](https://wandb.ai/frag-gnn/frag-gnn/runs/jeljdikj) epoch 37, `config/masster/ei/e1_nominal_natural_isotopes.yml`: full `nist23_ei_inchikey` test (51,685 spectra) mean 1 Da cosine 0.869984, Stein weighted similarity 0.886845; 0.899167 on the 26,372 RASSP-eligible spectra (RASSP FormulaNet reports 0.929 on its own NIST17 set, descriptive only).
@@ -19,7 +19,7 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [HR-EI-excluded fresh training](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED | Train e5 without prior weights; exact isotope inference overlay is ready. Castro identities remain unresolved |
+| [HR-EI-excluded fresh training](../plans/masster/hr_ei_isotopes_holdout_plan.md) | RAN, read ([finding](../findings/masster/hr_ei_e5_holdout_eval_2026_10_18.md)) | Recheck Metabolome overlap against native parents; e5 seed replicate. Castro identities remain unresolved |
 | [Matched intensity arms e2/e3/e4](../plans/masster/masster_ei_nominal_plan.md#matched-intensity-configs-2026-10-01-prepared-not-launched) | PREPARED | Launch with provenance; compare cosine and Stein by size and on the RASSP subset |
 | [Matched RASSP comparison](../findings/masster/masster_ei_performance_audit_2026_10_01.md) | OPEN | Check training overlap and preprocessing; run both models on one eligible split |
 | Mass-aware intensity objective | PROPOSED | Test only if matched arms leave a Stein gap (audit priority 3) |
@@ -42,6 +42,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [Held-out e5 HR-EI evaluation](../findings/masster/hr_ei_e5_holdout_eval_2026_10_18.md) | FINDING (2026-10-18) | e5 vs contaminated e1 on 962 HR-EI spectra, split by e1 training overlap |
 | [Exact isotopes and HR-EI exclusion](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED (2026-10-17) | Natural exact-mass output, conservative excluded split, and fresh e5 recipe |
 | [Frozen checkpoint HR-EI evaluation](../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md) | FINDING (2026-10-17) | Exact-mass monoisotopic outputs on three experimental HR-EI libraries; no training-overlap exclusion |
 | [HR-EI raw audit](../findings/masster/hr_ei_raw_audit_2026_10_17.md) | FINDING (2026-10-17) | Peak tables, derivative mappings, metadata defects, and local nominal-training overlap |
@@ -82,7 +83,7 @@ libraries and against NIST23 nominal-EI training before defining held-out evalua
 
 ## Key artifacts
 
-- W&B: e1 `jeljdikj` (best ep 37), e0 `he3j5y3o` (best 0.861611 at ep 57).
+- W&B: e1 `jeljdikj` (best ep 37), e0 `he3j5y3o` (best 0.861611 at ep 57), e5 `eugy8s9n` (best ep 45, val 0.86896; `saved_ckpts/e5_hr_ei_holdout_nominal_eugy8s9n.ckpt`).
 - Configs: `config/masster/ei/{e0_nominal_no_isotopes,e1_nominal_natural_isotopes,e2_nominal_control,e3_nominal_full_attention,e4_nominal_ema999}.yml`.
 - Data: `data/proc/nist23_ei/`, `data/split/nist23_ei_inchikey` (154,981 / 51,700 / 51,685), raw `data/df/nist23_ei_df.csv`.
 - Outputs (ignored): `output/masster_ei_jeljdikj_analysis_2026_10_01/` (`test_all_stein/size_performance_stein_bins.csv`, `sample512_cosine/`), `output/masster_ei_smarts_2026_10_01/`, `output/masster_ei_nominal_2026_09_30/`.

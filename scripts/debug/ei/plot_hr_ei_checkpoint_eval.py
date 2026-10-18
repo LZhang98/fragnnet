@@ -60,7 +60,7 @@ def main() -> None:
         ylim=(0, 1),
     )
     axes[1].legend(fontsize=8)
-    fig.suptitle("Frozen e1 checkpoint: " + prediction_label.lower())
+    fig.suptitle(f"{Path(provenance['checkpoint']).name}: " + prediction_label.lower())
     fig.savefig(args.directory / "hr_vs_nominal.png", dpi=180)
     plt.close(fig)
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), constrained_layout=True)
