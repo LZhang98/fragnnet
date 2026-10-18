@@ -82,7 +82,7 @@ and only warns when an MGF has no fold field at all (v1.0.0/v1.0.1).
 overwritten. A new `--output_name` would not do instead: step 2 labels the `dset` column with the
 `--dsets` name, and the Spectraverse configs and splits select the dataset `spectraverse`.
 
-`ion_mode` comes from the sign after the adduct's closing bracket. Before 2026-10-18 the reader gave
+`ion_mode` comes from the last character of the adduct (`+` gives `P`, `-` gives `N`). Before 2026-10-18 the reader gave
 `P` to any adduct containing a `+`, so `[M+Cl]-`, `[M+HCOOH-H]-` and `[M+CH3COOH-H]-` were labelled
 `P`; the stored v1.0.2 `data/proc/spectraverse/spec_df.pkl` (30,550 such spectra) still is. Only the
 `--ion_modes` split filter reads the column.

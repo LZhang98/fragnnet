@@ -728,9 +728,9 @@ def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     # setup dset
     spec_df["dset"] = "spectraverse"
     spec_df["dset_spec_id"] = spec_df["title"].apply(lambda x: _parse_specverse_title(x, mgf_fp))
-    # the charge sign follows the closing bracket: [M+Cl]- is negative
+    # the last character of the adduct is the charge sign: [M+Cl]- is negative
     spec_df["ion_mode"] = spec_df["prec_type"].apply(
-        lambda x: {"+": "P", "-": "N"}.get(str(x).rsplit("]", 1)[-1][-1:], np.nan)
+        lambda x: {"+": "P", "-": "N"}.get(str(x)[-1:], np.nan)
     )
     if fold_cols:
         split_df = spec_df[["spec_id", "dset_spec_id"] + fold_cols].copy()
