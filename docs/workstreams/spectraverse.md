@@ -30,7 +30,7 @@
   - [Curation paper note](../notes/spectraverse_curation_paper.md) — the paper's cosine > 0.99 near-duplicate rule does not hold in released v1.0.2.
   - [Spurious evaluations note](../notes/spurious_evaluations_spectraverse.md) — spectrum-blind baseline gets 26.9% top-1 on our split; not a clean target.
 - **Filters**
-  - [Subformula filter screen](../findings/masster/spectraverse_subformula_filter_2026_10_01.md) — STOPPED: removes 26.2% of intensity, 15.2% of base peaks, empties 15,074 spectra; 10x window still misses 7.5%.
+  - Subformula filter screen (removed 2026-10-18; `git show 731fe493:docs/findings/masster/spectraverse_subformula_filter_2026_10_01.md`) — STOPPED: removes 26.2% of intensity, 15.2% of base peaks, empties 15,074 spectra; 10x window still misses 7.5%.
   - [Na/K read](../findings/masster/spectraverse_subformula_filter_2026_10_03_na_k.md) — `[M+K]+` is a potassium/background problem (82% lack the precursor); `[M+Na]+` failures cluster in a few source blocks.
 - **Handling and metrics**
   - [`[M]+` handling](../findings/masster/spectraverse_mplus_handling_2026_10_01.md) — always a pre-charged cation (3,405 spectra, 457 molecules); `/tmp/spv_recall_ckpts` and old SPV ckpts carry the retired `FT` label.
@@ -48,7 +48,6 @@
 | [+/-0.05 Da arm plan](../plans/masster/spectraverse_abs005_training_plan.md) | PREPARED (2026-10-06) | Ten fold configs; also holds the control-config record |
 | [Oracle ceiling](../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md) | FINDING (2026-10-06) | Where the cosine gap sits |
 | [Source/replicate audit](../findings/masster/spectraverse_source_replicate_audit_2026_10_03.md) | FINDING (2026-10-06) | Sources, MS-DIAL, duplicates, folds, reproducible pipeline |
-| [Subformula filter screen](../findings/masster/spectraverse_subformula_filter_2026_10_01.md) | STOPPED (2026-10-06) | Filter not enabled |
 | [Na/K subformula read](../findings/masster/spectraverse_subformula_filter_2026_10_03_na_k.md) | FINDING (2026-10-06) | Why K/Na spectra are unexplained |
 | [`[M]+` handling](../findings/masster/spectraverse_mplus_handling_2026_10_01.md) | FINDING (2026-10-06) | Pre-charged cations only |
 | [Recall tolerance](../findings/masster/spectraverse_recall_tolerance_2026_10_01.md) | FINDING (2026-10-06) | Recall under instrument tolerance |

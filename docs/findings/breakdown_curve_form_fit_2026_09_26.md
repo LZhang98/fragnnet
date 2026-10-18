@@ -252,7 +252,7 @@ molecules?
   share exceeds the true one by +0.11 for val molecules with nearest-train Tanimoto ≤ 0.4, and
   by +0.015 above 0.8. The ceiling there is +0.071 against +0.040, and the absolute error 0.22
   against 0.11. This is the fallback on unseen molecules found in the
-  [displacement Phase 0](masster/masster_intensity_displacement_phase0_2026_09_24.md).
+  displacement Phase 0 (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`).
 - **A population prior is much worse than the model.** Swapping in the train mean at that NCE
   costs −0.036, and at that NCE and size −0.027. The model's survival already carries
   molecule-specific information, so a better survival term has to come from structure, not
@@ -339,7 +339,7 @@ spectrum's entropy, top fragment share and peak count. Its prediction replaces t
   with the model, the GBM adds +0.0014: it behaves like a second ensemble member, not a missing
   information source.
 - **So the remaining ~+0.022 is epistemic**, like the rest of the val gap
-  ([variance is epistemic](masster/masster_variance_novelty_2026_09_24.md)). It is not something
+  (variance is epistemic (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)). It is not something
   a survival-specific parameterization or post-hoc stage can extract from these 12.7k molecules.
 
 ## Next

@@ -1,7 +1,7 @@
 # FraGNNet simplification audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Audit complete. The cc-mask padding leak (finding 1) is fixed in the working tree with a regression test; the staged cleanup (findings 2–6) is not started.
+> **Status:** FINDING · **Updated:** 2026-10-18
+> Audit complete. The cc-mask padding leak (finding 1) is fixed with a regression test (`e0197d8f`); the staged cleanup (findings 2–6) is not started.
 
 ## Scope and conclusion
 

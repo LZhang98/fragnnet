@@ -318,7 +318,7 @@ probe's docstring was corrected.
 (`6h67zps9`, `3bej6fq7`; unmerged `[M+H]+` FT, not `c4a_base_s1`), and the toy-scale ranking
 holds. At matched validation damage, boundary corruption leaves a 0.022 train/validation gap
 against 0.059-0.086 for the cc pools, out of an eval-mode gap of 0.19. See the
-[memorization route probe](masster_memorization_route_probe_2026_09_23.md).
+memorization route probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`).
 
 ### 7.2 What is actually worth doing
 
@@ -335,7 +335,7 @@ Ranked, with the reason each is not larger:
    asymmetry. If that holds at production scale, `e2`/`e3` are aimed at the wrong columns and
    `candidate_atom_dropout` should be extended to the boundary pool before it is swept.
    **Done 2026-09-23; it holds on two production checkpoints**
-   ([route probe](masster_memorization_route_probe_2026_09_23.md)).
+   (route probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`)).
 
 3. **Fix the two dormant proposal-side defects** (§4.4, §4.5). `ion_mode_proposal_head` is
    `None` in **223/223** configs, so neither is live today — they are traps that would silently

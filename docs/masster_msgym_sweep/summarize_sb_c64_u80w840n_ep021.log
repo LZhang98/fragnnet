@@ -1,0 +1,9 @@
+2026-10-17 12:55:51,426 INFO sb_c64_u80w840n_ep021: 20 files, 1657238 candidates, 9954 queries
+2026-10-17 12:56:49,788 INFO 
+                label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
+sb_c64_u80w840n_ep021        mspred_ent    all       9954 0.5317 0.8577  0.9581          0.5006          0.5647              0.5159              0.5484
+sb_c64_u80w840n_ep021            loglik    all       9954 0.5126 0.8446  0.9593          0.4810          0.5451              0.4968              0.5294
+sb_c64_u80w840n_ep021        loglik_cal    all       9954 0.5517 0.8700  0.9701          0.5193          0.5850              0.5358              0.5678
+sb_c64_u80w840n_ep021      cos_sim_0.01    all       9954 0.3708 0.7223  0.8967          0.3453          0.3971              0.3551              0.3865
+sb_c64_u80w840n_ep021 cos_sim_sqrt_0.01    all       9954 0.4822 0.8132  0.9417          0.4517          0.5139              0.4665              0.4990
+sb_c64_u80w840n_ep021           cos_hun    all       9954 0.3777 0.7335  0.8999          0.3515          0.4048              0.3619              0.3930

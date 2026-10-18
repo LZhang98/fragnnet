@@ -530,7 +530,7 @@ production-shaped MASSter model, predictions agree within 9.5e-7 and every non-n
 within 4.2e-7 relative; the FraGNNet `cut_bond` test model is bit-identical. Encoder forward FLOPs
 fell from 20.1 to 2.1 GFLOP (MASSter total 45.9 to 27.8). Expect little wall clock: removing the
 encoder outright (`c4a_no_bbe`) saved only 6% per epoch. The model function is unchanged, so the
-boundary block's [memorization finding](masster_memorization_route_probe_2026_09_23.md) is not
+boundary block's memorization finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`) is not
 affected. Tests: `tests/test_cut_bond.py`, `tests/test_masster_candidate_features.py` (per-row
 equivalence checks for both models, including a planted orientation bug).
 

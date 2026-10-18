@@ -40,16 +40,16 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 - **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_path_audit_2026_10_16.md): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
 
-- **Shared codebase audit:** [repairs](findings/codebase_audit_2026_10_13.md#repairs-2026-10-13) for all six findings and three config runtime defects are implemented, uncommitted. Focused checks and the unfiltered CPU suite pass. **Next:** review; GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.
+- **Shared codebase audit:** all six findings and the three config runtime defects repaired and committed in `e65339ed`; unfiltered CPU suite passes (record removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`). **Next:** GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.
 
 - **Configs grouped by model:** record (removed 2026-10-13; `git show e65339ed:docs/plans/config_model_grouping.md`); shared template and experiment settings retained. [Audit findings](findings/config_audit_2026_10_12.md) 1–3 repaired; 6 resolved for MASSter by retiring 97 configs (2026-10-13, recover from `e180f2c2`); 4, 5 and 7 open. **Next:** malformed/duplicate YAML.
 
 - **Shared notebook audit:** [findings](findings/notebook_audit_2026_10_12.md); reporting errors and execution blockers confirmed. NIST20 duplicate consolidated; large saved table outputs cleared with figures preserved. Reporting repairs remain open.
 
-- **Unit test audit:** [findings](findings/unit_test_audit_2026_10_12.md); all four findings fixed. Unfiltered CPU suite passed in the codebase repair validation. **Next:** GPU validation.
+- **Unit test audit:** all four findings fixed in `e65339ed` (record removed 2026-10-18; `git show 731fe493:docs/findings/unit_test_audit_2026_10_12.md`). **Next:** GPU validation.
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
-- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the [export fix](findings/masster/masster_export_merge_untransform_2026_10_12.md) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
+- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the export fix (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
 - **Shared loss consolidation committed** (`1a63257b`, file merge and renames `72ad897e`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12), [file merge and renames](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** GPU validation when available.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
@@ -93,7 +93,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## CASMI 2026, Enveda-180, shared data
 
-- **Preprocessing audit:** [seven correctness findings](findings/preproc_scripts_audit_2026_10_12.md) fixed and committed (`bbcdf00c`). Rebuild any merger/inference-merged outputs into new directories before use.
+- **Preprocessing audit:** seven correctness findings (removed 2026-10-18; `git show 731fe493:docs/findings/preproc_scripts_audit_2026_10_12.md`) fixed and committed (`bbcdf00c`). Rebuild any merger/inference-merged outputs into new directories before use.
 - **ZenoTOF CID + EAD (uncommitted):** [MultiMS2 and MS-DIAL 5 standards](findings/zenotof_ead_libraries_2026_10_15.md) preprocessed to `data/proc/{multims2,msdial5_ead}`; new `EAD` frag_mode, `frag_mode` added to the `group_id` key (existing groups unchanged). CIeaD deferred (no structures). Next: review, splits, EAD-aware config.
 
 - **CASMI 2026:** extracted, not preprocessed. The visible test is a copy of train, so validate
@@ -106,7 +106,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 ## FraGNNet
 
 - **Shared loss consolidation committed** (`1a63257b`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12). Follow-up in the working tree: [`loss/` cut from 9 to 6 modules, misleading function names fixed](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** review and commit; GPU validation when available.
-- **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed in the working tree with a regression test; probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
+- **Code audit complete:** [simplification findings](findings/fragnnet/fragnnet_simplification_audit_2026_10_12.md). cc-mask padding leak (rest pooling, cc-corruption probe) fixed with a regression test (`e0197d8f`); probe magnitudes now unverified. **Next:** remove dead loss branches, then consolidate duplicated operations.
 - **Shared reorganization done** (branch, not merged; [progress](plans/repo_reorg_plan.md#progress)): FraGNNet is in `src/fragnnet/models/fragnnet/`. MCES pretraining (and fine-tuning from it), ChemLM and CLIP were retired 2026-10-12.
 
 - **Dormant since September.** Best `pqx7ywc9` 0.7555 `cos_hun_inst_tol` (NIST20 test). The DAG

@@ -142,7 +142,7 @@ round trip. This is distinct from the prediction-export size above.
 
 ## Config precedence at inference
 
-The 2026-10-13 request to fix the [codebase audit](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13)
+The 2026-10-13 request to fix the codebase audit (removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`)
 supersedes the template-over-checkpoint policy recorded on 2026-09-15 and 2026-09-29.
 `get_config_from_ckpt` preserves migrated checkpoint hparams, then recursively merges
 only settings explicitly declared in `custom_fp`. The template validates those keys;
@@ -159,7 +159,7 @@ including for compiled checkpoints; incomplete weights are rejected.
 ## Known broken or deferred (as of 2026-09-15, unverified since)
 
 - The old evaluation entrypoint API/order failures are repaired in the
-  [2026-10-13 record](../findings/codebase_audit_2026_10_13.md#repairs-2026-10-13).
+  2026-10-13 record (removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`).
   The two multi-seed scripts now use the pickle exporter consumed by statistics scripts;
   every seed is evaluated and saved. `--untransform_spec` is retained as a deprecated
   option: inference already exports linear normalized intensities.

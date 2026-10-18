@@ -29,7 +29,7 @@ information loss; it is not the intended replacement architecture.
 - The [base-peak finding](../../findings/masster/masster_i1_base_peak_errors_2026_09_28.md)
   motivates nested and sibling ranking metrics. It establishes a transfer deficit, not that
   whole-molecule information is unnecessary.
-- The [bond-local learner](../../findings/masster/masster_bond_local_learner_2026_09_24.md)
+- The bond-local learner (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`)
   was weaker alone and added only a small complementary gain on the older `f1` checkpoint,
   especially little at high energy. Its group cosine is not production cosine. These results
   argue against assuming that locality is sufficient.

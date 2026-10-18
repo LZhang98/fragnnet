@@ -7,7 +7,7 @@
 #
 # WHY UNMERGED [M+H]+/FT. This is where the ranking finding was measured: checkpoint 6h67zps9 has
 # cos_sim_0.01 0.929 and ranking gap 0.011 on a 25.6k train sample against 0.737 and 0.121 on val
-# (docs/findings/masster/masster_ranking_decomposition_2026_09_23.md). The merged t2 arm
+# (731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md, removed 2026-10-18). The merged t2 arm
 # tests the same key on a lineage where that pattern has not been measured. Siblings on this
 # lineage: h1_head_dropout02 and h2_head_dim128 (allocator capacity); the boundary-dropout arm u1
 # was dropped 2026-09-24 because blocking one head input can reroute the lookup.

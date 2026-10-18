@@ -41,8 +41,8 @@ memorization instruments are:
 
 - the eval-mode train/val gap;
 - the route map, which corrupts one route at inference and compares train and val damage
-  ([route map](masster_route_map_2026_09_24.md),
-  [set-message probe on `c0`](masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27));
+  (route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`),
+  set-message probe on `c0` (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`));
 - the novelty bins.
 
 ## Method
@@ -228,7 +228,9 @@ Paired `i1`@59 − `c0`@42 on the probe sample, by nearest-train Tanimoto. Stand
   point needs 100 spectra.
 - Everything is in `output/ev_ladder_census_2026_09_28/`. Velos (1,446 val spectra) is left out.
 
-![i1 vs c0 per NCE](../../figures/masster_i1_vs_c0_elite_vs_lumos_per_nce.png)
+The `i1` vs `c0` per-NCE figure (`masster_i1_vs_c0_elite_vs_lumos_per_nce.png`) was never
+committed, and `output/ev_ladder_census_2026_09_28/` no longer exists; only the whole-split
+table below remains.
 
 On the whole val split, with 95% molecule-bootstrap intervals for `i1`:
 

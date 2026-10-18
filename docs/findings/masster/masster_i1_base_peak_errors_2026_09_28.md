@@ -61,7 +61,7 @@ charge-related features or something else.
     filter, normalized, no transform. Each target peak maps to its nearest candidate within
     10 ppm (200 Da floor).
   - Per spectrum it records the ranking decomposition's coverage/ranking/calibration split
-    ([ranking decomposition](masster_ranking_decomposition_2026_09_23.md)) and the base-peak
+    (ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)) and the base-peak
     outcome.
     - `hit`: the model's top candidate is within tolerance of the measured base peak.
     - `under_ranked`: the base peak is a candidate, but not the model's top.
@@ -197,7 +197,7 @@ Predicted minus target mean over all candidates, per spectrum:
 The cut deficit is −0.10 to −0.11 in every NCE bin up to 60 and −0.07 above. It is −0.16 at
 novelty < 0.4. The precursor excess is +0.051 at NCE ≤ 20 and +0.002 above 60, the low-energy
 precursor default of the
-[ranking decomposition](masster_ranking_decomposition_2026_09_23.md#the-low-ce-precursor-default-is-still-there).
+ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`).
 
 Cross-fitted reweighting, held-out mean cosine gain over the raw 0.7878:
 
@@ -266,7 +266,7 @@ Nested pairs, balanced accuracy (the mean over which side the target favors):
   - The val discrimination deficit is similar across decision types, step types and bond classes.
   - The strongest covariate is similarity to training.
   - This is the ranking-transfer problem of the
-    [ranking decomposition](masster_ranking_decomposition_2026_09_23.md), not a chemistry class
+    ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`), not a chemistry class
     the model cannot represent.
   - It agrees with the [residual-structure finding](masster_i1_residual_structure_2026_09_28.md)
     on the same checkpoint. There, 64% of the val deficit is how intensity is split among

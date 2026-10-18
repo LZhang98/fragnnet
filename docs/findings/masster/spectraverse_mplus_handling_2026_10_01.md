@@ -55,7 +55,7 @@ chemistry, so it is not made here.
 | Spectra / molecules | 3,405 / 457. QTOF 2,362, OB 1,022, NA 20, Other 1 |
 | Charge site (spectra) | Quaternary N+ 1,937; aromatic n+ 575; P+ 564; aromatic o+ (flavylium) 251; S+ 27; other 51 |
 | Zwitterions / radicals / charged atom carrying H | 5 / 0 / 6 molecules |
-| Subformula retention at 1× instrument tolerance | 93.8% of intensity ([subformula census](spectraverse_subformula_filter_2026_10_01.md)) |
+| Subformula retention at 1× instrument tolerance | 93.8% of intensity (subformula census (removed 2026-10-18; `git show 731fe493:docs/findings/masster/spectraverse_subformula_filter_2026_10_01.md`)) |
 | Base peak equals precursor (±0.02 Da) | 19.6% of spectra |
 
 Candidate recall below joins the per-spectrum tables from the

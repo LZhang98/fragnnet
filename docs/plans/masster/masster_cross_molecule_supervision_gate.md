@@ -18,7 +18,7 @@
 Do related training molecules share measurable fragmentation patterns beyond matched random
 molecules? This tests whether informative cross-molecule supervision pairs exist. It does not
 measure improvement over MASSter, establish reaction mechanisms, or revive the almost-null
-[local bond learner](../../findings/masster/masster_bond_local_learner_2026_09_24.md).
+local bond learner (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`).
 The reopening audit
 is the design source. `fa1` and `mz1` are running on W&B per the user; their results are pending.
 

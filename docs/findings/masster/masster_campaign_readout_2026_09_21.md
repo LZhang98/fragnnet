@@ -354,7 +354,7 @@ default. Tail mean over epochs 118–127 against the 0.7270 control (gate ±0.00
 - **`c4a_no_bbe` is also 6% faster per epoch** (0.80 against 0.85–0.86 min/epoch). Its
   train-mode primary-loss gap is 0.6136 against a 0.6191 control mean, inside the 0.014 floor.
   The run logged no train cosine and uploaded no checkpoint, so the
-  [memorization probe](masster_memorization_route_probe_2026_09_23.md) cannot be run on it.
+  memorization probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`) cannot be run on it.
 - **The `c4a_no_bbe` config's pre-registered rule does not apply.** Its header says the
   "2026-07-13 removal stands" if the bundle's lift survives the arm. That removal never happened
   on MASSter (see the §6 correction), so the rule has no premise. Whether the encoder stays on

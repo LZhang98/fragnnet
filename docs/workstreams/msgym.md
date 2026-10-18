@@ -47,7 +47,7 @@
 - GLACIER-parity features arm: no gain (0.5669 vs 0.5695 tail); both MSGYM recipes peak near epoch 60 and drift down ([arms plan](../plans/masster/masster_msgym_training_arms_plan.md)).
 - User scope decision 2026-09-24: benchmark subset only, no extra MassSpecGym data (`ms_gym_all_1_5` would add 9,313 molecules).
 - [Marginal selection](../plans/masster/masster_fragment_marginal_selection_plan.md) — CLOSED NULL on NIST; U128 ties U256 at 1.65x speed.
-- [ChemBERTa-3 E1/T2](../plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished) — peak after epoch 0 at val 0.199/0.194, end 0.169/0.152; structure-blind prior scores 0.194; random SMILES hurt. `chemlm` retired 2026-10-12 (E4 never ran); code at `13b1599d`.
+- ChemBERTa-3 E1/T2 (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`) — peak after epoch 0 at val 0.199/0.194, end 0.169/0.152; structure-blind prior scores 0.194; random SMILES hurt. `chemlm` retired 2026-10-12 (E4 never ran); code at `13b1599d`.
 
 ## All documents
 | Doc | Status (updated) | One-line content |
@@ -59,7 +59,6 @@
 | [msgym_val_loss_sweep_48](../plans/masster/msgym_val_loss_sweep_48_2026_10_03.md) | ACTIVE (2026-10-11) | Live 48-trial read, interruption audit, hyperparameter signals and checkpoint recovery. |
 | [masster_fragment_marginal_selection_plan](../plans/masster/masster_fragment_marginal_selection_plan.md) | CLOSED NULL (2026-10-06) | NIST marginal-selection null; holds the MSGYM U256/E1024 config list. |
 | [annotation_aware_retrieval_plan](../plans/annotation_aware_retrieval_plan.md) | ACTIVE (2026-10-06) | Retrieval scoring plan, frozen full-track protocol, calibration. |
-| [chemberta3_msgym_plan](../plans/chemberta3_msgym_plan.md) | CLOSED NULL (2026-10-12) | ChemBERTa-3 first 6 layers end to end with NEIMS head; results; model retired. |
 | [masster_msgym_vs_glacier_released_ckpt](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md) | FINDING (2026-10-06) | Test cosine comparison, peak over-prediction, instrument audit. |
 | [masster_msgym_arm_screen_formula_retrieval](../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md) | FINDING (2026-10-07) | Val table of all 18 screen checkpoints; formula test retrieval for `wd10`, `pow075`, `ll04i00m` with paired CIs. |
 | [masster_msgym_formula_retrieval_full](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md) | FINDING (2026-10-06) | Full val+test formula retrieval, GLACIER matching, calibrated likelihood. |

@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **Shared preprocessing audit:** [seven correctness findings](../findings/preproc_scripts_audit_2026_10_12.md), including broken merged molecule/group identities; fixed with regression tests and committed in `bbcdf00c` (2026-10-13).
+- **Shared preprocessing audit:** seven correctness findings (removed 2026-10-18; `git show 731fe493:docs/findings/preproc_scripts_audit_2026_10_12.md`), including broken merged molecule/group identities; fixed with regression tests and committed in `bbcdf00c` (2026-10-13). Rebuild merger, inference-merged or `--canonicalize_tautomers False` outputs made before it into new directories before use.
 
 - **ZenoTOF CID + EAD libraries:** [MultiMS2 and MS-DIAL 5 standards preprocessed](../findings/zenotof_ead_libraries_2026_10_15.md) (steps 1-2, `data/proc/multims2`, `data/proc/msdial5_ead`) with a new `EAD` frag_mode (`ace` = electron kinetic energy) and `frag_mode` in the `group_id` key (uncommitted). CIeaD deferred: no structures in any export. Next: splits and an EAD-aware config.
 
@@ -25,7 +25,6 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FIXED (`bbcdf00c`) | Rebuild affected merged outputs into new directories before use |
 | [ZenoTOF CID + EAD libraries](../findings/zenotof_ead_libraries_2026_10_15.md) | STEPS 1-2 DONE, UNCOMMITTED | Review the reader/group-key change; build splits; config with `frag_modes` incl. `EAD`; CIeaD structures from the authors |
 | [CASMI train filter](../findings/casmi2026_dataset_2026_10_05.md) | OPEN | Choose filter (subformula suspects at ORB tier vs shifted-peak control, dedup, `riken` rule in section 5.9), then preprocess |
 | CASMI external data (NIST) | OPEN | Competition rules on external data not checked; hidden test energy protocol unknown (section 6) |
@@ -56,7 +55,6 @@
 | --- | --- | --- |
 | [CASMI halogen census](../findings/casmi2026_halogen_census_2026_10_16.md) | FINDING (2026-10-16) | Br/Cl/I carriers per library, halogen-aware quality filter, Br→Cl swap pairs vs NIST20 |
 | [ZenoTOF CID + EAD libraries](../findings/zenotof_ead_libraries_2026_10_15.md) | FINDING (2026-10-15) | MultiMS2, MS-DIAL 5 standards, CIeaD: sources, contents, EAD frag_mode, group key, processed outputs |
-| [Preprocessing script audit](../findings/preproc_scripts_audit_2026_10_12.md) | FINDING (2026-10-13) | Seven correctness findings; fixed with regression tests, committed in `bbcdf00c` |
 | [CASMI 2026 data](../findings/casmi2026_dataset_2026_10_05.md) | FINDING (2026-10-06) | Release contents, placeholder test, train checks, MSnLib/NIST overlap, NP bias, `riken` |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | RTHead and CCSHead, label audit, completed GPU debug run and full experiment |
 | [Enveda-180 dataset](../findings/enveda_180_dataset_2026_09_25.md) | FINDING (2026-10-06) | Source, CE, adducts, preprocessing, split, `[M+Br]-`, isotopes, baseline config |

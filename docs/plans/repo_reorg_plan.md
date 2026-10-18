@@ -890,7 +890,7 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
   - Docs: the fine-tuning guide points at the `nps_pcdl_nist23_ft` example and a generic
     checkpoint; the architecture map and the FraGNNet hub's Settled list record the retirement.
 - 2026-10-12: ChemLM retired (user decision; the ChemBERTa-3 runs barely beat a structure-blind
-  prior, [results](chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)). A three-scout
+  prior, results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`)). A three-scout
   inventory with a completeness critic found ChemLM the only user of the `transformers` stack.
   `BinnedPL`, `SpecFFN`/`NeimsBlock`, the conditioning mixins and `neims_bottleneck_factor` are
   shared with NEIMS, GNN and MassFormer and stay.

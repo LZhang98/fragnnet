@@ -114,10 +114,10 @@ unfiltered export has a median of 924 peaks per spectrum.
 - On the NIST20 FraGNNet test export, base-peak misses are about 7:1 misranking against missing
   coverage ([dominant-peak decomposition](../findings/fragnnet/dominant_peak_outcome_decomposition.md)).
 - The MASSter ranking error is a generalization failure: val ranking 0.121 against train 0.011
-  ([ranking decomposition](../findings/masster/masster_ranking_decomposition_2026_09_23.md)).
+  (ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)).
 - Independent runs agree less on novel molecules. Agreement falls from 0.94 to 0.75 as
   nearest-train Tanimoto drops from above 0.8 to below 0.3
-  ([variance is epistemic](../findings/masster/masster_variance_novelty_2026_09_24.md)).
+  (variance is epistemic (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
   Decoy candidates are unseen molecules by construction, so their intensities are the least
   reliable part of their predictions.
 
@@ -253,7 +253,7 @@ Read the test fold once, after freezing.
   substructure voting are applications, worth building only after a score has proven itself.
 - **Per-peak uncertainty as a cosine weight.** This was rejected in design. Ensemble spread is
   mostly spectrum-level: inside one spectrum, the higher-spread peak is the worse one only 58-60%
-  of the time ([per-peak uncertainty](../findings/masster/masster_per_peak_uncertainty_2026_09_24.md)).
+  of the time (per-peak uncertainty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_per_peak_uncertainty_2026_09_24.md`)).
   Across candidates, unusual decoys are the uncertain ones, so down-weighting their mismatches
   would reward them. Uncertainty may enter only as a predictive spread inside score (c).
 

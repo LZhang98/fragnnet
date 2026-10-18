@@ -1,0 +1,9 @@
+2026-10-17 11:59:52,702 INFO sb_c32_gz4fa02d_ep018: 20 files, 1657238 candidates, 9954 queries
+2026-10-17 12:00:50,133 INFO 
+                label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
+sb_c32_gz4fa02d_ep018        mspred_ent    all       9954 0.5277 0.8450  0.9617          0.4955          0.5620              0.5120              0.5448
+sb_c32_gz4fa02d_ep018            loglik    all       9954 0.5140 0.8454  0.9603          0.4812          0.5471              0.4983              0.5308
+sb_c32_gz4fa02d_ep018        loglik_cal    all       9954 0.5590 0.8700  0.9729          0.5230          0.5930              0.5431              0.5748
+sb_c32_gz4fa02d_ep018      cos_sim_0.01    all       9954 0.3653 0.7324  0.9038          0.3390          0.3915              0.3500              0.3809
+sb_c32_gz4fa02d_ep018 cos_sim_sqrt_0.01    all       9954 0.4805 0.8167  0.9435          0.4495          0.5122              0.4647              0.4972
+sb_c32_gz4fa02d_ep018           cos_hun    all       9954 0.3731 0.7432  0.9079          0.3463          0.4000              0.3573              0.3887

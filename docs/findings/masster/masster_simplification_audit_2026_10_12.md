@@ -1,7 +1,7 @@
 # MASSter code simplification audit
 
-> **Status:** FINDING · **Updated:** 2026-10-12
-> Items 1–4 implemented in the working tree 2026-10-12 (uncommitted); 5–6 open. One export bug found.
+> **Status:** FINDING · **Updated:** 2026-10-18
+> Items 1–4, the export fix and the `path_selection/` move committed in `7e73b384`; 5–6 open.
 
 MASSter has substantial opportunities for behavior-preserving simplification. Start with
 diagnostic plumbing and duplicated CUDA loading, then separate model stages. Removing experimental
@@ -17,7 +17,7 @@ failures (export schema, the postcut-gate debug script, runner config) fail iden
 
 | Item | Result |
 | --- | --- |
-| 1. Test baseline | Fixtures enable `masster_merge_same_mz_rows`. The guard already had its own test (`tests/test_masster_merge_same_mz_rows.py`). Repairing the CLI case exposed an export bug: [annotated export untransformed each pathway](masster_export_merge_untransform_2026_10_12.md), fixed with it. |
+| 1. Test baseline | Fixtures enable `masster_merge_same_mz_rows`. The guard already had its own test (`tests/test_masster_merge_same_mz_rows.py`). Repairing the CLI case exposed an export bug: annotated export untransformed each pathway (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`), fixed with it. |
 | 2. Diagnostic names | Three module-level tuples (30 mask, 6 timing, 9 ion-channel names) drive reads, casting and `loss_names`; one edit per new diagnostic instead of four. A before/after script over 21 configurations matched bitwise except wall-clock timings. |
 | 3. CUDA loading | One `build_cuda_library` lifecycle; per-stage locks, `lru_cache`, ABI and flags stay with the callers. Cache filenames are byte-identical, so existing builds stay valid. About +22 net lines; the gain is one lifecycle, not fewer lines. |
 | 4. Backend dispatch | `_cuda_full` had **no callers** (the audit said "duplicates"); deleted, and its error now names `candidate_backend='cuda'`. The topology prototype moved behind `build_masster_candidates_cuda_topology` through a private CPU core with one hook. Cost: the 14 keyword parameters are now listed in three places, about +60 net lines. |
@@ -141,8 +141,8 @@ other. Preserve chemistry validity, candidate ordering, forced-mask prefixes, gr
 checkpoint keys and flat model outputs. Do not infer feature retirement from default-off flags
 or null experiments; schema removal requires a separate decision and migration.
 
-Next: review and commit the items 1–4 working-tree changes, the export fix and the
-`path_selection/` move. Orchestration extraction (item 5) is next on a green baseline;
+Items 1–4, the export fix and the `path_selection/` move were committed in `7e73b384`.
+Orchestration extraction (item 5) is next on a green baseline;
 bucketing (item 6) waits for a profile.
 
 ## Validation

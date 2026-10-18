@@ -59,7 +59,7 @@
 #   a0d1    a0 + depth-1 continuation, top-4 bond cuts per product (masster_rewire_continuation_cuts: 4)    (control: i1; read vs a0)
 #   a0null  a0 with random same-shape edits (masster_rewire_null: true)                                     (control: i1; read vs a0)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
-# nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
+# nl finding: 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md, removed 2026-10-18
 #
 # STAGE (required):
 #   stack i3 and i4 (i1 has run or is running).

@@ -3,7 +3,7 @@
 > **Status:** NOTE · **Updated:** 2026-09-27
 > A literature search for the
 > [intensity-displacement plan](../plans/masster/masster_intensity_displacement_plan.md),
-> read against its [Phase 0 finding](../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md).
+> read against its Phase 0 finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`).
 > It covers three areas: forward MS/MS predictors, fragmentation energetics, and proteomics
 > intensity models. §7 is a second pass that corrects two first-pass claims. Generic
 > memorization and regularization work is in the
@@ -83,7 +83,7 @@ precursor-versus-contender.
   *corrected 2026-09-27:* it ran as `ll04i00m`, −0.0026 against `1imawkx1` on the 118-127 tail,
   no gain) adds `c_nl_composition`, the complement's element counts. That is the
   input form of GRAFF-MS's lesson. The
-  [formula-only baseline](../findings/masster/masster_formula_only_baseline_2026_09_23.md)
+  formula-only baseline (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_formula_only_baseline_2026_09_23.md`)
   found formula information adds +0.005 overall. Phase 0 says its value is concentrated in the
   low-CE precursor decision. Read that arm on the low-NCE precursor split specifically, not only
   on mean cosine.
@@ -126,7 +126,7 @@ precursor-versus-contender.
   MassSpecGym numbers
   ([arXiv 2606.29161](https://arxiv.org/html/2606.29161v1); [our note](glacier_object_detection.md)).
 - **Consequence.** Keep 2A's identity-blind path **additive**, next to the global head, not a
-  replacement. The [route map](../findings/masster/masster_route_map_2026_09_24.md) finding
+  replacement. The route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`) finding
   that global attention writes the memorization key argues for a separate identity-blind path.
   The literature does not show that removing global attention helps.
 - **Proteomics is consistent with this.** Every strongly generalizing peptide model computes

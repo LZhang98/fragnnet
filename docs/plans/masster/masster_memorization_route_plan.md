@@ -3,7 +3,7 @@
 > **Status:** ACTIVE · **Updated:** 2026-10-06
 > Next check is the computed-energetics information gate (policy and protocol first); route-removal, architecture and conditioning screens are finished with no single-seed pass beyond `i3`/`i4`. Dated log: [history](../../history/masster_memorization_route_plan_log.md).
 
-The [memorization probe](../../findings/masster/masster_memorization_route_probe_2026_09_23.md)
+The memorization probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`)
 found the lookup in the boundary block. But every candidate input MASSter builds comes from
 the same globally attended atom embeddings, so blocking that one input can move the lookup
 instead of removing it. This plan first maps every route by which the lookup can reach the
@@ -77,7 +77,7 @@ Make the intensity allocation transfer to new molecules. On unmerged `[M+H]+`/FT
 - The eval-mode train/val cosine gap is 0.19, and coverage differs by 0.007.
 - The ranking gap is 0.011 on a train sample and 0.121 on val.
 - The base-peak hit rate is 84.5% on train and 56.7% on val
-  ([ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md)).
+  (ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)).
 
 The model fits each training molecule and ranks new ones poorly.
 
@@ -91,7 +91,7 @@ An arm passes only if all five hold against a same-code control at matched epoch
    eval-mode gap falling. No route's train/val asymmetry at matched validation damage may grow
    beyond its control value.
 4. **Novelty.** The gain is largest in the nearest-train Tanimoto bins at or below 0.6
-   ([variance-novelty](../../findings/masster/masster_variance_novelty_2026_09_24.md)).
+   (variance-novelty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
 5. **Coverage.** `wrecall` stays within 0.005 of the control.
 
 Narrowing the gap by lowering train fit is underfitting, not a pass. `drop03` (−0.0149) did
@@ -199,7 +199,7 @@ production checkpoints uses 17 paired conditions and 60 batches of 512 per split
 `output/memorization_route_step0_2026_09_24/run_probe.sh`, read with `analyze_route_map.py`
 beside it.
 
-**Result, 2026-09-24 ([route map](../../findings/masster/masster_route_map_2026_09_24.md)).**
+**Result, 2026-09-24 (route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`)).**
 Both checkpoints agree to about 0.01.
 
 - **Global attention is where the key is written.** Replacing each atom's global message with
@@ -320,12 +320,12 @@ each one: once the token cannot name the molecule, the candidate set is the rema
   re-form from the other blocks.
 - **Formula or composition columns in the token.** They make candidates more identifiable, and
   the whole formula prior is worth +0.005
-  ([formula baseline](../../findings/masster/masster_formula_only_baseline_2026_09_23.md)).
+  (formula baseline (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_formula_only_baseline_2026_09_23.md`)).
 - **A train-set ranking loss.** The train ranking gap is 0.011.
 - **Global dropout** (`drop03`, −0.0149) and **pool-only atom dropout** (`e2`/`e3`, null).
 - **Reconnecting the proposal gradient**, which costs about 0.01 through a convergence delay
   ([head-input asymmetry §8.2](../../findings/masster/masster_head_input_asymmetry_2026_09_22.md#82-the-71-deficit-is-a-convergence-delay-not-a-lower-endpoint)).
-- **Target cleaning**, a [closed null](../../findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md).
+- **Target cleaning**, a closed null (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`).
 - **An identity-blind lability prior in the final score**, which is the displacement plan's
   arm 2A.
 

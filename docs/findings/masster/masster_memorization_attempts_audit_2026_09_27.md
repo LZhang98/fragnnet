@@ -124,8 +124,8 @@ and resume path, the `r0` construction order and the probe's val batch order.
 
 ### Post-hoc levers, unmerged `f0`/`f1`
 
-These are from the [target-cleaning cross-eval](masster_target_cleaning_cross_eval_2026_09_23.md)
-and the [ranking decomposition](masster_ranking_decomposition_2026_09_23.md), and were not
+These are from the target-cleaning cross-eval (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`)
+and the ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`), and were not
 re-derived here.
 
 | lever | gain |
@@ -150,7 +150,7 @@ is in corrections 4 and 5.
    but inside the 0.0042 seed spread, and the token widening changes initialization. So it is an
    unresolved single-seed pass that needs a second seed.
    - Stale in: the plan banner and 'Batch 3 read', the
-     [energy-vs-parts](masster_memorization_energy_vs_parts_2026_09_26.md) 'What this changes',
+     energy-vs-parts (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`) 'What this changes',
      and MEMORY.md.
 2. **`nl2` underfits against its same-code control `r2`.** Its val cosine is −0.0021 against
    `r2`, train loss +0.0095 and val loss +0.0221. That contradicts 'train fit does not move'.
@@ -160,12 +160,12 @@ is in corrections 4 and 5.
    - the boundary block (bit-identical under the toggle, checked on CPU);
    - `c_mass` and the new `c_heavy_side`, which is close to the heavier side's formula;
    - the candidate set that the allocator attends over. The
-     [set-message probe](masster_memorization_energy_vs_parts_2026_09_26.md#allocator-set-message-probe-2026-09-26)
+     set-message probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`)
      rates that route the most train-specific (3.37x).
 
    "Rerouted" cannot be told apart from "never removed" from these arms alone. The probe chain
    has since run
-   ([read](masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27)):
+   (read (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`)):
    - `nl1` still writes the key in global attention (2.89x), so the heavier side's removal never
      removed the key.
    - In `r2`, trained without global attention, the lookup did reroute. The set message carries
@@ -210,8 +210,8 @@ is in corrections 4 and 5.
    - The paired contrasts share batches, but val damage depends on the novelty mix (global
      attention's val damage rises 0.028 → 0.131 with similarity). So the damage ratios may move
      on a random val sample.
-   - The [route probe](masster_memorization_route_probe_2026_09_23.md) and
-     [ranking decomposition](masster_ranking_decomposition_2026_09_23.md) describe a CE-context
+   - The route probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`) and
+     ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`) describe a CE-context
      sampler and `skip_too_big` that these checkpoints never used (plain `RandomSampler` or
      `SequentialSampler`, batch 512).
 9. **The eval-mode gap table overstates `k1` and `r2` slightly, and cannot be reproduced.**
@@ -308,7 +308,7 @@ is in corrections 4 and 5.
   - Merged LR decay: +0.005 to +0.008.
 
   All three lift train and val together. The ensemble gain says two runs disagree most on novel
-  molecules and at high CE ([variance-novelty](masster_variance_novelty_2026_09_24.md)).
+  molecules and at high CE (variance-novelty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
 - **The route map describes the trained checkpoint, not causal routes.**
   - Its top route (global attention, 2.6x) did not pay when removed (`r2`).
   - It predicted `k1` would be weak, and `k1` is the one replicated structural gain.

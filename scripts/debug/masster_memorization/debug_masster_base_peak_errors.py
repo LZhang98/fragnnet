@@ -5,7 +5,7 @@ Stage 1 of the wrong-peak analysis (2026-09-28). One annotated forward per batch
 Per spectrum it records:
 
 - the candidate-space split of ``1 - cos`` into coverage, ranking and calibration, as in the
-  [ranking decomposition](docs/findings/masster/masster_ranking_decomposition_2026_09_23.md).
+  ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`).
   Channels sharing an m/z are merged into one candidate peak; each target peak contributes to
   every candidate within the instrument tolerance;
 - the base-peak outcome: ``hit`` (the model's top candidate is the measured base peak),

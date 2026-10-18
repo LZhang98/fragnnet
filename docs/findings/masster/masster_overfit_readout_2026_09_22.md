@@ -358,12 +358,12 @@ routes inside the intensity head. The per-candidate **boundary block** carries m
 train-only allocation, while the cc pools and candidate descriptors act as generalizing features.
 The candidate-set fingerprint carries under 11% of the gap. Those checkpoints are unmerged
 `[M+H]+` FT, and the data-side routes above remain untested. See the
-[memorization route probe](masster_memorization_route_probe_2026_09_23.md).
+memorization route probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`).
 
 **Update 2026-09-24.** Two more routes were measured offline on the same unmerged `[M+H]+`/FT
 checkpoint `6h67zps9`, using its eval-mode train-sample export (25,600 spectra, 10,913 molecules)
 and val export from the
-[ranking decomposition](masster_ranking_decomposition_2026_09_23.md).
+ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`).
 
 - **Unequal exposure is not a driver on this lineage.** Molecules contribute 12.4 training spectra
   on average (p10 8, p90 16, p99 26). Train `cos_sim_0.01` is flat across exposure inside every NCE

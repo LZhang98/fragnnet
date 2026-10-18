@@ -1,0 +1,9 @@
+2026-10-17 12:48:28,789 INFO sb_e1024_5esngzcl_ep026: 20 files, 1657238 candidates, 9954 queries
+2026-10-17 12:49:26,760 INFO 
+                  label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
+sb_e1024_5esngzcl_ep026        mspred_ent    all       9954 0.5287 0.8486  0.9560          0.4965          0.5635              0.5131              0.5456
+sb_e1024_5esngzcl_ep026            loglik    all       9954 0.5082 0.8438  0.9569          0.4763          0.5409              0.4921              0.5248
+sb_e1024_5esngzcl_ep026        loglik_cal    all       9954 0.5445 0.8665  0.9693          0.5119          0.5787              0.5288              0.5612
+sb_e1024_5esngzcl_ep026      cos_sim_0.01    all       9954 0.3752 0.7223  0.8989          0.3492          0.4019              0.3594              0.3905
+sb_e1024_5esngzcl_ep026 cos_sim_sqrt_0.01    all       9954 0.4776 0.8110  0.9411          0.4477          0.5092              0.4619              0.4943
+sb_e1024_5esngzcl_ep026           cos_hun    all       9954 0.3814 0.7325  0.9023          0.3548          0.4086              0.3658              0.3968

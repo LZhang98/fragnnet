@@ -5,7 +5,7 @@
 > A literature search for the
 > [memorization-route plan](../plans/masster/masster_memorization_route_plan.md). Each
 > method family is mapped onto the mechanism the
-> [route map](../findings/masster/masster_route_map_2026_09_24.md) measured:
+> route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`) measured:
 >
 > - the encoder's global attention writes a per-(molecule, atom) key;
 > - the boundary block reads it;

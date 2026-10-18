@@ -78,7 +78,7 @@ only keys explicitly present in that YAML, with recursive merging of nested sect
 The template validates the overlay; its defaults do not replace saved checkpoint values.
 Use the selected run's full training config when explicitly reconstructing those settings.
 An overlay cannot select a different model architecture. This policy replaces the earlier
-template-over-checkpoint behavior; see the [repair record](../docs/findings/codebase_audit_2026_10_13.md#repairs-2026-10-13).
+template-over-checkpoint behavior; see the repair record (removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`).
 
 ## Sections
 

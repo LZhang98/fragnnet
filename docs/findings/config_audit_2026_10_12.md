@@ -1,7 +1,7 @@
 # Configuration audit
 
-> **Status:** FINDING · **Updated:** 2026-10-13
-> Runtime findings 1–3 repaired in the working tree; finding 6 resolved for MASSter by retiring
+> **Status:** FINDING · **Updated:** 2026-10-18
+> Runtime findings 1–3 repaired and committed in `e65339ed`; finding 6 resolved for MASSter by retiring
 > 97 configs on 2026-10-13; findings 4, 5 and 7 remain open.
 
 Scope: experiment YAML under `config/`, the shared template, CLI overrides, W&B merging,
@@ -92,7 +92,7 @@ and infrastructure/editor configuration are outside this audit.
 ## Next action
 
 Findings 1–3 were repaired with regression coverage in the
-[codebase repair record](codebase_audit_2026_10_13.md#repairs-2026-10-13).
+codebase repair record (removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`).
 Resolve malformed and duplicate YAML next. Preserve historical experiment semantics when
 migrating removed settings; these runtime repairs do not choose new values for those experiments.
 

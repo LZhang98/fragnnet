@@ -529,7 +529,7 @@ GLACIER's token is **formula-first**. The parts that transfer across molecules (
 loss, cut count) form the query, and molecule-specific atom detail enters only through attention.
 Ours is **embedding-first**: three pooled 384-dim embeddings, one of them a sharp cut-site
 embedding, and no formula. That cut-site embedding is where the
-[memorization probe](../findings/masster/masster_memorization_route_probe_2026_09_23.md)
+memorization probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`)
 located most of the train/val gap. GLACIER is not immune to memorization either, since `G` plus
 the formula can key a (molecule, formula) pair, and no train/val gap is reported for it.
 

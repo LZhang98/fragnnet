@@ -7,7 +7,7 @@
 #   c_nl_composition                          log1p element counts of the complementary neutral
 #                                             loss in the intensity token: GLACIER's formula term,
 #                                             which separates CO (27.9949) from C2H4 (28.0313)
-# The formula-only finding (docs/findings/masster/masster_formula_only_baseline_2026_09_23.md)
+# The formula-only finding (731fe493:docs/findings/masster/masster_formula_only_baseline_2026_09_23.md, removed 2026-10-18)
 # puts the transferable formula-level signal at +0.005 (largest above NCE 60), so expect small.
 # The cut features (c_cut_bonds, c_cut_adjacency) are NOT added: null on the merged NIST screen.
 # upload_checkpoints is turned on (not a training key) for the offline reads.

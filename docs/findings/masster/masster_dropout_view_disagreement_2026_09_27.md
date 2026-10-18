@@ -28,7 +28,7 @@
 - **Novelty barely moves it.** On validation, two dropout views agree at cosine 0.92-0.97 (`k1`
   family) or 0.98-0.99 (`c0`) from the least to the most familiar molecules. Two independently
   seeded runs fall from 0.94 to 0.75 across the same range
-  ([variance finding](masster_variance_novelty_2026_09_24.md)). Dropout noise is not the
+  (variance finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)). Dropout noise is not the
   epistemic variance that ensembles exploit.
 - **Two-view averages: the gain looked like flattening (corrected by the many-view follow-up).**
   - The average of two views beats the deterministic prediction on val by +0.003 to +0.005 and
@@ -147,7 +147,7 @@ column is the eval prediction's own 0.01-Da TV to the target: the model's error 
 | `k1_ema` average: head-average gain | +0.0138 | +0.0028 | +0.0027 | +0.0038 | +0.0013 |
 | val spectra | 80 | 1,124 | 1,823 | 678 | 340 |
 
-The [variance finding](masster_variance_novelty_2026_09_24.md)'s two-seed agreement runs from
+The variance finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)'s two-seed agreement runs from
 0.75 to 0.94 over the same range (f0/f1, 0.01-Da cosine of the two predictions). The flattening
 gain rises steadily with novelty; the head-average gain has no consistent trend outside the
 80-spectrum first bin.
@@ -307,7 +307,7 @@ both splits:
   - The unweighted form spends half its weight on the zero-intensity tail.
   - The flattening it could deliver is available at inference: `P^0.875` gains +0.004-0.005 on val
     at no train cost in these runs, and `P^0.75` gained +0.006-0.007 on test in the
-    [ranking decomposition](masster_ranking_decomposition_2026_09_23.md#calibration-slightly-too-sharp-and-a-global-temperature-pays).
+    ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`).
   - A confidence penalty worth testing would be mass-weighted (`Var_P(z)`) or a peak-level entropy
     term, read against `P^γ`.
 - **Late SAM (note §3).** Nothing here measures sharpness. Two constraints apply to the build:
@@ -353,7 +353,7 @@ both splits:
      predictions land in the same bins. Absolute cosines and comparisons against other models'
      masses carry this noise.
 3. **Flattening is a hedge, not a split-independent calibration.**
-   - The [ranking decomposition](masster_ranking_decomposition_2026_09_23.md#train-versus-validation-the-ranking-error-is-a-generalization-error)
+   - The ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)
      measured `P^0.75` on val and test only, and inferred a split-independent effect from equal
      entropy excess.
    - On training spectra `P^0.75` costs 0.004-0.006 cosine here, and its validation gain rises

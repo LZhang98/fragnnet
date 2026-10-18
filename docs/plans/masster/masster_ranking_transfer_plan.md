@@ -20,7 +20,7 @@
 
 ## Objective and acceptance
 
-The [ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md)
+The ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)
 found that half of the validation cosine gap is candidate order, and that the order is nearly right
 on training molecules: ranking gap 0.011 on train against 0.121 on val, base-peak hit 84.5% against
 56.7%, train `cos_sim_0.01` 0.929 against 0.737. The
@@ -30,7 +30,7 @@ on training molecules: ranking gap 0.011 on train against 0.121 on val, base-pea
 
 | audit route | status on unmerged `[M+H]+`/FT |
 | --- | --- |
-| candidate-set fingerprint | under 11% of the gap ([memorization probe](../../findings/masster/masster_memorization_route_probe_2026_09_23.md)) |
+| candidate-set fingerprint | under 11% of the gap (memorization probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`)) |
 | unequal exposure by molecule | not a driver: train cosine flat across 4 to 24+ spectra per molecule, Spearman 0.058 |
 | QTOF NCE proxy | absent (FT only) |
 | precursor/population prior | a fallback on unseen molecules (NCE ≤ 20 hit when the base peak is not the precursor: 0.90 train, 0.42 val) |
@@ -49,7 +49,7 @@ An arm passes when, against its control at matched epoch:
 2. the offline ranking decomposition shows the shortcut shrinking: a **lower val** ranking gap,
    usually with a **higher train** one;
 3. validation cosine by nearest-train Tanimoto bin
-   ([variance-novelty finding](../../findings/masster/masster_variance_novelty_2026_09_24.md))
+   (variance-novelty finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`))
    improves most in the least-similar bins.
 
 An arm that only lowers train fit is underfitting, not a pass. `drop03`, `b3_wd_groups` and
@@ -65,7 +65,7 @@ An arm that only lowers train fit is underfitting, not a pass. `drop03`, `b3_wd_
 These live in `config/masster/mh_ft_ranking_transfer_2026_09_23/`. Each is
 `f0_mh_ft_control.yml` plus one key and W&B naming, verified through `load_config`. The raw
 target is used because cleaning is a
-[closed null](../../findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md).
+closed null (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`).
 Train metrics stay off, as in the control, and the train side is read offline.
 
 | arm | key | control → arm | what it limits |
@@ -176,7 +176,7 @@ Unmerged tail is epochs 54-63; merged tail is 118-127.
   drifts to 0.7363 by 127. Unmerged `u2` is flat from epoch 44 (slope +0.0002 per 10 epochs; best 0.7394 at 56). (Corrected 2026-09-24: this sentence said it was still rising.) At 128 epochs `t2`
   also beats the 630-epoch `long_control` (`tkkesus9`, best 0.7318 at epoch 555). For scale, on
   the cross-eval exports a two-checkpoint weight average gave +0.003 and the f0+f1 two-run
-  ensemble +0.020 ([cross-eval](../../findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md)).
+  ensemble +0.020 (cross-eval (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`)).
   Those numbers are best-checkpoint exports, not W&B tail means.
 - **`h1` is rejected.** It is below the control at 63 of 64 epochs. More dropout in the allocator
   costs validation without a gain, as `drop03` did.
@@ -199,7 +199,7 @@ Next, in order:
 1. Offline gates 2-3 on `u2`, whose checkpoint is on W&B: the ranking decomposition on val and a
    train sample, and the Tanimoto bins, both against `3bej6fq7`. The question is whether EMA
    shrinks the val ranking gap and helps most on novel molecules. It should, if it removes the
-   optimizer-noise part of the [epistemic variance](../../findings/masster/masster_variance_novelty_2026_09_24.md).
+   optimizer-noise part of the epistemic variance (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`).
 2. Whether EMA stacks with LR annealing. `d3`'s cosine decay also damps end-of-training noise,
    so the two may overlap. Test `t2` + `d3` against `d3` (`rcfzf67p`) on the merged screen.
 3. Promotion is a user decision. The `ema_decay` template default stays null, so any config

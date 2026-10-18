@@ -37,7 +37,7 @@
    fine-tuning) was retired on 2026-10-12 because it did not help; its code and configs are at
    revision `13b1599d`. ChemLM (`chemlm`, a ChemBERTa-3 SMILES encoder with the NEIMS head) was
    retired the same day: it barely beat a structure-blind prior
-   ([results](plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)); code at `13b1599d`.
+   (results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`)); code at `13b1599d`.
    CLIP spectrum-molecule contrastive pretraining (`clip`, `spec_mol_clip_pretraining`) was
    retired the same day as no longer used; code at `13b1599d`.
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs

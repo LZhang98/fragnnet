@@ -5,7 +5,7 @@
 > **2026-09-30: Phase 0 and Phase 1.4b ran on `f0`/`f1`, now retired (user decision; old `FT`
 > labels).** Re-derive any premise on `i1` ([base-peak
 > table](../../findings/masster/masster_i1_base_peak_errors_2026_09_28.md)) before running an arm.
-> **Phase 0 is done** ([finding](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md)).
+> **Phase 0 is done** (finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`)).
 >
 > - **G0 condition 1 passes.** 67% (val) and 63% (test) of the displacement is reducible error
 >   that the two runs share.
@@ -19,7 +19,7 @@
 > The class-targeted items (1.2, 2C, the H2/H3 split) are dropped.
 >
 > **Phase 1.4b is done: gate G1 is not passed**
-> ([finding](../../findings/masster/masster_bond_local_learner_2026_09_24.md)).
+> (finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`)).
 >
 > - **An identity-blind bond-local learner adds a little.** Stacked with the model at peak level,
 >   it gives +0.0022 (val) and +0.0025 (test) group cosine over a fitted temperature, SE 0.0003.
@@ -45,7 +45,7 @@ below remain unchanged; the new diagnostic has not been run.
 
 **Intensity displacement** is validation target intensity that sits on a candidate the model
 already proposes, but that the model assigns to a *different* candidate. By the
-[ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md),
+ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`),
 that is ranking (0.121) plus calibration (0.104 ceiling) out of a 0.238 val gap, against
 coverage 0.014.
 
@@ -73,7 +73,7 @@ Rules of engagement:
 Numbers are f1 (`6h67zps9`) on its cleaned val target unless stated; test agrees within 0.01.
 
 **Size and shape of the misplacement**
-([ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md)):
+(ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)):
 
 - The base peak is missed in 43% of spectra, and 97% of those misses are covered.
 - When missed, the true base peak is the model's #2 in 37% of cases and in its top 3 in 52%.
@@ -103,7 +103,7 @@ weakest bond.
 What will not carry the fix:
 
 - Formula statistics: a formula-only learner blended in adds +0.005
-  ([formula-only baseline](../../findings/masster/masster_formula_only_baseline_2026_09_23.md)).
+  (formula-only baseline (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_formula_only_baseline_2026_09_23.md`)).
 - A molecule-independent per-loss reweighting closes 9.3% of the cross-adduct gap; 90.7% is
   molecule-specific ([cross-adduct headroom](../../findings/cross_adduct_loss_headroom_2026_09_17.md)).
 - Objective swaps: JSS, KL, Hellinger and direct cosine all land at or below CE, and a train-set
@@ -229,7 +229,7 @@ class-targeted arms in Phase 2 have no premise.
   against the model's 0.754, but stacked AUC 0.798 → 0.829 on val and 0.807 → 0.838 on test.
 
 Tables and limits are in the
-[finding](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md).
+finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`).
 
 ## 5. Phase 1: one new export, still no training
 
@@ -447,13 +447,13 @@ since the class shares may differ on that population.
   (local), about 50 minutes on 10 CPU workers.
 - The raw val/test targets were copied from a `/tmp` scratchpad into
   `output/cross_eval_mh_ft_clean_2026_09_23/targets/`.
-- Results: [finding](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md).
+- Results: finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`).
 
 **Literature (2026-09-24):** [note](../../notes/intensity_displacement_literature_2026_09_24.md). It adds a per-instrument CE-offset check, a data-side source of shared bias, to run first once the raw NIST20 `Instrument` field is joined on the cluster. It also refines 2A: CE-dependent per-bond break curves (threshold, slope), with precursor survival taken from the same prior, as in CFM-ID.
 
-**Bond-type check (2026-09-24):** [finding addendum](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md#addendum-bond-type-check-iceberg-style-2026-09-24). Aggregate bond-type shares by CE match the target on val as on train, to about 0.01. Of the val−train bond-level gap, 59% is between bond types within a molecule, 26% within a type and 16% the precursor. 2A's prior must therefore rank bonds of different types on one scale.
+**Bond-type check (2026-09-24):** finding addendum (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`). Aggregate bond-type shares by CE match the target on val as on train, to about 0.01. Of the val−train bond-level gap, 59% is between bond types within a molecule, 26% within a type and 16% the precursor. 2A's prior must therefore rank bonds of different types on one scale.
 
-**Phase 1.4b, bond-local learner (2026-09-24):** [finding](../../findings/masster/masster_bond_local_learner_2026_09_24.md).
+**Phase 1.4b, bond-local learner (2026-09-24):** finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`).
 The probe gained `--bond_records_fp` and `--fragment_level`. `scripts/eval/bond_local_learner.py`
 fits identity-blind GBDT/MLP learners on 12,055 train molecules. It stacks them onto f1's
 fragment scores at peak level, cross-fitted between val and test.

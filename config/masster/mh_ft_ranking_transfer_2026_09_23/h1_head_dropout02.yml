@@ -21,7 +21,7 @@
 # READ: (1) tail mean of val_cos_sim_0.01_epoch/mean over epochs 54-63 against 0.7298, and best;
 # (2) offline ranking decomposition of the best checkpoint's val export and a train sample. A
 # shortcut reduction shows as a HIGHER train ranking gap with a LOWER val one. (3) Val cosine by
-# nearest-train Tanimoto bin (masster_variance_novelty_2026_09_24.md): a real reduction lifts the
+# nearest-train Tanimoto bin (731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md, removed 2026-10-18): a real reduction lifts the
 # least-similar bins most. An arm that only lowers train fit is underfitting, not a pass.
 # upload_checkpoints is already true, so the checkpoints are on W&B.
 #

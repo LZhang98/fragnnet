@@ -1,0 +1,9 @@
+2026-10-17 12:47:37,006 INFO sb_u128_28dptwet_ep023: 20 files, 1657238 candidates, 9954 queries
+2026-10-17 12:48:36,074 INFO 
+                 label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
+sb_u128_28dptwet_ep023        mspred_ent    all       9954 0.5290 0.8473  0.9541          0.4960          0.5631              0.5133              0.5460
+sb_u128_28dptwet_ep023            loglik    all       9954 0.4952 0.8251  0.9492          0.4627          0.5287              0.4794              0.5116
+sb_u128_28dptwet_ep023        loglik_cal    all       9954 0.5354 0.8558  0.9646          0.5022          0.5702              0.5195              0.5519
+sb_u128_28dptwet_ep023      cos_sim_0.01    all       9954 0.3718 0.7239  0.8943          0.3472          0.3979              0.3559              0.3875
+sb_u128_28dptwet_ep023 cos_sim_sqrt_0.01    all       9954 0.4735 0.8086  0.9367          0.4437          0.5051              0.4578              0.4900
+sb_u128_28dptwet_ep023           cos_hun    all       9954 0.3792 0.7322  0.8985          0.3544          0.4059              0.3635              0.3943

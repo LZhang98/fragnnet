@@ -110,7 +110,7 @@ Scripts: `output/qet_projection_2026_09_26/` (local, Git-ignored), run from the 
   sum within bins). Re-scoring the unprojected prediction reproduces the model's per-spectrum
   value to within 1.1e-6. Two controls:
   - `P^0.75` variants raise each spectrum to 0.75 before binning. The
-    [ranking decomposition](masster_ranking_decomposition_2026_09_23.md) found that flattening
+    ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`) found that flattening
     worth +0.007; a projection gain that is only flattening would vanish on top of it.
   - Standard errors are clustered by molecule, because a projection acts on a molecule's spectra
     jointly.
@@ -169,7 +169,7 @@ By where the spectrum sits (val, change from the prediction):
   at a molecule's ends.
 - **It helps novel molecules a little more**, +0.0027 at Tanimoto ≤ 0.4 against about 0 above
   0.8. That is still small against the 2-run ensemble's gains on the same novel molecules
-  ([variance is epistemic](masster_variance_novelty_2026_09_24.md)).
+  (variance is epistemic (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
 
 ### Where the gain sits: shared and rare NCE values
 
@@ -568,7 +568,7 @@ The NCE path keeps `1/(NCE + 200)`.
     ones.
   - Per NCE value against `c0`, split by acquisition ladder. The categorical code let the model
     treat each ladder's own values separately, and one smooth axis cannot. The
-    [energy-vs-parts finding](masster_memorization_energy_vs_parts_2026_09_26.md) measured
+    energy-vs-parts finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`) measured
     adjacent values of the two ladders at 0.71-0.84 cosine on the same molecule. A loss
     concentrated at the ladder-B-only values (9, 14, 27, 44, 54, 76, 88, 100) would mean the
     acquisition setup needs its own input. That needs the raw NIST `Instrument` field, which

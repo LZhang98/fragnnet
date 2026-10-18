@@ -1,6 +1,6 @@
 # Documentation rules
 
-> **Status:** REFERENCE · **Updated:** 2026-10-12
+> **Status:** REFERENCE · **Updated:** 2026-10-18
 > Placement and maintenance conventions for project documentation. The 2026-10-06 consolidation
 > added workstream hubs, the project-state size cap, and `docs/history/`.
 
@@ -71,8 +71,21 @@ status changes, and use only these statuses:
 | `GUIDE` / `REFERENCE` / `NOTE` | How to run something, how the system works, or scratch/literature; verify against current code. |
 | `CURATED ANALYSIS` | Long-running append-only analysis. Append via its slash command rather than hand-editing. |
 
-Keep failed and negative-result plans in place with `CLOSED NULL`, `STOPPED`, or `SUPERSEDED`
-and the reason they stopped. Do not archive or delete them.
+Keep `CLOSED NULL` documents in place with the reason they closed; do not archive or delete
+them. Mark stopped or replaced work `STOPPED` or `SUPERSEDED` with the reason.
+
+## Removing a document
+
+Remove a document only when the user asks. Candidates are `SUPERSEDED` and `STOPPED` documents
+and audits whose fixes have all landed; an audit with an open item stays. When removing one:
+
+- Delete its row from the hub's "All documents" table. Keep any "Settled" verdict line.
+- Replace every inbound link in live documents, `config/`, `src/`, `scripts/` and `tests/` with
+  its text followed by (removed YYYY-MM-DD; `git show <commit>:<path>`), where `<commit>` still
+  holds the file; a bare path becomes `<commit>:<path>, removed YYYY-MM-DD`. Leave `docs/history/`
+  as it is.
+- Move any still-open consequence (data to rebuild, validation not yet run) into the hub or
+  `docs/project-state.md` first.
 
 ## Adding, moving, or renaming a document
 

@@ -137,8 +137,8 @@ The corrected CE-context sampler remains relevant implementation evidence, not e
 
 ### 3. Reopen ensemble distillation, preferably with out-of-fold teachers
 
-**Previous record.** The [clean-target cross-evaluation](masster/masster_target_cleaning_cross_eval_2026_09_23.md)
-found +0.020 from averaging f0/f1 predictions. The [novelty analysis](masster/masster_variance_novelty_2026_09_24.md)
+**Previous record.** The clean-target cross-evaluation (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`)
+found +0.020 from averaging f0/f1 predictions. The novelty analysis (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)
 found larger gains on unfamiliar molecules. Those models differ in target cleaning as well as
 their learned solutions, so first establish the gain with a pure seed ensemble on current labels.
 
@@ -180,7 +180,7 @@ Canonical sources: [CE/QET](masster/masster_qet_projection_candidate_union_2026_
 [local attention screen](../plans/masster/masster_memorization_route_plan.md),
 [EBM gate](../plans/energy_based_spectrum_reranking_plan.md),
 [ClassyFire plan](../plans/fragnnet/classyfire_atom_pretraining_plan.md),
-[ChemBERTa results](../plans/chemberta3_msgym_plan.md),
+ChemBERTa results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`),
 [prepass confound](feature_headroom_2026_09_22.md),
 [cross-adduct gate](cross_adduct_loss_headroom_2026_09_17.md).
 

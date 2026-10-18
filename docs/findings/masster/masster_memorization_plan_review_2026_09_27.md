@@ -39,13 +39,13 @@ recipe. They are not confirmed main-recipe successes or failures.
    necessary check before calling a representation shared or identity-blind.
 
 3. **The strongest evidence points to limited chemical transfer, not solely excess capacity.**
-   In the [parts analysis](masster_memorization_energy_vs_parts_2026_09_26.md#result-molecules-and-parts),
+   In the parts analysis (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`),
    27.7% of fragment-explained validation intensity has no matching radius-2 break environment
    in training; captured intensity is 0.488 there versus 0.699 for environments seen in 10–99
    other molecules. This is a diagnostic association, not an irreducible-error bound. It does
    explain why destroying training fit need not improve validation. The local learner already
    tested is only modestly complementary and contributes almost nothing at high CE
-   ([finding](masster_bond_local_learner_2026_09_24.md)); “use local chemistry” alone is not a
+   (finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`)); “use local chemistry” alone is not a
    sufficient replacement plan.
 
 4. **The acceptance criteria mix usefulness with a mechanistic theory.** The
@@ -67,7 +67,7 @@ recipe. They are not confirmed main-recipe successes or failures.
 6. **Peak supervision does not identify individual fragment explanations.** Multiple candidate
    fragments and ion/H channels can explain the same observed peak. The spectral loss constrains
    their aggregate intensity; it does not observe the true split between isomeric explanations.
-   The [bond-local finding](masster_bond_local_learner_2026_09_24.md#method) explicitly demonstrates
+   The bond-local finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`) explicitly demonstrates
    attribution sensitivity. Therefore fragment/bond “memorization” conclusions need peak-level
    corroboration. Smoothing uniformly over candidates would also weight peaks by their number
    of explanations; define any such prior at the observed peak/formula level first.
@@ -126,7 +126,7 @@ recipe. They are not confirmed main-recipe successes or failures.
    tokens, so restricting edges alone cannot guarantee removal of molecule identity.
 
 5. **Protect a confirmation split from further tuning.** The
-   [bond-local stack](masster_bond_local_learner_2026_09_24.md#method) fits validation weights on
+   bond-local stack (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`) fits validation weights on
    part of test and test weights on part of validation. That is a useful symmetric diagnostic,
    but not an untouched final-test result. Future calibration and arm selection should use
    training folds/validation only, with a reserved molecule-level confirmation set.
