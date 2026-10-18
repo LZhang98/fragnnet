@@ -410,8 +410,11 @@ python preproc_scripts/spectraverse/build_benchmark_split.py \
 `--fold-fp data/df_spectraverse_1_0_3/spectraverse_fold.csv` gives byte-identical id files (checked
 2026-10-18).
 The ten folds are disjoint over 44,234 2D InChIKeys and each `cv<k>` covers every `spec_id` once.
-cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. No train-side
-variant below has been built for v1.0.3 yet.
+cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. Of the variants
+below, only the per-adduct NEIMS splits exist for v1.0.3 (2026-10-18, all nine adducts:
+`--adducts "[M+H]+" "[M-H]-" "[M+Na]+" "[M+NH4]+" "[M+HCOOH-H]-" "[M+K]+" "[M+CH3COOH-H]-" "[M+Cl]-" "[M]+"`).
+Some adduct folds are lopsided: `[M+CH3COOH-H]-` has 18 cv0 val spectra, and its cv1 test (4,483)
+is larger than its cv1 train (1,948).
 
 #### Spectraverse train-side variants
 Since 2026-10-18 every default path is v1.0.3: each reads `data/split/spectraverse_1_0_3_benchmark` and
