@@ -1,7 +1,7 @@
 # MASSter EI SMARTS rules: TMS silyl migration first
 
-> **Status:** PROPOSED · **Updated:** 2026-10-18
-> One rule is a build candidate: `tms_siloxy_silylium`, the Si–O–Si migration ion Me3Si–O⁺=SiMe2 (m/z 147.0656), as an `[M]+` rewire rule. Bond cuts reach the other TMS rearrangements, so they are not built. Nothing is implemented; model-free gates come before any GPU time.
+> **Status:** CLOSED NULL · **Updated:** 2026-10-18
+> The NIST23 gate admits no EI rule ([gate](#nist23-gate-2026-10-18)). T1, the TMS Si–O–Si ion, has a new composition (reach 1.000) but adds −0.0018 nominal coverage, and its isotope test is borderline. The user declined the Fir arms (2026-10-18). The T1 code (off by default), the e6 configs and the Fir submitter stay in the repo (`f5728bdc`) and were never submitted.
 
 Hub: [NIST23 EI](../../workstreams/nist23_ei.md). Related: [EI evaluation](../../findings/masster/masster_ei_evaluation.md)
 (Metabolome m/z 147 composition and TMS-vs-non-TMS sections), [rewire rules plan](masster_rewire_rules_training_plan.md)
@@ -200,7 +200,72 @@ If T1 passes, it goes into the EI recipe. The tier-2 rules then follow the same 
 3. Tier-2 scope was not decided. The NIST23 gate evaluates the existing rewire rules under `[M]+` as well, as a
    measurement only. Production enables `[M]+` for T1 alone.
 
+## NIST23 gate (2026-10-18)
+
+Script [`debug_masster_ei_tms_rewire_gate.py`](../../../scripts/debug/ei/debug_masster_ei_tms_rewire_gate.py)
+(tests `tests/test_debug_masster_ei_tms_rewire_gate.py`). Output
+[`output/ei_tms_rewire_gate_2026_10_18/`](../../../output/ei_tms_rewire_gate_2026_10_18/): `summary.csv`, `rows.csv`,
+`census.csv`, `t1_isotope_spectra.csv`, `t1_control_isotope_spectra.csv`, `provenance.json`. The full run (57,556
+molecules, about 27 min, 8 workers) used no sampling; `..._sample20/` was a timing pilot.
+
+Scope:
+
+- Folds: train and val peaks scored; test structures counted only.
+- Rules: T1, T1b, T2, T3, and the 17 committed ESI rewire rules evaluated as if they listed `[M]+`.
+- Matches are truncated to 8 per rule, as in production. This truncates T1 on 813 of 2,067 molecules, which does not
+  matter because every T1 product is the same C5H15OSi2.
+- The null is 8 random-site topology draws per molecule and rule.
+
+Decision rule: `b and (c or e)` with ≥20 val molecules.
+
+- (b) is composition reach on all products, exact enumeration up to 40 heavy atoms.
+- (c) is nominal added coverage with natural isotopes, against the null.
+- (e) is the T1 148/147 isotope consistency. It needs its CI above 0.5 **and** above the upper bound of a 1-TMS
+  control, where Si2 cannot form.
+- Peak support (d) is descriptive only: a known TMS ion beats random null products by construction.
+- The control and the descriptive (d) were added in the verification fix round, **after** the first result was seen.
+  They are post-hoc.
+
+| Rule | Molecules (train+val) | (b) unreachable | (c) rule − null, 95% CI | Gate |
+| --- | ---: | ---: | --- | --- |
+| T1 `tms_siloxy_silylium` | 2,067 | 1.000 | −0.0018 [−0.0029, −0.0007] | Fails on train+val (e below), borderline |
+| T1b `tms_siloxy_silanol` | 1,826 | 0.801 | −0.0094 [−0.0107, −0.0080] | Fails (b, c) |
+| T2 `vicinal_otms_geminal` | 180 | 0.017 | +0.0024 [+0.0011, +0.0037] | Fails (b) |
+| T3 `silyl_to_ester_carbonyl` | 227 | 0.379 | +0.0024 [+0.0003, +0.0047] | Fails (b) |
+| Best ESI rules under `[M]+` | `sulfonyl_so2_extrusion` 6,677; `s_to_o_aromatic_C` 5,301; `thiono_thiolo_aryl` 119 | 0.835; 0.754; 0.916 | +0.0071; +0.0061; +0.0050 (all CIs above 0) | Fail (b); no ESI rule reaches 0.95 |
+
+T1 isotope consistency (e), share of spectra where the observed 148/147 is closer to C5H15OSi2 than to the best
+reachable nominal-147 composition (exhaustive competitors, molecule bootstrap):
+
+| Fold | T1 (≥2 TMS, 147 ≥10% of base) | 1-TMS control | Median abs. error, Si2 vs competitor |
+| --- | --- | --- | --- |
+| train+val | 0.739 [0.714, 0.764] (1,164 mol / 1,453 spectra) | 0.667 [0.597, 0.731] (201 / 221) | 0.0115 vs 0.0231 |
+| val | 0.780 [0.731, 0.826] (287 / 368) | 0.566 [0.434, 0.698] (53 / 60) | 0.011 vs 0.023 |
+
+Reading:
+
+- **T1's composition is new, but nominal NIST23 cannot prove it.** In nominal mode its 147 adds no coverage (the
+  ordinary C6H15O2Si sits at the same nominal mass), so (c) is slightly negative.
+- **The isotope evidence is moderate.** The Si2 ratio fits about twice as well as the competitor (median error 0.011 vs
+  0.023). It beats the control on val, but not on train+val, where the intervals touch (0.714 vs 0.731).
+- **The control is weak.** It has 221 spectra, and its median error is about 0.10 for both compositions.
+- **Under the rule as written, T1 is not admitted.** The direct evidence for its composition remains the HR-EI exact
+  mass (Metabolome 147.0656), which by decision 1 was not used as a gate.
+- **No other candidate passes reach.** T2/T3 (and mostly T1b) were expected to fail. The ESI rewire rules add some
+  nominal coverage under `[M]+`, but 9-25% of their matched molecules already reach the product composition, so
+  none is admitted for EI.
+
+Shared-anchor gap in the committed T1 SMARTS: 431 of 3,162 NIST23 molecules with ≥2 O/N-TMS groups get no T1 match.
+These are 90 shared-anchor O-TMS pairs (for example tris-TMS phosphate and geminal bis-OTMS), 119 N,N-bis(TMS) amines,
+and the rest have no O donor. The SMARTS is in the CRC32 hash, so fix it, or accept the gap, before the first Fir arm.
+
 ## Progress
 
 - **2026-10-18:** Literature pass, census, isotope-ratio check, reachability prototype and rule catalog (this
-  document). No code, config or data changed.
+  document).
+- **2026-10-18:** Built T1 as rewire rule 18 (`[M]+` only, off by default), with tests, the e6 configs and
+  `scripts/manual_slurm/fir/submit_masster_ei_tms.sh`; committed in `f5728bdc`. Ran the NIST23 gate (above):
+  no rule admitted. **User decision: T1 does not go to Fir.** Closed.
+- **To revive:** use exact-mass evidence. The HR-EI references (Metabolome 147.0656), or HR-EI training data, are
+  the only data that can separate C5H15OSi2 from C6H15O2Si; nominal NIST23 cannot. Freeze the T1 SMARTS
+  (shared-anchor gap above) before any arm trains.

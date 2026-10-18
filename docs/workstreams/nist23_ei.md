@@ -26,11 +26,11 @@
 | H-shift width +/-6 (trained ablation) | OPEN | None until a trained-width ablation is wanted; keep +/-4 |
 | NEIMS baseline, EI library metrics (composite cosine, retrieval) | NOT BUILT | Build NEIMS on `nist23_ei_inchikey` at 1 Da |
 | Large-molecule errors | OPEN | Larger val sample with size/chemistry strata before changing candidates, H shift or SMARTS |
-| [EI SMARTS: TMS Si–O–Si rule](../plans/masster/masster_ei_smarts_plan.md) | PROPOSED | User decisions (G0-HR on Metabolome, tier-2 scope, run host), then `[M]+` in the rewire stage and gates G0-reach/G0-HR/G0b for `tms_siloxy_silylium` (m/z 147.0656) |
 
 ## Settled — read before re-proposing
 
 - **Setup decisions (user):** nominal `nist23_ei`, not the SHR set; select on `val_cos_sim_1.0`; model isotopes; `loss_tolerance_abs` 0.5 ([plan](../plans/masster/masster_ei_nominal_plan.md)).
+- [EI SMARTS rules, TMS first](../plans/masster/masster_ei_smarts_plan.md#nist23-gate-2026-10-18) — CLOSED NULL (2026-10-18): the NIST23 gate admits none of T1/T1b/T2/T3 or the 17 ESI rewire rules under `[M]+`. T1 (Si–O–Si 147) has a new composition but −0.0018 nominal coverage and a borderline isotope test. The user declined Fir arms; the code, off by default, is kept. Reviving it needs exact-mass evidence.
 - EI SMARTS screen (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_ei_smarts_screen_2026_10_01.md`) — CLOSED NULL: anisoyl fluoride and para-hydroxyazobenzene add zero coverage; sulfonamide O-transfer +2.414% on seven train molecules, no val examples.
 - [H-shift screen](../plans/masster/masster_ei_nominal_plan.md#ei-h-transfer-width-screen-2026-09-30-session-retain-4-for-now) — keep +/-4: L1 coverage 0.9040 at +/-2, 0.9339 at +/-3, 0.9482 at +/-4; +/-6 adds 1.31 points and 0.00314 cosine ceiling.
 - [e1 annotation read](../plans/masster/masster_ei_nominal_plan.md#e1-checkpoint-annotation-read-2026-10-01-4-used-6-unresolved) — H+/-4 carries 3.10% of predicted intensity; dropping it costs 0.0010 cosine.
@@ -47,7 +47,7 @@
 | [EI evaluation](../findings/masster/masster_ei_evaluation.md) | FINDING (2026-10-18, merged) | Four parts: NIST23 `e1` performance audit (Stein vs RASSP, support oracle); HR-EI raw audit; frozen `e1` on HR-EI; held-out `e5` on 962 HR-EI spectra split by `e1` training overlap (headline) |
 | [Exact isotopes and HR-EI exclusion](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED (2026-10-17) | Natural exact-mass output, conservative excluded split, and fresh e5 recipe |
 | [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
-| [Plan: EI SMARTS rules, TMS first](../plans/masster/masster_ei_smarts_plan.md) | PROPOSED (2026-10-18) | Literature, census and reachability: one build candidate (Si–O–Si 147 ion as an `[M]+` rewire rule), gates, e6 arms |
+| [Plan: EI SMARTS rules, TMS first](../plans/masster/masster_ei_smarts_plan.md) | CLOSED NULL (2026-10-18) | Literature, census, reachability and NIST23 gate: no rule admitted (T1 borderline), Fir arms declined; T1 code and e6 configs kept, never run |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 
 ## HR-EI raw downloads (2026-10-16)

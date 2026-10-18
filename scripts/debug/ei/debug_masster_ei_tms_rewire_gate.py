@@ -13,9 +13,12 @@ composition reach only. Per rule and fold the gate measures:
     otherwise or when the exact search hits its cap (recorded per molecule);
 (c) nominal added coverage with natural isotopes beyond the 0-2-cut pool, rule vs topology null;
 (d) peak support at the product's nominal m/z (literature H shift; H shift 0 for ESI rules)
-    and at the best valid channel within +-4 H, rule vs topology null;
-(e) T1 only: observed 148/147 against the M+1/M of C5H15OSi2 and of the closest reachable
-    competing composition at nominal 147.
+    and at the best valid channel within +-4 H, rule vs topology null. The null does not preserve
+    Si, so for T1 (d) is descriptive: 147 is a generic ion in TMS spectra;
+(e) T1 only: observed 148/147 against the M+1/M of C5H15OSi2 and of the closest competing
+    composition at nominal 147 over EVERY connected atom set (H shift -4..+4), with the same
+    statistic on one-TMS control spectra (147 >= 10% of base) that T1 cannot match. The 0-2-cut
+    pool version is kept as an upper bound (``e_pool_*``); the headline is ``e_*`` (exact).
 
 Products follow the production rewire stage: the rule is applied to a kept fragment F holding
 every mapped atom, the product is a connected piece of the edited F that holds a formed bond,
@@ -23,7 +26,7 @@ its cut count is the boundary of the piece and its valence correction is
 ``-2 * (n_formed - n_internal_cut)``. F ranges over the whole precursor and every one-cut
 fragment of the pool. Products already in the pool are ordinary candidates and are dropped
 from (c) and (d). The baseline pool is the 0-2-cut stand-in of the closed 2026-10-01 screen,
-not the trained model's selected pool. The pre-registered decision is written to summary.csv.
+not the trained model's selected pool. The decision (see ``decide``) is written to summary.csv.
 """
 
 from __future__ import annotations
@@ -76,6 +79,9 @@ SPLIT = Path("data/split/nist23_ei_inchikey_hr_ei_excluded_2026_10_17")
 FOLDS = ("train", "val", "test")
 MAX_MATCHES = 8  # production masster_rewire_max_matches_per_rule
 EXACT_MAX_HEAVY = 40
+COMPETITOR_MZ = 147
+COMPETITOR_CAP = 1_000_000  # connected-set visits per molecule before the exact (e) arm gives up
+SI2 = ((("C", 5), ("O", 1), ("Si", 2)), 15)  # C5H15OSi2, the T1 product at H shift 0
 TMS = "[Si]([CH3])([CH3])[CH3]"
 TMS_GROUP = Chem.MolFromSmarts(f"[O,N,S]{TMS}")
 PRECURSOR = ("[M]+",)
@@ -608,6 +614,7 @@ def process_molecule(task: tuple) -> list[dict]:
         # 6.3 Per-spectrum metrics, averaged within the molecule.
         values = defaultdict(list)
         t1_rows = []
+        competitors: tuple | None = None
         for spectrum in spectra:
             delta = coverage_delta(spectrum, base["iso"], supports[0])
             null_deltas = [coverage_delta(spectrum, base["iso"], s) for s in supports[1:]]
@@ -632,53 +639,144 @@ def process_molecule(task: tuple) -> list[dict]:
                 and n_tms >= 2
                 and spectrum.bins.get(147, 0.0) >= 0.1 * spectrum.base
             ):
-                t1_rows.append(isotope_consistency(mol, spectrum, base, top))
+                if competitors is None:
+                    competitors = (
+                        pool_competitors(base["table"], mol),
+                        exact_competitors(mol),
+                    )
+                t1_rows.append(isotope_consistency(spectrum, *competitors))
         for name, vals in values.items():
             row[name] = float(np.nanmean(vals)) if not np.isnan(vals).all() else np.nan
         row["diff"] = row["delta"] - row["null"]
         for name in ("lit_l1", "lit_ge10", "best_l1", "best_ge10"):
             row[f"diff_{name}"] = row[name] - row[f"null_{name}"]
-        usable = [r for r in t1_rows if r is not None]
-        row["e_spectra"] = len(usable)
-        row["e_no_competitor"] = len(t1_rows) - len(usable)
-        if usable:
-            row["e_si2_closer"] = float(np.mean([r["si2_closer"] for r in usable]))
-            row["e_abs_err_si2"] = float(np.mean([r["err_si2"] for r in usable]))
-            row["e_abs_err_competitor"] = float(np.mean([r["err_competitor"] for r in usable]))
-        row["e_detail"] = json.dumps(usable)
+        row["e_spectra"] = len(t1_rows)
+        row["e_exact_capped"] = bool(t1_rows) and competitors[1] is None
+        row["e_detail"] = json.dumps(t1_rows)
         rows.append(row)
     return rows
 
 
-def isotope_consistency(mol, spectrum: Spectrum, base: dict, top: dict) -> dict | None:
-    """Observed 148/147 against the T1 composition and the closest reachable competitor at 147."""
-    observed = spectrum.bins.get(148, 0.0) / spectrum.bins[147]
-    # Product composition of the whole-precursor T1 edit, H shift 0: C5H15OSi2 for every TMS pair.
-    product = next(iter(top), None)
-    if product is None:
+def control_molecule(task: tuple) -> dict | None:
+    """(e) control: a molecule with exactly one TMS group, which T1 cannot match, scored like T1."""
+    mol_id, mol, split, spectra = task
+    if len(mol.GetSubstructMatches(TMS_GROUP)) != 1:
         return None
-    atoms = tuple(sorted(product))
-    si2 = (composition_key(mol, atoms), own_hydrogens(mol, atoms))
-    competitors = {}
-    table = base["table"]
-    for pool_atoms, valid in table.valid.items():
-        for shift in H_SHIFTS[valid]:
-            if table.mass[pool_atoms] + int(shift) == 147:
-                key = (table.composition[pool_atoms], own_hydrogens(mol, pool_atoms) + int(shift))
-                if key != si2:
-                    competitors[key] = m1_over_m(*key)
+    prepared = [prepare_spectrum(peaks) for _, peaks in spectra]
+    prepared = [s for s in prepared if s.bins.get(147, 0.0) >= 0.1 * s.base]
+    if not prepared:
+        return None
+    bonds = [frozenset((b.GetBeginAtomIdx(), b.GetEndAtomIdx())) for b in mol.GetBonds()]
+    sets = pool_sets(mol)
+    table = channel_table(mol, CALC, dict.fromkeys(sets, 0), bonds)
+    competitors = (pool_competitors(table, mol), exact_competitors(mol))
+    detail = [isotope_consistency(spectrum, *competitors) for spectrum in prepared]
+    return {
+        "mol_id": mol_id,
+        "split": split,
+        "e_spectra": len(detail),
+        "e_exact_capped": competitors[1] is None,
+        "e_detail": json.dumps(detail),
+    }
+
+
+def competitor_ratios(mol: Chem.Mol, nominal: int, cap: int) -> dict[tuple, float] | None:
+    """M+1/M of every composition some connected atom set has at ``nominal`` m/z, or None past ``cap``.
+
+    Exhaustive (ESU) enumeration of connected sets whose heavy-atom nominal mass with own hydrogens
+    is within the H-shift window of ``nominal``; every shift of -4..+4 is allowed, so the set
+    contains every valid channel of the 0-2-cut pool and more. Keys are (heavy, hydrogens).
+    """
+    masses = nominal_atom_masses(mol).tolist()
+    neighbors = [{n.GetIdx() for n in atom.GetNeighbors()} for atom in mol.GetAtoms()]
+    symbols = [atom.GetSymbol() for atom in mol.GetAtoms()]
+    hydrogens = [atom.GetTotalNumHs() for atom in mol.GetAtoms()]
+    low, high = int(H_SHIFTS.min()), int(H_SHIFTS.max())
+    found: dict[tuple, float] = {}
+    visits = 0
+
+    def extend(sub: frozenset[int], ext: list[int], closed: frozenset[int], mass: int) -> bool:
+        nonlocal visits
+        visits += 1
+        if visits > cap:
+            return False
+        shift = nominal - mass
+        if low <= shift <= high:
+            hydrogen = sum(hydrogens[i] for i in sub) + shift
+            if hydrogen >= 0:
+                heavy = tuple(sorted(Counter(symbols[i] for i in sub).items()))
+                if (heavy, hydrogen) not in found:
+                    found[(heavy, hydrogen)] = m1_over_m(heavy, hydrogen)
+        while ext:
+            atom = ext.pop()
+            if mass + masses[atom] > nominal - low:
+                continue
+            fresh = [u for u in neighbors[atom] if u > root and u not in closed]
+            if not extend(sub | {atom}, ext + fresh, closed | neighbors[atom], mass + masses[atom]):
+                return False
+        return True
+
+    for root in range(len(masses)):
+        if masses[root] > nominal - low:
+            continue
+        closed = frozenset(neighbors[root] | {root})
+        if not extend(
+            frozenset([root]), [u for u in neighbors[root] if u > root], closed, masses[root]
+        ):
+            return None
+    return found
+
+
+def closest_ratio_error(competitors: dict[tuple, float], observed: float) -> float | None:
+    """Absolute error of the competitor whose M+1/M is nearest the observed ratio; None if none."""
     if not competitors:
         return None
-    ratio_si2 = m1_over_m(si2[0], si2[1])
-    ratio_best = min(competitors.values(), key=lambda r: abs(r - observed))
-    return {
+    return min(abs(observed - ratio) for ratio in competitors.values())
+
+
+def exact_competitors(mol: Chem.Mol) -> dict[tuple, float] | None:
+    """Exhaustive competitors at 147 excluding C5H15OSi2; None when the search hit its cap."""
+    found = competitor_ratios(mol, COMPETITOR_MZ, COMPETITOR_CAP)
+    if found is not None:
+        found.pop(SI2, None)
+    return found
+
+
+def isotope_consistency(
+    spectrum: Spectrum,
+    pool_competitors: dict[tuple, float],
+    exact_competitors: dict[tuple, float] | None,
+) -> dict:
+    """Observed 148/147 against the M+1/M of C5H15OSi2 and of the closest competitor at 147.
+
+    Competitors exclude C5H15OSi2 itself. ``pool`` uses the 0-2-cut pool (a stand-in that
+    under-counts competitors, so its share is an upper bound); ``exact`` uses every connected set
+    and is the headline. An arm is None when it has no competitor or the exact search was capped.
+    """
+    observed = spectrum.bins.get(148, 0.0) / spectrum.bins[147]
+    ratio_si2 = m1_over_m(*SI2)
+    record = {
         "observed": observed,
         "ratio_si2": ratio_si2,
-        "ratio_competitor": ratio_best,
         "err_si2": abs(observed - ratio_si2),
-        "err_competitor": abs(observed - ratio_best),
-        "si2_closer": bool(abs(observed - ratio_si2) < abs(observed - ratio_best)),
     }
+    for tag, competitors in (("pool", pool_competitors), ("exact", exact_competitors)):
+        error = closest_ratio_error(competitors or {}, observed)
+        record[f"err_{tag}"] = error
+        record[f"si2_closer_{tag}"] = None if error is None else bool(record["err_si2"] < error)
+    return record
+
+
+def pool_competitors(table: Channels, mol: Chem.Mol) -> dict[tuple, float]:
+    """Competitors at 147 among the valid channels of the 0-2-cut pool (excluding C5H15OSi2)."""
+    found = {}
+    for atoms, valid in table.valid.items():
+        for shift in H_SHIFTS[valid]:
+            if table.mass[atoms] + int(shift) == COMPETITOR_MZ:
+                key = (table.composition[atoms], own_hydrogens(mol, atoms) + int(shift))
+                if key != SI2:
+                    found[key] = m1_over_m(*key)
+    return found
 
 
 # 7. Summary ----------------------------------------------------------------------------------
@@ -709,7 +807,37 @@ def paired(group: pd.DataFrame, rule_col: str, null_col: str, seed: int) -> dict
     }
 
 
-def summarize(rows: pd.DataFrame, census: pd.DataFrame, seed: int) -> pd.DataFrame:
+def isotope_stats(details: pd.Series, tag: str, seed: int) -> dict:
+    """(e) statistics of one competitor arm; one JSON list of per-spectrum records per molecule.
+
+    The share is the mean over molecules of the per-molecule fraction of spectra where C5H15OSi2
+    is closer to the observed 148/147; spectra without that arm's competitor are skipped.
+    """
+    per_mol, spectra = [], []
+    for blob in details:
+        usable = [d for d in json.loads(blob) if d[f"si2_closer_{tag}"] is not None]
+        if usable:
+            per_mol.append(np.mean([d[f"si2_closer_{tag}"] for d in usable]))
+            spectra.extend(usable)
+    if not spectra:
+        return {"molecules": 0, "spectra": 0}
+    values = np.array(per_mol)
+    lo, hi = bootstrap_ci(values, seed)
+    return {
+        "molecules": len(values),
+        "spectra": len(spectra),
+        "si2_closer_mean": float(values.mean()),
+        "si2_closer_lo": lo,
+        "si2_closer_hi": hi,
+        "si2_closer_spectra": float(np.mean([d[f"si2_closer_{tag}"] for d in spectra])),
+        "median_abs_err_si2": float(np.median([d["err_si2"] for d in spectra])),
+        "median_abs_err_competitor": float(np.median([d[f"err_{tag}"] for d in spectra])),
+    }
+
+
+def summarize(
+    rows: pd.DataFrame, census: pd.DataFrame, control: pd.DataFrame, seed: int
+) -> pd.DataFrame:
     """Per rule and fold table of all metrics plus the pre-registered admission decision."""
     out = []
     for rule in [c.rule.name for c in build_contexts(gate_rules())]:
@@ -759,29 +887,14 @@ def summarize(rows: pd.DataFrame, census: pd.DataFrame, seed: int) -> pd.DataFra
                 item["null_capped_molecules"] = int(peaks.null_capped.sum())
             if rule == T1 and fold != "test":
                 e = scored[scored.e_spectra.fillna(0) > 0]
-                item["e_molecules"] = len(e)
-                item["e_spectra"] = int(e.e_spectra.sum()) if len(e) else 0
-                if len(e):
-                    spectra = [d for blob in e.e_detail for d in json.loads(blob)]
-                    values = e.e_si2_closer.to_numpy()
-                    lo, hi = bootstrap_ci(values, seed)
-                    item.update(
-                        {
-                            "e_si2_closer_mean": float(values.mean()),
-                            "e_si2_closer_lo": lo,
-                            "e_si2_closer_hi": hi,
-                            "e_si2_closer_spectra": float(
-                                np.mean([d["si2_closer"] for d in spectra])
-                            ),
-                            "e_median_abs_err_si2": float(
-                                np.median([d["err_si2"] for d in spectra])
-                            ),
-                            "e_median_abs_err_competitor": float(
-                                np.median([d["err_competitor"] for d in spectra])
-                            ),
-                            "e_no_competitor_spectra": int(e.e_no_competitor.sum()),
-                        }
-                    )
+                item["e_exact_capped_molecules"] = int(e.e_exact_capped.sum())
+                ctrl = control[control.split.isin(folds)]
+                item["ctrl_exact_capped_molecules"] = int(ctrl.e_exact_capped.sum())
+                for prefix, frame in (("e", e), ("ctrl", ctrl)):
+                    for tag in ("exact", "pool"):
+                        stats = isotope_stats(frame.e_detail, tag, seed)
+                        name = prefix if tag == "exact" else f"{prefix}_pool"
+                        item.update({f"{name}_{k}": v for k, v in stats.items()})
             out.append(item)
     summary = pd.DataFrame(out)
     decisions = [decide(row, summary) for _, row in summary.iterrows()]
@@ -791,7 +904,12 @@ def summarize(rows: pd.DataFrame, census: pd.DataFrame, seed: int) -> pd.DataFra
 
 
 def decide(row: pd.Series, summary: pd.DataFrame) -> tuple[str, str]:
-    """Pre-registered rule, read on train+val: (b) AND ((c) OR ((d) AND, for T1, (e))) AND >=20 val molecules."""
+    """Decision rule, read on train+val, with >=20 val molecules.
+
+    Other rules: (b) AND ((c) OR (d)). T1: (b) AND ((c) OR (e)); its (d) is descriptive only
+    because the topology null does not preserve Si (147 is a generic ion in TMS spectra). (e) needs
+    the exhaustive-competitor share's lower bound above 0.5 and above the 1-TMS control's upper bound.
+    """
     if row.fold != "train+val":
         return "", ""
     val = summary[(summary.rule == row.rule) & (summary.fold == "val")].iloc[0]
@@ -799,11 +917,16 @@ def decide(row: pd.Series, summary: pd.DataFrame) -> tuple[str, str]:
     b = row.b_all_unreachable >= 0.95
     c = row.get("c_lo", np.nan) > 0
     d = row.get("d_lit_l1_lo", np.nan) > 0
-    e = row.get("e_si2_closer_lo", np.nan) > 0.5 if row.rule == T1 else True
-    ok = bool(b and (c or (d and e)) and n_val >= 20)
+    if row.rule == T1:
+        e_lo = row.get("e_si2_closer_lo", np.nan)
+        e = bool(e_lo > 0.5 and e_lo > row.get("ctrl_si2_closer_hi", np.nan))
+        ok = bool(b and (c or e) and n_val >= 20)
+        tail = f"d=descriptive ({d}); e={e} (ctrl hi {row.get('ctrl_si2_closer_hi', np.nan):.3f})"
+    else:
+        ok = bool(b and (c or d) and n_val >= 20)
+        tail = f"d={d}"
     reason = (
-        f"b={b} (all-unreachable {row.b_all_unreachable:.3f}); c={c}; d={d}; "
-        f"e={e if row.rule == T1 else 'n/a'}; val_molecules={n_val}"
+        f"b={b} (all-unreachable {row.b_all_unreachable:.3f}); c={c}; {tail}; val_molecules={n_val}"
     )
     return ("yes" if ok else "no"), reason
 
@@ -939,7 +1062,24 @@ def main() -> None:
                     len(tasks),
                     (datetime.now(UTC) - started).total_seconds() / 60,
                 )
-    rows = pd.DataFrame(out).sort_values(["rule", "mol_id"]).reset_index(drop=True)
+        # 4b. (e) control: one-TMS molecules of train and val, scored like the T1 spectra.
+        control_tasks = [
+            (
+                int(i),
+                mol_df.loc[i, "mol"],
+                mol_split[i],
+                list(peaks.get_group(i)[["spec_id", "peaks"]].itertuples(index=False, name=None)),
+            )
+            for i in mol_ids
+            if mol_split[i] != "test" and mol_df.loc[i, "mol"].HasSubstructMatch(TMS_GROUP)
+        ]
+        LOGGER.info("Scoring %d candidate control molecules", len(control_tasks))
+        control = [
+            r
+            for r in pool.imap_unordered(control_molecule, control_tasks, chunksize=4)
+            if r is not None
+        ]
+        rows = pd.DataFrame(out).sort_values(["rule", "mol_id"]).reset_index(drop=True)
     rows.drop(columns=["e_detail"]).to_csv(args.out_dp / "rows.csv", index=False)
     detail = [
         {"mol_id": r.mol_id, "split": r.split, **d}
@@ -947,9 +1087,17 @@ def main() -> None:
         for d in json.loads(r.e_detail)
     ]
     pd.DataFrame(detail).to_csv(args.out_dp / "t1_isotope_spectra.csv", index=False)
+    control = pd.DataFrame(control).sort_values("mol_id").reset_index(drop=True)
+    pd.DataFrame(
+        [
+            {"mol_id": r.mol_id, "split": r.split, **d}
+            for r in control.itertuples()
+            for d in json.loads(r.e_detail)
+        ]
+    ).to_csv(args.out_dp / "t1_control_isotope_spectra.csv", index=False)
 
     # 5. Summary and decision.
-    summary = summarize(rows, census, args.seed)
+    summary = summarize(rows, census, control, args.seed)
     summary.to_csv(args.out_dp / "summary.csv", index=False)
     provenance["finished_utc"] = datetime.now(UTC).isoformat()
     (args.out_dp / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")

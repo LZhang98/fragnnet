@@ -277,6 +277,19 @@ def test_t1_needs_two_silyl_groups():
     assert _matches_of("CCCCO", T1) == []
 
 
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "O=P(O[Si](C)(C)C)(O[Si](C)(C)C)O[Si](C)(C)C",  # shared P anchor
+        "CC(O[Si](C)(C)C)(O[Si](C)(C)C)C",  # shared geminal C anchor
+        "C[Si](C)(C)N(C)[Si](C)(C)C",  # no O donor
+    ],
+)
+def test_t1_known_gap_shared_anchor_and_no_o_donor(smiles):
+    """Documented, accepted gap: the two silyl groups need distinct anchors and an O donor."""
+    assert _matches_of(smiles, T1) == []
+
+
 def test_t1_filter_keeps_only_m_plus():
     full = rr.build_rewire_matches(_mol(GLYCEROL_3TMS), max_matches_per_rule=32)
     n = rr.MASSTER_NUM_REWIRE_RULES

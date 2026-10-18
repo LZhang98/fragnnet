@@ -91,8 +91,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079
   over e0 (one seed). The gap is intensity allocation (support oracle 0.996).
-- **Proposed:** [EI SMARTS plan](plans/masster/masster_ei_smarts_plan.md), the TMS Si–O–Si ion (m/z 147.0656)
-  as an `[M]+` rewire rule; awaiting three user decisions, no code yet.
+- **EI SMARTS: CLOSED NULL** ([gate](plans/masster/masster_ei_smarts_plan.md#nist23-gate-2026-10-18)): no rule
+  admitted on NIST23; the user declined Fir arms for T1. Code and configs are kept, off by default.
 - **Next:** record provenance, check full-attention batch-512 memory, run e2/e3/e4, then a
   matched RASSP comparison.
 

@@ -9,13 +9,16 @@ from scripts.debug.ei.debug_masster_ei_nominal_coverage import pool_sets
 from scripts.debug.ei.debug_masster_ei_tms_rewire_gate import (
     CANDIDATES,
     MAX_MATCHES,
+    SI2,
     RewireChannelCalculator,
     bootstrap_ci,
     boundary_count,
     build_contexts,
     channel_table,
+    competitor_ratios,
     composition_key,
     edited_products,
+    exact_competitors,
     exact_reach,
     gate_rules,
     isotope_consistency,
@@ -23,6 +26,7 @@ from scripts.debug.ei.debug_masster_ei_tms_rewire_gate import (
     m1_over_m,
     null_matches,
     own_hydrogens,
+    pool_competitors,
     prepare_spectrum,
     real_matches,
 )
@@ -140,20 +144,50 @@ def test_isotope_ratios_distinguish_si2_from_the_reachable_composition():
     assert m1_over_m((("C", 6), ("O", 2), ("Si", 1)), 15) == pytest.approx(0.118, abs=0.001)
 
 
-def test_isotope_consistency_prefers_si2_for_a_si2_like_ratio():
+def glycerol_competitors():
     mol = Chem.MolFromSmiles(GLYCEROL)
-    _, products = whole_products(mol, T1)
     calc = RewireChannelCalculator(("[M]+",))
     sets = pool_sets(mol)
-    base = {"sets": sets, "table": channel_table(mol, calc, dict.fromkeys(sets, 0), bonds_of(mol))}
-    peaks = [[73.0, 100.0], [147.0, 50.0], [148.0, 50.0 * 0.16]]
-    result = isotope_consistency(mol, prepare_spectrum(peaks), base, products)
+    table = channel_table(mol, calc, dict.fromkeys(sets, 0), bonds_of(mol))
+    return mol, pool_competitors(table, mol), exact_competitors(mol)
+
+
+def test_exact_competitors_contain_the_pool_and_the_reachable_composition():
+    _, pool, exact = glycerol_competitors()
+    assert SI2 not in exact  # unreachable by connected sets on glycerol 3TMS
+    assert set(pool) <= set(exact)
+    assert len(exact) > len(pool)
+    c6h15o2si = ((("C", 6), ("O", 2), ("Si", 1)), 15)
+    assert exact[c6h15o2si] == pytest.approx(0.118, abs=0.001)
+
+
+def test_competitor_search_returns_none_past_its_cap():
+    mol = Chem.MolFromSmiles(GLYCEROL)
+    assert competitor_ratios(mol, 147, cap=5) is None
+    assert competitor_ratios(mol, 147, cap=10**6) is not None
+
+
+def test_isotope_consistency_prefers_si2_for_a_si2_like_ratio():
+    _, pool, exact = glycerol_competitors()
+    spectrum = prepare_spectrum([[73.0, 100.0], [147.0, 50.0], [148.0, 50.0 * 0.16]])
+    result = isotope_consistency(spectrum, pool, exact)
     assert result["observed"] == pytest.approx(0.16)
     assert result["ratio_si2"] == pytest.approx(0.158, abs=0.001)
-    assert result["si2_closer"]
-    assert result["err_si2"] < result["err_competitor"]
-    peaks = [[73.0, 100.0], [147.0, 50.0], [148.0, 50.0 * 0.118]]
-    assert not isotope_consistency(mol, prepare_spectrum(peaks), base, products)["si2_closer"]
+    assert result["si2_closer_exact"] and result["si2_closer_pool"]
+    assert result["err_si2"] < result["err_exact"]
+    spectrum = prepare_spectrum([[73.0, 100.0], [147.0, 50.0], [148.0, 50.0 * 0.118]])
+    result = isotope_consistency(spectrum, pool, exact)
+    assert not result["si2_closer_exact"]
+
+
+def test_exact_arm_is_none_when_capped_and_exact_is_the_stricter_arm():
+    _, pool, exact = glycerol_competitors()
+    spectrum = prepare_spectrum([[73.0, 100.0], [147.0, 50.0], [148.0, 50.0 * 0.15]])
+    capped = isotope_consistency(spectrum, pool, None)
+    assert capped["si2_closer_exact"] is None and capped["err_exact"] is None
+    full = isotope_consistency(spectrum, pool, exact)
+    # More competitors can only move the nearest competitor closer to the observation.
+    assert full["err_exact"] <= full["err_pool"]
 
 
 def test_bootstrap_is_deterministic_and_brackets_the_mean():

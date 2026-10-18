@@ -198,6 +198,11 @@ REWIRE_RULES: tuple[RewireRule, ...] = (
     # Si migrates onto the acceptor O and loses one methyl. Not reachable by bond cuts on glycerol 3TMS.
     # Every TMS atom is mapped so a parent fragment must hold both whole groups (an unmapped methyl would
     # let a truncated parent yield a smaller spurious product); permutations collapse in the edit-key dedup.
+    # Known gap, accepted: the two silyl groups sit on distinct anchors (atoms 1 and 4), and the donor
+    # is an O. Tris-TMS phosphate and geminal bis(OTMS) (shared anchor), and N,N-bis(TMS) amines (no O
+    # donor) never match: 431 of 3,162 NIST23 EI molecules with >=2 O/N-TMS groups (90 shared-anchor
+    # O-TMS pairs, 119 N,N-bis(TMS)). The SMARTS is in the CRC32 hash, so freezing it is a decision
+    # made before the first Fir arm; a shared-anchor variant would be a separate appended rule.
     # Harvey & Vouros 2019 https://doi.org/10.1002/mas.21590
     # Byun & Gross 1997 https://pubmed.ncbi.nlm.nih.gov/9008870/
     # Rontani & Aubert 2004 https://doi.org/10.1002/rcm.1567
