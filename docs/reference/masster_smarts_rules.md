@@ -386,6 +386,10 @@ remain unchanged. See the screen finding (removed 2026-10-18; `git show 95341fce
 for exact SMARTS scope, null controls, isotope collisions and limits. This closes the
 coverage screen only; it does not establish an intensity-model null.
 
+TMS rearrangements are planned in the [EI SMARTS plan](../plans/masster/masster_ei_smarts_plan.md)
+(2026-10-18, PROPOSED). Only the Si–O–Si ion at m/z 147 is unreachable by bond cuts, so it is the one build
+candidate, as an `[M]+` rewire rule. The two TMS backlog rows below remain backlog.
+
 ## Additional literature backlog
 
 These transformations are plausible MASSter rules but need more spectra, narrower

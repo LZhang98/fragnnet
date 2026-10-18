@@ -1,6 +1,6 @@
 # MASSter method
 
-> **Status:** REFERENCE · **Updated:** 2026-10-16
+> **Status:** REFERENCE · **Updated:** 2026-10-18
 > Chemically constrained probabilistic spectrum prediction: core cut-mask method, EI-MS extension, unique-fragment formulation, and comparison with FraGNNet.
 
 ## Overview
@@ -36,7 +36,8 @@ to assemble the predicted spectrum. The lower panel distinguishes spectral
 supervision of the intensity model from coverage supervision of the proposal model.
 Molecular structures and spectra are schematic.*
 The [editable SVG](../figures/masster_architecture_editable.svg) is available for
-figure revisions.
+figure revisions; a [draw.io version](../figures/masster_architecture.drawio) has the
+same content with connected arrows and grouped drawings, so it is easier to edit.
 
 ## Molecular encoding and bond-cut proposals
 

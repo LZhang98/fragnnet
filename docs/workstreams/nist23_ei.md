@@ -26,6 +26,7 @@
 | H-shift width +/-6 (trained ablation) | OPEN | None until a trained-width ablation is wanted; keep +/-4 |
 | NEIMS baseline, EI library metrics (composite cosine, retrieval) | NOT BUILT | Build NEIMS on `nist23_ei_inchikey` at 1 Da |
 | Large-molecule errors | OPEN | Larger val sample with size/chemistry strata before changing candidates, H shift or SMARTS |
+| [EI SMARTS: TMS Si–O–Si rule](../plans/masster/masster_ei_smarts_plan.md) | PROPOSED | User decisions (G0-HR on Metabolome, tier-2 scope, run host), then `[M]+` in the rewire stage and gates G0-reach/G0-HR/G0b for `tms_siloxy_silylium` (m/z 147.0656) |
 
 ## Settled — read before re-proposing
 
@@ -46,6 +47,7 @@
 | [EI evaluation](../findings/masster/masster_ei_evaluation.md) | FINDING (2026-10-18, merged) | Four parts: NIST23 `e1` performance audit (Stein vs RASSP, support oracle); HR-EI raw audit; frozen `e1` on HR-EI; held-out `e5` on 962 HR-EI spectra split by `e1` training overlap (headline) |
 | [Exact isotopes and HR-EI exclusion](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED (2026-10-17) | Natural exact-mass output, conservative excluded split, and fresh e5 recipe |
 | [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
+| [Plan: EI SMARTS rules, TMS first](../plans/masster/masster_ei_smarts_plan.md) | PROPOSED (2026-10-18) | Literature, census and reachability: one build candidate (Si–O–Si 147 ion as an `[M]+` rewire rule), gates, e6 arms |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 
 ## HR-EI raw downloads (2026-10-16)
