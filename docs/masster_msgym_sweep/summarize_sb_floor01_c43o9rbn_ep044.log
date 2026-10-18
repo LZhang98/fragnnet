@@ -1,9 +1,0 @@
-2026-10-17 12:45:47,124 INFO sb_floor01_c43o9rbn_ep044: 20 files, 1657238 candidates, 9954 queries
-2026-10-17 12:46:46,405 INFO 
-                    label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
-sb_floor01_c43o9rbn_ep044        mspred_ent    all       9954 0.5167 0.8341  0.9515          0.4856          0.5485              0.5011              0.5337
-sb_floor01_c43o9rbn_ep044            loglik    all       9954 0.4767 0.8119  0.9467          0.4456          0.5085              0.4610              0.4932
-sb_floor01_c43o9rbn_ep044        loglik_cal    all       9954 0.5112 0.8370  0.9553          0.4793          0.5439              0.4955              0.5279
-sb_floor01_c43o9rbn_ep044      cos_sim_0.01    all       9954 0.3713 0.7200  0.9011          0.3465          0.3972              0.3553              0.3868
-sb_floor01_c43o9rbn_ep044 cos_sim_sqrt_0.01    all       9954 0.4687 0.8012  0.9382          0.4386          0.4995              0.4529              0.4854
-sb_floor01_c43o9rbn_ep044           cos_hun    all       9954 0.3776 0.7306  0.9067          0.3529          0.4039              0.3618              0.3929

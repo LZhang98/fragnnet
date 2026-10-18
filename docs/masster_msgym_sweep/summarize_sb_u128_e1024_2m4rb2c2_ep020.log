@@ -1,9 +1,0 @@
-2026-10-17 12:45:40,347 INFO sb_u128_e1024_2m4rb2c2_ep020: 20 files, 1657238 candidates, 9954 queries
-2026-10-17 12:46:39,276 INFO 
-                       label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
-sb_u128_e1024_2m4rb2c2_ep020        mspred_ent    all       9954 0.5257 0.8475  0.9485          0.4943          0.5588              0.5097              0.5427
-sb_u128_e1024_2m4rb2c2_ep020            loglik    all       9954 0.4944 0.8392  0.9496          0.4627          0.5265              0.4784              0.5107
-sb_u128_e1024_2m4rb2c2_ep020        loglik_cal    all       9954 0.5370 0.8622  0.9637          0.5041          0.5697              0.5212              0.5534
-sb_u128_e1024_2m4rb2c2_ep020      cos_sim_0.01    all       9954 0.3609 0.7178  0.8931          0.3351          0.3873              0.3453              0.3765
-sb_u128_e1024_2m4rb2c2_ep020 cos_sim_sqrt_0.01    all       9954 0.4684 0.8116  0.9346          0.4368          0.4997              0.4525              0.4852
-sb_u128_e1024_2m4rb2c2_ep020           cos_hun    all       9954 0.3682 0.7316  0.8971          0.3424          0.3947              0.3527              0.3836

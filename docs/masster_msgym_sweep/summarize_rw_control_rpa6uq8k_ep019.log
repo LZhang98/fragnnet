@@ -1,9 +1,0 @@
-2026-10-17 13:02:59,172 INFO rw_control_rpa6uq8k_ep019: 20 files, 1657238 candidates, 9954 queries
-2026-10-17 13:03:56,593 INFO 
-                    label             score subset  n_queries  hit@1  hit@5  hit@20  hit@1_mol95_lo  hit@1_mol95_hi  hit@1_mspred999_lo  hit@1_mspred999_hi
-rw_control_rpa6uq8k_ep019        mspred_ent    all       9954 0.5193 0.8538  0.9558          0.4855          0.5532              0.5035              0.5361
-rw_control_rpa6uq8k_ep019            loglik    all       9954 0.5088 0.8481  0.9574          0.4757          0.5438              0.4928              0.5256
-rw_control_rpa6uq8k_ep019        loglik_cal    all       9954 0.5549 0.8758  0.9697          0.5211          0.5897              0.5390              0.5708
-rw_control_rpa6uq8k_ep019      cos_sim_0.01    all       9954 0.3694 0.7211  0.9001          0.3438          0.3967              0.3537              0.3849
-rw_control_rpa6uq8k_ep019 cos_sim_sqrt_0.01    all       9954 0.4746 0.8182  0.9422          0.4437          0.5077              0.4590              0.4912
-rw_control_rpa6uq8k_ep019           cos_hun    all       9954 0.3796 0.7319  0.9028          0.3538          0.4072              0.3638              0.3947
