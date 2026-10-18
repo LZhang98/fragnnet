@@ -6,7 +6,8 @@ Steps (run from the repository root; findings in ``docs/findings/casmi2026_halog
    One row per (dataset, 2D InChIKey block) with SMILES, spectrum count and Br/Cl/I flags; optional
    structure-only sets (HMDB, ``--extra``) and the Spectraverse per-molecule library sources.
 2. ``plot_umap.py`` (``umap-viz``: umap-learn 0.5.7; ``FRAGNNET-GPU`` has no UMAP). Fits one joint
-   UMAP, draws the per-dataset and halogen figures, saves coordinates and ``umap_model.pkl``.
+   UMAP of the MS/MS datasets, draws the per-dataset and HMDB / NP Atlas overlap figures, saves
+   coordinates and ``umap_model.pkl``.
 3. ``nn_fit.py``: nearest-molecule similarity of one dataset (HMDB, NP Atlas) to each MS/MS dataset.
 4. ``project.py``: places such a dataset on a fitted map with ``reducer.transform``.
 5. ``open_vs_nist.py``: what open MS/MS data covers of NIST20 ∪ NIST23 HR.
@@ -35,7 +36,6 @@ ORDER = [*MSMS_REFS, NP_PROXY, "HMDB"]
 DATASET_COLORS = dict(
     zip(ORDER, ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"])
 )
-HALOGEN_COLORS = {"Cl": "#2a78d6", "Br": "#eb6834", "I": "#1baf7a"}  # reference palette slots 1-3
 GREY = "#e4e3de"
 DATASET_GREY = "#9a998f"
 INK, MUTED = "#1a1a19", "#6b6a63"
@@ -52,6 +52,16 @@ SIMILARITY_BINS = [
     (0.4, 0.7, "related 0.4–0.7", "#eda100"),
     (0.0, 0.4, "no analogue <0.4", "#e34948"),
 ]
+
+
+def with_spectra(mols: pd.DataFrame) -> pd.DataFrame:
+    """The MS/MS datasets of a ``collect_mols.py`` table: drops structure-only sets (HMDB, ``--extra``).
+
+    They have no spectra, stay out of the map fit (a joint fit with HMDB fails spectral
+    initialisation) and never count as open MS/MS data; ``project.py`` places them instead.
+    """
+    spectra = mols.groupby("dataset")["n_spectra"].sum()
+    return mols[mols["dataset"].isin(spectra[spectra > 0].index)]
 
 
 def slug(name: str) -> str:

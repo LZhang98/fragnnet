@@ -229,6 +229,7 @@ bootstrap:
 
 Artifacts are in `output/msgym_retrieval/formula_test/`: `run_f44tzxoc_2026_10_13.log`,
 `run_pow075_rerun_2026_10_13.log`, `summary_<ckpt stem>.csv`, `compare_f44tzxoc_pow075.csv`,
-and `shard_NNN/<ckpt stem>/` (predictions and scores).
+and `shard_NNN/<ckpt stem>/` (predictions and scores; the `pow075` shard outputs were deleted
+2026-10-17, `f44tzxoc` remains).
 The 2026-10-07 per-candidate outputs of `wd10` and `ll04i00m` in that directory were deleted
 by 2026-10-13 01:03; only `pow075` was regenerated.

@@ -114,7 +114,8 @@ All in `output/msgym_retrieval/formula_test/`:
 - `run_chain.sh` and `run_chain.log`: the three runs.
 - `summary_<ckpt stem>.csv`: per-checkpoint hit@k with intervals.
 - `compare_wd10_pow075_ll04.csv`: paired comparisons (`scripts/eval/summarize_retrieval.py --compare`).
-- `shard_NNN/<ckpt stem>/`: predictions (kept for `wd10`, `pow075`; deleted for `ll04i00m`) and scores.
+- `shard_NNN/<ckpt stem>/`: predictions and scores. All deleted: `wd10` and `ll04i00m` by
+  2026-10-13; `pow075` (formula and mass test) on 2026-10-17. Regenerate from the checkpoint.
 - Checkpoints: `saved_ckpts/msgym/8afoui7e_wd10_ep050.ckpt`, `saved_ckpts/msgym/q3oxbpgx_pow075_ep055.ckpt`.
 - A parallel session wrote `compare_vs_glacier.py` and `compare_own_best.py` (with CSVs) in the
   same directory, comparing these checkpoints with GLACIER's released checkpoint; not part of

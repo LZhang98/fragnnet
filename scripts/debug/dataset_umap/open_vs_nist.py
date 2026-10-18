@@ -6,14 +6,15 @@ NIST23 HR molecule, the nearest open neighbour (Morgan r=2, 2048 bits, Tanimoto)
 data has the same or a close analogue. The NP proxy is scored against open and open + NIST.
 NIST molecules are drawn on the joint UMAP of ``plot_umap.py``, coloured by that similarity.
 
-Runs in the ``umap-viz`` env; reads ``collect_mols.py`` output, CASMI train and the UMAP coordinates.
+Runs in the ``umap-viz`` env; reads ``collect_mols.py`` output (structure-only sets ignored), CASMI
+train and the UMAP coordinates.
 
 Usage (from the repository root):
     conda run -n umap-viz python scripts/debug/dataset_umap/open_vs_nist.py \
         --umap_dp output/dataset_umap_2026_10_16 --workers 10
-    # Re-plot saved similarities on another map (e.g. the one fitted with HMDB):
+    # Re-plot saved similarities (nist_nn_open.parquet in --nn_dp) on the map in --umap_dp:
     conda run -n umap-viz python scripts/debug/dataset_umap/open_vs_nist.py \
-        --umap_dp output/dataset_umap_hmdb_2026_10_17 --nn_dp output/dataset_umap_2026_10_16
+        --umap_dp output/dataset_umap_2026_10_16 --nn_dp output/dataset_umap_2026_10_16
 """
 
 import argparse
@@ -43,6 +44,7 @@ from common import (  # noqa: E402
     similarity_bin,
     style,
     view_limits,
+    with_spectra,
 )
 
 PROXY_LIB = "enveda-np-examples"
@@ -67,7 +69,7 @@ def main() -> None:
         plot(args.umap_dp, pd.read_parquet(args.nn_dp / "nist_nn_open.parquet"))
         return
 
-    mols = pd.read_parquet(args.umap_dp / "mols.parquet")
+    mols = with_spectra(pd.read_parquet(args.umap_dp / "mols.parquet"))
     casmi = pq.read_table(args.casmi_train_fp, columns=["ingest_lib", "normalized_smiles"]).to_pandas()
     casmi = casmi.drop_duplicates()
     # CASMI libraries not already in mols.parquet; 2D key recomputed with RDKit as collect_mols does.
@@ -129,18 +131,12 @@ def plot(umap_dp: Path, nist_u: pd.DataFrame) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(16, 8.4), facecolor="white")
     for ax in axes:
         base_map(ax, coords, lims)
-    # HMDB has no spectra: drawn as its own layer, never counted as open MS/MS data.
-    open_color, hmdb_color = DATASET_COLORS["NIST20 HR"], DATASET_COLORS["HMDB"]
-    open_pts = sampled[~sampled["dataset"].isin(NIST + [NP_PROXY, "HMDB"])].drop_duplicates("ik14")
-    hmdb_pts = sampled[sampled["dataset"] == "HMDB"]
-    if len(hmdb_pts):
-        axes[0].scatter(hmdb_pts["x"], hmdb_pts["y"], s=0.3, c=hmdb_color, alpha=0.35, linewidths=0, rasterized=True)
+    open_color = DATASET_COLORS["NIST20 HR"]
+    open_pts = sampled[~sampled["dataset"].isin(NIST + [NP_PROXY])].drop_duplicates("ik14")
     axes[0].scatter(open_pts["x"], open_pts["y"], s=0.3, c=open_color, alpha=0.5, linewidths=0, rasterized=True)
     proxy_pts = sampled[sampled["dataset"] == NP_PROXY]
     axes[0].scatter(proxy_pts["x"], proxy_pts["y"], s=10, c=DATASET_COLORS[NP_PROXY], linewidths=0, label=NP_PROXY)
     axes[0].scatter([], [], s=30, c=open_color, label="Open data (MSGYM, Spectraverse, MSnLib, Enveda-180)")
-    if len(hmdb_pts):
-        axes[0].scatter([], [], s=30, c=hmdb_color, label="HMDB (structures only, no spectra; under open data)")
     axes[0].legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
     style(axes[0], "Open data only", "Sampled molecules on the joint map")
     # Bins come from the similarity, not the stored label, so older nist_nn_open.parquet files re-plot.

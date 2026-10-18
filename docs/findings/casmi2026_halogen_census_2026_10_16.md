@@ -81,18 +81,27 @@ The pipeline's step order, environments and shared helpers are in
 [`collect_mols.py`](../../scripts/debug/dataset_umap/collect_mols.py) (`FRAGNNET-GPU`) and
 [`plot_umap.py`](../../scripts/debug/dataset_umap/plot_umap.py) (separate `umap-viz` conda env:
 umap-learn 0.5.7, scikit-learn 1.5; `FRAGNNET-GPU` has no UMAP) fit one joint UMAP (Morgan r=2,
-2048 bits, Jaccard) on up to 25,000 molecules per dataset (103,322 unique). The sample is seeded and
-the fit is not. Figures `umap_by_dataset.png` and `umap_halogens_by_dataset.png` are in
-`output/dataset_umap_2026_10_16/`, with the coordinates.
+2048 bits, Jaccard) on up to 25,000 molecules per MS/MS dataset (103,322 unique). The sample is seeded
+and the fit is not. Every output of this section and the next two is in `output/dataset_umap_2026_10_16/`
+(consolidated 2026-10-17): one `mols.parquet` with the MS/MS datasets, HMDB and NP Atlas, one map
+(coordinates, `umap_model.pkl`), `umap_by_dataset.png`, `umap_overlap_hmdb_npatlas_by_dataset.png` with
+`structure_overlap.json`, and the similarity, projection and coverage outputs. The map is the
+2026-10-17 MS/MS-only refit (same sample) that HMDB and NP Atlas were projected onto; the first
+2026-10-16 fit had no saved model and was dropped, so the positions below describe the refit.
 
 Molecules, all rows (2D InChIKey block): NIST20 HR 26,800; NIST23 HR 44,831; MassSpecGym 16,957;
 Spectraverse 44,234; MSnLib 46,821; Enveda-180 182,941; MSnLib + Enveda-180 227,487 (6,489 in NIST20 ∪ NIST23 HR).
 
-- Enveda-180 and MSnLib fill the lower block of the map. NIST20/23 are densest in the upper right,
-  and a large part of the lower block has little NIST coverage. MassSpecGym and Spectraverse span both.
-- The NP proxy sits mostly in the upper arms and outlying clusters, where Enveda-180 is nearly absent.
-- NIST20/23 Br and I carriers cluster in the upper-right region. Enveda-180 and MSnLib Br carriers
-  spread through the lower block, so they add Br chemistry in a different region, not more of the same.
+- Enveda-180 fills the central and lower core of the main cloud, and much of that core has little NIST
+  coverage. NIST20/23 are densest in the upper part of the cloud and in the outlying arms (the left
+  islands and the lower-right arm). MSnLib, MassSpecGym and Spectraverse span the cloud.
+- The NP proxy sits mostly in the left island, the lower-right arm and the cloud's rim, where
+  Enveda-180 is absent.
+- Overlap with HMDB and NP Atlas (same 2D key, all molecules): HMDB holds 26% of NIST20 HR, 17% NIST23
+  HR, 29% MassSpecGym, 23% Spectraverse, 10% MSnLib, 87% of the NP proxy and 6 Enveda-180 molecules;
+  NP Atlas holds 2-3% of every library, 13% of the NP proxy and 1 Enveda-180 molecule. HMDB overlap
+  sits in the upper cloud and the left islands; NP Atlas overlap concentrates in the lower-right arm,
+  the arm that also holds most NP-proxy molecules.
 
 ## Without NIST, and where HMDB sits (2026-10-17)
 
@@ -124,14 +133,15 @@ with a neighbour ≥ 0.7:
 polyunsaturated chains, so "other" still holds lipids. Lipid series share most fingerprint bits,
 so ≥ 0.7 overstates their coverage. Enveda-180's median nearest neighbour to HMDB is 0.23
 (spot-checked against an independent 40k-molecule recomputation; NIST20 to Enveda-180 is 0.31): it is
-a separate chemical space from human metabolites. Outputs are in `output/dataset_umap_hmdb_2026_10_17/`.
+a separate chemical space from human metabolites. Outputs (`hmdb_nn.parquet`, `hmdb_fit.json`) are in
+`output/dataset_umap_2026_10_16/`.
 
-**HMDB on the map.** A joint UMAP fit with HMDB (`output/dataset_umap_hmdb_2026_10_17/`) failed
+**HMDB on the map.** A joint UMAP fit with HMDB (outputs not kept) failed
 spectral initialisation, because HMDB lipid series form disconnected components. It took 64 min and
 scattered HMDB as islands, so it is not usable. Instead
 [`project.py`](../../scripts/debug/dataset_umap/project.py) projects 24,990 HMDB molecules
 (including the 10,000 similarity sample) onto the MS/MS-only map with `reducer.transform`
-(`output/dataset_umap_proj_2026_10_17/umap_hmdb_projected.png`). 76% land on a few small lipid
+(`output/dataset_umap_2026_10_16/umap_hmdb_projected.png`). 76% land on a few small lipid
 islands, mostly Spectraverse with a few NIST molecules. One island of 88 training molecules
 (cardiolipin and phospholipid-like) receives 10,761 HMDB molecules. 89% of off-cloud HMDB is
 long-chain; of the 24% inside the main cloud, 18% is. HMDB's lipid bulk therefore sits on a
@@ -140,8 +150,8 @@ handful of library lipids, and Enveda-180 touches none of it.
 **NP Atlas** (microbial natural products, `data/raw/npatlas/NPAtlas_download.tsv` from npatlas.org,
 36,454 compounds, 33,497 2D keys; 63% fungal, 37% bacterial). It went through the same pipeline
 (`collect_mols.py --extra`, `nn_fit.py --dataset "NP Atlas"`, `project.py --dataset "NP Atlas"`;
-outputs `output/dataset_umap_npatlas_2026_10_17/`,
-`output/dataset_umap_proj_2026_10_17/umap_npatlas_projected.png`). 1,922 molecules (5.7%) have a
+outputs `npatlas_nn.parquet`, `npatlas_fit.json` and `umap_npatlas_projected.png` in
+`output/dataset_umap_2026_10_16/`). 1,922 molecules (5.7%) have a
 spectrum in any dataset here; Spectraverse holds 1,471 of them. In a 10,000-molecule sample,
 nearest MS/MS neighbour ≥ 0.7: all datasets 0.19, Spectraverse 0.16, NIST20 ∪ 23 0.12, MSnLib 0.08,
 Enveda-180 0.000; < 0.4 for 32%. Median nearest neighbour 0.48. NP Atlas projects onto the
@@ -152,7 +162,7 @@ microbial natural products are largely uncovered by every library, including NIS
 ## Candidate open training set: Spectraverse + MSnLib + Enveda-180 (2026-10-17)
 
 [`combo_coverage.py`](../../scripts/debug/dataset_umap/combo_coverage.py); output
-`output/dataset_umap_hmdb_2026_10_17/combo_coverage.json`. Spectraverse already holds 15,569 MSnLib
+`output/dataset_umap_2026_10_16/combo_coverage.json`. Spectraverse already holds 15,569 MSnLib
 molecules (its `MSnLib` source). Only 1,330 Spectraverse molecules are MS-DIAL-only, so dropping
 MS-DIAL changes every coverage number below by under 0.01.
 

@@ -1,9 +1,12 @@
 """Joint chemical-space UMAP of the MS/MS datasets, one panel per dataset.
 
 Fits ONE UMAP (Morgan radius 2, 2048 bits, Jaccard) on a molecule sample drawn so that every
-dataset contributes up to ``--per_dataset`` molecules, so all panels share coordinates. Each
-panel shows that dataset's sampled molecules over the grey union; a second figure marks the
-Br, Cl and I carriers per dataset. Input is ``collect_mols.py`` output. Runs in the
+MS/MS dataset contributes up to ``--per_dataset`` molecules, so all panels share coordinates.
+Structure-only sets in the input (HMDB, NP Atlas) are left out of the fit; ``project.py`` places
+them. Each panel shows that dataset's sampled molecules over the grey union. A second figure
+marks, per dataset, the molecules that are also in a structure-only set (same 2D InChIKey block),
+with the counts over all molecules in ``structure_overlap.json``. Input is ``collect_mols.py``
+output. Runs in the
 ``umap-viz`` conda env (umap-learn 0.5.7, RDKit 2024.09); ``FRAGNNET-GPU`` has no UMAP. Saves
 ``umap_model.pkl`` for ``project.py``.
 
@@ -33,15 +36,16 @@ from common import (  # noqa: E402
     DATASET_COLORS,
     DATASET_GREY,
     FP_BITS,
-    HALOGEN_COLORS,
     INK,
     ORDER,
     base_map,
     fingerprints,
     in_view,
     note,
+    slug,
     style,
     view_limits,
+    with_spectra,
 )
 
 
@@ -59,8 +63,12 @@ def main() -> None:
     args = ap.parse_args()
     args.out_dp.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_parquet(args.mols_fp)
-    totals = df.groupby("dataset").agg(molecules=("ik14", "size"), Br=("Br", "sum"), Cl=("Cl", "sum"), I=("I", "sum"))
+    all_mols = pd.read_parquet(args.mols_fp)
+    df = with_spectra(all_mols)
+    totals = df.groupby("dataset").agg(molecules=("ik14", "size"))
+    # Structure-only sets (no spectra), in figure order then by name: the overlap figure's references.
+    refs = sorted(set(all_mols["dataset"]) - set(df["dataset"]), key=lambda d: (d not in ORDER, ORDER.index(d) if d in ORDER else 0, d))
+    ref_keys = {r: set(all_mols.loc[all_mols["dataset"] == r, "ik14"]) for r in refs}
     sampled = pd.concat(
         g.sample(n=min(len(g), args.per_dataset), random_state=args.seed) for _, g in df.groupby("dataset")
     )
@@ -150,31 +158,51 @@ def main() -> None:
     fig.savefig(args.out_dp / "umap_all_datasets.png", dpi=150)
     plt.close(fig)
 
-    # Figure 2: halogen carriers per dataset (Cl first so rarer Br and I draw on top).
-    fig, axes = grid()
-    for ax, name in zip(axes, datasets):
-        sub = sampled[sampled["dataset"] == name]
-        parts = []
-        ax.scatter(sub["x"], sub["y"], s=0.2, c=DATASET_GREY, linewidths=0, rasterized=True)
-        for el in ("Cl", "Br", "I"):
-            hal = sub[sub[el]]
-            ax.scatter(hal["x"], hal["y"], s=1.0 if len(sub) >= 1000 else 8, c=HALOGEN_COLORS[el], alpha=0.8,
-                       linewidths=0, rasterized=True)
-            parts.append(f"{el} {int(totals.loc[name, el]):,}")
-        style(ax, name, "  ·  ".join(parts) + " molecules")
-    legend_ax = axes[len(datasets)]
-    style(legend_ax, "All datasets (light grey)", "Dark grey in each panel: that dataset's own molecules")
-    note(legend_ax, off_view)
-    for el, color in HALOGEN_COLORS.items():
-        legend_ax.scatter([], [], s=30, c=color, label={"Cl": "Cl carrier", "Br": "Br carrier", "I": "I carrier"}[el])
-    legend_ax.legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
-    for ax in axes[len(datasets) + 1:]:
-        ax.set_visible(False)
-    fig.suptitle("Halogen carriers by dataset (same joint UMAP; datasets over 25,000 molecules are subsampled)",
-                 x=0.01, ha="left", fontsize=13, color=INK)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(args.out_dp / "umap_halogens_by_dataset.png", dpi=150)
-    plt.close(fig)
+    # Figure 2: per dataset, its molecules that are also in a structure-only set (exact 2D key).
+    if refs:
+        overlap_report = {}
+        for name in datasets:
+            mol_keys = df.loc[df["dataset"] == name, "ik14"]
+            hits = pd.DataFrame({r: mol_keys.isin(ref_keys[r]) for r in refs})
+            overlap_report[name] = {"molecules": len(mol_keys), **{r: int(hits[r].sum()) for r in refs}}
+            if len(refs) > 1:
+                overlap_report[name][" and ".join(refs)] = int(hits.all(axis=1).sum())
+        (args.out_dp / "structure_overlap.json").write_text(json.dumps(overlap_report, indent=2, ensure_ascii=False))
+        # One colour per reference alone, plus one for molecules in several (reference palette slots 1-3).
+        categories = [(r, f"in {r} only", color) for r, color in zip(refs, ["#2a78d6", "#eb6834"])]
+        both = " and ".join(refs)
+        fig, axes = grid()
+        for ax, name in zip(axes, datasets):
+            sub = sampled[sampled["dataset"] == name]
+            hits = pd.DataFrame({r: sub["ik14"].isin(ref_keys[r]).to_numpy() for r in refs}, index=sub.index)
+            n_hits = hits.sum(axis=1)
+            ax.scatter(sub["x"], sub["y"], s=0.2, c=DATASET_GREY, linewidths=0, rasterized=True)
+            for r, _label, color in categories:
+                pts = sub[hits[r] & (n_hits == 1)]
+                ax.scatter(pts["x"], pts["y"], s=1.0 if len(sub) >= 1000 else 8, c=color, alpha=0.8, linewidths=0,
+                           rasterized=True)
+            if len(refs) > 1:
+                pts = sub[n_hits > 1]
+                ax.scatter(pts["x"], pts["y"], s=1.0 if len(sub) >= 1000 else 8, c="#1baf7a", alpha=0.8,
+                           linewidths=0, rasterized=True)
+            counts = overlap_report[name]
+            parts = [f"{r} {counts[r]:,} ({counts[r] / counts['molecules']:.0%})" for r in refs]
+            style(ax, name, "  ·  ".join(parts) + (f"  ·  both {counts[both]:,}" if len(refs) > 1 else ""))
+        legend_ax = axes[len(datasets)]
+        style(legend_ax, "All datasets (light grey)", "Dark grey in each panel: that dataset's own molecules")
+        note(legend_ax, off_view)
+        for _r, label, color in categories:
+            legend_ax.scatter([], [], s=30, c=color, label=label)
+        if len(refs) > 1:
+            legend_ax.scatter([], [], s=30, c="#1baf7a", label=f"in {both}")
+        legend_ax.legend(loc="upper left", frameon=False, fontsize=9, labelcolor=INK)
+        for ax in axes[len(datasets) + 1:]:
+            ax.set_visible(False)
+        fig.suptitle(f"Overlap with {' and '.join(refs)} by dataset (same 2D molecule; subtitle counts are all "
+                     f"molecules, the map shows the sample)", x=0.01, ha="left", fontsize=13, color=INK)
+        fig.tight_layout(rect=(0, 0, 1, 0.97))
+        fig.savefig(args.out_dp / f"umap_overlap_{'_'.join(slug(r) for r in refs)}_by_dataset.png", dpi=150)
+        plt.close(fig)
 
     (args.out_dp / "umap_run_info.json").write_text(json.dumps({
         **vars(args), "mols_fp": str(args.mols_fp), "out_dp": str(args.out_dp), "umap": umap.__version__,

@@ -702,6 +702,10 @@ The same stage on MassSpecGym, which is [M+H]+ only.
   Needs the Fir checkout at the code fix. Not submitted.
 - **Read:** paired per-query hit@1 for a0 vs control and a0 vs a0null, overall and on rearrangement-tail
   queries; kill if a0 does not beat a0null.
+- **Control scored 2026-10-17:** `rpa6uq8k` @19 `loglik_cal` hit@1 0.555, `mspred_ent` 0.519 (all queries;
+  ORB 0.609, QTOF 0.266), within 0.004 / 0.009 of `c32`, its config twin
+  ([table](msgym_short_budget_screen_2026_10_14.md#formula-test-retrieval-2026-10-17)). `a0`, `a0d1`, `a0null` not
+  yet scored.
 
 ### Phase 2 (only on the G0b trigger)
 

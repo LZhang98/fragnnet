@@ -9,7 +9,7 @@ molecule is "MS-DIAL only" when every one of its spectra has source MS-DIAL (sou
 
 Usage (from the repository root, ``umap-viz`` env):
     python -I scripts/debug/dataset_umap/combo_coverage.py \
-        --dp output/dataset_umap_hmdb_2026_10_17 --n_nist 5000 --workers 6
+        --dp output/dataset_umap_2026_10_16 --n_nist 5000 --workers 6
 """
 
 import argparse

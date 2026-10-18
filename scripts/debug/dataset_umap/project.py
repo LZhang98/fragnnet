@@ -9,9 +9,9 @@ data. Each point is coloured by its nearest-molecule Tanimoto to all MS/MS datas
 
 Usage (from the repository root, ``umap-viz`` env):
     python -I scripts/debug/dataset_umap/project.py \
-        --map_dp output/dataset_umap_proj_2026_10_17 \
-        --mols_fp output/dataset_umap_hmdb_2026_10_17/mols.parquet \
-        --nn_fp output/dataset_umap_hmdb_2026_10_17/hmdb_nn.parquet
+        --map_dp output/dataset_umap_2026_10_16 \
+        --mols_fp output/dataset_umap_2026_10_16/mols.parquet \
+        --nn_fp output/dataset_umap_2026_10_16/hmdb_nn.parquet
 """
 
 import argparse

@@ -10,8 +10,8 @@ Writes ``<slug>_nn.parquet`` (read by ``project.py`` and, for HMDB, ``combo_cove
 
 Usage (from the repository root, ``umap-viz`` env):
     python -I scripts/debug/dataset_umap/nn_fit.py \
-        --mols_fp output/dataset_umap_hmdb_2026_10_17/mols.parquet \
-        --out_dp output/dataset_umap_hmdb_2026_10_17 --n 10000 --workers 6
+        --mols_fp output/dataset_umap_2026_10_16/mols.parquet \
+        --out_dp output/dataset_umap_2026_10_16 --n 10000 --workers 6
 """
 
 import argparse

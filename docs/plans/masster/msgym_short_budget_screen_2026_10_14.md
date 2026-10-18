@@ -1,7 +1,7 @@
 # MSGYM short-schedule and candidate-budget screen
 
-> **Status:** READ · **Updated:** 2026-10-15
-> Six arms run twice at the same seed (2026-10-14/15). Same-seed reruns differ by up to 0.008 val cosine, so cosine does not separate the arms; wrecall does. 32 epochs is enough; U128, E1024 and floor 0.01 all cost wrecall. See [Results](#results-2026-10-15).
+> **Status:** READ · **Updated:** 2026-10-18
+> Six arms run twice at the same seed (2026-10-14/15), then formula-test retrieval (2026-10-17). 32 epochs is enough. E1024 costs validation wrecall but no resolved retrieval; U128 costs ~0.016 `loglik_cal` hit@1; floor 0.01 costs 0.041. See [Results](#results-2026-10-15) and [Retrieval](#formula-test-retrieval-2026-10-17).
 
 ## Questions
 
@@ -104,4 +104,50 @@ Each arm ran twice with identical configs and seed 397623 (A: 2026-10-14 20:43, 
   `c32` replicates.
 - **U, E, floor:** cosine differences are within same-seed noise except `u128_e1024`; the wrecall
   losses (U128 −0.039, E1024 −0.022, floor −0.106) reproduce in both replicates.
-- Retrieval remains the deciding read before adopting U128 or E1024.
+- Retrieval was the deciding read: see [Formula-test retrieval](#formula-test-retrieval-2026-10-17).
+
+## Formula-test retrieval (2026-10-17)
+
+Ran with [`submit_msgym_sb_retrieval.sh`](../../../scripts/manual_slurm/fir/submit_msgym_sb_retrieval.sh)
+on `fir:h100-2g.20gb`: replicate-A best-`val_primary_loss` checkpoints, 9,954 queries (ORB 8,374,
+QTOF 1,580), 1,657,238 candidates, none excluded. `queries.csv` is md5-identical to the shards used
+for `f44tzxoc` and `pow075`. `loglik_cal` keeps the `ll04i00m` rule (not re-selected). The rewire
+control `rpa6uq8k` (config identical to `c32` apart from W&B identity, best epoch 19) was scored on the
+same shards, so `c32` vs `rw_control` is a second-seed-path replicate of the same recipe.
+
+Expected hit@1, all queries (Δ against `c64`):
+
+| Arm (run @epoch) | `cos_sim_0.01` | `cos_sim_sqrt_0.01` | `mspred_ent` | `loglik` | `loglik_cal` (hit@5 / hit@20) | Δ `loglik_cal` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `c64` (`u80w840n` @21) | 0.371 | 0.482 | 0.532 | 0.513 | 0.552 (0.870 / 0.970) | — |
+| `c32` (`gz4fa02d` @18) | 0.365 | 0.481 | 0.528 | 0.514 | 0.559 (0.870 / 0.973) | +0.007 |
+| `rw_control` (`rpa6uq8k` @19) | 0.369 | 0.475 | 0.519 | 0.509 | 0.555 (0.876 / 0.970) | +0.003 |
+| `e1024` (`5esngzcl` @26) | 0.375 | 0.478 | 0.529 | 0.508 | 0.545 (0.867 / 0.969) | −0.007 |
+| `u128` (`28dptwet` @23) | 0.372 | 0.473 | 0.529 | 0.495 | 0.535 (0.856 / 0.965) | −0.016 |
+| `u128_e1024` (`2m4rb2c2` @20) | 0.361 | 0.468 | 0.526 | 0.494 | 0.537 (0.862 / 0.964) | −0.015 |
+| `floor01` (`c43o9rbn` @44) | 0.371 | 0.469 | 0.517 | 0.477 | 0.511 (0.837 / 0.955) | −0.041 |
+| ref. `f44tzxoc` @19 (128 ep) | 0.365 | 0.470 | 0.523 | 0.503 | 0.545 | −0.007 |
+
+`loglik_cal` hit@1 by instrument: ORB `c64` 0.605, `c32` 0.613, `rw_control` 0.609, `e1024` 0.600,
+`u128` 0.594, `u128_e1024` 0.592, `floor01` 0.564; QTOF 0.270, 0.273, 0.266, 0.248, 0.225, 0.246, 0.233.
+
+- **Noise.** Unpaired 95% molecule-bootstrap intervals are ±0.034 on every arm. The same recipe twice
+  (`c32` vs `rw_control`) differs by 0.004 `loglik_cal`, 0.009 `mspred_ent`, 0.006 sqrt cosine, and by
+  0.04 on the QTOF subset (`mspred_ent` 0.266 vs 0.228), so QTOF per-arm differences are unresolved.
+- **Epochs.** `c32` and `c64` tie each other and the 128-epoch leader `f44tzxoc` on every score. 32
+  epochs is enough for retrieval as well as validation.
+- **E1024.** −0.007 `loglik_cal`, −0.003 `mspred_ent`, +0.004 cosine: inside the replicate spread. The
+  −0.022 validation wrecall does not show up in retrieval at this resolution.
+- **U128.** −0.016 `loglik_cal` and −0.017 `loglik` (4x the replicate spread, both arms with U128),
+  while `mspred_ent` and cosine are flat. The loss is in likelihood scoring, consistent with fewer
+  candidate fragments carrying probability mass for peaks the truth explains.
+- **Floor 0.01.** −0.041 `loglik_cal`, −0.036 `loglik`, −0.015 `mspred_ent`. Rejected.
+- **Not yet paired.** These are differences of marginal estimates; the per-candidate score pickles are on
+  Fir (`/scratch/feiw/frag-gnn-data/msgym/formula_test/shard_*/<ckpt stem>/`). Before adopting E1024, run
+  `scripts/eval/summarize_retrieval.py --compare sb_e1024:sb_c32 sb_c64:sb_c32` there.
+- **Inference speed** is confounded by batch size (`c64`/`rw_control` at 512, the others at 1024; no
+  `c32` GPU log), so it is not compared here.
+
+Artifacts: `output/msgym_retrieval/formula_test/` `summary_<stem>.csv`, `summarize_<stem>.log`,
+`gpu_usage_<stem>.csv` (copied from Fir via `summaries.zip`).
+
