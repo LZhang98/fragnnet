@@ -15,6 +15,7 @@ plans are kept deliberately; read a hub's "Settled" list before re-proposing a m
 | [project-state.md](project-state.md) | Dashboard: one block per workstream, next actions, uncommitted work |
 | [architecture.md](architecture.md) | Verified entry points and architectural boundaries |
 | [workflow/session.md](workflow/session.md) | Development, experiment provenance, validation, and handoff |
+| [workflow/history_and_summary.md](workflow/history_and_summary.md) | Handoff summaries, plan-log rotation to `docs/history/`, project-state compaction, merging and retiring documents |
 | [rules/engineering.md](rules/engineering.md) | Core behavior, environment, compatibility, validation, and Git rules |
 | [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
 | [rules/documentation.md](rules/documentation.md) | Placement, status vocabulary, hubs, project-state cap, history |

@@ -42,8 +42,8 @@
   "All documents" table lists every plan and finding in the workstream. A new workstream gets a
   new hub and a row in `docs/README.md` and project-state.
 - **A plan** carries its own dated progress. When a plan passes about 600 lines, move its dated
-  log sections verbatim to `docs/history/<plan-stem>_log.md`, keep a `## Current summary` in the
-  plan, and repoint inbound anchor links. Keep heading text identical so anchors survive the move.
+  log sections verbatim to `docs/history/<plan-stem>_log.md` and keep a `## Current summary` in
+  the plan ([procedure](../workflow/history_and_summary.md#rotate-a-plan-log)).
 - **Findings** hold measurements and conclusions; one canonical location per fact. Link to it
   instead of restating numbers elsewhere.
 - **Paths in frozen records** (findings, plans, `docs/history/`) are as of `13b1599d`, before
@@ -78,18 +78,12 @@ them. Mark stopped or replaced work `STOPPED` or `SUPERSEDED` with the reason.
 ## Removing a document
 
 Remove a document only when the user asks. Candidates are `SUPERSEDED` and `STOPPED` documents
-and audits whose fixes have all landed; an audit with an open item stays. When removing one:
-
-- Delete its row from the hub's "All documents" table. Keep any "Settled" verdict line.
-- Replace every inbound link in live documents, `config/`, `src/`, `scripts/` and `tests/` with
-  its text followed by (removed YYYY-MM-DD; `git show <commit>:<path>`), where `<commit>` still
-  holds the file; a bare path becomes `<commit>:<path>, removed YYYY-MM-DD`. Leave `docs/history/`
-  as it is.
-- Move any still-open consequence (data to rebuild, validation not yet run) into the hub or
-  `docs/project-state.md` first.
-- Add the document's summary (question, verdict with key numbers and run IDs, open items) to
-  `docs/history/retired_docs.md` under its workstream, and turn an "Open threads" row into a
-  Settled line saying it was retired and what the next step would be if revived.
+and audits whose fixes have all landed; an audit with an open item stays. A removed document
+leaves a summary in `docs/history/retired_docs.md`, a hub Settled line, and inbound links that
+name a commit still holding it. Follow the
+[retirement procedure](../workflow/history_and_summary.md#retire-a-document); merging several
+findings into one topic document follows the
+[merge procedure](../workflow/history_and_summary.md#merge-findings-into-a-topic-document).
 
 ## Adding, moving, or renaming a document
 
