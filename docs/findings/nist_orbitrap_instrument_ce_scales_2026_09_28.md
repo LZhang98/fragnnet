@@ -315,7 +315,7 @@ Cosine is on 0.01 Da bins, per-molecule means (molecules in brackets).
   controlled; §3 is.
 - The equivalence column is the same-molecule NIST23 median over all masses, which hides the
   mass dependence of §3.2.
-- [CSV](../figures/nist_orbitrap_elite_vs_lumos_per_nce.csv).
+- [CSV](../tables/nist_orbitrap_instrument_ce_scales_2026_09_28/nist_orbitrap_elite_vs_lumos_per_nce.csv).
 
 | NCE | NIST20 spectra E / L | measured prec. frac. NIST20 E / L | NIST23 E / L | Lumos → Elite-equivalent NCE, NIST23 same-molecule (mols) | `c0` val cos E / L | `c0` prec-frac bias E / L |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

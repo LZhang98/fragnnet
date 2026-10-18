@@ -36,8 +36,9 @@ to assemble the predicted spectrum. The lower panel distinguishes spectral
 supervision of the intensity model from coverage supervision of the proposal model.
 Molecular structures and spectra are schematic.*
 The [editable SVG](../figures/masster_architecture_editable.svg) is available for
-figure revisions; a [draw.io version](../figures/masster_architecture.drawio) has the
-same content with connected arrows and grouped drawings, so it is easier to edit.
+figure revisions; the [draw.io source](../figures/masster_figures.drawio) holds this
+figure (page 1) and the decoupled-design figure (page 2) with connected arrows and
+grouped drawings, so it is easier to edit.
 
 ## Molecular encoding and bond-cut proposals
 

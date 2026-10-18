@@ -19,7 +19,8 @@
   | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASSter plans in `masster/`, cross-model plans at top level |
   | `docs/history/` | Frozen verbatim logs moved out of live documents, and `retired_docs.md` (summaries of removed documents); never the canonical home of a current fact |
   | `docs/notes/` | Scratch and literature notes |
-  | `docs/figures/` | Figures referenced by documentation |
+  | `docs/figures/` | Images and drawing sources (PNG, SVG, draw.io) referenced by documentation; no CSVs |
+  | `docs/tables/<doc stem>/` | Small summary CSVs cited by one finding or plan; raw per-query outputs and logs stay in `output/` |
   | `docs/rules/` | Shared constraints |
   | `docs/workflow/` | Shared development and experiment procedures |
 

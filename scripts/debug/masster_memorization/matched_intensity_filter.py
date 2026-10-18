@@ -36,7 +36,7 @@ Stages::
     python scripts/debug/masster_memorization/matched_intensity_filter.py score --pred_hdf5 P.hdf5 \\
         --targets_fp T.pkl --out_fp scores.pkl
     python scripts/debug/masster_memorization/matched_intensity_filter.py plot --runs raw=a.pkl cleaned=b.pkl \\
-        --out_dp docs/figures
+        --out_dp output/matched_intensity_filter
     python scripts/debug/masster_memorization/matched_intensity_filter.py export --pred_hdf5 P.hdf5 \\
         --scores_fp scores.pkl --targets_fp T.pkl --thresh 0.001 --out_dp D
 

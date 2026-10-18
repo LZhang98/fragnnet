@@ -150,4 +150,6 @@ Expected hit@1, all queries (Δ against `c64`):
 
 Artifacts: `output/msgym_retrieval/formula_test/` `summary_<stem>.csv`, `summarize_<stem>.log`,
 `gpu_usage_<stem>.csv` (copied from Fir via `summaries.zip`).
+Tracked copies of the `summary_<stem>.csv` and `gpu_usage_<stem>.csv` files are in
+[`docs/tables/msgym_short_budget_screen_2026_10_14/`](../../tables/msgym_short_budget_screen_2026_10_14/).
 
