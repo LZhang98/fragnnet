@@ -507,6 +507,101 @@ def test_valence_adjustment_hand_values() -> None:
     assert mask[0].sum() == 1 and mask[0, 0]
 
 
+# --- EI: tms_siloxy_silylium with [M]+ -----------------------------------------------------------
+
+_GLYCEROL_3TMS = "C[Si](C)(C)OCC(O[Si](C)(C)C)CO[Si](C)(C)C"
+_T1 = REWIRE_RULE_VOCABULARY.index("tms_siloxy_silylium")
+
+
+def _t1_rows(out, h_shift=0):
+    """Pathway m/z values of every T1 extra at one H shift, per extra fragment."""
+    fragments = out["fragment_rewire_fragment_idxs"][out["fragment_rewire_rule_idxs"] == _T1]
+    pick = out["pred_pathway_h_shifts"] == h_shift
+    return [
+        out["pred_mzs"][pick & (out["pred_pathway_fragment_idxs"] == fragment)]
+        for fragment in fragments.tolist()
+    ]
+
+
+def _t1_isotope_rows(out, h_shift=0):
+    """(mz, isotope offset, score) of every T1 extra at one H shift; needs merged (nominal) rows."""
+    fragments = out["fragment_rewire_fragment_idxs"][out["fragment_rewire_rule_idxs"] == _T1]
+    pick = out["pred_pathway_h_shifts"] == h_shift
+    rows = []
+    for fragment in fragments.tolist():
+        rows_of = pick & (out["pred_pathway_fragment_idxs"] == fragment)
+        rows.append(
+            (out["pred_pathway_mzs"][rows_of], out["pred_pathway_isotope_offsets"][rows_of], out["pred_pathway_scores"][rows_of])
+        )
+    return rows
+
+
+def _ei_model(batch, **kwargs):
+    return _build_model(
+        batch, **_REWIRE_KWARGS, precursor_types=("[M]+",), max_h_transfer=4, **kwargs
+    )
+
+
+def test_t1_exact_mass_is_the_silylium_ion() -> None:
+    """Me3Si-O(+)=SiMe2 is C5H15OSi2 at 147.0656 (electron mass removed) for the H shift 0 channel."""
+    smiles = (_GLYCEROL_3TMS,)
+    batch = _build_batch(smiles)
+    out = _run(_ei_model(batch), batch, smiles, return_annotation=True)
+    assert int(out["rewire_extra_count"].sum()) > 0
+    rows = _t1_rows(out)
+    assert rows
+    for mzs in rows:
+        assert mzs.numel() == 1 and float(mzs[0]) == pytest.approx(147.0656, abs=5e-4)
+    # the extras carry nothing but the 3-cut edit of this rule
+    assert set(out["fragment_rewire_rule_idxs"].tolist()) == {_T1}
+
+
+def test_t1_nominal_isotope_envelope_is_the_si2_pattern() -> None:
+    """Nominal 147 with natural isotopes: M+1/M is that of C5H15OSi2 (0.158), not of C6H15O2Si (0.118)."""
+    smiles = (_GLYCEROL_3TMS,)
+    batch = _build_batch(smiles)
+    model = _ei_model(batch, mass_mode="nominal", isotope_envelope="natural")
+    out = _run(model, batch, smiles, return_annotation=True)
+    rows = _t1_isotope_rows(out)
+    assert rows
+    for mzs, offsets, scores in rows:
+        by_offset = dict(zip(offsets.tolist(), zip(mzs.tolist(), scores.tolist())))
+        assert by_offset[0][0] == 147.0 and by_offset[1][0] == 148.0
+        assert by_offset[1][1] / by_offset[0][1] == pytest.approx(0.158, abs=1e-3)
+
+
+def test_t1_off_and_other_precursors_give_no_extra() -> None:
+    smiles = (_GLYCEROL_3TMS,)
+    batch = _build_batch(smiles)
+    off = _build_model(batch, **_OFF_KWARGS, precursor_types=("[M]+",), max_h_transfer=4)
+    assert "rewire_is_extra" not in _run(off, batch, smiles)
+    adduct = _build_model(batch, **_REWIRE_KWARGS, precursor_types=("[M+H]+",), max_h_transfer=4)
+    assert not _run(adduct, batch, smiles)["rewire_is_extra"].any()
+    no_si = ("CC(O)CO",)
+    batch2 = _build_batch(no_si)
+    assert not _run(_ei_model(batch2), batch2, no_si)["rewire_is_extra"].any()
+
+
+def test_t1_unknown_to_a_17_rule_checkpoint() -> None:
+    """A checkpoint from before T1 (17 rules) keeps T1 off and loads into the 18-rule model."""
+    smiles = (_GLYCEROL_3TMS,)
+    batch = _build_batch(smiles)
+    on = _ei_model(batch)
+    on.intensity_head.rewire_pathway_residual.weight.data.normal_()
+    n = _T1
+    state = copy.deepcopy(on.state_dict())
+    state["rewire_rule_name_hashes"] = state["rewire_rule_name_hashes"][:n]
+    state["intensity_head.rewire_pathway_residual.weight"] = state[
+        "intensity_head.rewire_pathway_residual.weight"
+    ][:, :n]
+    old = _ei_model(batch)
+    old.load_state_dict(state)
+    assert old.rewire_rule_name_hashes.numel() == n
+    assert not old.intensity_head.rewire_pathway_residual.weight[:, n:].any()
+    assert not _run(old, batch, smiles)["rewire_is_extra"].any()
+    assert _run(on, batch, smiles)["rewire_is_extra"].any()
+
+
 # --- checkpoint ------------------------------------------------------------------------------
 
 

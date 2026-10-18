@@ -241,3 +241,26 @@ def test_pl_null_flag_builds_a_null_static_graph_with_identical_state_dict_layou
     r, n = real_pl.state_dict(), null_pl.state_dict()
     assert r.keys() == n.keys() and all(r[k].shape == n[k].shape for k in r)
     assert real_pl.hparams.masster_rewire_null is False and null_pl.hparams.masster_rewire_null is True
+
+
+# ---- tms_siloxy_silylium: two-component pattern ----
+
+_T1_INDEX = [r.name for r in REWIRE_RULES].index("tms_siloxy_silylium")
+
+
+def test_t1_auto_null_keeps_the_two_components() -> None:
+    assert N.null_pattern_smarts(REWIRE_RULES[_T1_INDEX]) == "[*:1]~[!D1:2].[!D1:5]~[!D1:6]~[*:7]"
+
+
+@pytest.mark.parametrize("smiles", ["C[Si](C)(C)OCCO[Si](C)(C)C", "C[Si](C)(C)OCC(O[Si](C)(C)C)CO[Si](C)(C)C"])
+def test_t1_null_is_deterministic_same_shape_and_off_the_real_sites(smiles) -> None:
+    mol = Chem.MolFromSmiles(smiles)
+    real = [m for m in build_rewire_matches(mol, max_matches_per_rule=10**9).matches if m.rule_index == _T1_INDEX]
+    first = N.build_null_rewire_matches(mol, max_matches_per_rule=10**9)
+    assert first == N.build_null_rewire_matches(mol, max_matches_per_rule=10**9)
+    null = [m for m in first.matches if m.rule_index == _T1_INDEX]
+    assert 0 < len(null) <= len(real)
+    real_sites = set(N._real_sites(mol, _T1_INDEX))
+    for match in null:
+        assert frozenset(match.motif_atoms) not in real_sites
+        assert len(match.cut_pairs) == 3 and len(match.form_pairs) == 1 and match.deleted == ()

@@ -1,7 +1,8 @@
 """Rewire rules for MASSter: admitted edit rules, vocabulary, spec hashes and per-molecule matches.
 
-Each rule is a mapped SMARTS plus an edit (delete atoms, cut bonds, form bonds). The 17 rules are the ``admitted``
-entries of the rule gate catalog (``output/rewire_rule_gate_2026_10_15/rule_catalog.json``, gitignored), copied here.
+Each rule is a mapped SMARTS plus an edit (delete atoms, cut bonds, form bonds). The first 17 rules are the
+``admitted`` entries of the rule gate catalog (``output/rewire_rule_gate_2026_10_15/rule_catalog.json``, gitignored),
+copied here; rule 18 (``tms_siloxy_silylium``, ``[M]+`` only, EI) is appended after the catalog and is not in it.
 The vocabulary is separate from ``MASSTER_RULE_VOCABULARY`` and append-only. Pure Python and RDKit, no torch.
 
 Status: PROTOTYPE. Applied only with ``masster_rewire_rules: true`` (off by default and in the
@@ -19,7 +20,7 @@ from functools import cache
 
 from rdkit import Chem
 
-PRECURSOR_TYPES_ALLOWED = ("[M+H]+", "[M-H]-", "[M+NH4]+", "[M+Na]+")  # the only values a rule may list
+PRECURSOR_TYPES_ALLOWED = ("[M+H]+", "[M-H]-", "[M+NH4]+", "[M+Na]+", "[M]+")  # the only values a rule may list
 _MAX_RAW_MATCHES = 5000  # the gate's GetSubstructMatches maxMatches
 
 _P3 = ("[M+H]+", "[M-H]-", "[M+NH4]+")
@@ -193,6 +194,21 @@ REWIRE_RULES: tuple[RewireRule, ...] = (
         form=((1, 3),),
         precursors=('[M-H]-',),
     ),
+    # EI, TMS derivatives: Me3Si-O(+)=SiMe2 (C5H15OSi2, 147.0656) from two silyl ethers/silylamines; a donor
+    # Si migrates onto the acceptor O and loses one methyl. Not reachable by bond cuts on glycerol 3TMS.
+    # Every TMS atom is mapped so a parent fragment must hold both whole groups (an unmapped methyl would
+    # let a truncated parent yield a smaller spurious product); permutations collapse in the edit-key dedup.
+    # Harvey & Vouros 2019 https://doi.org/10.1002/mas.21590
+    # Byun & Gross 1997 https://pubmed.ncbi.nlm.nih.gov/9008870/
+    # Rontani & Aubert 2004 https://doi.org/10.1002/rcm.1567
+    RewireRule(
+        name='tms_siloxy_silylium',
+        smarts='[#6,#15:1][OX2:2][Si:3]([CH3:8])([CH3:9])[CH3:10].[#6,#15:4][O,N:5][Si:6]([CH3:7])([CH3:11])[CH3:12]',
+        delete=(),
+        cut=((1, 2), (5, 6), (6, 7)),
+        form=((2, 6),),
+        precursors=('[M]+',),
+    ),
 )
 
 # Literal, append-only; checked against REWIRE_RULES at import (reordering or removing a rule fails).
@@ -214,6 +230,7 @@ REWIRE_RULE_VOCABULARY: tuple[str, ...] = (
     'dinitrophenol_24_2NO',
     'acid_acyl_transfer_5',
     'haloalkyl_sulfonyl_X_to_S',
+    'tms_siloxy_silylium',
 )
 MASSTER_NUM_REWIRE_RULES = len(REWIRE_RULE_VOCABULARY)
 

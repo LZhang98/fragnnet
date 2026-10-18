@@ -33,6 +33,7 @@ EXPECTED_NAMES = (
     "dinitrophenol_24_2NO",
     "acid_acyl_transfer_5",
     "haloalkyl_sulfonyl_X_to_S",
+    "tms_siloxy_silylium",
 )
 
 
@@ -56,19 +57,20 @@ def _rule(name):
 
 
 def test_registry():
-    assert len(rr.REWIRE_RULES) == 17
-    assert rr.MASSTER_NUM_REWIRE_RULES == 17
+    assert len(rr.REWIRE_RULES) == 18
+    assert rr.MASSTER_NUM_REWIRE_RULES == 18
     assert rr.REWIRE_RULE_VOCABULARY == EXPECTED_NAMES
     for i, rule in enumerate(rr.REWIRE_RULES):
-        assert len(rule.precursors) == (1 if i in (13, 14, 15, 16) else 3)
-    assert [r.null_smarts is not None for r in rr.REWIRE_RULES] == [i in (13, 14, 15) for i in range(17)]
+        assert len(rule.precursors) == (1 if i in (13, 14, 15, 16, 17) else 3)
+    assert [r.null_smarts is not None for r in rr.REWIRE_RULES] == [i in (13, 14, 15) for i in range(18)]
 
 
 @pytest.mark.skipif(not CATALOG.exists(), reason="gitignored rule catalog not present")
 def test_rules_equal_catalog():
     admitted = [r for r in json.loads(CATALOG.read_text())["rules"] if r["status"] == "admitted"]
-    assert len(admitted) == len(rr.REWIRE_RULES)
-    for entry, rule in zip(admitted, rr.REWIRE_RULES):
+    catalog_rules = rr.REWIRE_RULES[:17]  # rules appended after the catalog are not in it
+    assert len(admitted) == len(catalog_rules)
+    for entry, rule in zip(admitted, catalog_rules):
         assert rule.name == entry["name"]
         assert rule.smarts == entry["smarts"]
         assert rule.delete == tuple(entry["delete"])
@@ -79,7 +81,7 @@ def test_rules_equal_catalog():
 
 
 def test_hashes_and_append_only():
-    assert len(set(rr.REWIRE_RULE_SPEC_HASHES)) == 17
+    assert len(set(rr.REWIRE_RULE_SPEC_HASHES)) == 18
     swapped = list(rr.REWIRE_RULES)
     swapped[0], swapped[1] = swapped[1], swapped[0]
     with pytest.raises(ValueError):
@@ -237,14 +239,65 @@ def test_filter():
     mol = _mol("c1ccccc1N=Nc1ccccc1")
     full = rr.build_rewire_matches(mol, max_matches_per_rule=10)
     assert any(m.rule_index == 13 for m in full.matches)
-    pos = rr.filter_rewire_matches(full, precursor_type="[M+H]+", num_known_rules=17)
-    neg = rr.filter_rewire_matches(full, precursor_type="[M-H]-", num_known_rules=17)
+    pos = rr.filter_rewire_matches(full, precursor_type="[M+H]+", num_known_rules=rr.MASSTER_NUM_REWIRE_RULES)
+    neg = rr.filter_rewire_matches(full, precursor_type="[M-H]-", num_known_rules=rr.MASSTER_NUM_REWIRE_RULES)
     assert all(m.rule_index != 13 for m in pos.matches)
     assert any(m.rule_index == 13 for m in neg.matches)
     few = rr.filter_rewire_matches(neg, precursor_type="[M-H]-", num_known_rules=5)
     assert all(m.rule_index < 5 for m in few.matches)
     big = rr.build_rewire_matches(_mol("CCSCCSCC"), max_matches_per_rule=1)
-    assert rr.filter_rewire_matches(big, precursor_type="[M+H]+", num_known_rules=17).num_truncated == big.num_truncated
+    assert rr.filter_rewire_matches(big, precursor_type="[M+H]+", num_known_rules=rr.MASSTER_NUM_REWIRE_RULES).num_truncated == big.num_truncated
+
+
+# ---- tms_siloxy_silylium ([M]+ only, EI) ----
+
+GLYCEROL_3TMS = "C[Si](C)(C)OCC(O[Si](C)(C)C)CO[Si](C)(C)C"
+ETHYLENE_GLYCOL_2TMS = "C[Si](C)(C)OCCO[Si](C)(C)C"
+T1 = "tms_siloxy_silylium"
+
+
+def test_t1_registry_is_appended_and_m_plus_only():
+    assert rr.REWIRE_RULE_VOCABULARY[-1] == T1
+    assert "[M]+" in rr.PRECURSOR_TYPES_ALLOWED
+    assert _rule(T1).precursors == ("[M]+",)
+    assert all("[M]+" not in r.precursors for r in rr.REWIRE_RULES[:-1])
+
+
+@pytest.mark.parametrize(("smiles", "count"), [(ETHYLENE_GLYCOL_2TMS, 6), (GLYCEROL_3TMS, 18)])
+def test_golden_t1_match_counts(smiles, count):
+    """Ordered (acceptor, donor) pairs times the three symmetric donor methyls."""
+    matches = _matches_of(smiles, T1)
+    assert len(matches) == count
+    for m in matches:
+        assert len(m.cut_pairs) == 3 and len(m.form_pairs) == 1 and m.deleted == ()
+
+
+def test_t1_needs_two_silyl_groups():
+    assert _matches_of("C[Si](C)(C)OCC", T1) == []
+    assert _matches_of("CCCCO", T1) == []
+
+
+def test_t1_filter_keeps_only_m_plus():
+    full = rr.build_rewire_matches(_mol(GLYCEROL_3TMS), max_matches_per_rule=32)
+    n = rr.MASSTER_NUM_REWIRE_RULES
+    idx = rr.REWIRE_RULE_VOCABULARY.index(T1)
+    kept = rr.filter_rewire_matches(full, precursor_type="[M]+", num_known_rules=n)
+    assert {m.rule_index for m in kept.matches} == {idx}
+    for adduct in ("[M+H]+", "[M-H]-", "[M+NH4]+", "[M+Na]+"):
+        assert all(
+            m.rule_index != idx for m in rr.filter_rewire_matches(full, precursor_type=adduct, num_known_rules=n).matches
+        )
+    # a checkpoint trained on the 17-rule vocabulary does not know T1
+    assert rr.filter_rewire_matches(full, precursor_type="[M]+", num_known_rules=idx).matches == ()
+
+
+def test_t1_prefix_of_old_vocabulary_is_still_valid():
+    """Old checkpoints saved the first 17 hashes; they must remain a prefix of the current ones."""
+    old = rr.REWIRE_RULE_VOCABULARY[:17]
+    assert old == EXPECTED_NAMES[:17]
+    assert rr.REWIRE_RULE_SPEC_HASHES[:17] == tuple(
+        rr.zlib.crc32(rr.rewire_rule_spec(r).encode()) for r in rr.REWIRE_RULES[:17]
+    )
 
 
 # ---- parity with the gate ----
@@ -280,7 +333,7 @@ def test_matches_equal_gate():
     for smi in smiles:
         mol = _mol(smi)
         ms = rr.build_rewire_matches(mol, max_matches_per_rule=10_000)
-        for i, rule in enumerate(rr.REWIRE_RULES):
+        for i, rule in enumerate(rr.REWIRE_RULES[:17]):
             entry = catalog[rule.name]
             hits = gate._matches(mol, Chem.MolFromSmarts(entry["smarts"]))
             # the gate's raw matches collapse to our deduped edits
