@@ -3,7 +3,8 @@
 Every Spectraverse record carries one ``FOLD=`` value in 1..10; folds are disjoint by 2D
 InChIKey. For ``cv{k}`` the test split is FOLD ``k + 1``, the validation split is FOLD ``k``
 (FOLD 0 wraps to 10, so cv0 validates on FOLD 10), and train is the other eight folds.
-Record ``i`` (1-based) of the MGF is the spectrum whose ``dset_spec_id`` is ``str(i)``.
+An MGF record is the spectrum whose ``dset_spec_id`` is its ``TITLE`` number. In v1.0.2 that
+number is the 1-based record index; v1.0.3 numbers are unique but sparse.
 ``mol_id``, ``spec_id`` and ``group_id`` come from the CURRENT ``spec_df.pkl``, so the ids
 always agree with the processed data.
 
@@ -21,7 +22,8 @@ inside, the ``--check-against`` directory.
 Example::
 
     python preproc_scripts/spectraverse/build_benchmark_split.py \
-        --dst-split-dp /tmp/spv_split --check-against data/split/spectraverse_benchmark
+        --mgf-fp --dst-split-dp /tmp/spv_split \
+        --check-against data/split/spectraverse_1_0_3_benchmark
 """
 
 from __future__ import annotations
@@ -41,28 +43,28 @@ NUM_FOLDS = 10
 SPLITS = ("train", "val", "test")
 COLUMNS = ["mol_id", "spec_id", "group_id"]
 TITLE_RE = re.compile(rb"^TITLE=SPECTRAVERSE(\d+)\s*$")
-DEFAULT_SPEC_FP = "data/proc/spectraverse/spec_df.pkl"
-DEFAULT_MGF_FP = "data/raw/spectraverse/spectraverse-1.0.2/spectraverse-1.0.2.mgf"
+DEFAULT_SPEC_FP = "data/proc/spectraverse_1_0_3/spec_df.pkl"
+DEFAULT_MGF_FP = "data/raw/spectraverse/spectraverse-1.0.3/spectraverse-1.0.3.mgf"
 
 
-def read_mgf_folds(mgf_fp: Path) -> tuple[list[int], str]:
-    """Stream an MGF and return the FOLD of every record plus the file md5.
+def read_mgf_folds(mgf_fp: Path) -> tuple[dict[int, int], str]:
+    """Stream an MGF and return the FOLD of every record, keyed by TITLE number, plus the md5.
 
     Only ``TITLE=`` and ``FOLD=`` lines are parsed. Each record must have exactly one of each,
-    and the TITLE number must equal the 1-based record index.
+    and TITLE numbers must be unique.
 
     Args:
         mgf_fp: Path to the Spectraverse MGF.
 
     Returns:
-        ``(folds, md5)``: ``folds[i - 1]`` is the FOLD of record ``i``.
+        ``(folds, md5)``: ``folds[n]`` is the FOLD of the record titled ``SPECTRAVERSE<n>``.
 
     Raises:
         ValueError: If a record lacks TITLE or FOLD (legacy INDEX/FOLD_* MGFs are not
-            supported), repeats one, has a mismatched TITLE or a non-integer FOLD.
+            supported), repeats one, reuses another record's TITLE or has a non-integer FOLD.
     """
     md5 = hashlib.md5()
-    folds: list[int] = []
+    folds: dict[int, int] = {}
     title: int | None = None
     fold: int | None = None
     in_record = False
@@ -77,12 +79,12 @@ def read_mgf_folds(mgf_fp: Path) -> tuple[list[int], str]:
                 idx = len(folds) + 1
                 if not in_record or title is None or fold is None:
                     raise ValueError(
-                        f"record {idx} lacks TITLE or FOLD; a v1.0.2 FOLD= field is required "
+                        f"record {idx} lacks TITLE or FOLD; a v1.0.2+ FOLD= field is required "
                         "(legacy INDEX/FOLD_* MGFs are not supported)"
                     )
-                if title != idx:
-                    raise ValueError(f"record {idx} has TITLE number {title}")
-                folds.append(fold)
+                if title in folds:
+                    raise ValueError(f"record {idx} repeats TITLE number {title}")
+                folds[title] = fold
                 in_record = False
             elif in_record and line.startswith(b"TITLE="):
                 match = TITLE_RE.match(line)
@@ -103,32 +105,34 @@ def read_mgf_folds(mgf_fp: Path) -> tuple[list[int], str]:
     return folds, md5.hexdigest()
 
 
-def assign_folds_from_mgf(spec_df: pd.DataFrame, folds: list[int]) -> pd.Series:
-    """Map MGF record folds onto ``spec_df`` rows through ``dset_spec_id`` (1-based index).
+def assign_folds_from_mgf(spec_df: pd.DataFrame, folds: dict[int, int]) -> pd.Series:
+    """Map MGF record folds onto ``spec_df`` rows through ``dset_spec_id`` (the TITLE number).
 
     Args:
         spec_df: Processed spectra with ``dset_spec_id``.
-        folds: ``folds[i - 1]`` is the FOLD of MGF record ``i``.
+        folds: ``folds[n]`` is the FOLD of the record titled ``SPECTRAVERSE<n>``.
 
     Returns:
         Integer FOLD per ``spec_df`` row, aligned with its index.
 
     Raises:
-        ValueError: If the record count differs from ``len(spec_df)`` or ids do not cover
-            ``1..len(folds)`` exactly once.
+        ValueError: If the record count differs from ``len(spec_df)``, ``dset_spec_id``
+            repeats, or the ``dset_spec_id`` set differs from the TITLE numbers.
     """
     if len(folds) != len(spec_df):
         raise ValueError(f"MGF has {len(folds)} records but spec_df has {len(spec_df)} rows")
     rec = spec_df["dset_spec_id"].astype(str).astype(int)
-    if rec.nunique() != len(rec) or rec.min() != 1 or rec.max() != len(folds):
-        raise ValueError("dset_spec_id is not a permutation of 1..n_records")
-    return pd.Series([folds[i - 1] for i in rec], index=spec_df.index, dtype="int64")
+    if rec.duplicated().any():
+        raise ValueError("spec_df repeats dset_spec_id")
+    if set(rec) != set(folds):
+        raise ValueError("MGF TITLE numbers differ from spec_df dset_spec_id")
+    return pd.Series([folds[i] for i in rec], index=spec_df.index, dtype="int64")
 
 
 def assign_folds_from_csv(spec_df: pd.DataFrame, fold_fp: Path) -> pd.Series:
     """Look up FOLD per ``spec_df`` row in a ``spec_id,dset_spec_id,fold`` helper CSV.
 
-    Rows are joined on ``dset_spec_id`` (the MGF record index), which is stable through
+    Rows are joined on ``dset_spec_id`` (the MGF TITLE number), which is stable through
     preprocessing step 2; ``spec_id`` is relabeled there and is not used for the join.
 
     Args:

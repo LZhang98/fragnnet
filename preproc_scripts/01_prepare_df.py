@@ -544,7 +544,7 @@ SPECTRAVERSE_MGF_KEY_DICT = {
     #'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy',
     #'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
     #'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
-    # v1.0.2: one FOLD field per record (the benchmark's MCES fold, 1..10)
+    # v1.0.2+: one FOLD field per record (the benchmark's MCES fold, 1..10)
     "FOLD": "fold",
     # legacy (v1.0.0-era) fold fields and explicit spectrum index
     "FOLD_INCHI": "fold_inchi",
@@ -679,12 +679,12 @@ def _read_specverse_records(mgf_fp: str) -> list[dict]:
 
 
 def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
-    """Read a Spectraverse MGF (v1.0.2 or the legacy INDEX/FOLD_* format) into a spec_df.
+    """Read a Spectraverse MGF (v1.0.2+ or the legacy INDEX/FOLD_* format) into a spec_df.
 
     Header lines are matched on the exact key before the first "=" (so `INCHI` never matches an
     `INCHIKEY=` line). `spec_id` is the INDEX field when present (legacy) and otherwise the
     0-based record order; `dset_spec_id` is the integer parsed from TITLE. Fold columns present
-    in the file are kept in the returned split_df: `fold` (v1.0.2, one FOLD field per record,
+    in the file are kept in the returned split_df: `fold` (v1.0.2+, one FOLD field per record,
     1..10) and/or the legacy `fold_*` columns. The split_df also carries `dset_spec_id`, the
     key that stays stable through step 2 (which relabels `spec_id`). Files without any fold
     field (v1.0.0/1.0.1) yield no split_df and a warning.
@@ -722,7 +722,7 @@ def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
         if spec_df["spec_id"].isna().any():
             raise ValueError(f"INDEX is missing for some records in {mgf_fp}")
     else:
-        # v1.0.2 has no INDEX: spec_id is the 0-based record order
+        # v1.0.2+ has no INDEX: spec_id is the 0-based record order
         spec_df["spec_id"] = np.arange(len(spec_df))
 
     # setup dset
@@ -1162,7 +1162,7 @@ if __name__ == "__main__":
             print(f"> WARNING: {mgf_fp} has no fold field; no fold helper written")
         else:
             if "fold" in split_df.columns:
-                # v1.0.2: one file for the whole set; dset_spec_id is the key that survives step 2
+                # v1.0.2+: one file for the whole set; dset_spec_id is the key that survives step 2
                 split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
                 print(f"> saving fold helper ({len(split_df)} spectra) to {split_df_fp}")
                 split_df[["spec_id", "dset_spec_id", "fold"]].to_csv(split_df_fp, index=False)

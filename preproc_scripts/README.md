@@ -376,12 +376,14 @@ per `cv<k>`. See
 
 `build_benchmark_split.py` rebuilds them from the MGF, with `mol_id`/`spec_id`/`group_id` taken from the
 current `spec_df.pkl`. `--dst-split-dp` is required, has no default, and must not be the existing
-benchmark directory. A bare `--mgf-fp` selects the v1.0.2 MGF path above.
+benchmark directory. MGF records are matched to `spec_df` rows by `TITLE` number = `dset_spec_id`,
+so both the dense v1.0.2 and the sparse v1.0.3 titles work. A bare `--mgf-fp` and the default
+`--spec-fp` select v1.0.3 (next block); for v1.0.2 pass both paths:
 
 ```bash
 python preproc_scripts/spectraverse/build_benchmark_split.py \
     --spec-fp data/proc/spectraverse/spec_df.pkl \
-    --mgf-fp \
+    --mgf-fp data/raw/spectraverse/spectraverse-1.0.2/spectraverse-1.0.2.mgf \
     --expect-md5 50803b370a118299bfef3e9485ef6895 \
     --dst-split-dp data/split/spectraverse_benchmark_rebuild \
     --check-against data/split/spectraverse_benchmark
@@ -397,43 +399,48 @@ all 30 files, but its `mol_id` and `group_id` columns are a stale permutation of
 loaders select spectra by `spec_id` only; do not join on those two columns. The splits derived from it
 (variants below) inherit the same columns.
 
-For v1.0.3 use `--fold-fp`: `--mgf-fp` requires `TITLE` to equal the record index and refuses the
-sparse v1.0.3 titles. `stats.json` then has a null `mgf_md5`; the MGF md5 is in Step 1 above.
+v1.0.3 (the defaults):
 
 ```bash
 python preproc_scripts/spectraverse/build_benchmark_split.py \
-    --spec-fp data/proc/spectraverse_1_0_3/spec_df.pkl \
-    --fold-fp data/df_spectraverse_1_0_3/spectraverse_fold.csv \
+    --mgf-fp \
+    --expect-md5 52ed27db2d5b764a636fb2ce246004aa \
     --dst-split-dp data/split/spectraverse_1_0_3_benchmark
 ```
+`--fold-fp data/df_spectraverse_1_0_3/spectraverse_fold.csv` gives byte-identical id files (checked
+2026-10-18).
 The ten folds are disjoint over 44,234 2D InChIKeys and each `cv<k>` covers every `spec_id` once.
-cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. The train-side
-variants below were not rebuilt for v1.0.3.
+cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. No train-side
+variant below has been built for v1.0.3 yet.
 
 #### Spectraverse train-side variants
-Each reads `data/split/spectraverse_benchmark` and the current `data/proc/spectraverse/spec_df.pkl` and
-writes `cv<k>` directories. The first three also write one `stats.json` and change only the training
+Since 2026-10-18 every default path is v1.0.3: each reads `data/split/spectraverse_1_0_3_benchmark` and
+`data/proc/spectraverse_1_0_3/spec_df.pkl`, writes beside them, and writes `cv<k>` directories. The
+existing v1.0.2 variants (`data/split/spectraverse_benchmark_{dedup,subceil05,nomsdial,neims_adduct}`)
+were built with the then-default `data/proc/spectraverse` and `data/split/spectraverse_benchmark`;
+rebuilding one needs those paths passed explicitly (`--spec-fp`, `--src-split-dp`, `--dst-split-dp`
+and the script's other `data/proc` paths). The first three also write one `stats.json` and change only the training
 spectra: `val_ids.csv` and `test_ids.csv` are copied unchanged, so held-out scores stay comparable with
 the benchmark. They require `--folds` and were run for `--folds 0 1` only. `split_by_adduct.py` has no
 `--folds` and writes no `stats.json`.
 
 ```bash
-# Near-duplicate removal -> data/split/spectraverse_benchmark_dedup. One spectrum per cluster of
+# Near-duplicate removal -> data/split/spectraverse_1_0_3_benchmark_dedup. One spectrum per cluster of
 # same molecule + adduct spectra with cosine > 0.99 (instrument and CE must match; missing values match
-# anything). Also writes data/proc/spectraverse/near_dup_{clusters,edges}.csv.
+# anything). Also writes data/proc/spectraverse_1_0_3/near_dup_{clusters,edges}.csv.
 python preproc_scripts/spectraverse/dedup_train_split.py --folds 0 1
 
-# Drop train spectra with subformula ceiling <= 0.5 -> data/split/spectraverse_benchmark_subceil05.
-# Reuses data/proc/spectraverse/subformula_ceiling.csv if it exists (delete it after any spec_df
+# Drop train spectra with subformula ceiling <= 0.5 -> data/split/spectraverse_1_0_3_benchmark_subceil05.
+# Reuses data/proc/spectraverse_1_0_3/subformula_ceiling.csv if it exists (delete it after any spec_df
 # rebuild), else computes it.
 python preproc_scripts/spectraverse/clean_train_split.py --folds 0 1
 
-# Drop train spectra from a raw SOURCE -> data/split/spectraverse_benchmark_nomsdial. Reads SOURCE= from
-# the v1.0.2 MGF and writes data/proc/spectraverse/spec_source.csv. The default --dst-split-dp is the
+# Drop train spectra from a raw SOURCE -> data/split/spectraverse_1_0_3_benchmark_nomsdial. Reads SOURCE=
+# from the v1.0.3 MGF (keyed by TITLE number) and writes data/proc/spectraverse_1_0_3/spec_source.csv. The default --dst-split-dp is the
 # nomsdial directory whatever --drop-sources is; set --dst-split-dp when dropping another source.
 python preproc_scripts/spectraverse/source_filter_split.py --folds 0 1 --drop-sources MS-DIAL
 
-# Per-adduct splits for the NEIMS models -> data/split/spectraverse_benchmark_neims_adduct/<adduct>/cv<k>.
+# Per-adduct splits for the NEIMS models -> data/split/spectraverse_1_0_3_benchmark_neims_adduct/<adduct>/cv<k>.
 # All ten folds, and val and test are filtered to the adduct as well. The directory tag is the lowercase
 # adduct, e.g. m+h+, m-h-, m+.
 python preproc_scripts/spectraverse/split_by_adduct.py --adducts "[M+H]+" "[M-H]-" "[M+Na]+"
