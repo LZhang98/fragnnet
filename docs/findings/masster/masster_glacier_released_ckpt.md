@@ -1,4 +1,18 @@
-# MASSter vs GLACIER's released checkpoint on the MassSpecGym simulation test set
+# MASSter vs GLACIER's released checkpoint on MassSpecGym
+
+> **Status:** FINDING · **Updated:** 2026-10-18
+> Two comparisons with GLACIER's released MSG checkpoint: forward similarity on the simulation test set, and the wrong-spectrum (swap) test of its contrastive fine-tuning.
+
+Merged 2026-10-18 from 2 findings on one topic. Each part below is the original
+document unchanged except for heading levels; its own status line keeps its original date.
+Former file names are listed so old links and `git log -- <former path>` can be traced.
+
+| Part | Updated | Verdict | Former file |
+| --- | --- | --- | --- |
+| [MASSter vs GLACIER's released checkpoint on the MassSpecGym simulation test set](#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set) | 2026-10-06 | Linear-cosine gap +0.026 for MASSter; GLACIER outputs sqrt intensity | `masster_msgym_vs_glacier_released_ckpt_2026_09_24.md` |
+| [GLACIER contrastive fine-tuning: wrong-spectrum (swap) test on MassSpecGym](#glacier-contrastive-fine-tuning-wrong-spectrum-swap-test-on-massspecgym) | 2026-10-03 | Contrastive fine-tuning shows no spectrum-blind structure prior beyond MASSter | `glacier_cf_swap_test_2026_10_03.md` |
+
+## MASSter vs GLACIER's released checkpoint on the MassSpecGym simulation test set
 
 > **Status:** FINDING · **Updated:** 2026-10-06
 > Linear-cosine gap +0.026 for MASSter over GLACIER's released checkpoint; instrument audit 2026-10-03; GLACIER outputs sqrt intensity.
@@ -12,7 +26,7 @@
 > +0.011 (CI −0.002 to +0.024), or +0.002 to +0.006 with per-peak sqrt at a matched peak count.
 > The first version of this finding scored GLACIER's output un-squared (0.5430, +0.028).
 
-## Setup
+### Setup
 
 - **GLACIER.** This is the MassSpecGym checkpoint linked from the
   [ms-pred README](https://github.com/coleygroup/ms-pred/blob/main/README.md) (Dropbox,
@@ -21,14 +35,14 @@
   `src/ms_pred/glacier/predict_smis_joint.py` (`main` at `318bb7b`) with `--sparse-k 256`. (Correction 2026-10-03: this is not upstream's setting. `max_k` in
   ms-pred's retrieval entries is the candidate-list size; upstream's `03_run_retrieval.py` uses
   `--sparse-k 100 --batch-size 64`. GLACIER's output also depends on batch size; see the
-  [full retrieval finding](masster_msgym_formula_retrieval_full_2026_10_03.md#glacier-batch-dependence).) All 9,954 spectra got a prediction. At
+  [full retrieval finding](masster_msgym_formula_retrieval.md#glacier-batch-dependence).) All 9,954 spectra got a prediction. At
   `--sparse-k 1024` it scores slightly lower, so 256 does not truncate it.
 - **Is it the paper's model?** It is the **w/ CF** model (resolved 2026-10-03; the reasoning below
   that called it w/o CF is wrong). Its EarlyStopping patience is 3, which `train_contr_joint.py`
   hardcodes; `train_joint.py` uses 5. The stage-1 hyperparameters it stores are expected, because
   the CF script restores stage 1 with `load_from_checkpoint` and sets the CF values only as
   attributes. Ranked by ms-pred's protocol it reproduces the paper's w/ CF retrieval row; see the
-  [full retrieval finding](masster_msgym_formula_retrieval_full_2026_10_03.md#matching-glaciers-reported-retrieval-numbers-added-2026-10-03).
+  [full retrieval finding](masster_msgym_formula_retrieval.md#matching-glaciers-reported-retrieval-numbers-added-2026-10-03).
   Original assessment, superseded: The GLACIER paper,
   Table 4, gives MassSpecGym cosine 0.58 (95% CI 0.57-0.59) without contrastive fine-tuning and
   0.58 with it, and JSS 0.50 / 0.48. The paper does not say whether the released weights are
@@ -56,7 +70,7 @@
   `simulation_challenge` test rows. Identifier, CE, precursor m/z and instrument all match the raw
   TSV. Every row has a numeric CE, so missing-CE handling does not enter at inference.
 
-## GLACIER's output is sqrt intensity
+### GLACIER's output is sqrt intensity
 
 In ms-pred, `data_scripts/forms/01_assign_subformulae.py` calls `MassSpec.process_spec_file`,
 which calls `common.process_spec_file`. That function divides by the maximum and takes `np.sqrt`
@@ -72,7 +86,7 @@ MassSpecGym's own simulation code (`massspecgym/models/simulation/base.py`, `f25
 `cos_sim`. That is the cosine of untransformed intensities; `cos_sim_sqrt` is optional. Our
 `cos_sim_0.01` is the same linear quantity.
 
-## Metric and its validation
+### Metric and its validation
 
 The scorer applies fragnnet's `batched_bin_func` and `cos_sim_helper` with the eval settings to
 the test targets, dumped as the eval dataset builds them. The settings are 0.01 Da, sum pooling
@@ -84,9 +98,9 @@ targets, float64 predicted m/z, batches of 64.
 Many MassSpecGym target m/z values are rounded to 0.01 Da, so they sit exactly on a bin edge. CPU
 binning or other dtype mixes move 155-482 spectra, and the mean by up to 0.0004.
 
-## Results
+### Results
 
-### Four-metric table (model's own `metric_fn`)
+#### Four-metric table (model's own `metric_fn`)
 
 Both models are scored by MASSter's `model.metric_fn` on the same targets
 (`model.preproc_spec`), with the eval's tolerance table. That scorer reproduces `ll04i00m`'s
@@ -121,7 +135,7 @@ from GPU nondeterminism in the model forward pass; means agree to 1e-5.
 All eight 95% CIs exclude zero. The earlier sqrt-space interval (−0.002 to +0.024, below) is a
 99.9% CI.
 
-### Metric variants
+#### Metric variants
 
 GLACIER's output is squared to give linear intensity in every row.
 
@@ -152,7 +166,7 @@ In sqrt space GLACIER is level with or slightly ahead of us at CE ≤ 35 and on 
 either space is above 35 eV on FT, the high-CE allocation regime of the
 [NIST GLACIER-gap finding](../fragnnet/glacier_gap_ce_decomposition_2026_09_21.md).
 
-## Peak over-prediction (added 2026-09-24)
+### Peak over-prediction (added 2026-09-24)
 
 Test set, linear intensity (GLACIER squared), 0.01 Da bins. A predicted bin counts as on target
 when the target has a peak in the same bin.
@@ -197,7 +211,7 @@ With the aggregated export (the current code), 0.1% keeps a median of 65 of 924 
 the NIST20 cost. Until 2026-09-24 the export filter was a silent no-op for MASSter, fixed in
 `batch_filter_by_peak_intensity` (see [project state](../../project-state.md)).
 
-## Limits
+### Limits
 
 - **Reported versus measured.** GLACIER's sqrt-space score here (0.566-0.577) is close to the
   roughly 0.58 recorded for it on MassSpecGym. That fits ms-pred reporting sqrt-space cosine. Its
@@ -208,7 +222,7 @@ the NIST20 cost. Until 2026-09-24 the export filter was a silent no-op for MASSt
 - n=1 per model; `ll04i00m` is not our best recipe.
 - MassSpecGym's Jensen-Shannon similarity was not computed.
 
-## Artifacts
+### Artifacts
 
 All under `output/glacier_msg_eval_2026_09_24/` (git-ignored):
 
@@ -220,7 +234,7 @@ All under `output/glacier_msg_eval_2026_09_24/` (git-ignored):
   `score_mspred_native.py`.
 - **Per-spectrum scores:** `analysis/*_test_cos.pkl` and `analysis/sqrt_check_scores.pkl`.
 
-## Instrument prediction audit (2026-10-03)
+### Instrument prediction audit (2026-10-03)
 
 Rechecked the saved exact-m/z aggregated MASSter export (`ll04i00m` epoch 60, no cutoff)
 against the original GLACIER sparse-k 256 predictions. These are the simulation predictions
@@ -228,7 +242,7 @@ above, not the later retrieval sparse-k 100 run. Both score tables have unique, 
 spec_id sets and exactly matching molecule, instrument and CE metadata. GLACIER peaks are
 squared before linear-intensity analysis. No inference, training or preprocessing change ran.
 
-### QTOF is not an established GLACIER win
+#### QTOF is not an established GLACIER win
 
 Fresh paired 95% molecule-bootstrap intervals (5,000 resamples, seed 0):
 
@@ -251,7 +265,7 @@ matching lifts linear scores by 0.07503 for MASSter and 0.05882 for GLACIER and 
 small sqrt ordering. This establishes metric sensitivity, not which individual mass offsets
 come from acquisition, rounding or formula assignment. Binned cosine remains the benchmark.
 
-### What the peak lists show
+#### What the peak lists show
 
 Independent diagnostics on saved target peaks and both actual prediction HDF5 files:
 
@@ -275,7 +289,7 @@ observed base peak first less often, despite supporting it more often. That supp
 intensity-allocation weakness, rather than deficient candidate coverage. It does not prove an
 architectural cause or that GLACIER is better overall on QTOF.
 
-### Dataset composition and limits
+#### Dataset composition and limits
 
 QTOF has 21.2% of rows above stored CE 50, against Orbitrap's 38.1%. MASSter's linear advantage
 in that band is +0.05153 on QTOF and +0.04940 on Orbitrap. Below or at 50, the four QTOF bin
@@ -295,3 +309,86 @@ Artifacts: `output/msgym_instrument_audit_2026_10_03/audit.py`, `metrics.csv`,
 root using the configured FRAGNNET-GPU interpreter. One checkpoint per model; no training-seed
 uncertainty estimated. The next causal check is matched molecule/energy/source strata and
 QTOF intensity-allocation errors, not an instrument-specific architecture claim.
+
+## GLACIER contrastive fine-tuning: wrong-spectrum (swap) test on MassSpecGym
+
+> **Status:** FINDING · **Updated:** 2026-10-03
+> On MassSpecGym formula retrieval, the released GLACIER checkpoint (with contrastive fine-tuning,
+> CF) shows no spectrum-blind structure prior beyond MASSter (no CF). With a wrong spectrum of
+> a different formula, both rank the truth at chance. With a wrong spectrum of a same-formula
+> molecule, both rank above chance, and MASSter ranks higher. The NIST'20 random-split shortcut
+> argument in [the GLACIER note](../../notes/glacier_object_detection.md) is still unmeasured.
+
+### Question
+
+GLACIER's CF uses measured positives and PubChem/mutation negatives. The note argues that this
+can teach a "looks measured" prior that ranks candidates without reading the spectrum. The test
+from the MassSpecGym-in-the-wild audit (§5.2): score each test query's candidates against a
+*different* test spectrum, then compare hit@k with chance and with a model trained without CF.
+
+### Setup
+
+- Test fold, all 9,954 `[M+H]+` queries, our candidate list, the saved candidate predictions
+  of the released GLACIER MassSpecGym checkpoint and MASSter `ll04i00m` ep060
+  ([retrieval finding](masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier)). No new inference.
+- **Donors** (same instrument, closest CE, random among ties, seed 0):
+  - `sameF`: a test query whose truth has the same formula and a different 2D InChIKey. Exists
+    for 1,114 queries (221 of 2,318 molecules).
+  - `near`: the nearest precursor m/z with a different 2D InChIKey, for all queries
+    (median |Δm/z| 0.015 Da, p90 1.03 Da; 11% are the same formula).
+- Under a swapped spectrum, candidates sharing the donor's 2D InChIKey are removed. The score is
+  the expected hit@k (random ties) of the query's own truth, so it measures ranking by structure
+  alone. Chance is the mean of min(k, n)/n over the remaining candidates.
+- Scores: ms-pred binned 0.01 Da sqrt entropy (`ent`, GLACIER's native ranking) and the frozen
+  calibrated query log-likelihood (`ll`). Spectrum-free rankers: the negative entropy of each
+  candidate's predicted spectrum (sharpness) and its support size.
+- Intervals: 95% bootstrap over molecules, paired by query.
+
+### Results
+
+The true-spectrum rows reproduce the earlier reads (GLACIER `ent` 0.4965, MASSter `ll` 0.5284).
+
+| spectrum | n | chance @1 / @5 / @20 | GLACIER `ent` | GLACIER `ll` | MASSter `ent` | MASSter `ll` |
+|---|---:|---|---|---|---|---|
+| true | 9,954 | 0.025 / 0.105 / 0.270 | 0.497 / 0.826 / 0.942 | 0.490 / 0.829 / 0.951 | 0.485 / 0.818 / 0.949 | 0.528 / 0.853 / 0.965 |
+| `near` (wrong) | 9,954 | 0.025 / 0.105 / 0.271 | 0.030 / 0.117 / 0.304 | 0.030 / 0.113 / 0.302 | 0.032 / 0.130 / 0.319 | 0.031 / 0.122 / 0.315 |
+| true, `sameF` subset | 1,114 | 0.014 / 0.072 / 0.192 | 0.433 / 0.692 / 0.873 | 0.440 / 0.688 / 0.867 | 0.425 / 0.727 / 0.938 | 0.481 / 0.738 / 0.929 |
+| `sameF` (wrong) | 1,114 | 0.016 / 0.074 / 0.195 | 0.076 / 0.205 / 0.443 | 0.079 / 0.205 / 0.446 | 0.105 / 0.311 / 0.562 | 0.107 / 0.281 / 0.537 |
+
+| contrast, hit@1 | `near` | `sameF` |
+|---|---|---|
+| GLACIER `ent` − chance | +0.005 [−0.001, +0.011] | +0.060 [+0.029, +0.101] |
+| MASSter `ll` − chance | +0.005 [−0.002, +0.013] | +0.091 [+0.054, +0.132] |
+| GLACIER − MASSter, `ent` | −0.002 [−0.009, +0.005] | −0.029 [−0.060, +0.008] |
+| GLACIER − MASSter, `ll` | −0.000 [−0.007, +0.006] | −0.028 [−0.056, +0.006] |
+
+At @5 and @20, under `sameF`, MASSter leads GLACIER by 0.076-0.119 (`ent` @5: −0.106 [−0.209, −0.009]).
+
+Spectrum-free rankers, hit@1 (chance 0.025): GLACIER sharpness 0.019, MASSter sharpness 0.019,
+GLACIER support size 0.025, MASSter support size 0.016. Prediction shape carries no
+"measured-like" signal.
+
+When the donor's own truth is in the query's candidate list (about 600 queries per arm), the swapped
+spectrum puts it first 18-24% of the time, about the same for both models.
+
+### Reading
+
+1. **Neither model has a spectrum-blind structure prior on MassSpecGym.** With a wrong spectrum
+   of nearby mass, both sit within +0.005 of chance, and the GLACIER CF checkpoint is level with
+   MASSter.
+2. **The above-chance `sameF` hits come from reading the spectrum, not from a prior.** Same-formula
+   test molecules are often close analogs, so the donor's spectrum partly resembles the truth's.
+   MASSter, which has no CF, gains more from it than GLACIER does. A CF prior would push the
+   other way.
+3. **Scope.** This tests the released MassSpecGym CF model on the MCES-split benchmark, where the
+   paper's CF gain is only +1.4 pt. The shortcut argument is about the NIST'20 random split, where
+   CF gives +0.135. That case is not tested: no NIST'20 GLACIER checkpoint is released, and
+   retraining one means running ms-pred's MAGMa labelling pipeline on NIST'20 first (judged
+   not worth it, user, 2026-10-03). The policy of comparing against w/o-CF rows still
+   holds, on the argument alone.
+
+### Artifacts
+
+`output/msgym_swap_test_2026_10_03/`: `build_donors.py` → `donors.csv`; `score_swap.py <shard>`
+→ `test/swap_XX.pkl`; `analyze_swap.py` → `swap_summary.csv`, `swap_paired.csv`,
+`swap_donor_truth.csv`.

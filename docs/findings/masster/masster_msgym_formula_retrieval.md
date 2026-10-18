@@ -1,4 +1,18 @@
-# MSGYM 1.5 formula-track retrieval: full val and test, MASSter vs GLACIER
+# MSGYM 1.5 formula-track retrieval: full evaluation and arm screen
+
+> **Status:** FINDING · **Updated:** 2026-10-18
+> Full val/test formula retrieval for MASSter vs GLACIER, then the k1/EMA/Fourier arm screen with test retrieval for `wd10` and `pow075`.
+
+Merged 2026-10-18 from 2 findings on one topic. Each part below is the original
+document unchanged except for heading levels; its own status line keeps its original date.
+Former file names are listed so old links and `git log -- <former path>` can be traced.
+
+| Part | Updated | Verdict | Former file |
+| --- | --- | --- | --- |
+| [MSGYM 1.5 formula-track retrieval: full val and test, MASSter vs GLACIER](#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier) | 2026-10-06 | Calibrated likelihood reaches test hit@1 0.528 | `masster_msgym_formula_retrieval_full_2026_10_03.md` |
+| [MSGYM arm screen (val) and test retrieval for `wd10` and `pow075`](#msgym-arm-screen-val-and-test-retrieval-for-wd10-and-pow075) | 2026-10-08 | `pow075` beats `ll04i00m` on likelihood and entropy scoring (+0.031 hit@1) | `masster_msgym_arm_screen_formula_retrieval_2026_10_07.md` |
+
+## MSGYM 1.5 formula-track retrieval: full val and test, MASSter vs GLACIER
 
 > **Status:** FINDING · **Updated:** 2026-10-06
 > Complete (2026-10-03); calibrated likelihood reaches test hit@1 0.528.
@@ -17,7 +31,7 @@
 > At instrument tolerance, linear JSS ranks worst for both models and favours MASSter (−0.032).
 > Li-weighted entropy puts the two level (+0.000).
 
-## Setup
+### Setup
 
 The protocol was fixed before the test fold was read; see the
 [retrieval plan](../../plans/annotation_aware_retrieval_plan.md#full-formula-track-run-frozen-protocol-2026-10-02-before-any-test-fold-read).
@@ -51,9 +65,9 @@ It extends the [400-query pilot](masster_annotation_retrieval_pilot_2026_10_02.m
   - Spectrum-blind consensus controls.
 - **Intervals.** 95% molecule bootstrap, 2,000 resamples, paired.
 
-## Results
+### Results
 
-### Test (9,954 queries)
+#### Test (9,954 queries)
 
 | model / score | hit@1 | hit@5 | hit@20 | hit@1 ORB (8,374) | hit@1 QTOF (1,580) |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -78,7 +92,7 @@ Paired hit@1 differences:
 | MASSter `cos_hun_inst_tol_sqrt` − MASSter `cos_sim_0.01` | +0.104 [+0.094, +0.116] |
 | MASSter `cos_hun_inst_tol` − MASSter `cos_sim_0.01` | +0.006 [+0.002, +0.010] |
 
-### Val (9,731 queries, MASSter only)
+#### Val (9,731 queries, MASSter only)
 
 | score | hit@1 | hit@5 | hit@20 | Δhit@1 vs cosine [95% CI] |
 | --- | ---: | ---: | ---: | --- |
@@ -90,7 +104,7 @@ Paired hit@1 differences:
 
 Without the 400 pilot molecules (8,095 queries), the likelihood gain is +0.130 [+0.114, +0.147].
 
-## Interpretation
+### Interpretation
 
 1. **The scoring rule matters more than the model.** The log-likelihood gain over cosine is
    +12.7 hit@1 points on both val and test. MASSter's whole margin over GLACIER is 2–3 points.
@@ -104,7 +118,7 @@ Without the 400 pilot molecules (8,095 queries), the likelihood gain is +0.130 [
    similarity than MASSter does.
 4. **QTOF is harder, not bad data.** See the diagnostic below.
 
-## Matching GLACIER's reported retrieval numbers (added 2026-10-03)
+### Matching GLACIER's reported retrieval numbers (added 2026-10-03)
 
 **The paper does not say which similarity ranks retrieval candidates.**
 - §4.1 lists "top-k retrieval accuracy, cosine similarity, and Jensen-Shannon similarity
@@ -275,7 +289,7 @@ Paired GLACIER − MASSter hit@1 (95% molecule bootstrap):
   is the truth in MassSpecGym's ordering. Here it adds at most +0.24 points, because ties
   involving the truth are rare (7–161 of 9,954 queries depending on the score).
 
-### Entropy variants: binning, instrument tolerance, 1% filter (added 2026-10-03)
+#### Entropy variants: binning, instrument tolerance, 1% filter (added 2026-10-03)
 
 - **"ppm"** is ms-pred's entropy formula with one-to-one peak matching at instrument tolerance
   (ORB 10 ppm / 200, QTOF 20 ppm / 750) instead of 0.01 Da bins. Peaks above precursor m/z +
@@ -307,7 +321,7 @@ MASSter's query log-likelihood is 48.53 / 81.50 for reference.
   the instrument-tolerance version GLACIER leads by about 2 points. A filtered metric would favour
   MASSter but is not a standard protocol.
 
-### Intensity weighting at instrument tolerance: sqrt vs linear (JSS) vs Li-weighted
+#### Intensity weighting at instrument tolerance: sqrt vs linear (JSS) vs Li-weighted
 
 These use the same ppm matching, aggregation and above-precursor cut as the ppm row above. Only
 the intensity transform before sum-normalization changes:
@@ -352,7 +366,7 @@ Paired changes in hit@1, 95% molecule bootstrap:
   checked on 2,463 candidates), `test/shard_*/weighted_jss.pkl`,
   `compare_insttol_weightings.{py,log}`.
 
-## QTOF diagnostic (val, MASSter)
+### QTOF diagnostic (val, MASSter)
 
 | | ORB | QTOF |
 | --- | ---: | ---: |
@@ -374,7 +388,7 @@ Paired changes in hit@1, 95% molecule bootstrap:
   column.
 - **Artifacts:** `val/qtof_diagnostic.csv`, `replicate_agreement.py`, `train_fit/`.
 
-## GLACIER batch dependence
+### GLACIER batch dependence
 
 GLACIER's predictions depend on batch composition. On 512 test candidates, batch 16 against
 batch 64 (same flags otherwise) gives this:
@@ -392,7 +406,7 @@ On test shard 0 (500 queries), batch 16 / sparse-k 256 against batch 64 / sparse
 GLACIER `cos_sim_0.01` hit@1 by −0.004 [−0.013, +0.001]. The batch-16 shards 0–4 are kept in
 `test/shard_0{0..4}/glacier_bs16_k256/` and are not used.
 
-## Pipeline notes
+### Pipeline notes
 
 - **`/tmp` filled up during the run**, from old Claude session folders. They were cleared with
   the user's approval. The run writes only under `output/`.
@@ -401,7 +415,7 @@ GLACIER `cos_sim_0.01` hit@1 by −0.004 [−0.013, +0.001]. The batch-16 shards
 - **Markers make the run resumable.** The runner, the inst-tol loops and the sqrt loop are
   idempotent per shard.
 
-## Limits
+### Limits
 
 - Simulation-challenge `[M+H]+` queries only. No `[M+Na]+` or no-CE policy, so these are not
   MassSpecGym leaderboard numbers.
@@ -413,7 +427,7 @@ GLACIER `cos_sim_0.01` hit@1 by −0.004 [−0.013, +0.001]. The batch-16 shards
   score.
 - The val log-likelihood was chosen on the pilot, so test is the clean read.
 
-## Artifacts
+### Artifacts
 
 All under `output/msgym_formula_retrieval_2026_10_02/`:
 
@@ -449,7 +463,7 @@ All under `output/msgym_formula_retrieval_2026_10_02/`:
   source plus its GLACIER configs and run scripts (`PROVENANCE.txt`). `runner.sh` now uses it
   instead of the `/tmp` copy.
 
-## Calibrated likelihood: val-selected, one test read (added 2026-10-03)
+### Calibrated likelihood: val-selected, one test read (added 2026-10-03)
 
 The rule was chosen on val and frozen in the
 [plan](../../plans/annotation_aware_retrieval_plan.md#scoring-rule-calibration-frozen-before-the-test-read-2026-10-03)
@@ -472,7 +486,7 @@ softening both sides: the query weights (√y) and the predicted intensities (p^
 higher floor (1e-4). Reverse-likelihood and explained-mass blends did not replicate on val.
 Artifacts: `output/msgym_retrieval_calibration_2026_10_03/` (`val_selection.csv`, `test_read.csv`).
 
-### GLACIER under the same likelihood rules (added 2026-10-03)
+#### GLACIER under the same likelihood rules (added 2026-10-03)
 
 GLACIER's saved test predictions (released checkpoint, batch 64, sparse-k 100, squared), scored
 with the same rules by `output/msgym_retrieval_calibration_2026_10_03/glacier_calib.py`; all
@@ -494,7 +508,7 @@ about +0.04 at top1 and narrows to +0.014 at top20. ORB: MASSter 0.586 vs GLACIE
 (+0.041 [+0.025, +0.057]). QTOF: 0.222 vs 0.195 (+0.027 [−0.019, +0.074], not resolved). Full table:
 `test_masster_vs_glacier.csv`.
 
-### Each model in its own likelihood space (test-tuned diagnostic, added 2026-10-03)
+#### Each model in its own likelihood space (test-tuned diagnostic, added 2026-10-03)
 
 The frozen rule's prediction power (0.75) was tuned on MASSter, and GLACIER predicts √ intensity.
 To bound that asymmetry, both models were swept on **test** (query weight √y fixed; prediction
@@ -519,7 +533,7 @@ works for GLACIER's 100-peak output and not for MASSter's full ~950-peak support
 Scoring GLACIER in its own space removes about a third of the top-1 lead. MASSter stays ahead at
 every cutoff, with every interval above zero, even though the GLACIER setting was chosen on test.
 
-### 1% filter on predictions (test diagnostic, added 2026-10-03)
+#### 1% filter on predictions (test diagnostic, added 2026-10-03)
 
 Predicted peaks below 1% of each candidate's base peak (linear intensity; GLACIER squared) were
 dropped and the rest renormalized. Then the same likelihood sweep was run (query weight √y;
@@ -541,7 +555,7 @@ interior (floor 1e-3, 1× tolerance).
 - Filtering only MASSter hands GLACIER the top1 lead. Any comparison must filter both or
   neither.
 
-### MASSter-only output filter (added 2026-10-03)
+#### MASSter-only output filter (added 2026-10-03)
 
 Only MASSter is filtered: predicted peaks below a fraction of each candidate's base peak are dropped,
 then the frozen calibrated rule is applied. GLACIER stays unfiltered at its native top-100 output
@@ -562,7 +576,7 @@ On val, 0.01% is the coarsest filter whose loss is inside noise. It keeps a medi
 5.5× fewer than unfiltered. 0.05% (median 76, about GLACIER's 100-peak budget) still beats
 unfiltered GLACIER at its test-best setting at top1. The 1% filter is not competitive.
 
-### MASSter calibrated vs GLACIER on ms-pred's own ranking (added 2026-10-03)
+#### MASSter calibrated vs GLACIER on ms-pred's own ranking (added 2026-10-03)
 
 GLACIER is unfiltered and ranked by ms-pred entropy (its published protocol; saved
 `mspred_style.pkl`), on our candidate list. It reproduces 49.67 / 82.65 / 94.22. MASSter uses the
@@ -582,7 +596,7 @@ frozen calibrated rule with its own output filter. Script: `mspred_glacier_compa
 Deltas are against stable ties. Against GLACIER's own published ranking, MASSter leads at every
 cutoff down to a 0.1% filter.
 
-### MASSter capped at 100 peaks, GLACIER's budget (added 2026-10-03)
+#### MASSter capped at 100 peaks, GLACIER's budget (added 2026-10-03)
 
 The MASSter-only filters are top-100 peaks, ≥ 0.025% of base, and both together. The frozen
 calibrated rule scores MASSter; GLACIER is unfiltered with ms-pred entropy and stable ties.
@@ -599,3 +613,126 @@ At the same 100-peak budget as GLACIER, MASSter loses nothing measurable on val 
 (−0.0016 top1). It leads GLACIER's published ranking at every cutoff (top1 +0.030, top2 +0.023,
 top3 +0.023, top5 +0.022 [+0.002, +0.041], top10 +0.027, top20 +0.023). Adding the 0.025% floor
 to the top-100 cap only removes peaks and costs a little. Top-100 alone is the simpler match.
+
+## MSGYM arm screen (val) and test retrieval for `wd10` and `pow075`
+
+> **Status:** FINDING · **Updated:** 2026-10-08
+> The k1/EMA/Fourier screen ran on 2026-10-02/03 (18 checkpoints in W&B). On formula test retrieval,
+> `pow075` beats `ll04i00m` on likelihood and entropy scoring (`mspred_ent` +0.031 hit@1, CI excludes
+> zero); `wd10` is +0.003 to +0.012 with every CI crossing zero. One seed each.
+
+### Val screen (W&B, all MSGYM runs since `ll04i00m`)
+
+All runs use `data/split/ms_gym_benchmark_1_5`, 128 epochs (`e64`: 64), seed 397623 (`s2`:
+20261003). Checkpointing keeps the top-1 epoch by `val_cos_sim_0.01_epoch/mean` (max), so "val best"
+is the val score of the uploaded `model-epoch=NNN.ckpt`. The saved `state_dict` is the EMA average.
+Arm names are suffixes of `msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda_`.
+
+| run | arm | val best | ckpt epoch | val last |
+| --- | --- | ---: | ---: | ---: |
+| `8afoui7e` | k1_ema999_fourier_wd10 | 0.5867 | 50 | 0.5805 |
+| `3ki6nyy6` | k1_ema999_fourier_pm1 | 0.5859 | 40 | 0.5804 |
+| `7wh3jaqw` | k1_ema999_fourier_mol3 | 0.5849 | 39 | 0.5776 |
+| `1vvyc70p` | k1_ema999_fourier_bond1 | 0.5838 | 49 | 0.5766 |
+| `ocx2i6h5` | k1_ema999_fourier_enc256 | 0.5835 | 37 | 0.5779 |
+| `kb5by4di` | k1_ema999_fourier (control rerun) | 0.5833 | 46 | 0.5766 |
+| `apm3ok8v` | k1_ema999_fourier_enc512 | 0.5831 | 51 | 0.5784 |
+| `8szjefc2` | k1_ema999_fourier_pow075_pm1 | 0.5829 | 51 | 0.5774 |
+| `01pkzb92` | k1_ema999_fourier_e64 | 0.5821 | 38 | 0.5800 |
+| `2y8rl6fs` | k1_ema999_fourier_s2 | 0.5819 | 47 | 0.5766 |
+| `dz7u8i6w` | k1_ema999_fourier (control rerun) | 0.5815 | 39 | 0.5764 |
+| `57bavwzy` | k1_ema999_fourier (control) | 0.5809 | 62 | 0.5777 |
+| `q3oxbpgx` | k1_ema999_fourier_pow075 | 0.5790 | 55 | 0.5728 |
+| `cgivkl1j` | k1_ema999_fourier_itf1 | 0.5785 | 38 | 0.5737 |
+| `p3i0tudq` | glacier_feats_fourier | 0.5770 | 84 | 0.5733 |
+| `3s4o3l02` | k1_ema999_fourier_lr5e4 | 0.5736 | 47 | 0.5705 |
+| `ymaktpzu` | k1_ema999_fourier_sqrt_pm1 | 0.5721 | 29 | 0.5648 |
+| `0hmzfttj` | k1_ema999_fourier_sqrt | 0.5712 | 43 | 0.5642 |
+| `ll04i00m` | glacier_feats (reference) | 0.5705 | 60 | 0.5669 |
+
+- No checkpoint: `1p4s2w61` b256 (crashed at epoch 110, val best 0.5875), `zb7lhmn4`
+  glacier_feats_fourier (crashed, rerun as `p3i0tudq`), `1imawkx1`.
+- Control spread: three control runs plus `s2` span 0.5809–0.5833 (0.0025). Only `wd10` (+0.0049)
+  and `pm1` (+0.0041) clear the control mean 0.5819 by more than that.
+- Sweep `tiwhun9q` has no runs.
+- Val best is a max over 128 epochs, so it is selection-biased upward.
+
+### Formula-track test retrieval
+
+Protocol: [run_msgym_retrieval](../../guides/run_msgym_retrieval.md), formula candidates, test
+fold, 9,954 simulation-challenge `[M+H]+` queries in 20 shards (ORB 8,374, QTOF 1,580), no
+excluded candidates. Expected hit@k under random ties. `loglik_cal` is the rule
+`ll_g0.75_t2_e1e-4_a0.5`, val-selected for `ll04i00m` and **not re-selected** for the new
+checkpoints. `ll04i00m` was re-run on the same runner and reproduces the
+[2026-10-03 test numbers](#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier) to three decimals.
+
+hit@1 (hit@5 / hit@20):
+
+| score | `ll04i00m` @60 | `wd10` @50 | `pow075` @55 |
+| --- | ---: | ---: | ---: |
+| `cos_sim_0.01` | 0.358 (0.711 / 0.894) | 0.366 (0.725 / 0.897) | 0.362 (0.722 / 0.898) |
+| `cos_hun` | 0.365 | 0.372 | 0.368 |
+| `cos_sim_sqrt_0.01` | 0.455 (0.796 / 0.939) | 0.467 (0.806 / 0.936) | 0.467 (0.808 / 0.940) |
+| `mspred_ent` | 0.485 (0.818 / 0.949) | 0.495 (0.826 / 0.946) | 0.516 (0.842 / 0.955) |
+| `loglik` | 0.485 (0.815 / 0.948) | 0.496 (0.829 / 0.951) | 0.504 (0.836 / 0.957) |
+| `loglik_cal` | 0.528 (0.853 / 0.965) | 0.532 (0.857 / 0.963) | 0.542 (0.862 / 0.970) |
+
+`loglik_cal` hit@1 by instrument: ORB 0.591 (`wd10`), 0.603 (`pow075`); QTOF 0.217, 0.218.
+
+Paired hit@1 differences, 95% molecule bootstrap (2,000 resamples):
+
+| score | `wd10` − `ll04i00m` | `pow075` − `ll04i00m` | `pow075` − `wd10` |
+| --- | --- | --- | --- |
+| `cos_sim_0.01` | +0.008 [−0.005, +0.021] | +0.004 [−0.009, +0.017] | −0.004 [−0.015, +0.007] |
+| `cos_sim_sqrt_0.01` | +0.012 [−0.000, +0.024] | +0.012 [−0.002, +0.027] | +0.000 [−0.013, +0.014] |
+| `mspred_ent` | +0.010 [−0.003, +0.023] | **+0.031 [+0.017, +0.046]** | **+0.021 [+0.007, +0.036]** |
+| `loglik` | +0.011 [−0.003, +0.025] | **+0.018 [+0.003, +0.033]** | +0.008 [−0.006, +0.021] |
+| `loglik_cal` | +0.003 [−0.011, +0.018] | +0.014 [−0.002, +0.029] | +0.011 [−0.003, +0.025] |
+
+### Mass-track test retrieval, `pow075` (2026-10-08)
+
+Same runner, mass candidates, test fold: 9,954 queries, 2,466,243 candidates (about 248 per query;
+one unloadable non-truth candidate excluded; 19 queries with two truth rows). No comparison model
+has been run on this track. Expected top-k in %, random ties; top-1 95% molecule bootstrap.
+
+| score | top-1 [95% CI] | top-3 | top-5 | top-20 | ORB top-1 (8,374) | QTOF top-1 (1,580) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `loglik` | 71.35 [67.97, 74.66] | 86.78 | 91.23 | 96.59 | 75.89 | 47.28 |
+| `loglik_cal` | 74.52 [70.92, 77.93] | 89.42 | 93.54 | 97.98 | 79.51 | 48.10 |
+| `cos_sim_0.01` | 52.08 [49.15, 54.95] | 72.16 | 78.29 | 88.38 | 56.22 | 30.16 |
+| `mspred_ent` | 69.18 [65.63, 72.48] | 83.80 | 87.89 | 94.91 | 74.06 | 43.29 |
+
+- Paired top-1: `loglik` − cosine +19.26 [+17.48, +21.06]; `loglik` − entropy +2.17 [+0.79, +3.43].
+- The likelihood margin over cosine is larger than on the formula track (+14.1), and largest on
+  QTOF, where cosine top-20 is 75.4 against 92.2 for `loglik`.
+- GLACIER's paper reports mass top-1 69.95 (w/ CF) and 69.69 (w/o CF) on ms-pred's candidate list.
+  That is unpaired, and our mass list has not been checked against ms-pred's (the formula list was).
+- Artifacts: `output/msgym_retrieval/mass_test/` (`run_pow075.{sh,log}`,
+  `summary_q3oxbpgx_pow075_ep055.csv`, `topk_masster_mass.py`, `topk_1_3_5_20_q3oxbpgx_pow075_ep055.csv`).
+
+### Interpretation
+
+1. **Val cosine does not rank checkpoints for retrieval.** `wd10` leads `pow075` on val
+   `cos_sim_0.01` by 0.008 and ties it on test cosine retrieval, but `pow075` wins on every
+   likelihood/entropy score.
+2. **`pow075` gains where small peaks count.** Entropy and log-likelihood weight low-intensity
+   peaks; cosine and sqrt cosine show no `pow075` advantage. A flatter training target is a
+   plausible cause, untested.
+3. **Single seed.** These are one checkpoint per arm; the val seed spread (0.0025) has no test
+   retrieval counterpart yet.
+4. **`loglik_cal` is under-tuned for the new checkpoints.** Re-selecting it on val per checkpoint
+   may move both arms.
+
+### Artifacts
+
+All in `output/msgym_retrieval/formula_test/`:
+
+- `run_chain.sh` and `run_chain.log`: the three runs.
+- `summary_<ckpt stem>.csv`: per-checkpoint hit@k with intervals.
+- `compare_wd10_pow075_ll04.csv`: paired comparisons (`scripts/eval/summarize_retrieval.py --compare`).
+- `shard_NNN/<ckpt stem>/`: predictions and scores. All deleted: `wd10` and `ll04i00m` by
+  2026-10-13; `pow075` (formula and mass test) on 2026-10-17. Regenerate from the checkpoint.
+- Checkpoints: `saved_ckpts/msgym/8afoui7e_wd10_ep050.ckpt`, `saved_ckpts/msgym/q3oxbpgx_pow075_ep055.ckpt`.
+- A parallel session wrote `compare_vs_glacier.py` and `compare_own_best.py` (with CSVs) in the
+  same directory, comparing these checkpoints with GLACIER's released checkpoint; not part of
+  this finding.

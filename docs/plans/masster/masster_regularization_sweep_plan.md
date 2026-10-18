@@ -41,7 +41,7 @@ Executes the "sweep second" half of the
 regularization audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_regularization_audit_2026_09_19.md`), whose census
 established that `masster_head_dropout`, `weight_decay`, `lr` and `gradient_clip_val` are
 identical in all 226 (now 232) `model_type: masster` runs, and that
-[the overfit audit's](../../findings/masster/masster_unmerged_overfitting_2026_09_16.md) instrument gate
+[the overfit audit's](../../findings/masster/masster_memorization_audits.md#unmerged-masster-generalization-audit) instrument gate
 is still closed.
 
 ## Objective

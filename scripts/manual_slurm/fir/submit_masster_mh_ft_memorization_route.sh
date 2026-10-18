@@ -7,7 +7,7 @@
 # removed with their configs on 2026-09-29: on FT labels the identity routes stood in for the missing
 # instrument, and the relabelled spec_df.pkl no longer reproduces them. Their configs and stages are
 # in Git at 8c52c6d3; their results are in docs/plans/masster/masster_memorization_route_plan.md and
-# docs/findings/masster/masster_memorization_attempts_audit_2026_09_27.md. The route arms among them
+# docs/findings/masster/masster_memorization_audits.md. The route arms among them
 # are rerun below (stage rerun).
 #
 # Added 2026-09-28, after i1_inst_ob_obf (i50ig7rf, n4 on the ORB / ORB_F instrument labels) led n4

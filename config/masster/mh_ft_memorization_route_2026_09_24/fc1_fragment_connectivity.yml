@@ -9,7 +9,7 @@
 # QUESTION. Does message-passing on a candidate's own retained bond graph move base-peak
 # accuracy, ranking gap or calibrated cosine over i1, especially on nested and sibling pairs for
 # molecules with Tanimoto < 0.6 to train? Step 1
-# (docs/findings/masster/masster_i1_base_peak_errors_2026_09_28.md) found val base-peak accuracy
+# (docs/findings/masster/masster_i1_base_peak_errors.md) found val base-peak accuracy
 # 0.71-0.79 against 0.86-0.92 on train, flat across energy and rising with train similarity
 # (0.66 to 0.81). By volume: "does fragmentation go one step further" is 69% of val pairs and
 # 60% of misses; "which bond breaks" is 26% of pairs and 34% of misses; "which side keeps the
@@ -19,7 +19,7 @@
 # branch adds message passing on the retained fragment, not a new feature.
 #
 # HONEST PRIOR. Step 2
-# (docs/findings/masster/masster_i1_postcut_information_gate_2026_09_29.md) found hand-built
+# (docs/findings/masster/masster_i1_base_peak_errors.md) found hand-built
 # post-cut-connectivity descriptors -- 74 columns, richer than anything this branch computes --
 # predict at most about +0.0010 cosine over the calibration baseline on held-out molecules,
 # indistinguishable from noise and from the eight already-tried structure attributes

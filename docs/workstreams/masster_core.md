@@ -1,13 +1,13 @@
 # MASSter core model on NIST20
 
-> **Status:** HUB · **Updated:** 2026-10-16
+> **Status:** HUB · **Updated:** 2026-10-18
 > Architecture, training recipe, regularization, losses, candidate/proposal machinery, speed/GPU, the 128-epoch screens and campaign reads, ion-H channel selection, and feature/information audits for MASSter on NIST20.
 
 ## Where it stands
 
-- **Current speed audit:** [opportunities and limits](../findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16): `i1`/`i4` already use the main speed switches. First candidates are rewire host round-trips and repeated product-pool reductions; base attention packing and loss padding need GPU profiling. 49 focused CPU tests pass; no current GPU speedup measured.
+- **Current speed audit:** [opportunities and limits](../findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16): `i1`/`i4` already use the main speed switches. First candidates are rewire host round-trips and repeated product-pool reductions; base attention packing and loss padding need GPU profiling. 49 focused CPU tests pass; no current GPU speedup measured.
 
-- **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_path_audit_2026_10_16.md): retired-config test inventories repaired; all 177 MASSter PL tests pass. Package lint has four violations. Rewire output-row sorting regression passes. Added 14 batch/padding cases; focused suite: 168 passed, 3 skipped. GPU and real-checkpoint inference unverified.
+- **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_audits.md#masster-current-code-path-audit): retired-config test inventories repaired; all 177 MASSter PL tests pass. Package lint has four violations. Rewire output-row sorting regression passes. Added 14 batch/padding cases; focused suite: 168 passed, 3 skipped. GPU and real-checkpoint inference unverified.
 
 - **Shared codebase audit:** all six findings and the three rechecked config runtime defects repaired and committed in `e65339ed`; the unfiltered CPU suite passes (record removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`). GPU and real-checkpoint evaluation remain unverified.
 
@@ -19,7 +19,7 @@
 
 - **Shared loss consolidation implemented:** [plan](../plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12); numerical fixes, shared preparation and reductions have regression coverage; committed in `1a63257b`. [File merge and renames](../plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12) await review.
 - **Reorganization implemented, not merged:** [plan](../plans/repo_reorg_plan.md) Phases 0–9 are complete on `refactor/fragnnet-masster-reorg`. FraGNNet code is in `src/fragnnet/models/fragnnet/`, MASSter in `src/fragnnet/models/masster/`, GRAFF and MassFormer in `src/fragnnet/baselines/` ([architecture](../architecture.md#package-layout-and-dependency-rule)); ICEBERG runs externally via ms-pred and the main environment is [DGL-free](../plans/repo_reorg_plan.md#decided-external-iceberg-dgl-free-main-environment).
-- **Simplification cleanup committed:** [audit](../findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12) items 1–4 and the annotated-export fix (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`) for sqrt/log10 models with merged rows; annotated exports made before `7e73b384` from such models must be regenerated. Module renames: candidate generation (builder, Cython `cut_mask_kernels.pyx`, SMARTS templates, CUDA) lives in `src/fragnnet/models/masster/candidates/` (`4e36bcae`); the heads are split into `candidate_transformer.py`, `proposal_heads.py`, `component_pooling.py` and `pathway_probabilities.py`.
+- **Simplification cleanup committed:** [audit](../findings/masster/masster_code_audits.md#outcome-2026-10-12) items 1–4 and the annotated-export fix (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`) for sqrt/log10 models with merged rows; annotated exports made before `7e73b384` from such models must be regenerated. Module renames: candidate generation (builder, Cython `cut_mask_kernels.pyx`, SMARTS templates, CUDA) lives in `src/fragnnet/models/masster/candidates/` (`4e36bcae`); the heads are split into `candidate_transformer.py`, `proposal_heads.py`, `component_pooling.py` and `pathway_probabilities.py`.
 - **RT/CCS:** [RTHead and CCSHead](../plans/masster/masster_rt_ccs_plan.md) with independent label sets completed a new 10-epoch GPU debug run; full Enveda arm remains prepared, heads default off.
 - Matched 128-epoch screen on the merged MA/MI base: control `c4a_base_s1` = **0.7270** `val_cos_sim` (tail mean epochs 118-127, replicate spread 0.0007, gate +-0.005), config `config/masster/ma_mi_merged/nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml`.
 - Real levers: `a1_prenorm` (`q4t4udee`) **+0.0056**, the only clean single-key architecture pass; cosine LR decay with 1000-step warmup `d3` (`rcfzf67p`) 0.7357 (+0.0072 at epoch 121, n=1); the 2026-09-20 feature bundle is worth about +0.006/+0.007; EMA gained +0.0102 on `i1` (see generalization hub).
@@ -34,12 +34,12 @@
 
 | Thread | Status | Next concrete step |
 | --- | --- | --- |
-| [Current speed audit](../findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16) | FINDING | Profile current base/rewire GPU steps; benchmark behavior-preserving rewire host/cap changes first |
-| [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING | Config tests repaired; package lint and GPU/real-checkpoint validation remain open |
+| [Current speed audit](../findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16) | FINDING | Profile current base/rewire GPU steps; benchmark behavior-preserving rewire host/cap changes first |
+| [Current code-path audit](../findings/masster/masster_code_audits.md#masster-current-code-path-audit) | FINDING | Config tests repaired; package lint and GPU/real-checkpoint validation remain open |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING | Findings 1–3 repaired; 6 resolved for MASSter (configs retired 2026-10-13); resolve malformed/duplicate YAML next |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED | Review implementation and tests; GPU validation when available |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE | Phases 1–2 committed (`3deaf652`); Phases 3–5 reviewed, ready to commit |
-| [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
+| [Code simplification audit](../findings/masster/masster_code_audits.md#masster-code-simplification-audit) | FINDING | Items 1–4, export fix and module renames committed; next item 5 (orchestration extraction) |
 | [RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | DEBUG COMPLETE; full arm PREPARED | Matched Enveda multitask/control evaluation; coordinated in the [CASMI/Enveda hub](casmi_enveda.md) |
 | [Regularization sweep / `wd10`](../plans/masster/masster_regularization_sweep_plan.md) | PREPARED | Generate on Fir with `submit_masster_regularization.sh wd10` if the gap question is reopened |
 | [Unused NIST peak annotations](../findings/unused_information_inventory_2026_09_22.md) | FINDING (open) | Decide whether to use per-peak formula assignments in the loss |
@@ -85,22 +85,21 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
-| [Current code-path audit](../findings/masster/masster_code_path_audit_2026_10_16.md) | FINDING (2026-10-16) | Selected CPU validation, stale config tests, lint baseline and rewire row-order review |
+| [Code audits](../findings/masster/masster_code_audits.md) | FINDING (2026-10-18, merged) | Two parts: simplification audit (items 1–4 committed, 5–6 open); current code-path audit (stale config tests, lint baseline, speed audit, rewire row-order review) |
 | [MASSter method](../reference/masster_method.md) | REFERENCE (2026-10-16) | Chemically constrained probabilistic framing, intensity-distribution semantics, ranked candidate selection, and comparison with FraGNNet |
 | [Config audit](../findings/config_audit_2026_10_12.md) | FINDING (2026-10-12) | Seven findings; 806 YAML files scanned, 109 focused tests passed |
 | [Shared loss consolidation](../plans/loss_consolidation_plan.md) | LANDED (2026-10-12) | Phased numerical fixes and behavior-preserving cleanup |
 | [Training runner cleanup](../plans/runner_cleanup_plan.md) | ACTIVE (2026-10-12) | `runner.py` audit: 10 bugs (W&B-off upload, `ckpt_path="best"` without checkpoints, dead `interrupted` guards, silent sweep typos), then a behavior-preserving split into config and loading modules |
 | [Shared loss audit](../findings/loss_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Reproduced correctness issues and prioritized simplifications |
-| [Code simplification audit](../findings/masster/masster_simplification_audit_2026_10_12.md) | FINDING (2026-10-12) | Prioritized cleanup; items 1–4 implemented and committed; candidate generation in `candidates/` |
 | [MASSter RT/CCS heads](../plans/masster/masster_rt_ccs_plan.md) | PREPARED (2026-10-10) | Shared heads, label evidence, completed GPU debug training and full experiment |
 | [repo_reorg_plan](../plans/repo_reorg_plan.md) | ACTIVE (2026-10-12) | Cross-model reorg: registry and hooks, `fragmentation/`, `frag_utils` split, `models/` and `baselines/` packages, external ICEBERG via ms-pred, DGL-free env; Phases 0–9 complete on `refactor/fragnnet-masster-reorg`, awaiting merge |
 | [masster_plan](../plans/masster/masster_plan.md) | LANDED (2026-10-06) | Core design record: one-pass bond-set model, mask enumeration, ion/H channels; snapshot of shipped behavior |
 | [masster_candidate_feature_list_plan](../plans/masster/masster_candidate_feature_list_plan.md) | LANDED (2026-10-06) | Ordered candidate-token feature list with one spec table |
 | [masster_nonprobabilistic_intensity_plan](../plans/masster/masster_nonprobabilistic_intensity_plan.md) | LANDED (2026-10-06) | Direct peak-list objectives (Hellinger, leak, CE auxiliary); CE stays production |
 | [masster_regularization_sweep_plan](../plans/masster/masster_regularization_sweep_plan.md) | PREPARED (2026-10-06) | One-hour regularization sweep (no promotions) and the prepared full-length `wd10` arm |
-| [masster_smarts_review_2026_09_13](../findings/masster/masster_smarts_review_2026_09_13.md) | FINDING (2026-09-13) | SMARTS rule set and literature review (26 rules) |
+| [SMARTS review](../findings/masster/masster_smarts_findings.md#masster-smarts-set-and-literature-review) | FINDING (2026-09-13) | SMARTS rule set and literature review (26 rules) |
 | [masster_training_speed_2026_09_17](../findings/masster/masster_training_speed_2026_09_17.md) | FINDING (2026-10-06) | Training speed: monitoring, CPU/CUDA candidates, batched coverage loss, cut-bond dedup |
-| [masster_unmerged_overfitting_2026_09_16](../findings/masster/masster_unmerged_overfitting_2026_09_16.md) | FINDING (2026-09-16) | W&B read of the growing unmerged generalization gap |
+| [Unmerged overfitting audit](../findings/masster/masster_memorization_audits.md#unmerged-masster-generalization-audit) | FINDING (2026-09-16) | W&B read of the growing unmerged generalization gap |
 | [unexplained_peak_split_2026_09_22](../findings/masster/unexplained_peak_split_2026_09_22.md) | FINDING (2026-09-22) | Unreachable ~11% intensity: 73% coverage, 27% escape; isotopologues 46.5% of escape |
 | [notebook_audit_2026_10_12](../findings/notebook_audit_2026_10_12.md) | FINDING (2026-10-12) | Shared notebook reporting correctness and reproducibility audit |
 | [loss_setup_review_2026_09_13](../findings/loss_setup_review_2026_09_13.md) | FINDING (2026-09-21) | Loss setup review with counterexamples and fixes |

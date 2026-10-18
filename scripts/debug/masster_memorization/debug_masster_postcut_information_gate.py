@@ -2,7 +2,7 @@
 checkpoint does not use? A cross-fitted, per-candidate correction gate on validation molecules.
 
 Step 2 of the wrong-peak analysis (2026-09-29), after
-``docs/findings/masster/masster_i1_base_peak_errors_2026_09_28.md``. Subcommands ``extract`` and
+``docs/findings/masster/masster_i1_base_peak_errors.md``. Subcommands ``extract`` and
 ``fit`` (plus ``ceiling``, below):
 
 ``extract`` runs one annotated eval-mode forward per batch, as

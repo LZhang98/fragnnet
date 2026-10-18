@@ -1,6 +1,6 @@
 # CASMI 2026, Enveda-180 and shared data quality
 
-> **Status:** HUB · **Updated:** 2026-10-16
+> **Status:** HUB · **Updated:** 2026-10-18
 > CASMI 2026 (Enveda) data release, the Enveda-180 dataset and its baseline config, the ZenoTOF CID/EAD libraries, the combined PCDL+NIST23+Enveda-180 split, and shared NIST data-quality / subformula / isotope-detection work.
 
 ## Where it stands
@@ -41,7 +41,7 @@
   - [Standalone, ACE only, no EMA](../findings/enveda_180_dataset_2026_09_25.md) — user decision; molecules effectively disjoint from NIST20/23, MSGYM and Spectraverse (26-66 shared).
   - [Isotopes](../findings/enveda_180_dataset_2026_09_25.md#9-isotopes-2026-09-25) — 13C satellites are 7.7% of positive-mode target; envelope gate fails (0.0047 vs 0.005), so no isotope modelling for cosine.
   - [`[M+Br]-` support](../findings/enveda_180_dataset_2026_09_25.md#8-mbr--support-2026-09-25-uncommitted) — added to the adduct tables; 25 Enveda and 224 NIST23 spectra; the split needs regenerating to include them.
-  - [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) — only S=O rules pass, 2-10x weaker than NIST20 (owned by the generalization hub).
+  - [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_findings.md#masster-smarts-rules-on-enveda-180-per-class-gate) — only S=O rules pass, 2-10x weaker than NIST20 (owned by the generalization hub).
 - **Shared data quality**
   - NIST20 zero-coverage (removed 2026-10-18; `git show 95341fce:docs/plans/nist_data_quality_plan.md`) — only 255 spectra (0.069%); 16 are lipid precursor-annotation errors; UWPR flags are a sensitivity label, not ground truth.
   - [5 ppm subformula filter](../findings/subformula_filter_ft_qtof.md) — NIST20-HR census by FT/QTOF; the Cl/Na budget fix reaches MASSter.
@@ -63,7 +63,7 @@
 | [5 ppm subformula filtering, NIST20-HR](../findings/subformula_filter_ft_qtof.md) | FINDING (2026-10-06) | Census, instrument tolerance, Cl/Na fix |
 | [NIST human review guide](../guides/nist_human_review.md) | GUIDE (linked only) | Manual spectral review procedure |
 | [Isotope-peak detection tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (linked only) | Tuning of the isotope-peak detectors (`utils/isotope_cleanup_utils.py`: `detect_isotope_peaks_for_training` and its formula-aware variant; the naive `detect_isotope_peaks` was removed 2026-10-12) |
-| [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md) | linked only | Per-class SMARTS gate |
+| [SMARTS gate on Enveda-180](../findings/masster/masster_smarts_findings.md#masster-smarts-rules-on-enveda-180-per-class-gate) | linked only | Per-class SMARTS gate |
 
 Shared data quality (NIST20 diagnostics, subformula filter, isotope detection) is listed here because no other hub owns it; Spectraverse filter screens are in [the Spectraverse hub](spectraverse.md).
 

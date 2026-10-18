@@ -20,7 +20,7 @@ CASMI train row whose `molecular_formula` carries Br, Cl or I (287,607 rows), at
   coverage ≥ 0.8, coverage − chance ≥ 0.3, base peak explained. Thresholds were set before reading
   the tables and were not tuned.
 - **Pairs.** Single-site and all-site Br→Cl, I→Br, I→Cl swaps, matched on the 2D InChIKey block,
-  as in the [element-swap census](masster/rare_chemistry_element_swap_census_2026_10_14.md). "Coarse"
+  as in the [element-swap census](masster/rare_chemistry_censuses.md#rare-chemistry-element-swap-census-halogens-have-measured-pairs-seassi-do-not). "Coarse"
   means the pair shares an (adduct, instrument class).
 - **NIST20 HR** here is all splits of `nist20_hr*` in `data/proc/nist20`, not the `i1` train split.
 

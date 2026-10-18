@@ -10,7 +10,7 @@
 # This config differs from fc1_fragment_connectivity.yml by
 # masster_fragment_connectivity_messages and W&B naming only. See fc1's header for the full
 # motivation, the step-1 decision breakdown and the honest step-2 prior
-# (docs/findings/masster/masster_i1_postcut_information_gate_2026_09_29.md).
+# (docs/findings/masster/masster_i1_base_peak_errors.md).
 #
 # CONTROL: i1_inst_ob_obf (i50ig7rf), tail 0.7607 over epochs 54-63.
 # READ: run only if fc1 beats i1 by more than the documented seed floor (see fc1's header). Same

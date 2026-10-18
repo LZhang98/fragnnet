@@ -59,7 +59,7 @@ Launcher: [`submit_msgym_short_budget.sh`](../../../scripts/manual_slurm/fir/sub
 - `e1024` matters only if `unique_fragment_target_reached` drops or `selected_mask_count` sits at
   the cap; if neither moves, E1024 is free.
 - Validation cosine does not rank MSGYM checkpoints for retrieval
-  ([arm screen finding](../../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
+  ([arm screen finding](../../findings/masster/masster_msgym_formula_retrieval.md#msgym-arm-screen-val-and-test-retrieval-for-wd10-and-pow075)).
   Run formula-test retrieval, with `loglik_cal` re-selected on validation, for `c64` and any arm
   that holds it on validation before adopting a cheaper setting.
 

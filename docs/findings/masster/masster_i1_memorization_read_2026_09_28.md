@@ -62,7 +62,7 @@ memorization instruments are:
     on `spec_df.pkl` md5 `bdc009bb…`.
 - **Full val split.** `i1`@59 also ran on all 52,020 val spectra, 5 min.
   - The probe's val sample is the `spec_id`-ordered prefix
-    ([audit, correction 8](masster_memorization_attempts_audit_2026_09_27.md#corrections-to-the-record)).
+    ([audit, correction 8](masster_memorization_audits.md#corrections-to-the-record)).
   - It turns out to be 90% Elite, against 74% for the split.
 - **`c0` references.**
   - The stored `c0`@42 probe (`output/allocator_route_nl_2026_09_26/`).

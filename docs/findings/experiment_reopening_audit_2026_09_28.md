@@ -52,7 +52,7 @@ tree. Historical sources, recoverable with `git show <revision>:<path>`:
 
 ## What the newest evidence changes
 
-The [base-peak finding](masster/masster_i1_base_peak_errors_2026_09_28.md) is more selective
+The [base-peak finding](masster/masster_i1_base_peak_errors.md#wrong-base-peak-choices-of-i1-a-broad-transfer-deficit-not-one-missing-distinction) is more selective
 than the earlier verbal diagnosis:
 
 - Nested candidate pairs account for 60% of base-peak misses; overlapping/disjoint alternatives
@@ -207,7 +207,7 @@ prepass confound (removed 2026-10-18; `git show 95341fce:docs/findings/feature_h
 
 Sources: [FluxMPNN](../plans/fragnnet/fluxmpnn_plan.md),
 sibling diagnostic correction (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md`),
-[attempts audit](masster/masster_memorization_attempts_audit_2026_09_27.md),
+[attempts audit](masster/masster_memorization_audits.md#audit-of-every-attempt-to-close-massters-memorization-gap),
 [latest batch read](../plans/masster/masster_memorization_route_plan.md),
 architecture results (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md`),
 shared proposals (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md`),

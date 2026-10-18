@@ -24,7 +24,7 @@
 # READ: (1) val_candidate_wrecall against c0; (2) tail mean of val_cos_sim_0.01_epoch/mean over
 # epochs 54-63 against c0, +0.003 gate, about +0.006 for a single seed; (3) val cosine on the
 # spectra whose molecule has an eligible template, against c0 on the same spectra.
-# Finding: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+# Finding: docs/findings/masster/masster_smarts_findings.md
 #
 # Control header follows.
 # CONTROL c0 -- same-code control for the memorization-route Step 1 arms, 2026-09-24.

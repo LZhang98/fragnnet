@@ -85,7 +85,7 @@ overwritten. A new `--output_name` would not do instead: step 2 labels the `dset
 **Never join `data/df/spectraverse_df.csv` or `data/df/spectraverse_fold_*.csv` to the current
 `data/proc/spectraverse`.** They are an older build (v1.0.0 era; `INDEX` and `FOLD_*` keys, 8-digit
 titles, 478,530 rows) whose `spec_id`/`dset_spec_id` do not match the current ones. See
-[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)
+[the source and replicate audit](../docs/findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape)
 and [the curation note](../docs/notes/spectraverse_curation_paper.md).
 
 ### Enveda-180
@@ -339,7 +339,7 @@ and train is the other eight folds. Every spectrum is in exactly one of the thre
 by 2D InChIKey (not by formula). Each `cv` holds `train_ids.csv`, `val_ids.csv`, `test_ids.csv`
 (`mol_id,spec_id,group_id`); the existing directory has no `stats.json`, but the rebuild writes one
 per `cv<k>`. See
-[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md).
+[the source and replicate audit](../docs/findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape).
 
 `build_benchmark_split.py` rebuilds them from the MGF, with `mol_id`/`spec_id`/`group_id` taken from the
 current `spec_df.pkl`. `--dst-split-dp` is required, has no default, and must not be the existing

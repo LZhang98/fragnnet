@@ -9,10 +9,10 @@
 
 Find a MASSter MSGYM recipe that raises linear `val_cos_sim_0.01` and MSGYM retrieval. The
 generalization gap is the target: `ll04i00m` has train 0.884 against val 0.584 (63% of its
-emitted-bin ceiling, see the [oracle ceiling](../../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md)).
+emitted-bin ceiling, see the [oracle ceiling](../../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-oracle-cosine-ceiling)).
 Reference points on the 9,954-spectrum simulation test set: `ll04i00m` 0.5713, GLACIER released
 checkpoint 0.5455
-([finding](../../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md)).
+([finding](../../findings/masster/masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set)).
 Retrieval is read with the [one-command runner](../../guides/run_msgym_retrieval.md).
 
 ## Scope decision (user, 2026-09-24, from project-state handoff)
@@ -118,7 +118,7 @@ against |control − `s2`|.
 ### Calibrated-likelihood training arms (2026-10-03)
 
 `…_k1_ema999_fourier_{pow075,pm1,sqrt_pm1,pow075_pm1}.yml` put the calibrated retrieval rule
-(`ll_g0.75_t2_e1e-4_a0.5`, see the [retrieval finding](../../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md#calibrated-likelihood-val-selected-one-test-read-added-2026-10-03))
+(`ll_g0.75_t2_e1e-4_a0.5`, see the [retrieval finding](../../findings/masster/masster_msgym_formula_retrieval.md#calibrated-likelihood-val-selected-one-test-read-added-2026-10-03))
 into training.
 
 - **Keys.** `ints_transform: pow0.75` is new (target y^0.75, untransform x^(4/3)).

@@ -43,7 +43,7 @@ Read the existing analyses before proposing new noise or uncertainty work:
   is 0.970 mean / 0.989 median in its 10-ppm clustered frame. Its ensemble uncertainty test
   found mostly spectrum-level signal; per-peak spread/votes added presence AUC 0.793 → 0.800
   and within-spectrum intensity-matched error concordance was about 58-60%.
-- The 0.946 figure in the [attempts audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)
+- The 0.946 figure in the [attempts audit](../../findings/masster/masster_memorization_audits.md#audit-of-every-attempt-to-close-massters-memorization-gap)
   uses a different, 0.01-Da binned frame. It is not interchangeable with clustered cosine and
   should not anchor a new noise estimate. Neither number is a universal prediction ceiling.
 - Both historical replicate analyses matched NCE only. Their results remain historical

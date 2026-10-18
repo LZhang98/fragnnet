@@ -23,7 +23,7 @@ Stages:
     together, since they are not independent).
 
 Example (MSGYM test, see
-docs/findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md):
+docs/findings/masster/masster_glacier_released_ckpt.md):
 
     python scripts/eval/compare_msgym_predictions.py score --config <cfg> --ckpt <ckpt> \
         --split test --export <predictions_test.hdf5> --out ours.pkl

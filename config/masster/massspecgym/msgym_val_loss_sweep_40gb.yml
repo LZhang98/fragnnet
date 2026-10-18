@@ -3,7 +3,7 @@
 #
 # 2026-10-08: ints_transform pow0.75 + masster_merge_same_mz_rows true (the pow075 arm's pair;
 # merge is required with an exact-mass MASSter and a non-none transform, template.yml:834-839).
-# WHY. The 2026-10-03 screen read (docs/findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md):
+# WHY. The 2026-10-03 screen read (docs/findings/masster/masster_msgym_formula_retrieval.md):
 # pow075 (q3oxbpgx@55) beats ll04i00m on formula test retrieval, mspred_ent hit@1 +0.031
 # [+0.017, +0.046] and loglik +0.018 [+0.003, +0.033], and val cosine does not rank checkpoints
 # for retrieval -- so the sweep trains at the pow0.75 operating point. pm1 is NOT taken: it

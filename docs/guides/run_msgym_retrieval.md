@@ -3,7 +3,7 @@
 > **Status:** GUIDE · **Updated:** 2026-10-16
 > One command scores a MASSter checkpoint on MSGYM 1.5 retrieval, locally or on Fir/Vulcan.
 > Verified locally on the formula val fold. Prepare reproduces the
-> [2026-10-03 run's](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+> [2026-10-03 run's](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier)
 > 20 shards exactly. Scoring reproduces its per-candidate values from the same predictions.
 > No cluster job has been submitted yet.
 

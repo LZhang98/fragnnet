@@ -11,8 +11,8 @@ Plan built on this: [rewire rules in training](../../plans/masster/masster_rewir
 ## Question
 
 The user asked whether more SMARTS rules are worth writing, and what they would cover. Earlier gates
-measured registered whole-precursor templates only ([SMARTS pathway gates](masster_smarts_pathway_gates_2026_09_30.md),
-[outlier reach](masster_smarts_outlier_reach_2026_09_29.md)). This finding measures the ceiling directly
+measured registered whole-precursor templates only ([SMARTS pathway gates](masster_smarts_findings.md#smarts-pathway-gates-g0-g1-g2-g2b-every-arm-fails-its-gate),
+[outlier reach](masster_smarts_findings.md#masster-smarts-rules-and-outlier-spectra)). This finding measures the ceiling directly
 from the spectra, then gates mechanism rules that are followed by ordinary cuts.
 
 ## Method

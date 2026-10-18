@@ -188,14 +188,14 @@ teaches nothing about the motif. The user chose this revised sequence on 2026-10
 the molecular-networking branch below as the route for rare-element classes.
 
 1. **Check the gap first.** Score `i1` on the frozen rare cohort from
-   [`held_out_cohorts.csv`](../../findings/masster/rare_chemistry_class_census_2026_10_10.md) against
+   [`held_out_cohorts.csv`](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-census-a1-moves-exposure-a3-does-not) against
    the common cohort, on val only. The cohort comes from training counts, so this keeps the
    preregistration. If `i1` is not clearly worse on it, close the rare-element question.
 2. **Pool the cohort.** Report one "rare heteroatom" cohort (the element and reactive-group
    classes in the 1–20 bins) in addition to the per-class counts; single classes cannot reach the
    20-molecule support rule. A training-molecule k-fold may enlarge it for diagnostics only.
 3. **Element-swap transfer, NIST20 halogens only.** The
-   [element-swap census](../../findings/masster/rare_chemistry_element_swap_census_2026_10_14.md)
+   [element-swap census](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-element-swap-census-halogens-have-measured-pairs-seassi-do-not)
    found 57 Br→Cl training pairs (35 sharing adduct, instrument and frag mode), 23 I→Br/Cl
    pairs, and essentially none for Se, As, Si or Te; MSGYM has no usable pairs. Steps:
    - **3a. Correspondence screen on training Br↔Cl pairs.** Transport the annotated peaks of one
@@ -432,7 +432,7 @@ the stopped formula-alignment or cm0–2 training recipes unchanged.
   retrieval-conditioned forward spectrum prediction using neural graph matching. It supports
   testing learned donor use; it does not validate our proposed augmentation recipe or its
   expected gain on the current NIST20/MSGYM splits.
-- Our [cross-molecule census](../../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md)
+- Our [cross-molecule census](../../findings/masster/masster_cross_molecule_supervision.md#cross-molecule-gate-transferable-spectral-relationships-weak-winner-labels)
   found soft measured relationships; strongest-outcome agreement was weak. Its training pilot
   was removed at user request, never measured as a training null.
 - Formula-aligned corrections (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_reference_information_gate_2026_09_29.md`)
@@ -598,14 +598,14 @@ retain measured spectra. Report each dataset independently.
   spectra per epoch at fixed batch 512, matching A0's steps.
 - **Configs:** `config/masster/rare_chemistry_2026_10_10/` now holds only NIST20 A0 (the `i1`
   rerun, seed 397623) and route 1's E0/E1/E2; the A1/A3 and MSGYM configs were removed.
-- **Census ([finding](../../findings/masster/rare_chemistry_class_census_2026_10_10.md)):** A1 moves
+- **Census ([finding](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-census-a1-moves-exposure-a3-does-not)):** A1 moves
   molecule exposure (total variation from A0: NIST20 0.109, MSGYM 0.479). A3 with this panel is
   nearly identical to A1 and has under 30 held-out rare molecules per split; it fails the census
   gate. Submit A0 and A1 only unless the user picks an A3 redesign from the finding.
 - **Verified:** 25 sampler/panel tests and 109 runner-config tests pass; two-epoch GPU smokes on
   512 spectra exit 0 for MSGYM A1 and NIST20 A3 and redraw each epoch. The full suite has 17
   failures in export-schema, MASSter export and post-cut gate tests that also fail on clean HEAD.
-- **Element-swap census 2026-10-14 ([finding](../../findings/masster/rare_chemistry_element_swap_census_2026_10_14.md)):**
+- **Element-swap census 2026-10-14 ([finding](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-element-swap-census-halogens-have-measured-pairs-seassi-do-not)):**
   structure-only; halogen pairs exist on NIST20, none usable on MSGYM.
 - **Built 2026-10-14 (route 1):** `a_periodic` (`AtomPeriodic`, `periodic_position`,
   `PAULING_ELECTRONEGATIVITY`) in [feat_utils.py](../../../src/fragnnet/utils/feat_utils.py);

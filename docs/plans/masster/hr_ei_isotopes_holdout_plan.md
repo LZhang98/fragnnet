@@ -20,9 +20,9 @@ configuration using the new split. Do not initialize it from the contaminated e1
 
 ## Established evidence
 
-- [Raw audit](../../findings/masster/hr_ei_raw_audit_2026_10_17.md): four libraries;
+- [Raw audit](../../findings/masster/masster_ei_evaluation.md#hr-ei-raw-peak-and-structure-audit): four libraries;
   Castro structure mapping remains unresolved.
-- [Frozen e1 comparison](../../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md):
+- [Frozen e1 comparison](../../findings/masster/masster_ei_evaluation.md#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra):
   962 consistent mapping records evaluated, but exact output currently lacks isotopes.
 - Existing natural isotope rows require nominal mass mode. Their nominal mass offsets
   cannot be reused as exact-mass increments.
@@ -106,7 +106,7 @@ The nominal isotope regression suite passes. GPU cases are skipped because CUDA
 is unavailable locally. Final focused validation: 45 tests passed, four GPU-only
 cases skipped; Ruff and diff checks pass. The frozen e1 checkpoint loads strictly
 with exact natural output; all 962 reference spectra completed on CPU. The
-[follow-up comparison](../../findings/masster/hr_ei_checkpoint_eval_2026_10_17.md#follow-up-natural-exact-mass-isotope-output)
+[follow-up comparison](../../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output)
 records results, runtime, and artifacts. They remain a contaminated baseline.
 
 Original artifacts and unrelated UMAP/CASMI edits remain untouched.

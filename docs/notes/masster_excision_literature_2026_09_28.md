@@ -21,7 +21,7 @@ formula alone cannot establish its atom mapping or reaction mechanism.
 
 The current implementation represents **precursor atom partitions**, including disconnected
 retained assemblies, rather than newly bonded product graphs with sequential fragmentation.
-See the [implementation audit](../findings/masster/masster_smarts_review_2026_09_13.md) and
+See the [implementation audit](../findings/masster/masster_smarts_findings.md#masster-smarts-set-and-literature-review) and
 [registry](../../src/fragnnet/models/masster/candidates/smarts_templates.py). Thus adding candidate support and
 learning the actual rearranged connectivity are different implementation scopes.
 
@@ -51,7 +51,7 @@ intermediate.
 
 **Correction to earlier state:** `hydroxamic_acid_nh_excision` is already in the executable
 registry, guarded to `[M+H]+`. The initial rejection in the
-[SMARTS audit §6](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#6-aimes-worked-examples-and-the-other-rule-lists)
+[SMARTS audit §6](../findings/masster/masster_smarts_findings.md#6-aimes-worked-examples-and-the-other-rule-lists)
 was followed by a weak positive gate and addition in §7. Its existence is not new in this
 search. The [current catalog](../reference/masster_smarts_rules.md) is authoritative for the
 22-rule set and measured gates. That gate measures peak coverage, not mechanistic proof.

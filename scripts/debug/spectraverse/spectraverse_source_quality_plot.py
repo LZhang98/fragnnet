@@ -11,7 +11,7 @@ ion of the labelled molecule and adduct (``preproc_scripts/spectraverse/subformu
     realistic mass defect. MS-DIAL is split at 50% intensity explained (config tolerance).
     Computed on sampled spectra and cached in ``--sweep-csv``.
 
-See docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md.
+See docs/findings/masster/spectraverse_masster_findings.md.
 """
 
 from __future__ import annotations

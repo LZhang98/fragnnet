@@ -36,9 +36,9 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
-- **Speed audit:** [current opportunities](findings/masster/masster_code_path_audit_2026_10_16.md#speed-audit-of-the-current-path-2026-10-16): main speed switches already active in `i1`/`i4`; rewire host round-trips/repeated reductions and base packing/loss padding are next profiling targets. CPU regressions pass; current GPU timing unavailable.
+- **Speed audit:** [current opportunities](findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16): main speed switches already active in `i1`/`i4`; rewire host round-trips/repeated reductions and base packing/loss padding are next profiling targets. CPU regressions pass; current GPU timing unavailable.
 
-- **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_path_audit_2026_10_16.md): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
+- **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_audits.md#masster-current-code-path-audit): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
 
 - **Shared codebase audit:** all six findings and the three config runtime defects repaired and committed in `e65339ed`; unfiltered CPU suite passes (record removed 2026-10-18; `git show 731fe493:docs/findings/codebase_audit_2026_10_13.md`). **Next:** GPU/real-checkpoint evaluation unverified. Older branch/uncommitted descriptions below are stale for this checkout.
 
@@ -49,7 +49,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Unit test audit:** all four findings fixed in `e65339ed` (record removed 2026-10-18; `git show 731fe493:docs/findings/unit_test_audit_2026_10_12.md`). **Next:** GPU validation.
 
 - **Reorganization done** (Phases 0–9 on `refactor/fragnnet-masster-reorg`, not merged; [progress](plans/repo_reorg_plan.md#progress)): MASSter is in `src/fragnnet/models/masster/`; ICEBERG runs through external ms-pred; package metadata and install files no longer require DGL (the live `FRAGNNET-GPU` environment is unchanged). **Next:** review and merge the branch.
-- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_simplification_audit_2026_10_12.md#outcome-2026-10-12), the export fix (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
+- **Code cleanup committed:** [audit items 1–4](findings/masster/masster_code_audits.md#outcome-2026-10-12), the export fix (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_export_merge_untransform_2026_10_12.md`) for sqrt/log10 models with merged rows, and module renames so file names say what they hold: candidate generation in `models/masster/candidates/` (`builder`, `cut_mask_kernels.pyx`, `reference_cut_masks`, `cuda_mask_ranking`, `cuda_topology_hybrid`; `4e36bcae`), and `bond_fragment_heads.py` split into `candidate_transformer`, `proposal_heads`, `component_pooling` and `pathway_probabilities`. After checkout run `python setup.py build_ext --inplace` (the Cython extension is now `cut_mask_kernels`). **Next:** audit item 5.
 - **Shared loss consolidation committed** (`1a63257b`, file merge and renames `72ad897e`): [plan](plans/loss_consolidation_plan.md#completion-and-validation-2026-10-12), [file merge and renames](plans/loss_consolidation_plan.md#file-merge-and-renames-2026-10-12). **Next:** GPU validation when available.
 
 - **Screen baseline:** merged MA/MI 128-epoch screen, control `c4a_base_s1` 0.7270 (spread
@@ -64,7 +64,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 - **Best:** `ll04i00m` test `cos_sim_0.01` 0.5713 vs GLACIER released 0.5455. Formula-track
   retrieval: `pow075` (`q3oxbpgx`@55) hit@1 `loglik_cal` 0.542, `mspred_ent` 0.516 (+0.031 over
-  `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)).
+  `ll04i00m`); `wd10` within noise ([arm screen finding](findings/masster/masster_msgym_formula_retrieval.md#msgym-arm-screen-val-and-test-retrieval-for-wd10-and-pow075)).
 - **Problem:** generalization, train 0.884 vs val 0.584; arms one seed each (control spread 0.0025).
 - **Ran 2026-10-03:** k1/EMA/Fourier control ×3, `s2`, 13 arms, including the calibrated-likelihood arms. **Prepared, not submitted:** `pow075_s2`, `b1024`, `b256` rerun,
   5 U256/E1024 configs
@@ -87,7 +87,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## NIST23 EI
 
-- **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/hr_ei_e5_holdout_eval_2026_10_18.md): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
+- **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079
   over e0 (one seed). The gap is intensity allocation (support oracle 0.996).
 - **Next:** record provenance, check full-attention batch-512 memory, run e2/e3/e4, then a

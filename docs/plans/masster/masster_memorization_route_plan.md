@@ -465,7 +465,7 @@ held-molecule ranking information beyond frozen MASSter scores and existing desc
 a plausible way to address wrong-side and wrong-parity choices without relying on analogue
 consensus. A benefit for the 44.9% no-similar-analogue class is a hypothesis, not a measured result.
 The [residual finding's limits](../../findings/masster/masster_i1_residual_structure_2026_09_28.md#limits)
-leave computed proton affinity/BDE untested. The [post-cut gate](../../findings/masster/masster_i1_postcut_information_gate_2026_09_29.md)
+leave computed proton affinity/BDE untested. The [post-cut gate](../../findings/masster/masster_i1_base_peak_errors.md#post-cut-information-gate-on-i1-explicit-fragment-and-charge-descriptors-add-nothing)
 already found little incremental value from generic charge/structural descriptors, so the bar
 is additional information, not another descriptor inventory.
 

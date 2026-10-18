@@ -1,6 +1,6 @@
 # 2026-10-03 arm `masster_merged_nomsdial` (fold cv0): train-only merge. Train drops MS-DIAL (preproc_scripts/spectraverse/source_filter_split.py) and merges each (molecule, adduct, instrument) group into one tolerance-consensus target (spec_params.merge_train_only); val/test stay per-spectrum. 70,368 train groups = 138 steps/epoch; 220 epochs = 30,360 steps, matched to the control's ~30.2k. train_target_top_k_peaks 512 caps the consensus peak tail (p99 1,772, max 12,415 peaks uncapped; capped targets keep cosine >= 0.999 for 99% of groups).
 # Read against masster_c0rerun/cv0.yml on best and epoch-tail val_cos_sim_0.01; see
-# docs/findings/masster/spectraverse_oracle_ceiling_2026_10_03.md.
+# docs/findings/masster/spectraverse_masster_findings.md.
 #
 # MASSter on Spectraverse, fold cv0, 2026-09-25. Unmerged, CMF on, dual CE on a fourier table, weight EMA.
 #

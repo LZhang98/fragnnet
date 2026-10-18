@@ -34,7 +34,7 @@ from fragnnet.fragmentation.smarts_prepass import (
 # forced cuts cover no more target intensity than random fragments of the same size, and
 # their merged byproducts cover less. So was aryl_sulfonate_so3, whose single-bond cut only
 # ever repeats the ordinary partition. FraGNNet's prepass keeps all of them.
-# Evidence: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+# Evidence: docs/findings/masster/masster_smarts_findings.md
 #
 # DISABLED 2026-09-29: eight rules are commented out below, to re-check on Enveda-180. On
 # NIST20, five add no m/z coverage (their product always has a connected formula twin) and
@@ -58,7 +58,7 @@ _SHARED_MASSTER_NL_RULE_NAMES = (
 # preprocessing behavior.
 # Evidence and admission gates: docs/reference/masster_smarts_rules.md.
 # Unimplemented candidates and mapping limits:
-# docs/findings/masster/masster_smarts_review_2026_09_13.md.
+# docs/findings/masster/masster_smarts_findings.md.
 # - Phenylalanine oxygen transfer: https://doi.org/10.3389/fchem.2022.1094329
 # - Aryl-sulfonamide oxygen transfer: https://doi.org/10.1016/j.ijms.2018.09.033
 # - Prazole-sulfone rearrangement: https://pmc.ncbi.nlm.nih.gov/articles/PMC10420917/
@@ -85,7 +85,7 @@ _MASSTER_ONLY_FRAG_RULES = (
     # The rules marked "Gate" below passed the 2026-09-27 per-class gate: on the NIST20
     # spectra of the molecules they match, in the admitted polarity, their product explains
     # target intensity that no connected atom set of the same composition can, beyond a
-    # random baseline. Evidence: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+    # random baseline. Evidence: docs/findings/masster/masster_smarts_findings.md
     #
     # Deprotonated N-acyl arylsulfonamides form a phenoxide from the arylsulfonyl ring and
     # the oxygen of the remote amide carbonyl. Cutting Ar-S and the carbonyl C-O leaves

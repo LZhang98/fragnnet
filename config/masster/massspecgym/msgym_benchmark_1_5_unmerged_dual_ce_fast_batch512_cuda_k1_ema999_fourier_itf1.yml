@@ -42,7 +42,7 @@
 # READ: best val_cos_sim_0.01_epoch/mean and the 118-127 tail against 1imawkx1. No MSGYM seed
 # spread exists; the NIST20 0.0042 is the only reference. Then score the best checkpoint on the
 # 9,954-spectrum test set against ll04i00m's 0.5713 and GLACIER's 0.5455
-# (docs/findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+# (docs/findings/masster/masster_glacier_released_ckpt.md).
 #
 # Base config follows: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml.
 # MASSter on MassSpecGym v1.5 (benchmark subset), forked from

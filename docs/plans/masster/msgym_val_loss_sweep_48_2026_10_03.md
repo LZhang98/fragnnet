@@ -19,7 +19,7 @@ Record completed/failed trials separately; the cap counts assigned trials, not 4
   from the current MSGYM k1/EMA/Fourier control. Labels, checkpoint selection, and explicit
   test disabling differed at creation; on 2026-10-08 the base also took the pow075 pair
   (`ints_transform: pow0.75` + `masster_merge_same_mz_rows: true`) after the
-  [screen read](../../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)
+  [screen read](../../findings/masster/masster_msgym_formula_retrieval.md#msgym-arm-screen-val-and-test-retrieval-for-wd10-and-pow075)
   put `pow075` ahead of `ll04i00m` on test retrieval (`mspred_ent` hit@1 +0.031, CI excludes
   zero) with val cosine not ranking checkpoints for retrieval. `pm1` was deliberately not taken
   (`pow075_pm1` measured control-level val, no retrieval read); `wd10` is covered by the swept
@@ -205,7 +205,7 @@ peaked at 0.5966 at epoch 81 and ended at 0.5911. Checkpoint:
 The test was run on the formula track, test fold, 9,954 queries, with
 [the retrieval runner](../../guides/run_msgym_retrieval.md). It was scored against `pow075`
 (`q3oxbpgx`@55), re-run the same day on the same shards. That re-run reproduces the
-[arm screen finding](../../findings/masster/masster_msgym_arm_screen_formula_retrieval_2026_10_07.md)
+[arm screen finding](../../findings/masster/masster_msgym_formula_retrieval.md#msgym-arm-screen-val-and-test-retrieval-for-wd10-and-pow075)
 to three decimals. Expected hit@1 (hit@5 / hit@20), with the paired difference and 95% molecule
 bootstrap:
 

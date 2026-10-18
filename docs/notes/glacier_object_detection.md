@@ -72,7 +72,7 @@ ms-pred has no ppm anywhere in its loss or evaluator.
 ## Contrastive finetuning as a §5.2 shortcut, not §4 leakage — ARGUMENT, UNMEASURED (2026-10-02)
 
 > **Measured on MassSpecGym 2026-10-03, NULL there:** the released CF checkpoint shows no structure
-> prior beyond MASSter under a wrong spectrum ([swap test](../findings/masster/glacier_cf_swap_test_2026_10_03.md)).
+> prior beyond MASSter under a wrong spectrum ([swap test](../findings/masster/masster_glacier_released_ckpt.md#glacier-contrastive-fine-tuning-wrong-spectrum-swap-test-on-massspecgym)).
 > The NIST'20 random-split case below remains an argument.
 
 The "MassSpecGym in the Wild" audit ([`massspecgym_in_the_wild_audit.md`](massspecgym_in_the_wild_audit.md))
@@ -124,7 +124,7 @@ A CF advantage that survives the swap is a structure prior. Under our model the 
 same: what does a fully spectrum-blind ranker (PubChem order, the chiral-atom count, a structure-only
 classifier) reach on the NIST'20 candidate sets? **Blocker (revised 2026-10-03):** the only released GLACIER weights
 are the MassSpecGym **w/ CF** model
-([released-ckpt finding](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md)).
+([released-ckpt finding](../findings/masster/masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set)).
 The swap test can therefore run on the released CF model as is. The w/o-CF comparison arm, and
 anything on NIST'20, still means retraining (`configs/glacier/joint_train_msg.yaml`, then
 `joint_contr_finetune_*.yaml`).
@@ -243,7 +243,7 @@ an estimate from formula-isomer counts, not a measurement.
 | ours, merged | ~26,000 | 25,859 | 1.01 |
 
 Molecule counts are within 1.2%. The 20x impression comes from comparing their unmerged count
-against our merged setup (1.01 rows/mol, see [merged-vs-unmerged root cause](../findings/masster/masster_unmerged_overfitting_2026_09_16.md)).
+against our merged setup (1.01 rows/mol, see [merged-vs-unmerged root cause](../findings/masster/masster_memorization_audits.md#unmerged-masster-generalization-audit)).
 The residual 10% is composition: theirs is all HCD in both polarities, ours spans FT/QTOF/IT over
 4 adducts. Against the older ms-pred NIST20 subset (35,129 spectra in the checked-in
 `split_1.tsv`, the ICEBERG 1.0 / SCARF era) GLACIER is ~15x larger — a change in extraction, not

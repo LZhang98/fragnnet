@@ -17,7 +17,7 @@
 > ms-pred's entropy, the similarity its paper's retrieval numbers use. The released GLACIER
 > checkpoint is the contrastively fine-tuned (CF) model. On ms-pred's own candidate table it
 > reproduces the paper's w/ CF row: 49.67 / 78.20 / 90.80 vs 49.88 / 78.13 / 90.75 hit@1/5/20.
-> [Full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+> [Full finding](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier)
 > · [pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
 > Cross-model, so it sits at the top of `plans/`.
 
@@ -99,7 +99,7 @@ unfiltered export has a median of 924 peaks per spectrum.
 
 **Anchors.**
 - MASSter: `ll04i00m` at epoch 60 (W&B), the checkpoint in the
-  [GLACIER comparison](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+  [GLACIER comparison](../findings/masster/masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set).
   MASSter model code has changed since that measurement (SMARTS rules, Si fix, NCE-encoder arms,
   ion-H channel work). The checkpoint's hparams set its behaviour, and the template fills keys
   added since. **Re-checked 2026-10-02:** MSGYM test mean `cos_sim_0.01` is 0.571272 against
@@ -340,7 +340,7 @@ fold is read.
 ## Next concrete check
 
 **Superseded 2026-10-03.** The full formula track (val + test) ran under the frozen protocol
-above; see the [full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md).
+above; see the [full finding](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier).
 Open next steps:
 - a policy for `[M+Na]+` and no-CE queries, needed for leaderboard-comparable numbers;
 - a query-level strongest-decoy peak comparison for the QTOF deficit;

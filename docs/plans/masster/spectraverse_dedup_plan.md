@@ -9,7 +9,7 @@ The curation paper removes near-duplicates: spectra with the same InChIKey first
 polarity whose cosine exceeds 0.99. The released v1.0.2 data does not satisfy that rule
 ([curation note](../../notes/spectraverse_curation_paper.md)). Duplicates make the training set
 look larger than it is and over-weight redistributed compounds. That is one candidate reason SPV
-val peaks at epoch 15 ([oracle finding](../../findings/masster/spectraverse_oracle_ceiling_2026_10_03.md)).
+val peaks at epoch 15 ([oracle finding](../../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-oracle-cosine-ceiling)).
 This arm isolates deduplication: no merge, MS-DIAL kept, everything else as `masster_c0rerun`.
 
 ## Rule

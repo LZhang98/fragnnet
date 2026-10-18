@@ -10,6 +10,46 @@
 A CLOSED NULL summary is the in-tree record of why a mechanism failed; read it, and the
 Git copy, before re-proposing the same mechanism.
 
+## Merged MASSter findings (2026-10-18)
+
+These 31 findings were merged, not removed: each is now a part of a topic document in
+`docs/findings/masster/`, unchanged except for heading levels, so in-document anchors still
+resolve there. Links in `docs/history/` still use the former names; resolve them with this table.
+
+| Former file | Merged into |
+| --- | --- |
+| `masster_ei_performance_audit_2026_10_01.md` | [masster_ei_evaluation.md](../findings/masster/masster_ei_evaluation.md) |
+| `hr_ei_raw_audit_2026_10_17.md` | [masster_ei_evaluation.md](../findings/masster/masster_ei_evaluation.md) |
+| `hr_ei_checkpoint_eval_2026_10_17.md` | [masster_ei_evaluation.md](../findings/masster/masster_ei_evaluation.md) |
+| `hr_ei_e5_holdout_eval_2026_10_18.md` | [masster_ei_evaluation.md](../findings/masster/masster_ei_evaluation.md) |
+| `spectraverse_recall_tolerance_2026_10_01.md` | [spectraverse_masster_findings.md](../findings/masster/spectraverse_masster_findings.md) |
+| `spectraverse_mplus_handling_2026_10_01.md` | [spectraverse_masster_findings.md](../findings/masster/spectraverse_masster_findings.md) |
+| `spectraverse_oracle_ceiling_2026_10_03.md` | [spectraverse_masster_findings.md](../findings/masster/spectraverse_masster_findings.md) |
+| `spectraverse_source_replicate_audit_2026_10_03.md` | [spectraverse_masster_findings.md](../findings/masster/spectraverse_masster_findings.md) |
+| `spectraverse_subformula_filter_2026_10_03_na_k.md` | [spectraverse_masster_findings.md](../findings/masster/spectraverse_masster_findings.md) |
+| `masster_smarts_review_2026_09_13.md` | [masster_smarts_findings.md](../findings/masster/masster_smarts_findings.md) |
+| `masster_smarts_cuda_audit_2026_09_27.md` | [masster_smarts_findings.md](../findings/masster/masster_smarts_findings.md) |
+| `masster_smarts_outlier_reach_2026_09_29.md` | [masster_smarts_findings.md](../findings/masster/masster_smarts_findings.md) |
+| `masster_smarts_enveda_gate_2026_09_29.md` | [masster_smarts_findings.md](../findings/masster/masster_smarts_findings.md) |
+| `masster_smarts_pathway_gates_2026_09_30.md` | [masster_smarts_findings.md](../findings/masster/masster_smarts_findings.md) |
+| `rare_chemistry_class_census_2026_10_10.md` | [rare_chemistry_censuses.md](../findings/masster/rare_chemistry_censuses.md) |
+| `rare_chemistry_element_swap_census_2026_10_14.md` | [rare_chemistry_censuses.md](../findings/masster/rare_chemistry_censuses.md) |
+| `masster_simplification_audit_2026_10_12.md` | [masster_code_audits.md](../findings/masster/masster_code_audits.md) |
+| `masster_code_path_audit_2026_10_16.md` | [masster_code_audits.md](../findings/masster/masster_code_audits.md) |
+| `masster_i1_base_peak_errors_2026_09_28.md` | [masster_i1_base_peak_errors.md](../findings/masster/masster_i1_base_peak_errors.md) |
+| `masster_i1_postcut_information_gate_2026_09_29.md` | [masster_i1_base_peak_errors.md](../findings/masster/masster_i1_base_peak_errors.md) |
+| `masster_fragment_connectivity_local_screen_2026_09_29.md` | [masster_i1_base_peak_errors.md](../findings/masster/masster_i1_base_peak_errors.md) |
+| `masster_i1_fragment_pairs_2026_09_30.md` | [masster_i1_fragment_pairs.md](../findings/masster/masster_i1_fragment_pairs.md) |
+| `masster_i1_pair_contrasts_2026_09_30.md` | [masster_i1_fragment_pairs.md](../findings/masster/masster_i1_fragment_pairs.md) |
+| `masster_msgym_vs_glacier_released_ckpt_2026_09_24.md` | [masster_glacier_released_ckpt.md](../findings/masster/masster_glacier_released_ckpt.md) |
+| `glacier_cf_swap_test_2026_10_03.md` | [masster_glacier_released_ckpt.md](../findings/masster/masster_glacier_released_ckpt.md) |
+| `masster_msgym_formula_retrieval_full_2026_10_03.md` | [masster_msgym_formula_retrieval.md](../findings/masster/masster_msgym_formula_retrieval.md) |
+| `masster_msgym_arm_screen_formula_retrieval_2026_10_07.md` | [masster_msgym_formula_retrieval.md](../findings/masster/masster_msgym_formula_retrieval.md) |
+| `masster_cross_molecule_supervision_gate_2026_09_29.md` | [masster_cross_molecule_supervision.md](../findings/masster/masster_cross_molecule_supervision.md) |
+| `masster_candidate_correspondence_2026_09_29.md` | [masster_cross_molecule_supervision.md](../findings/masster/masster_cross_molecule_supervision.md) |
+| `masster_unmerged_overfitting_2026_09_16.md` | [masster_memorization_audits.md](../findings/masster/masster_memorization_audits.md) |
+| `masster_memorization_attempts_audit_2026_09_27.md` | [masster_memorization_audits.md](../findings/masster/masster_memorization_audits.md) |
+
 ## masster_core
 
 Hub: [masster_core](../workstreams/masster_core.md).

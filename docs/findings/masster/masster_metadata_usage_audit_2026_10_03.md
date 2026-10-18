@@ -241,7 +241,7 @@ source-library provenance; and whether fixing units changes cosine (no run).
 ## 8. What we fed GLACIER (2026-10-03)
 
 The released-checkpoint comparisons
-([GLACIER vs `ll04i00m`](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md), the retrieval
+([GLACIER vs `ll04i00m`](masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set), the retrieval
 pilot and the formula-retrieval shards) all build an ms-pred labels TSV. For the test set it is
 `output/glacier_msg_eval_2026_09_24/labels_test.tsv`. Columns:
 `spec, ionization, formula, smiles, inchikey, instrument, collision_energies, precursor`.

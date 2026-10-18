@@ -7,7 +7,7 @@
 > [masster_rewire_rules_implementation.md](masster_rewire_rules_implementation.md).
 
 Related: SMARTS pathway plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`) (closed null; templates have no
-continuation), [CUDA audit](../../findings/masster/masster_smarts_cuda_audit_2026_09_27.md),
+continuation), [CUDA audit](../../findings/masster/masster_smarts_findings.md#masster-smarts-templates-cuda-enablement-audit-and-proposal-reach),
 [fragment marginal selection plan](masster_fragment_marginal_selection_plan.md), hub
 [MASSter generalization](../../workstreams/masster_generalization.md).
 
