@@ -28,10 +28,15 @@ all optional MASSter mechanisms.
 
 ## EI configuration
 
-![EI-MASSter architecture: learned fragment proposals, candidate intensity prediction, valid EI ion channels, natural isotope envelopes, and nominal-mass spectrum assembly.](../figures/masster_ei_architecture.png)
+![EI-MASSter architecture: learned fragment proposals, candidate intensity prediction, valid EI ion channels, natural isotope output, and nominal or exact-mass spectrum assembly.](../figures/masster_ei_architecture.png)
 
-The [SVG figure](../figures/masster_ei_architecture.svg) shows the configured
-nominal-mass EI path. Its drawing source is page 3 of the
+The [SVG figure](../figures/masster_ei_architecture.svg) shows a shared learned
+model with nominal EI and exact-mass HR-EI-MS output branches. The highlighted
+natural-isotope expansion step distributes each channel's intensity using fixed
+natural-abundance weights computed from its ion formula. Nominal mode sums
+isotope contributions at integer m/z; exact mode retains isotope fine structure.
+The output mass mode changes without adding learned parameters; the lower panel
+shows training on nominal EI spectra. Its drawing source is page 3 of the
 [MASSter diagrams](../figures/masster_figures.drawio). Molecular graphs, probability
 bars, isotope shares, and spectra are illustrative. The fixed-setup card describes
 the data configuration; it does not imply electron-energy or instrument conditioning.

@@ -50,6 +50,16 @@ resolve there. Links in `docs/history/` still use the former names; resolve them
 | `masster_unmerged_overfitting_2026_09_16.md` | [masster_memorization_audits.md](../findings/masster/masster_memorization_audits.md) |
 | `masster_memorization_attempts_audit_2026_09_27.md` | [masster_memorization_audits.md](../findings/masster/masster_memorization_audits.md) |
 
+## Merged reference documents (2026-10-18)
+
+Merged, not removed: each is now a part of a topic document in `docs/reference/`, unchanged
+except for heading levels. Last separate versions: `git show 5ec31aac:docs/reference/<file>`.
+
+| Former file | Merged into |
+| --- | --- |
+| `smarts.md` | [smarts_surveys.md](../reference/smarts_surveys.md#smarts-coverage-survey) |
+| `rearrangement_smarts.md` | [smarts_surveys.md](../reference/smarts_surveys.md#gas-phase-msms-rearrangement-smarts-review) |
+
 ## masster_core
 
 Hub: [masster_core](../workstreams/masster_core.md).

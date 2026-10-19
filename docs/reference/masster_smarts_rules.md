@@ -9,7 +9,7 @@
 This document defines which gas-phase rearrangement rules belong in MASSter,
 records the rules currently registered, and keeps literature candidates separate from
 validated code. It is intentionally narrower than the general
-[rearrangement review](rearrangement_smarts.md).
+[rearrangement review](smarts_surveys.md#gas-phase-msms-rearrangement-smarts-review).
 
 Related records:
 
@@ -470,5 +470,5 @@ name to `MASSTER_RULE_VOCABULARY`, and never remove or reorder a name there; to 
 comment it out of the allowlist, as on 2026-09-29
 ([How MASSter represents a rule](#how-masster-represents-a-rule)). `MASSTER_NUM_RULES`
 counts the vocabulary, not the registered rules. Keep broad chemistry surveys in
-[`rearrangement_smarts.md`](rearrangement_smarts.md); this file should remain the decision
+[`smarts_surveys.md`](smarts_surveys.md); this file should remain the decision
 record for MASSter candidate generation.

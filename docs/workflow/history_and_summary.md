@@ -67,13 +67,16 @@ This is the summary half of [session workflow step 5](session.md#5-update-state-
 
 1. **Plan or finding first.** Record the dated result, run IDs and numbers where they belong; set
    the banner status and date. If the plan now passes about 600 lines, rotate it.
-2. **Hub.** Rewrite "Where it stands" (current, not a diary) and "Open threads". When a thread
+2. **Results ledger.** For each new measurement, append a row to the benchmark's ledger in
+   `docs/results/` (run@epoch, split, metric values, comparator, link to the section from step 1);
+   update its "Current best" if the measurement beats it. When a source number is corrected, fix the row.
+3. **Hub.** Rewrite "Where it stands" (current, not a diary) and "Open threads". When a thread
    closes, delete its row and add a one-line "Settled" verdict with a link. Keep the "All
    documents" table complete.
-3. **Project state.** Replace the workstream's block: status, best result with link, prepared
+4. **Project state.** Replace the workstream's block: status, best result with link, prepared
    or uncommitted work, next action. Update its row in the workstream table. Never add a dated
    entry.
-4. **Uncommitted work** goes in project state's uncommitted list with its paths, and is removed
+5. **Uncommitted work** goes in project state's uncommitted list with its paths, and is removed
    when committed.
 
 ## Compact project state

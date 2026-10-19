@@ -158,7 +158,7 @@ A targeted external-set check identifies two priorities beyond the current regis
 | CFM-ID MSRB | [CFM-ID 4.0 paper and supplement](https://doi.org/10.1021/acs.analchem.1c01465), [author source repository](https://bitbucket.org/wishartlab/msrb-fragmenter). | Class-specific flavonoid/glycoside rules are a useful comparison. The supplement lists 47 flavonol, 20 flavone, 15 flavanone, and 63 flavonoid-7-O-glycoside rules, among other classes. These are not counts of novel heavy-atom assemblies; ordinary cleavage and ion/H behavior may overlap MASSter. |
 | MS-FINDER HR rules | [Primary paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC7063832/): nine hydrogen-redistribution rules for CNOPS and irregular-H handling. | Compare against ion/H support, especially P/S behavior; this is not a replacement heavy-atom rearrangement registry. |
 | LipidCreator | [Paper](https://www.nature.com/articles/s41467-020-15960-z), [source](https://github.com/lifs-tools/lipidcreator): fragment calculations for over 60 lipid classes. | Prioritize only if lipid scaffolds dominate residuals. Formula/building-block rules require explicit atom-mapping work to become MASSter templates. |
-| PPGB-MS2 | [Author repository](https://github.com/zhengfj1994/PPGB_MS2); historical [local audit](../../reference/smarts.md). | Already considered by the project. The local audit reports substantial ordinary-cut/H overlap; broad crf12/crf13 patterns are deliberately excluded from the current registry. Current upstream equivalence was not exhaustively re-audited. |
+| PPGB-MS2 | [Author repository](https://github.com/zhengfj1994/PPGB_MS2); historical [local audit](../../reference/smarts_surveys.md#smarts-coverage-survey). | Already considered by the project. The local audit reports substantial ordinary-cut/H overlap; broad crf12/crf13 patterns are deliberately excluded from the current registry. Current upstream equivalence was not exhaustively re-audited. |
 
 The ChemFrag article provides an explicit positive-ESI steroid methyl migration from a
 dehydrated intermediate. Migration alone preserves mass; only subsequent cleavage can
@@ -464,10 +464,10 @@ CMF, 10 ppm) over every connected atom subset and every MASSter template side.
   - The product peak holds 0.06% (`[M+H]+`) and 0.05% (`[M-H]-`) of intensity on average, and
     at least 1% in under 2% of spectra. That is the chance floor, so no rule was added.
 - **The other rule lists.**
-  - [`smarts.md`](../../reference/smarts.md): the 72-rule PPGB-MS2 survey, whose reaction
+  - [PPGB-MS2 survey](../../reference/smarts_surveys.md#smarts-coverage-survey): the 72-rule PPGB-MS2 survey, whose reaction
     SMARTS also sit in `preproc_scripts/no_dag_exp/03_test_other_smarts.py`. Run single-step
     on both molecules, its 101 parseable reactions reach 6 of the 15 ions.
-  - [`rearrangement_smarts.md`](../../reference/rearrangement_smarts.md): 7 validated SMIRKS
+  - [rearrangement review](../../reference/smarts_surveys.md#gas-phase-msms-rearrangement-smarts-review): 7 validated SMIRKS
     (McLafferty, RDA, retro-ene, Cope, Claisen), not integrated because cuts cover them.
   - The ESI-CID backlog in [`masster_smarts_rules.md`](../../reference/masster_smarts_rules.md):
     about 22 unimplemented literature candidates.

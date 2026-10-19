@@ -91,7 +91,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## NIST23 EI
 
-- **Figure:** EI architecture added as draw.io page 3 with SVG/PNG exports ([hub](workstreams/nist23_ei.md#where-it-stands)).
+- **Figure:** EI architecture shows nominal and HR-EI-MS output branches on draw.io page 3, with SVG/PNG exports ([hub](workstreams/nist23_ei.md#where-it-stands)).
 
 - **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079

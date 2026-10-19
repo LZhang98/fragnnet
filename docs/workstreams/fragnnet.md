@@ -79,8 +79,7 @@
 | [frag_gen_prepass](../reference/frag_gen_prepass.md) | REFERENCE (2026-04-05) | BFS + SMARTS prepass DAG build |
 | [fragnnet_pl_memory_review](../reference/fragnnet_pl_memory_review.md) | REFERENCE (2026-04-21) | Training-loop memory pressure points |
 | [pairwise_loss](../reference/pairwise_loss.md) | REFERENCE (2026-06-08) | Shipped pairwise loss and sampler |
-| [rearrangement_smarts](../reference/rearrangement_smarts.md) | REFERENCE (2026-06-20) | Gas-phase rearrangement SMARTS survey |
-| [smarts](../reference/smarts.md) | REFERENCE (2026-03-02) | 72-rule SMARTS coverage survey (pre-split) |
+| [smarts_surveys](../reference/smarts_surveys.md) | REFERENCE (2026-10-18) | PPGB-MS2 72-rule survey + gas-phase rearrangement SMIRKS review (merged) |
 | [detect_isotope_peaks_tuning](../reference/detect_isotope_peaks_tuning.md) | REFERENCE (2026-04-20) | Isotope-peak cleanup for training |
 | [dataloader_data](../reference/dataloader_data.md) | REFERENCE (2026-09-08) | Data mapping definitions |
 | [lz_molecular_generation](../notes/lz_molecular_generation.md) | NOTE (2026-06-08) | Spectrum-conditioned generation literature, part 1 |

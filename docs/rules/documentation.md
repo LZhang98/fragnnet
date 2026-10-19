@@ -17,6 +17,7 @@
   | `docs/reference/` | Detailed current system behavior |
   | `docs/findings/` | Measurements, evidence, and conclusions: FraGNNet/DAG findings in `fragnnet/`, MASSter findings in `masster/`, cross-model and shared-data findings at top level |
   | `docs/plans/` | Proposed, active, completed, or stopped work: FraGNNet/DAG plans in `fragnnet/`, MASSter plans in `masster/`, cross-model plans at top level |
+  | `docs/results/` | One results ledger per benchmark (`msgym.md`, `nist20.md`, …): every measured result as a table row linking its source |
   | `docs/history/` | Frozen verbatim logs moved out of live documents, and `retired_docs.md` (summaries of removed documents); never the canonical home of a current fact |
   | `docs/notes/` | Scratch and literature notes |
   | `docs/figures/` | Images and drawing sources (PNG, SVG, draw.io) referenced by documentation; no CSVs |
@@ -46,6 +47,11 @@
   the plan ([procedure](../workflow/history_and_summary.md#rotate-a-plan-log)).
 - **Findings** hold measurements and conclusions; one canonical location per fact. Link to it
   instead of restating numbers elsewhere.
+- **A results ledger** (`docs/results/<benchmark>.md`) is the one exception: it copies each
+  measured result's headline numbers verbatim into a table row, with run@epoch, split, setup and
+  a link to the finding or plan section that stays canonical. Rows are appended in date order
+  and never deleted; a corrected source means a corrected row, and a retracted result keeps its
+  row marked as retracted. Rows without a measurement (prepared runs) do not belong there.
 - **Paths in frozen records** (findings, plans, `docs/history/`) are as of `13b1599d`, before
   the reorganization moved FraGNNet, MASSter and the baselines into `src/fragnnet/models/` and
   `src/fragnnet/baselines/`; use git history to resolve them. Repoint links only in live
@@ -61,6 +67,7 @@ status changes, and use only these statuses:
 | Status | Meaning |
 |--------|---------|
 | `HUB` | Workstream map in `docs/workstreams/`. |
+| `LEDGER` | Results table in `docs/results/`; numbers copied from linked sources. |
 | `ACTIVE` | Current: someone is working on it and something happens next. |
 | `PREPARED` | Configs or code ready; not submitted or not run. |
 | `PROPOSED` | Written up, not started. |

@@ -1,4 +1,284 @@
-# Gas-Phase MS/MS Rearrangement SMARTS Review
+# SMARTS rule surveys: PPGB-MS2 coverage and gas-phase rearrangements
+
+> **Status:** REFERENCE · **Updated:** 2026-10-18
+> Two SMARTS surveys, oldest first: the 72-rule PPGB-MS2 coverage survey with per-rule status codes, and the gas-phase rearrangement literature survey with 7 validated SMIRKS and the NIST FT worst-case case studies.
+
+Merged 2026-10-18 from 2 reference documents on one topic. Each part below is the original
+document unchanged except for heading levels; its own status line keeps its original date.
+Former file names are listed so old links and `git log -- <former path>` can be traced.
+The MASSter rule allowlist is separate: [masster_smarts_rules.md](masster_smarts_rules.md).
+
+| Part | Updated | Verdict | Former file |
+| --- | --- | --- | --- |
+| [SMARTS Coverage Survey](#smarts-coverage-survey) | 2026-03-02 | 72 rules; 5 valid rules add coverage beyond BFS + H-transfer; predates the `FRAG_RULES`/`NL_RULES` split | `smarts.md` |
+| [Gas-Phase MS/MS Rearrangement SMARTS Review](#gas-phase-msms-rearrangement-smarts-review) | 2026-10-12 | 7 validated SMIRKS, not integrated (only gap: RDA on isolated rings); NIST FT worst-case case studies | `rearrangement_smarts.md` |
+
+## SMARTS Coverage Survey
+
+> **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-03-02
+>
+> 72-rule coverage survey with per-rule status codes. Predates the current `FRAG_RULES`/`NL_RULES` split.
+
+### Coverage Summary
+
+72 rules across 9 categories.  Status codes used in per-rule comments below:
+`BFS ✓` = already handled by multi_cut_bfs cut=1/2 + H-transfer.
+`prepass-1` = needs isomerization prepass (run full BFS on structural isomer).
+`prepass-2` = needs direct-fragment prepass (SMARTS → atom-set extraction → depth-1 DAG leaf).
+`BUG` = SMARTS is syntactically or chemically invalid; see inline comment.
+
+| Category | Total | BFS ✓ | prepass-1 | prepass-2 | BUG / skip |
+|---|---|---|---|---|---|
+| PPGB_MS2 original (28 reactions) | 28 | 21 | 3 (crf8_0-2) | 2 (crf12_0/1 acyclic, crf13_2 acyclic) | 2 (crf11 → neutral loss, crf6 not coverable) |
+| Extended neutral loss | 10 | 7 | — | — | 3 (nl2, nl_h2o_2, nl_co) |
+| Amide / peptide | 7 | 6 | — | — | 1 (amide_acylium) |
+| Ring & RDA | 9 | 0 | — | — | 9 (all: unmapped atoms / new bonds / wrong formula) |
+| Rearrangement | 4 | 1 (ortho_effect) | — | — | 3 (mclafferty ×2 buggy; mclaff_beta bimolecular) |
+| Lipid / phospholipid | 3 | — | — | — | 3 (all: bimolecular or invalid [R]/[OP] atoms) |
+| Ester / ether | 3 | 1 (ether_alpha) | — | — | 2 (ester_cleavage_1/2: invalid [OC]/[OP]) |
+| Charge migration | 5 | — | — | — | 5 (all no-ops: explicit +0 on both sides) |
+| Glycan | 3 | — | — | — | 3 (all: invalid [NHAC]/[R] atoms or wrong formula) |
+| Specialized | 7 | 2 (nitro_loss, nglycosidic) | — | — | 5 (phos_loss, omega_cleavage, cr_acid, pl_head, b_ion: invalid [OP]/[R]) |
+
+**Net new coverage from a rearrangement prepass: 5 valid rules**
+- Sub-type 1 (isomerize → re-BFS): crf8_0, crf8_1, crf8_2
+- Sub-type 2 (direct atom-set extraction): crf12_0/1 (acyclic), crf13_2 (acyclic)
+
+McLafferty (mclafferty / mclaff_classic) is BUGGY in this list but the
+correct McLafferty reaction is already fully covered by crf4_0 (BFS cut=1 +
+H-transfer) — no additional rule needed.
+
+---
+
+### Original PPGB-MS2 Rules (27 rules from `smiles_fragmentation.py`)
+
+```
+crf1_0 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0:1][*+0:2]>>([*+0:0]=[*+0:1].[*+0:2])')
+crf1_1 = AllChem.ReactionFromSmarts('[*+0;!H0:0]=[*+0:1][*+0:2]>>([*+0:0]#[*+0:1].[*+0:2])')
+crf2_0 = AllChem.ReactionFromSmarts('[*+0:0][*+0:1][*!H0+0:2]>>([*+0:0].[*+0:1]=[*+0:2])')
+crf2_1 = AllChem.ReactionFromSmarts('[*+0:0][*+0:1]=[*!H0+0:2]>>([*+0:0].[*+0:1]#[*+0:2])')
+crf3_0 = AllChem.ReactionFromSmarts('[*+0:0]1[*+0:1]=[*+0:2][*+0:3][*+0:4][*+0:5]1>>([*+0:0]=[*+0:1][*+0:2]=[*+0:3].[*+0:4]=[*+0:5])')
+crf3_1 = AllChem.ReactionFromSmarts('[*+0:0]1[*+0:1]=[*+0:2][*+0:3][*+0:4]=[*+0:5]1>>([*+0:0]=[*+0:1][*+0:2]=[*+0:3].[*+0:4]#[*+0:5])')
+crf4_0 = AllChem.ReactionFromSmarts('[*+0:0]=[*+0:1][*+0:2][*+0:3][*+0;!H0:4]>>([*+0:0][*+0:1]=[*+0:2].[*+0:3]=[*+0:4])')
+crf5_0 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0:1][*+0:2][*+0;!H0:3]>>([*+0:0]=[*+0:1].[*+0:2]=[*+0:3])')
+crf6_0 = AllChem.ReactionFromSmarts('[*+0:0]=[*+0:1][*+0:2]=[*+0:3][*+0:4]=[*+0:5][*+0:6]=[*+0:7]>>([*+0:0]=[*+0:7].[*+0:2]=[*+0:3][*+0:4]=[*+0:5][*+0:6]=[*+0:1])')
+crf7_0 = AllChem.ReactionFromSmarts('[*+0:0]1[*+0:1][*+0:2][*+0:3][*+0:4][*+0:5]1>>([*+0:0]=[*+0:1].[*+0:2]=[*+0:3].[*+0:4]=[*+0:5])')
+crf7_1 = AllChem.ReactionFromSmarts('[*+0:0]1=[*+0:1][*+0:2][*+0:3][*+0:4][*+0:5]1>>([*+0:0]#[*+0:1].[*+0:2]=[*+0:3].[*+0:4]=[*+0:5])')
+crf7_2 = AllChem.ReactionFromSmarts('[*+0:0]1=[*+0:1][*+0:2]=[*+0:3][*+0:4][*+0:5]1>>([*+0:0]#[*+0:1].[*+0:2]#[*+0:3].[*+0:4]=[*+0:5])')
+crf7_3 = AllChem.ReactionFromSmarts('[*+0:0]1=[*+0:1][*+0:2]=[*+0:3][*+0:4]=[*+0:5]1>>([*+0:0]#[*+0:1].[*+0:2]#[*+0:3].[*+0:4]#[*+0:5])')
+crf8_0 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0:1]=[*+0:2]>>([*+0:0]=[*+0:1][*+0:2])')
+crf8_1 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0:1]=[*+0:2][*+0:3]=[*+0:4]>>([*+0:0]=[*+0:1][*+0:2]=[*+0:3][*+0:4])')
+crf8_2 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0:1]=[*+0:2][*+0:3]=[*+0:4][*+0:5]=[*+0:6]>>([*+0:0]=[*+0:1][*+0:2]=[*+0:3][*+0:4]=[*+0:5][*+0:6])')
+crf9_0 = AllChem.ReactionFromSmarts('[*:0]@[C:1](=[O:2])@[*:3]>>([*:0][*:3].[C-:1]#[O+:2])')
+crf11_0 = AllChem.ReactionFromSmarts('[*+0;!H0:0][*+0;!H0:1]>>([*+0:0]=[*+0:1])')
+crf11_1 = AllChem.ReactionFromSmarts('[*+0;!H0:0]=[*+0;!H0:1]>>([*+0:0]#[*+0:1])')
+crf12_0 = AllChem.ReactionFromSmarts('[*+0:0][*+0:1][*+0:2][*+0:3]>>([*+0:0][*+0:3].[*+0:1]=[*+0:2])')
+crf12_1 = AllChem.ReactionFromSmarts('[*+0:0][*+0:1]=[*+0:2][*+0:3]>>([*+0:0][*+0:3].[*+0:1]#[*+0:2])')
+crf13_0 = AllChem.ReactionFromSmarts('[*+0:0][C+0:1](=[O+0:2])[OH+0:3]>>([*+0:0].[O+0:2]=[C+0:1]=[O+0:3])')
+crf13_1 = AllChem.ReactionFromSmarts('[C+0;H1:0](=[O+0:1])[O+0:2][*+0:3]>>([O+0:1]=[C+0:0]=[O+0:2].[*+0:3])')
+crf13_2 = AllChem.ReactionFromSmarts('[*+0:0][C+0:1](=[O+0:2])[O+0:3][*+0:4]>>([O+0:2]=[C+0:1]=[O+0:3].[*+0:0][*+0:4])')
+cmf2_0 = AllChem.ReactionFromSmarts('[N+0,O+0,S+0:0][*+0:1][*:2]>>([N+1,O+1,S+1:0]=[*+0:1].[*+0:2])')
+cmf2_1 = AllChem.ReactionFromSmarts('[N+0,O+0,S+0:0]=[*+0:1][*:2]>>([N+1,O+1,S+1:0]#[*+0:1].[*+0:2])')
+cmf7_0 = AllChem.ReactionFromSmarts('[*+0:0][*+0:1]>>([*+1:0].[*-1:1])')
+cmf13_0 = AllChem.ReactionFromSmarts('[*+0:0]1=[*+0:1][*+0:2]=[*+0:3][*+0:4]=[*+0:5]1>>([*+0:0]1=[*+0:1][*+0:2]=[*+0:3][*+1:4]1.[*:5])')
+```
+
+
+### Extended Neutral Loss Rules (8 rules)
+
+```
+nl1 = AllChem.ReactionFromSmarts('[C:1][OH2+0:2]>>([C:1].[OH2+0:2])')          # OK — C-OH2 bond break (BFS ✓)
+nl2 = AllChem.ReactionFromSmarts('[C:1]=[O+0:2].[OH+0:3]>>([C:1][OH+0:3].[O+0:2])')  # BUG: two reactants (bimolecular) — invalid for unimolecular MS/MS
+nl3 = AllChem.ReactionFromSmarts('[N+0:1][H3+0:2]>>([N+0:1].[NH3+0:2])')       # OK — N-NH3 bond break (BFS ✓)
+nl_h2o_1 = AllChem.ReactionFromSmarts('[CX4:1][OX2H2:2]>>([CX4:1].[OH2:2])')   # OK — alcohol C-O break (BFS ✓)
+nl_h2o_2 = AllChem.ReactionFromSmarts('[CX3:1](=[OX2:2])[OH:3]>>([CX3:1][OH:3].[O:2])')  # BUG: product [O:2] = bare oxygen atom/radical — not a real MS/MS fragment
+nl_co2 = AllChem.ReactionFromSmarts('[CX3:1](=[OX2:2])[OH:3]>>([CX3:1].[OC:2]=[O:3])')   # OK — CO2 loss from COOH (BFS + H-transfer=2 ✓; explicit injection preferred)
+nl_nh3_1 = AllChem.ReactionFromSmarts('[NX3:1][CX3:2]>>([NX3:1].[NH2:2])')     # OK — N-C break, NH2 leaves (BFS ✓)
+nl_nh3_2 = AllChem.ReactionFromSmarts('[C:1][N:2][H2:3]>>([C:1].[NH3:2])')     # OK — C-N break, NH3 leaves (BFS ✓)
+nl_meoh = AllChem.ReactionFromSmarts('[CX4:1][OX2H][CX4:2]>>([CX4:1].[CO:2])') # OK — ether C-O break (BFS ✓); [CO:2] maps atom :2 as CO, unusual notation
+nl_h2o_alc = AllChem.ReactionFromSmarts('[C;!$(C=[O,S,N]):1][O;H1,H2:2]>>([C:1].[O:2])')  # OK — alcohol C-O break (BFS ✓)
+nl_h2o_acid = AllChem.ReactionFromSmarts('[C:1](=[O:2])[OH:3]>>([C:1].[O:2].[OH:3])')     # BUG: 3 products — bare C, bare O, bare OH; chemically unsound
+nl_co = AllChem.ReactionFromSmarts('[C:1]=[O:2].[C:3]>>([C:1].[C:3]=[O:2])')   # BUG: two reactants (bimolecular) — CO transfer between molecules; invalid
+nl_ch2o = AllChem.ReactionFromSmarts('[N:1][CH2:2][O:3]>>([N:1H2:2].[CH2:3]=[O])')  # BUG: syntax error — [N:1H2:2] has two atom map numbers on one atom
+```
+
+
+### Amide/Peptide Rules (6 rules)
+
+```
+amide1 = AllChem.ReactionFromSmarts('[C:1](=[O:2])[NH+0:3][C:4]>>([C:1](=[O:2])[NH2+0:3].[C:4])')    # OK — N-C4 break, acyl-NH2 + C4 (BFS + H-transfer=1 ✓)
+amide_n_c = AllChem.ReactionFromSmarts('[N:1][CX3:2](=[O:3])[CX4:4]>>([N:1][CX3:2]=[O:3].[CX4:4])') # OK — CX3-CX4 alpha-cleavage (BFS ✓)
+amide_c_n = AllChem.ReactionFromSmarts('[CX3:1](=[O:2])[NH:3][C:4]>>([CX3:1][NH2:3].[C:4]=[O:2])')  # OK — N-CX3 break + O migrates to C4 (BFS + H-transfer ✓ formula-level)
+amide_std = AllChem.ReactionFromSmarts('[C:1](=[O:2])[NH:3][C:4]>>([C:1](=[O:2])[NH2:3].[HO:4]C)')  # OK — C4-N break (BFS + H-transfer ✓)
+amide_acylium = AllChem.ReactionFromSmarts('[N:1][C:2](=[O:3])[C:4]>>([N:1H2:2].[C:4][C:3+]=[O])')  # BUG: [N:1H2:2] — two atom maps on one atom (syntax error); intended acylium formation
+urea_cleavage = AllChem.ReactionFromSmarts('[NX3:1][CX3:2](=[O:3])[NX3:4]>>([NX3:1][CX3:2]=[O:3].[NX3:4])') # OK — N4-C break (BFS ✓)
+cyclic_amides = AllChem.ReactionFromSmarts('[C:1]1([N:2])[C:3](=[O:4])[N:5]C1>>([C:1][N:2].[C:3](=[O:4])[NH2:5])') # OK — 2-bond lactam ring opening (ring pre-pass ✓)
+```
+
+
+### Ring \& RDA Rules (6 rules)
+
+```
+rda1 = AllChem.ReactionFromSmarts('[C:1]1=CC=[C:4]C=C1>>([C:1][C:4].[C:2]=[C:3].[C:5]=[C:6])')
+  # BUG: atoms :2,:3,:5,:6 unmapped in reactant (bare CC, C=C); new C1-C4 bond formed (C1,C4 are 3 bonds apart in ring) — RDKit can't track unmapped atoms
+
+ring_extra = AllChem.ReactionFromSmarts('[C:1]1CCCC[C:6]1>>([C:1].[C:6])')
+  # BUG: atoms between :1 and :6 are unmapped — products [C:1] and [C:6] are bare atoms, not fragments; intent unclear
+
+rda_cyclohexene = AllChem.ReactionFromSmarts('[C:1]1=C[C:3]=C[C:5]=C1>>([C:1][C:6].[C:2]=[C:3].[C:4]=[C:5])')
+  # BUG: atoms :2,:4,:6 appear in product but unmapped in reactant; new C1-C6 bond formed
+
+rda_cyclohex = AllChem.ReactionFromSmarts('[C:1]1=CC=CC=C1>>([C:1][C:6].[C:2]=[C:3].[C:4]=[C:5])')
+  # BUG: atoms :2,:3,:4,:5,:6 all unmapped in reactant; same issues as rda_cyclohexene
+
+rda_cp = AllChem.ReactionFromSmarts('[c:1]1cccc1>>([c:1][c:5].[C:2]=[C:3].[C:4]=C)')
+  # BUG: :2,:3,:4,:5 unmapped in reactant lowercase atoms; [C:2],[C:3],[C:4] in product use uppercase C but ring has lowercase c (aromatic); :5 unmapped
+
+rda_furan = AllChem.ReactionFromSmarts('o1cccc1>>(c1cccc1.[H][H].[H][H])')
+  # BUG: furan (C4H4O) ≠ benzene (C6H6) — wrong formula; [H][H] is not valid SMARTS for H2; no atom mapping at all
+
+cyclopent_open = AllChem.ReactionFromSmarts('[C:1]1CCCC1>>([C:1].[C:5])')
+  # BUG: intermediate carbons unmapped; products are bare [C:1] and [C:5] atoms — intent is ring opening but syntax doesn't encode the chain fragment
+
+cyclohex_open = AllChem.ReactionFromSmarts('[C:1]1CCCCC1>>([C:1].[C:6])')
+  # BUG: same as cyclopent_open — unmapped intermediate carbons, products are bare atoms
+
+piperidine_open = AllChem.ReactionFromSmarts('N1CCCCC1>>(NCCCC.C)')
+  # BUG: no atom mapping at all; product NCCCC.C (5-atom + 1-atom) doesn't represent a valid 2-bond ring opening of piperidine (N + 5C ring → should give N-CCCCC chain); C as methane fragment is chemically wrong
+
+furan_open = AllChem.ReactionFromSmarts('o1cccc1>>(c1cccc1.[H][H].[H][H])')
+  # BUG: duplicate of rda_furan — same issues (wrong formula, invalid H2 notation)
+```
+
+
+### Rearrangement Rules (3 rules)
+
+```
+mclafferty = AllChem.ReactionFromSmarts('[C:1][C:2][C:3][C:4]=[O:5]>>([C:1][C:2]=[C:3][OH:4].[C:5]=O)')
+  # BUG: atom type remapping — :4 is [C] (carbonyl carbon) in reactant but [OH] (oxygen) in product; :5 is [O] (carbonyl O) in reactant but used as C in `[C:5]=O` product; C and O swap identity across :4 and :5
+
+mclaff_classic = AllChem.ReactionFromSmarts('[C:1][C:2][C:3][C:4]=[O:5]>>([C:1][C:2]=[C:3][OH:4].[C:5]=O)')
+  # BUG: duplicate of mclafferty — same C/O type-remapping bugs on :4 and :5
+
+mclaff_beta = AllChem.ReactionFromSmarts('[C:1][C:2]=[O:3].[CH2:4][R:5]>>([C:1][C:2][OH:4].[C:3]=O.[R:5])')
+  # BUG: bimolecular (two reactants separated by dot); also atom type remapping: :3 is [O] in reactant but appears as C in product `[C:3]=O`; [R:5] uses R as an element (not valid SMARTS)
+
+ortho_effect = AllChem.ReactionFromSmarts('c1ccccc1[OH2+0]>>(c1ccccc1.[OH2+0])')
+  # OK — C-OH2 bond break (BFS ✓)
+```
+
+
+### Lipid/Phospholipid Rules (4 rules)
+
+```
+pl_head = AllChem.ReactionFromSmarts('[O:1][P:2](=[O:3])([O:4])[CH2CH2N+]:5>>([O:1][P:2](=[O:3])([O:4])[O:5].[CH2CH2N])')
+  # BUG: `[CH2CH2N+]:5` is invalid SMARTS — multi-atom group in brackets is not a valid atomic primitive; atom map `:5` outside brackets is a parse error; `[CH2CH2N]` in product is also non-standard; atom :5 in product is [O:5] but the reactant :5 was the CH2CH2N group — atom type remapping
+
+fa_loss = AllChem.ReactionFromSmarts('[O:1][C:2]=[O:3].[CH2:4][CH:5][CH2:6][R:7]>>([O:1][C:2]=[O:3].[R:7][CH2:6][CH:5][CH2:4])')
+  # BUG: bimolecular (two reactants separated by dot) — invalid for unimolecular MS/MS; also `[R:7]` uses R as element (not valid SMARTS); products are the same atoms rearranged without bond breaking — models only reordering, not fragmentation
+
+cer_cleave = AllChem.ReactionFromSmarts('[C:1](=[O:2])[NH:3][CH:4][R1:5].[CH:6][OH:7][R2:8]>>([C:1](=[O:2])[NH2:3].[CH:4][R1:5].[CH:6][OH:7][R2:8])')
+  # BUG: bimolecular (ceramide amide and sphingoid hydroxyl written as two separate reactant molecules); ceramide is a single molecule — should be one connected reactant; `[R1:5]` and `[R2:8]` use non-standard R notation as an element
+```
+
+
+### Ester/Ether Rules (4 rules)
+
+```
+ester_cleavage_1 = AllChem.ReactionFromSmarts('[C:1](=[O:2])[O:3][C:4]>>([C:1][OH:3].[C:4]=[O:2])')
+  # BUG: O2 (carbonyl oxygen, bonded only to C1) migrates across the two product fragments — appears in C4's fragment in product; C1 and C4 are not directly bonded so O2 cannot cross fragments in a single bond cleavage; formula is conserved but the atom migration is physically invalid
+
+ester_cleavage_2 = AllChem.ReactionFromSmarts('[C:1][O:2][C:3](=[O:4])>>([C:1][OH:2].[OC:3]=[O:4])')
+  # BUG: `[OC:3]` is invalid SMARTS atom syntax — an atom cannot be simultaneously O and C; likely intended as an unmapped O bonded to C:3 (i.e. `[O][C:3]=[O:4]` for CO2 loss) but the notation is wrong; produces mass imbalance from the unmapped O
+
+ether_alpha = AllChem.ReactionFromSmarts('[CX4:1][OX2:2][CX4:3]>>([CX4:1].[CX4:3][OH:2])')
+  # OK — C1-O2 bond break, O2 stays with C3 + gains H; BFS + H-transfer=1 ✓
+```
+
+
+### Charge Migration Rules (6 rules)
+
+```
+charge_o1 = AllChem.ReactionFromSmarts('[CX3+0:1][O:2]>>([CX3:1][O+0:2])')
+  # BUG: no-op — both reactant (+0) and product (+0) are neutral; no bond change, no H change; charge is specified as +0 in both, so this transforms nothing
+
+charge_o2 = AllChem.ReactionFromSmarts('[CX4+0:1][OH:2]>>([CX4:1][OH+0:2])')
+  # BUG: no-op — same issue; charge +0 in reactant and +0 in product; effectively identity transformation
+
+charge_n1 = AllChem.ReactionFromSmarts('[CX3+0:1][N:2]>>([CX3:1][N+0:2])')
+  # BUG: no-op — no structural change; explicit +0 on both sides
+
+charge_n2 = AllChem.ReactionFromSmarts('[C+0:1][NH2:2]>>([C:1][NH3+0:2])')
+  # BUG: NH2 gains H to become NH3 without C losing H — mass not conserved; H appears from nowhere; also NH3+0 means neutral NH3 still bonded to C:1, which is NH3 substituent, not ammonia loss
+
+charge_s = AllChem.ReactionFromSmarts('[C+0:1][S:2]>>([C:1][S+0:2])')
+  # BUG: no-op — same as charge_o1/charge_n1; all charge migration rules in this block are structural no-ops
+```
+
+
+### Glycan Rules (3 rules)
+
+```
+glycosidic_hexnac = AllChem.ReactionFromSmarts('[O:1][C:2][NHAC:3][C:4][C:5][O:6]>>([O:1][C:2][NH2AC:3].[C:4][C:5][OH:6])')
+  # BUG: `[NHAC]` and `[NH2AC]` use `AC` as element — not a valid SMARTS element symbol; likely intended to represent acetamide NH (NHCOCH3) shorthand, but `AC` is not parseable as an element (closest element is Ac = Actinium, element 89)
+
+crossring_a = AllChem.ReactionFromSmarts('[O:1][CH2:2][CH:3][O:4][R:5]>>([O:1][CH:2][CH2:3].[O:4][R:5])')
+  # BUG: H counts on :2 and :3 are swapped within the same product fragment (CH2→CH and CH→CH2); this models an internal 1,2-H shift at the same time as a C-O bond break; H-transfer mechanism handles inter-fragment H only; also `[R:5]` is not a valid SMARTS element symbol
+
+b_ion = AllChem.ReactionFromSmarts('[C:1][O:2][C:3][OR:4]>>([C:1][OH:2].[OC:3][OR:4])')
+  # BUG: `[OR:4]` is not valid SMARTS — R is not a chemical element (it is a ring-bond descriptor, not used as atom symbol in brackets); `[OC:3]` is also invalid (atom cannot be both O and C)
+```
+
+
+### Specialized Rules (5 rules)
+
+```
+nitro_loss = AllChem.ReactionFromSmarts('[C:1][N+0:2](=[O:3])[O:4]>>([C:1].[N:2](=[O:3])[O:4])')
+  # OK — C-N bond break, NO2 fragment leaves (BFS ✓); N+0→N charge change is minor notation difference
+
+phos_loss = AllChem.ReactionFromSmarts('[O:1][P:2](=[O:3])([O:4])[O:5]>>([O:1].[OP:2](=[O:3])([O:4])[O:5])')
+  # BUG: `[OP:2]` is invalid SMARTS atom syntax — atom cannot be both O and P; `[O:1]` product is a bare oxygen atom/radical (not a real MS/MS fragment)
+
+omega_cleavage = AllChem.ReactionFromSmarts('[CH3:1][CH2:2][CH2:3][R:4]>>([CH3:1][CH2:2].[CH2:3][R:4])')
+  # BUG: `[R:4]` uses R as element symbol — not valid SMARTS (R is a ring-bond notation, not an element); the intended C2-C3 bond break is BFS-valid if syntax were corrected
+
+cr_acid = AllChem.ReactionFromSmarts('[R:1][CH2:2][CH2:3][C:4](=[O:5])[OH:6]>>([R:1][CH2:2].[CH2:3][C:4](=[O:5])[OH:6])')
+  # BUG: `[R:1]` uses R as element — same issue as omega_cleavage; intended C2-C3 bond break (BFS ✓) but syntax is invalid
+
+nglycosidic = AllChem.ReactionFromSmarts('[n:1][C:2][O:3][P:4]>>([n:1].[C:2][OH:3][P:4])')
+  # OK — n1-C2 bond break (BFS ✓), O3 gains H (H-transfer=1 ✓); [n:1] product is a bare aromatic N but acceptable for nucleobase fragment context
+
+phos_ribose = AllChem.ReactionFromSmarts('[C:1][O:2][P:3](=[O:4])([O:5])[O:6]>>([C:1][OH:2].[OP:3](=[O:4])([O:5])[O:6])')
+  # BUG: `[OP:3]` invalid SMARTS atom syntax (atom cannot be both O and P); same issue as phos_loss; C1-O2 bond break itself is BFS-valid
+
+na_loss = AllChem.ReactionFromSmarts('[Na+].[M:1]>>([Na+].[M-H:1]))')
+  # BUG: bimolecular (Na+ adduct written as separate species); `[M]` is not a valid SMARTS element (M = Metal Markush notation, not parseable); `[M-H]` means charge −H which is nonsensical; extra closing paren in SMARTS string
+
+metal_h2o = AllChem.ReactionFromSmarts('[Na+].[OH2].[M:1]>>([Na+].[M:1].[O])')
+  # BUG: three reactants — completely invalid for unimolecular fragmentation; `[M:1]` is not a valid SMARTS element; `[O]` bare oxygen product is not a real MS/MS fragment
+```
+
+**Total: 72 unique SMARTS rules** across all categories from this conversation. Copy-paste ready for your recursive fragmentation DAG implementation.
+
+[1]: https://pmc.ncbi.nlm.nih.gov/articles/PMC12658861/
+
+[2]: https://pubmed.ncbi.nlm.nih.gov/39575948/?fc=None\&ff=20241122143352\&v=2.18.0.post9+e462414
+
+[3]: https://pubs.acs.org/doi/abs/10.1021/acs.analchem.4c04375
+
+[4]: https://pubs.acs.org/doi/10.1021/acs.analchem.5b04925
+
+[5]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4869618/
+
+[6]: https://www.biorxiv.org/content/10.1101/2025.03.12.642824.full
+
+[7]: https://www.sciencedirect.com/science/article/pii/S0021925819485335
+
+[8]: https://www.nature.com/articles/s41467-024-48009-6
+
+[9]: https://www.scribd.com/document/912806062/
+
+## Gas-Phase MS/MS Rearrangement SMARTS Review
 
 > **Status:** REFERENCE &nbsp;·&nbsp; **Updated:** 2026-10-12
 >
@@ -9,7 +289,7 @@ relevant to ESI-CID MS/MS spectrum prediction (FraGNNet context).
 
 ---
 
-## Literature Sources with Machine-Readable Rules
+### Literature Sources with Machine-Readable Rules
 
 | Tool / Paper | Type | Rearrangement Coverage |
 |---|---|---|
@@ -22,7 +302,7 @@ relevant to ESI-CID MS/MS spectrum prediction (FraGNNet context).
 
 ---
 
-## Rearrangement Types in ESI-CID (ranked by frequency / coverage importance)
+### Rearrangement Types in ESI-CID (ranked by frequency / coverage importance)
 
 | Rearrangement | Frequency | Coverable by SMARTS? | Current BFS coverage |
 |---|---|---|---|
@@ -40,12 +320,12 @@ relevant to ESI-CID MS/MS spectrum prediction (FraGNNet context).
 
 ---
 
-## Validated SMARTS (SMIRKS-implementable, 7 rules)
+### Validated SMARTS (SMIRKS-implementable, 7 rules)
 
 All tested with RDKit `AllChem.ReactionFromSmarts` + `RunReactants`.
 Test suite: `tests/test_rearrangement_smarts.py` (32 tests, all passing).
 
-### 1. McLafferty — Carbonyl (FIXED)
+#### 1. McLafferty — Carbonyl (FIXED)
 
 **Bug in original:** product used `=[C:2]=` (ketene, pentavalent C in RDKit).
 **Fix:** change to `-[C:2]=` to give the correct enol product (single bond O–C).
@@ -70,7 +350,7 @@ No match: `CC(C)=O` (no gamma-H), `CCC=O` (propanal, chain too short).
 
 ---
 
-### 2. McLafferty — Nitrile (CORRECT AS-IS)
+#### 2. McLafferty — Nitrile (CORRECT AS-IS)
 
 Nitrile McLafferty correctly gives a **ketenimine** (`N=C=C`, not an enol).
 The cumulene product is chemically right for this substrate class.
@@ -93,7 +373,7 @@ No match: `CCC#N` (propionitrile, no gamma-H).
 
 ---
 
-### 3. Retro-Diels-Alder — All-Carbon
+#### 3. Retro-Diels-Alder — All-Carbon
 
 Added `r6` ring-membership guard to prevent spurious matches in non-6-membered rings.
 Use without `AddHs` (avoids valence overflow on substituted rings).
@@ -114,7 +394,7 @@ No match: `C1=CCC=CC1` (cyclohex-1,3-diene, two double bonds), `C1CCCCC1`, `C1=C
 
 ---
 
-### 4. Retro-Diels-Alder — Heteroatom
+#### 4. Retro-Diels-Alder — Heteroatom
 
 For rings containing O, N, S (flavonoid C-ring, dihydropyranones, etc.).
 Use without `AddHs`.
@@ -131,7 +411,7 @@ Produces heteroatom-containing diene/dienophile fragments from dihydropyranone-t
 
 ---
 
-### 5. Retro-ene (Carbonyl)
+#### 5. Retro-ene (Carbonyl)
 
 6-membered TS where the aldehyde H transfers to the terminal alkene carbon; beta-bond breaks.
 Produces a ketene + alkene. Chain-length specific: carbonyl must be exactly 4 atoms
@@ -154,7 +434,7 @@ No match: `C=CCCCC=O` (chain too long), `CCCC(C)=O` (ketone, no aldehyde H).
 
 ---
 
-### 6. Cope [3,3]-Sigmatropic (CORRECT AS-IS)
+#### 6. Cope [3,3]-Sigmatropic (CORRECT AS-IS)
 
 Isomerization of a 1,5-diene. Generates a structural isomer as input to a second BFS pass,
 not a fragment ion directly. Use without `AddHs`.
@@ -175,7 +455,7 @@ No match: isolated alkene `CC=CCC`, conjugated diene `C=CC=C`.
 
 ---
 
-### 7. Claisen Rearrangement (CORRECT, MISLABELED)
+#### 7. Claisen Rearrangement (CORRECT, MISLABELED)
 
 The original list called this "Oxa-Cope" — incorrect. This is the **Claisen rearrangement**
 (allyl vinyl ether → γ,δ-unsaturated carbonyl). Oxa-Cope is a different reaction
@@ -199,9 +479,9 @@ No match: `CCOCC` (diethyl ether), `C=CCOC` (allyl methyl ether, no vinyl compon
 
 ---
 
-## Rules Requiring Custom Python (Not SMIRKS-Implementable in RDKit)
+### Rules Requiring Custom Python (Not SMIRKS-Implementable in RDKit)
 
-### Wagner–Meerwein, 1,2-H Shift, 1,5-Hydride Transfer, Pinacol
+#### Wagner–Meerwein, 1,2-H Shift, 1,5-Hydride Transfer, Pinacol
 
 **Problem:** All involve carbocations. When RDKit constructs the product from SMIRKS,
 it adds implicit H atoms based on standard carbon valence (4 bonds). For a carbocation
@@ -213,7 +493,7 @@ the bond changes — resulting in a pentavalent carbon (sanitize failure).
 2. Explicitly edit the molecule with `RWMol.AddBond` / `RemoveBond`
 3. Adjust formal charges and H counts manually
 
-### Tropylium Ring Expansion (benzyl cation → C₇H₇⁺)
+#### Tropylium Ring Expansion (benzyl cation → C₇H₇⁺)
 
 **Problem:** SMIRKS cannot change ring size. The product SMARTS always assigns the same
 ring topology as the reactant. Writing `[#6:7]` in a 7-membered product ring while the
@@ -226,7 +506,7 @@ SMIRKS entirely.
 
 ---
 
-## Rules Removed
+### Rules Removed
 
 | Rule | Reason |
 |---|---|
@@ -235,7 +515,7 @@ SMIRKS entirely.
 
 ---
 
-## Original List — Issues Found
+### Original List — Issues Found
 
 | Rule | Status | Issue |
 |---|---|---|
@@ -255,7 +535,7 @@ SMIRKS entirely.
 
 ---
 
-## Coverage vs. Current BFS (Integration Decision)
+### Coverage vs. Current BFS (Integration Decision)
 
 Analysis of whether each validated rule adds coverage beyond the current multi-cut BFS
 (`multi_cut_bfs.pyx`) with H-transfer (`max_h_transfer=4`).
@@ -287,16 +567,16 @@ current prepass cannot model.
 
 ---
 
-## Case Study: o-Nitrothioether Cyclization (Confirmed, 2026-06-19)
+### Case Study: o-Nitrothioether Cyclization (Confirmed, 2026-06-19)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: (4-chloro-2-nitrophenylthio)acetic acid, SMILES: `O=C(O)CSc1ccc(Cl)cc1[N+](=O)[O-]`
 - **Formula**: C8H6ClNO4S, [M-H]⁻ = 245.963 Da
 - **Spectrum**: spec_id=941868, mol_id=30126, FT, NCE=9%, nist20_hr
 - **cos_hun_inst_tol = 0.029** (model essentially blind — all predictions unmatched)
 
-### Observed Fragmentation
+#### Observed Fragmentation
 
 All major GT peaks confirmed to ≤1 mDa (FT mass accuracy):
 
@@ -308,7 +588,7 @@ All major GT peaks confirmed to ≤1 mDa (FT mass accuracy):
 
 Neutral loss to base peak: **74.000 Da = C2H2O3** (confirmed: 2×12 + 2×1.00783 + 3×15.99491 = 74.000 Da).
 
-### Mechanism
+#### Mechanism
 
 The ortho-NO2 group acts as an internal electrophile, cyclizing with the adjacent S atom to
 form a new N–S bond (benzisothiazole N-oxide type 5-membered ring). Simultaneously the
@@ -329,7 +609,7 @@ thiadiazole or benzisothiazole N-oxide structure. The 13C M+1 peak of the base (
 intensity 50.85 = 5.1% of 999, consistent with ~4–5 carbons visible in the monoisotopic
 ion after NIST's 37Cl isotope filtering).
 
-### Why the Model Fails
+#### Why the Model Fails
 
 The BFS DAG only models bond-breaking (cleavage). This fragmentation requires **bond
 formation** (a new intramolecular N–S bond). The rearranged cyclic product C6H4ClNOS and
@@ -341,7 +621,7 @@ of bond cleavages. The model instead predicts conventional cleavage products:
 
 Neither appears in the actual spectrum.
 
-### SMARTS Pattern for Detection
+#### SMARTS Pattern for Detection
 
 Detect the o-nitrothioether substructure:
 
@@ -353,7 +633,7 @@ The reaction would need to be implemented as a custom Python function (not SMIRK
 1. It forms a new ring (N–S bond), which SMIRKS cannot represent as a ring-size change
 2. The neutral C2H2O3 requires tracking one O from NO2 joining the –CH2COO– fragment
 
-### Fixability and Priority
+#### Fixability and Priority
 
 | Dimension | Assessment |
 |---|---|
@@ -368,16 +648,16 @@ Otherwise, accept as out-of-scope (same decision as Cope/Claisen).
 
 ---
 
-## Case Study: Chloral Hemiacetal Amide — Cl Migration + Retro-Addition (Confirmed, 2026-06-20)
+### Case Study: Chloral Hemiacetal Amide — Cl Migration + Retro-Addition (Confirmed, 2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: N-(2,2,2-trichloro-1-(4-methoxyphenoxy)ethyl)butanamide, SMILES: `CCCC(=O)NC(Oc1ccc(OC)cc1)C(Cl)(Cl)Cl`
 - **Formula**: C13H16Cl3NO3, [M+H]⁺ = 340.027 Da
 - **Spectrum**: spec_id=182359, mol_id=9989, FT, NCE=10%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (total failure — all 30 model predictions unmatched)
 
-### Observed Fragmentation
+#### Observed Fragmentation
 
 Only 2 GT peaks; both confirmed to ≤1 mDa; neither is reachable by BFS:
 
@@ -386,7 +666,7 @@ Only 2 GT peaks; both confirmed to ≤1 mDa; neither is reachable by BFS:
 | 121.0285 | C4H8NOCl | 0.9 | 218.998 Da | Base — Cl migration from CCl3 to acyl chain |
 | 265.9543 | C9H7NO2Cl3 | 0.1 | 74.073 Da (C4H10O) | Retro-addition, loss of n-butanol equivalent |
 
-### Mechanisms
+#### Mechanisms
 
 **Fragment at 265.954 — retro-addition (NL = C4H10O = 74.073 Da):**
 
@@ -415,13 +695,13 @@ CCl3–CH(OAr)–NH–CO–nBu  →  [nBu–CO–NH–CH2Cl]⁺  +  neutral(ArO�
 Both mechanisms require **new bond formation** (Cl–C migration creates a new C–Cl bond;
 the retro-addition forms a C=N bond while breaking C–N): structurally outside the BFS DAG.
 
-### Why the Model Fails Completely
+#### Why the Model Fails Completely
 
 The BFS generates 30 standard cleavage products (4-methoxyphenol [M+H]⁺ = 126.07,
 butanamide [M+H]⁺ = 88.08, CCl3-containing direct cuts at various masses). None fall
 within 10 ppm (≤1.2 mDa at 121, ≤2.7 mDa at 266) of either GT peak. cos_hun = 0.000.
 
-### SMARTS Fixability
+#### SMARTS Fixability
 
 **Neutral loss rule (partial fix, implementable):**
 
@@ -452,7 +732,7 @@ Would require custom Python that:
 2. Redistributes one Cl to the alpha-C of the acyl group
 3. Emits the Cl-migrated acyliminium cation formula directly
 
-### Fixability and Priority
+#### Fixability and Priority
 
 | Dimension | Assessment |
 |---|---|
@@ -466,7 +746,7 @@ first. If <200 spectra, accept as out-of-scope. The neutral loss rule is easy bu
 without the companion Cl-migration fragment rule, and the latter requires custom Python for
 marginal gain.
 
-### Finding o-Nitrothioether Compounds in the Dataset
+#### Finding o-Nitrothioether Compounds in the Dataset
 
 ```python
 import pandas as pd
@@ -493,23 +773,23 @@ print(hit_specs.groupby("inst_type").size())
 
 ---
 
-## Case Study: 3-Hydroxythiophene Enol Dehydration — Model Ranking Failure (Confirmed, 2026-06-20)
+### Case Study: 3-Hydroxythiophene Enol Dehydration — Model Ranking Failure (Confirmed, 2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: Methyl 4-hydroxy-5-(trifluoromethyl)thiophene-2-carboxylate, SMILES: `COC(=O)c1sc(C(F)(F)F)cc1O`
 - **Formula**: C7H5F3O3S, [M+H]⁺ = 226.998 Da
 - **Spectrum**: spec_id=474127, mol_id=16901, FT, NCE=35%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (all 31 predictions unmatched)
 
-### Observed Fragmentation
+#### Observed Fragmentation
 
 | m/z (obs) | Formula | NL | Assignment |
 |---|---|---|---|
 | 208.9875 | C7H4F3O2S | 18.011 (H2O) | Base peak — enol-OH dehydration |
 | 121.0281 | C7H5O2 | 105.969 | Minor — full desulfurization (mechanism unclear) |
 
-### Why the Model Fails
+#### Why the Model Fails
 
 This is **not a BFS coverage gap**. The fragment C7H4F3O2S at 208.9884 Da (0.9 mDa from GT) **is
 in the BFS DAG** — generated by cutting the C3–OH bond with delta_h=0.  Confirmed via
@@ -528,7 +808,7 @@ for this scaffold because the dominant pathway is **enol-OH dehydration**: the 3
 enol hydroxyl stabilized by adjacent ring sulfur and C2 ester resonance. Dehydration is
 energetically preferred over CH₃OH or HF loss for this specific 3-hydroxythiophene-2-ester core.
 
-### Failure Mode: Model Intensity Ranking Failure
+#### Failure Mode: Model Intensity Ranking Failure
 
 This is a priority inversion between competing pathways — the same failure category as
 the glycoside charge-partitioning case. The fragment exists in the DAG; the model just
@@ -538,12 +818,12 @@ doesn't rank it above the competing ester and CF₃ fragments.
 heteroaromatic ring → dehydration dominant) from aliphatic OH or phenol OH. The model's
 `n_hydroxyl` feature counts OH groups but encodes nothing about the OH chemical context.
 
-### SMARTS Fixability
+#### SMARTS Fixability
 
 Not a SMARTS/prepass problem — the fragment is already in the DAG. **Fix requires a model
 feature change**.
 
-#### Why `n_hydroxyl` / `charge_retention` (the glycoside fix) does NOT help here
+##### Why `n_hydroxyl` / `charge_retention` (the glycoside fix) does NOT help here
 
 The `charge_retention` feature (`[n_hydroxyl, n_acidic, ion_mode_sign]`) solves charge
 partitioning: "which fragment keeps the proton/deprotonation site?" For glycosides, the
@@ -562,7 +842,7 @@ three competing pathways, all in positive mode, all simple bond cuts:
 All three product fragments have `n_hydroxyl = 0`. The feature is identical for all three
 competing nodes, so it cannot change the ranking.
 
-#### What would actually help
+##### What would actually help
 
 The signal needed is on the **type of the OH being lost**, not on the fragment that
 remains. An `is_enol_oh` atom-level feature on the OH oxygen in the parent molecule
@@ -576,7 +856,7 @@ it to fragment nodes as "did this fragment lose an enol OH?" via a complement-si
 `oh_type` {0: none, 1: aliphatic OH, 2: enol/aromatic OH} on each fragment's composition
 would carry the same signal without requiring complement-side bookkeeping.
 
-### Fixability and Priority
+#### Fixability and Priority
 
 | Dimension | Assessment |
 |---|---|
@@ -594,9 +874,9 @@ problems.
 
 ---
 
-## Design Principle: GNN Learning vs. Explicit Feature Encoding
+### Design Principle: GNN Learning vs. Explicit Feature Encoding
 
-### Can the molecular GNN learn functional-group dominance rules automatically?
+#### Can the molecular GNN learn functional-group dominance rules automatically?
 
 In principle yes — a 3-layer GINE with standard atom features can express any local subgraph
 pattern (sulfonamide, nitrile, nitro, etc.) within Weisfeiler-Lehman expressivity. Given
@@ -619,7 +899,7 @@ into the global embedding. The frag GNN must then learn TWO implicit steps:
 Explicit per-fragment features (e.g. `n_enol_oh` = 0 on the dehydrated fragment, 1 on all
 others) bypass both steps — they give a direct, per-node signal with no pooling dilution.
 
-### Practical threshold: training-set size per functional group class
+#### Practical threshold: training-set size per functional group class
 
 | Functional group | Est. NIST23 spectra | GNN learns? | Explicit feature needed? |
 |---|---|---|---|
@@ -630,7 +910,7 @@ others) bypass both steps — they give a direct, per-node signal with no poolin
 | Phosphate ester (HPO₃ vs H₃PO₄) | ~2,000+ | Borderline | Yes — mono vs di-ester distinction subtle |
 | **Enol-OH on 5-membered heteroaromatic** | **<300** | **No** | **Yes** |
 
-### Decision rule
+#### Decision rule
 
 - **>3,000 training spectra with that FG**: GNN learns it. Check if model already performs
   well on that compound class before adding a feature. If broken, the fix is more data or a
@@ -639,7 +919,7 @@ others) bypass both steps — they give a direct, per-node signal with no poolin
   the failure mode appears repeatedly in worst-case analysis.
 - **<300**: GNN cannot reliably learn it. Explicit feature is necessary.
 
-### Which features to actually add
+#### Which features to actually add
 
 Based on the above, add at most two new explicit scalar features beyond `n_hydroxyl` /
 `n_acidic`:
@@ -672,16 +952,16 @@ Revised decision rule:
 
 ---
 
-## Case Study: Lignan Glucoside [M+Na]⁺ — Systematic Fragment Mass Calibration Artifact (2026-06-20)
+### Case Study: Lignan Glucoside [M+Na]⁺ — Systematic Fragment Mass Calibration Artifact (2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: Podophyllotoxin-type lignan glucoside, SMILES: `COc1cc(C2c3cc4c(cc3C(OC3OC(CO)C(O)C(O)C3O)C3COC(=O)C23)OCO4)cc(OC)c1OC`
 - **Formula**: C28H32O13, [M+Na]⁺ = 599.174 Da
 - **Spectrum**: spec_id=533415, mol_id=18136, FT/CID, NCE=35%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (all predictions unmatched)
 
-### Observed Fragmentation and Model Predictions
+#### Observed Fragmentation and Model Predictions
 
 | GT m/z | GT int | Model m/z | Model int | Δ (mDa) | Assignment |
 |---|---|---|---|---|---|
@@ -694,7 +974,7 @@ Revised decision rule:
 **FT tolerance at m/z 420**: 10 ppm × 420 = 4.2 mDa. All GT peaks are 15–20 mDa from the
 nearest model prediction. cos_hun = 0.000.
 
-### Failure Mode: MS2 Fragment Mass Calibration Artifact
+#### Failure Mode: MS2 Fragment Mass Calibration Artifact
 
 The precursor is accurately measured: [M+Na]⁺ theory = 599.174, measured = 599.174 (Δ = 0.6 mDa).
 But ALL MS2 fragment ions are systematically offset from theoretical Na-adduct fragment masses.
@@ -711,7 +991,7 @@ fixes the systematic offset from theory.
 **Note**: precursor (MS1) calibration is fine; the offset is in the MS2 fragment scan only.
 This is consistent with instruments that calibrate MS1 and MS2 scans independently.
 
-### Fixability
+#### Fixability
 
 None. The model generates correct theoretical [fragment+Na]⁺ masses. The GT spectrum
 calibration cannot be corrected post-hoc from within the model. This is a NIST20 data
@@ -720,16 +1000,16 @@ correct formula.
 
 ---
 
-## Case Study: Triterpene Glucuronide [M+H]⁺ — Calibration Artifact + Ranking Failure (2026-06-20)
+### Case Study: Triterpene Glucuronide [M+H]⁺ — Calibration Artifact + Ranking Failure (2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: Ursolic-type triterpene glucuronide ester, SMILES: `CC(CCC(=O)OC1OC(C(=O)O)C(O)C(O)C1O)C1CCC2C3C(O)CC4CC(O)CCC4(C)C3CCC12C`
 - **Formula**: C30H48O10, [M+H]⁺ = 569.332 Da
 - **Spectrum**: spec_id=296336, mol_id=5307, FT/CID, NCE=35%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (all predictions unmatched)
 
-### Observed Fragmentation vs. Model Predictions
+#### Observed Fragmentation vs. Model Predictions
 
 GT base peak is a cascade of H₂O losses from the intact precursor:
 
@@ -749,7 +1029,7 @@ Model top predictions (not in GT):
 | 357.279 | 831 | 212.053 (glucuronolactone+H₂O) | secondary |
 | 375.289 | 643 | 194.043 (glucuronic acid) | [aglycone+H]⁺ direct |
 
-### Two Overlapping Failure Modes
+#### Two Overlapping Failure Modes
 
 **1. Systematic +20 mDa calibration artifact (same as spec_id=533415)**
 
@@ -774,7 +1054,7 @@ Additionally, GT peak 411.198 (2nd highest, NL=158.134) has no clean formula ass
 consistent with the molecular formula — possibly a retro-ene or side-chain loss unique to the
 triterpenoid scaffold, outside BFS coverage.
 
-### Fixability
+#### Fixability
 
 | Dimension | Assessment |
 |---|---|
@@ -787,16 +1067,16 @@ were perfect, the +20 mDa offset would prevent any match within FT tolerance.
 
 ---
 
-## Case Study: Complex Glycoconjugate — Na-Adducted Fragment Ions in [M+H]⁺ Spectrum (2026-06-20)
+### Case Study: Complex Glycoconjugate — Na-Adducted Fragment Ions in [M+H]⁺ Spectrum (2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: NeuAc-Hex-HexNAc-Rha glycoconjugate with NHAc-aldehyde aglycone, SMILES: `CC(=O)NC(C=O)C(OC1OC(CO)C(O)C(OC2(C(=O)O)CC(O)C(NC(C)=O)C(C(O)C(O)CO)O2)C1O)C(OC1OC(C)C(O)C(O)C1O)C(O)CO`
 - **Formula**: C31H52N2O23, [M+H]⁺ = 821.303 Da
 - **Spectrum**: spec_id=350043, mol_id=2032, FT/CID, NCE=30%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (n_pred=121, all predictions unmatched)
 
-### Model Predictions vs. GT
+#### Model Predictions vs. GT
 
 Model generates standard glycan **B-type oxonium ions** (correct chemistry):
 
@@ -822,7 +1102,7 @@ GT peaks:
 | 508.168 | 15 | Unassigned; NL = 313.136 Da |
 | 132.987 | 87 | **Anomalous**: no C/H/N/O formula within 5 mDa. Likely contaminant. |
 
-### Failure Mode: Na-Adducted Glycan Fragments
+#### Failure Mode: Na-Adducted Glycan Fragments
 
 The GT 226.067 is the **Na-adducted HexNAc B₁ oxonium** ion, formed when residual Na⁺ in the
 ion source adducts onto the [HexNAc−H₂O]⁺ cation:
@@ -842,7 +1122,7 @@ correspond to any combination of the constituent sugar residues (NeuAc=291.095, 
 HexNAc=203.079, Rha=146.057). The 132.987 peak has no valid C/H/N/O formula — likely an
 instrument background or co-eluting impurity.
 
-### Summary
+#### Summary
 
 | Failure source | Impact |
 |---|---|
@@ -861,16 +1141,16 @@ NCE=35%, n_pred=246) share the same failure modes and are omitted as duplicates.
 
 ---
 
-## Case Study: N-Nitroimidazolidine — N₂O Neutral Loss Rearrangement (Confirmed, 2026-06-20)
+### Case Study: N-Nitroimidazolidine — N₂O Neutral Loss Rearrangement (Confirmed, 2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: 2-nitroimino-imidazolidine (N-nitroimidazolidine-2-imine), SMILES: `O=[N+]([O-])NC1=NCCN1`
 - **Formula**: C3H6N4O2, [M−H]⁻ = 129.042 Da
 - **Spectrum**: spec_id=550113, mol_id=32618, FT/CID, NCE=35%, nist20_hr
 - **cos_hun_inst_tol = 0.000**
 
-### Observed Fragmentation
+#### Observed Fragmentation
 
 | m/z (obs) | Δ mDa | NL from [M−H]⁻ | Assignment |
 |---|---|---|---|
@@ -881,7 +1161,7 @@ NCE=35%, n_pred=246) share the same failure modes and are omitted as duplicates.
 
 N₂O mass = 2×14.003 + 15.995 = **44.001 Da** (exact). Confirmed to 0.1 mDa.
 
-### Mechanism
+#### Mechanism
 
 The compound is a **N-nitroimidazolidine-2-imine**: the nitro group is attached directly to
 an amidine N (N−NO₂ nitramine). Under CID [M−H]⁻, the N-N bond undergoes:
@@ -901,7 +1181,7 @@ from −NO₂, with one O from the nitro group. This requires a **bond order cha
 bond (from single → N=N=O triple in N₂O), which makes it a gas-phase rearrangement —
 **not a simple BFS bond cleavage**.
 
-### Why the Model Fails
+#### Why the Model Fails
 
 Model's top prediction at m/z 98.036 (NL = 31.006 = HNO loss) and its nearest fragment to GT:
 - m/z 85.028 (formula C2H3N3O⁻, NL = 44.014) → **13 mDa below GT** (outside 2 mDa floor)
@@ -911,7 +1191,7 @@ neutral loss because N₂O formation requires both N atoms from different positi
 molecule to combine. The formula difference: model predicts C2H3N3O (loses C1H3N1O1 = CH3NO)
 vs GT C3H5N2O (loses N₂O).
 
-### SMARTS Fixability
+#### SMARTS Fixability
 
 **N₂O loss is implementable as a conditional neutral loss rule:**
 
@@ -929,7 +1209,7 @@ N_NITRAMINE_PATTERN = "[N+](=O)([O-])-[NH]-"  # any N-nitroamine NH
 This does NOT require expressing the bond order change — it directly encodes the known
 neutral loss mass conditioned on the N-nitroamine substructure.
 
-### Compound Class and Prevalence
+#### Compound Class and Prevalence
 
 N-nitroamines / nitraimines that show N₂O loss:
 - **Energetic materials**: RDX (hexahydro-1,3,5-trinitro-1,3,5-triazine), HMX, CL-20
@@ -940,7 +1220,7 @@ In NIST20/23, energetic material spectra are rare but pharmaceutical nitroimidaz
 more common (~50–200 spectra estimated). Check NIST23 prevalence of `[N+](=O)([O-])-N`
 before implementing.
 
-### Fixability and Priority
+#### Fixability and Priority
 
 | Dimension | Assessment |
 |---|---|
@@ -961,16 +1241,16 @@ this reaction IS fully encodeable as a conditional mass-based rule without custo
 
 ---
 
-## Case Study: Aromatic Sulfonamide — SO₂ Extrusion BFS Coverage Gap (Confirmed, 2026-06-20)
+### Case Study: Aromatic Sulfonamide — SO₂ Extrusion BFS Coverage Gap (Confirmed, 2026-06-20)
 
-### Compound and Spectrum
+#### Compound and Spectrum
 
 - **Molecule**: N-(pyrimidin-2-yl)-4-nitrobenzenesulfonamide, SMILES: `O=[N+]([O-])c1ccc(S(=O)(=O)Nc2ncccn2)cc1`
 - **Formula**: C10H8N4O4S, [M−H]⁻ = 279.019 Da
 - **Spectrum**: spec_id=610784, mol_id=32771, FT/CID, NCE=35%, nist20_hr
 - **cos_hun_inst_tol = 0.000** (n_pred=115, single GT peak, zero matched)
 
-### Observed Fragmentation
+#### Observed Fragmentation
 
 GT has exactly **one peak**:
 
@@ -982,7 +1262,7 @@ NL = 63.962 = S + 2O = 31.972 + 2×15.995 = 63.962 Da (0.1 mDa from theoretical)
 
 Fragment = [4-NO₂-C₆H₄-NH-Pyr − H]⁻ = [C10H7N4O2]⁻ = 215.057 (2 mDa from theory 215.055).
 
-### Mechanism: SO₂ Extrusion with New Ar−N Bond Formation
+#### Mechanism: SO₂ Extrusion with New Ar−N Bond Formation
 
 Classic gas-phase reaction of aromatic sulfonamides in [M−H]⁻ mode:
 
@@ -998,7 +1278,7 @@ S−N bond cleavage with Ar−N bond formation** — a concerted 4-membered cycl
 Because a NEW bond forms, this is a **rearrangement** and is **completely outside BFS DAG
 coverage**. The product [4-NO₂-phenyl-NH-pyrimidine]⁻ has zero representation in the BFS DAG.
 
-### Why the Model Fails Completely
+#### Why the Model Fails Completely
 
 Model top prediction: **[M−H]⁻ at m/z 279.019 (NL=0.000, int=1000)** — the intact precursor
 ion, not any fragment. This indicates the model finds no high-probability fragment in the DAG
@@ -1012,7 +1292,7 @@ entirely.
 DAG but ranked incorrectly. Here the fragment is categorically absent from the DAG. No GNN
 improvement changes this — the prepass gap must be filled first.
 
-### Design Principle Correction
+#### Design Principle Correction
 
 This case invalidates the earlier claim that "the GNN learns aromatic sulfonamide SO₂ loss
 from NIST23-scale data." Even with 8,000+ sulfonamide training spectra, the GNN cannot predict
@@ -1022,7 +1302,7 @@ a fragment that has zero probability of appearing in its DAG. The correct statem
 > fragments whose existence requires new bond formation. For SO₂ extrusion from aromatic
 > sulfonamides, a SMARTS prepass rule must add the rearranged product to the DAG first.
 
-### SMARTS Fixability
+#### SMARTS Fixability
 
 **Fully implementable as a conditional neutral loss rule:**
 
@@ -1032,7 +1312,7 @@ ARYL_SULFONAMIDE_SO2 = "[c]-[SX4](=O)(=O)-[NH]"
 # NL = SO₂ = 63.9619 Da (S + 2O exact mass)
 ```
 
-### Compound Class and Priority
+#### Compound Class and Priority
 
 SO₂ extrusion is one of the most documented MS/MS losses in pharmaceutical mass spectrometry:
 - **Sulfonamide antibiotics**: sulfadiazine, sulfamethoxazole, sulfadimethoxine, etc.
@@ -1041,7 +1321,7 @@ SO₂ extrusion is one of the most documented MS/MS losses in pharmaceutical mas
 
 Estimated NIST23 prevalence: **1,000–5,000+ spectra** (very common class).
 
-### Fixability and Priority
+#### Fixability and Priority
 
 | Dimension | Assessment |
 |---|---|
@@ -1057,7 +1337,7 @@ in this analysis. The SMARTS is simple, the compound class is large, and the fix
 
 ---
 
-## Note: Thioxothiazole-Oxindole Hybrid — Calibration Artifact, Opposite Sign (spec_id=686582, 686598)
+### Note: Thioxothiazole-Oxindole Hybrid — Calibration Artifact, Opposite Sign (spec_id=686582, 686598)
 
 - **mol_id=31850**, C11H7N3O2S2, SMILES: `O=C1Nc2ccccc2C1=Nn1c(O)csc1=S`
 - **686582**: [M+H]+, prec_mz=278.005; **686598**: [M-H]-, prec_mz=275.991; nist20_hr, NCE=35%
@@ -1078,7 +1358,7 @@ No new actionable finding.
 
 ---
 
-## Confirmation: Second Aromatic Sulfonamide SO₂ Case (spec_id=856552)
+### Confirmation: Second Aromatic Sulfonamide SO₂ Case (spec_id=856552)
 
 - **Molecule**: N-(pyrimidin-2-yl)benzenesulfonamide (unsubstituted phenyl), SMILES: `O=S(=O)(Nc1cnccn1)c1ccccc1`
 - **Formula**: C10H9N3O2S, [M−H]⁻ = 234.034 Da
@@ -1100,11 +1380,11 @@ substituent-independent. The SMARTS trigger `[c]-[SX4](=O)(=O)-[NH]` covers both
 
 ---
 
-## Summary: FT Worst-Case Analysis, NCE=30-40%, Complete Survey (2026-06-20)
+### Summary: FT Worst-Case Analysis, NCE=30-40%, Complete Survey (2026-06-20)
 
 All spectra in `output/inference_eval/pqx7ywc9/plots/by_ce/FT/worst/30-40/` examined.
 
-### Pattern 1: NIST20 Fragment Mass Calibration Artifact (≥5 cases)
+#### Pattern 1: NIST20 Fragment Mass Calibration Artifact (≥5 cases)
 
 Systematic mass offsets in GT fragment peaks vs. theoretical; precursor is well-calibrated.
 FT tolerance (10 ppm / 2 mDa floor) is too tight to tolerate the offsets → cos=0.
@@ -1121,7 +1401,7 @@ Mitigation: flagging these spectra in training data as low-quality; they cannot 
 model improvements. Consider adding a NIST20 spec quality filter based on precursor vs.
 fragment calibration consistency.
 
-### Pattern 2: Aromatic Sulfonamide SO₂ Extrusion BFS Gap (2 confirmed cases)
+#### Pattern 2: Aromatic Sulfonamide SO₂ Extrusion BFS Gap (2 confirmed cases)
 
 | spec_id | compound | GT base → | assignment |
 |---|---|---|---|
@@ -1132,7 +1412,7 @@ Root cause: SO₂ extrusion requires new Ar−N bond formation → outside BFS D
 Fix: `NeutralLossRule` with SMARTS `[c]-[SX4](=O)(=O)-[NH]`, NL=63.962 Da.
 **Priority: HIGH.** Compound class very common in pharmaceutical spectra.
 
-### Pattern 3: Unusual Ion Types (2 cases)
+#### Pattern 3: Unusual Ion Types (2 cases)
 
 - **spec_id=350043** (glycoconjugate [M+H]⁺): GT shows [HexNAc−H₂O+Na]⁺ at 226.067 —
   Na-adducted oxonium ions from Na contamination. Model predicts [frag+H]⁺ only.
@@ -1140,14 +1420,14 @@ Fix: `NeutralLossRule` with SMARTS `[c]-[SX4](=O)(=O)-[NH]`, NL=63.962 Da.
 - **spec_id=550113** (N-nitroimidazolidine [M−H]⁻): GT base = [M−H−N₂O]⁻ = 85.041 (NL=44.001,
   0.1 mDa). N₂O extrusion via N−N bond order change. Fix: `NeutralLossRule` on N-nitramine.
 
-### Pattern 4: Model Ranking Failures (≥3 cases)
+#### Pattern 4: Model Ranking Failures (≥3 cases)
 
 - **spec_id=296336**: glucuronolactone loss (NL=176) over-ranked vs H₂O cascade.
 - **spec_id=686582**: C₂H₂OS NL (small loss) ranked above C₂H₂N₂OS NL (large loss).
 - **spec_id=957726**: carbazole-thiadiazole [M+Na]⁺ — model prefers large fragments (150-200 Da)
   while GT base is 81.033 (small fragment). Model consistently under-predicts high-NL fragments.
 
-### Pattern 5: Large Glycoside / [M+Na]⁺ Generalization Failures
+#### Pattern 5: Large Glycoside / [M+Na]⁺ Generalization Failures
 
 - **spec_id=866788** (quercetin triglycoside [M−H]⁻): GT base = 718, model at 596, Δ=122 Da
   — wrong sugar sequence predicted.
@@ -1155,7 +1435,7 @@ Fix: `NeutralLossRule` with SMARTS `[c]-[SX4](=O)(=O)-[NH]`, NL=63.962 Da.
   base is a small or mid-size fragment. [M+Na]⁺ fragmentation behavior differs from [M+H]⁺;
   model may be undertrained on this adduct type.
 
-### Actionable Findings Priority
+#### Actionable Findings Priority
 
 1. **Implement aromatic sulfonamide SO₂ NeutralLossRule** — highest priority, confirmed in 2
    spectra, common in pharmaceutical databases.

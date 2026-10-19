@@ -82,6 +82,7 @@ their documented stores; include accessible identities and links in the record.
 
 At meaningful checkpoints, update the plan with observed results. Put supported durable
 conclusions and negative results in `docs/findings/`; preserve evidence and uncertainty.
+Append each new measurement as a row to its benchmark ledger in `docs/results/`.
 Update the workstream hub's "Where it stands" and "Open threads", then **replace** that
 workstream's block in [project state](../project-state.md) (no dated entries there; it stays
 under about 200 lines). Keep useful closed plans and their status banners. Do not copy transcripts into docs.

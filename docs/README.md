@@ -65,8 +65,7 @@ Data preprocessing commands (including Spectraverse folds) are in
 | [masster_ei_method.md](reference/masster_ei_method.md) | Probabilistic MASSter EI-MS method, nominal/exact ion channels, natural isotope assembly, and training setup. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Isotope-peak cleanup for training. |
-| [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
-| [rearrangement_smarts.md](reference/rearrangement_smarts.md) | Literature survey + SMARTS validation for gas-phase rearrangements. |
+| [smarts_surveys.md](reference/smarts_surveys.md) | PPGB-MS2 72-rule coverage survey and gas-phase rearrangement SMIRKS review (merged 2026-10-18). |
 | [masster_smarts_rules.md](reference/masster_smarts_rules.md) | MASSter SMARTS allowlist, literature additions, exclusions, and validation gate. |
 | [fragnnet_pl_memory_review.md](reference/fragnnet_pl_memory_review.md) | GPU/CPU memory pressure points in the training loop, and FraGNNet training memory levers. |
 | [inference_pitfalls.md](reference/inference_pitfalls.md) | Fixed inference/DAG bugs, `dags.h5` and HDF5 export sizing, batching, config precedence (checkpoint hparams are the custom config), known-broken scripts. |

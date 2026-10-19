@@ -1247,15 +1247,15 @@
         </mxGraphModel>
     </diagram>
     <diagram id="masster-ei-architecture" name="EI-MASSter architecture">
-        <mxGraphModel dx="1797" dy="2024" grid="0" gridSize="5" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="960" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="1797" dy="2024" grid="0" gridSize="5" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2100" pageHeight="960" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
                 <mxCell id="stage_panel_4" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;strokeColor=none;strokeWidth=1;html=1;fillColor=#F5F0FA;">
-                    <mxGeometry as="geometry" x="1410" y="195" width="355" height="465"/>
+                    <mxGeometry as="geometry" x="1410" y="195" width="655" height="465"/>
                 </mxCell>
                 <mxCell id="stage_accent_4" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;strokeColor=none;strokeWidth=1;html=1;fillColor=#8261AD;">
-                    <mxGeometry as="geometry" x="1428" y="195" width="319" height="3"/>
+                    <mxGeometry as="geometry" x="1428" y="195" width="619" height="3"/>
                 </mxCell>
                 <mxCell id="stage_panel_3" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;strokeColor=none;strokeWidth=1;html=1;fillColor=#F0F8F9;">
                     <mxGeometry as="geometry" x="1025" y="195" width="355" height="465"/>
@@ -1275,13 +1275,13 @@
                 <mxCell id="stage_accent_1" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;strokeColor=none;strokeWidth=1;html=1;fillColor=#3D6FB4;">
                     <mxGeometry as="geometry" x="53" y="195" width="309" height="3"/>
                 </mxCell>
-                <mxCell id="c127" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=34;fontStyle=1;fontColor=#172B3A;" value="EI-MASSter architecture&lt;br&gt;&lt;font style=&quot;font-size:20px&quot;&gt;&lt;span style=&quot;font-weight:normal&quot;&gt;Predict nominal-mass EI spectra with learned fragments and natural isotope envelopes&lt;/span&gt;&lt;/font&gt;" vertex="1">
+                <mxCell id="c127" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=34;fontStyle=1;fontColor=#172B3A;" value="EI-MASSter architecture&lt;br&gt;&lt;font style=&quot;font-size:20px&quot;&gt;&lt;span style=&quot;font-weight:normal&quot;&gt;One learned model · natural-isotope support for nominal EI and high-resolution EI-MS&lt;/span&gt;&lt;/font&gt;" vertex="1">
                     <mxGeometry height="85" width="1400" x="45" y="22" as="geometry"/>
                 </mxCell>
                 <mxCell id="c14" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=12;html=1;fillColor=#F1F4F7;strokeColor=none;container=1;collapsible=0;recursiveResize=0;" value="" vertex="1">
                     <mxGeometry height="74" width="560" x="660" y="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="context_heading" parent="c14" vertex="1" value="FIXED EI SETUP · NIST23 NOMINAL MASS" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#607486;">
+                <mxCell id="context_heading" parent="c14" vertex="1" value="EI MODEL · TRAINED ON NOMINAL NIST23 SPECTRA" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#607486;">
                     <mxGeometry as="geometry" x="20" y="9" width="520" height="18"/>
                 </mxCell>
                 <mxCell id="context_energy" parent="c14" vertex="1" value="70 eV electrons" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=19;fontStyle=0;fontColor=#172B3A;">
@@ -1290,7 +1290,7 @@
                 <mxCell id="context_adduct" parent="c14" vertex="1" value="[M]+" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=19;fontStyle=0;fontColor=#172B3A;">
                     <mxGeometry as="geometry" x="225" y="35" width="105" height="27"/>
                 </mxCell>
-                <mxCell id="context_instrument" parent="c14" vertex="1" value="Unit resolution" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=19;fontStyle=0;fontColor=#172B3A;">
+                <mxCell id="context_instrument" parent="c14" vertex="1" value="Two output modes" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=19;fontStyle=0;fontColor=#172B3A;">
                     <mxGeometry as="geometry" x="365" y="35" width="175" height="27"/>
                 </mxCell>
                 <mxCell id="context_divider_1" parent="c14" vertex="1" value="" style="fillColor=#CED7E0;strokeColor=none;html=1;">
@@ -1320,8 +1320,8 @@
                 <mxCell id="c18" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;strokeWidth=1.7;fontFamily=Arial;fontSize=21;fontStyle=1;fontColor=#ffffff;fillColor=#8261AD;strokeColor=#8261AD;" value="4" vertex="1">
                     <mxGeometry height="38" width="38" x="1418" y="211" as="geometry"/>
                 </mxCell>
-                <mxCell id="c133" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontStyle=1;fontColor=#8261AD;fontSize=20;" value="Assemble EI spectrum" vertex="1">
-                    <mxGeometry height="32.5" width="261" x="1468" y="213" as="geometry"/>
+                <mxCell id="c133" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontStyle=1;fontColor=#8261AD;fontSize=20;" value="Assemble nominal or HR-EI spectra" vertex="1">
+                    <mxGeometry height="32.5" width="530" x="1468" y="213" as="geometry"/>
                 </mxCell>
                 <mxCell id="c2" connectable="0" parent="1" style="group;" value="" vertex="1">
                     <mxGeometry height="108" width="213" x="58.5" y="321" as="geometry"/>
@@ -1526,13 +1526,13 @@
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="c32" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeWidth=1.5;fontFamily=Arial;fontStyle=1;fontColor=#172B3A;strokeColor=#8261AD;fontSize=20;" value="EI ion channels&lt;br&gt;&lt;font style=&quot;font-size:15px&quot;&gt;&lt;span style=&quot;font-weight:normal&quot;&gt;Charge retention · valid ΔH = −4…+4&lt;/span&gt;&lt;/font&gt;" vertex="1">
-                    <mxGeometry height="65" width="315" x="1430" y="300" as="geometry"/>
+                    <mxGeometry height="65" width="415" x="1530" y="280" as="geometry"/>
                 </mxCell>
                 <mxCell id="c160" edge="1" parent="1" source="c30" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=12;html=1;strokeWidth=2;endArrow=block;endFill=1;endSize=7;startArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;strokeColor=#8261AD;" target="c32">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="1405" y="412.5"/>
-                            <mxPoint x="1405" y="332.5"/>
+                            <mxPoint x="1405" y="312.5"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
@@ -1540,83 +1540,14 @@
                     <mxGeometry relative="1" as="geometry">
                         </mxGeometry>
                 </mxCell>
-                <mxCell id="c11" connectable="0" parent="1" style="group;" value="" vertex="1">
-                    <mxGeometry height="55" width="240" x="1467.5" y="548" as="geometry"/>
-                </mxCell>
-                <mxCell id="c162" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=2;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="55.0" as="sourcePoint"/>
-                        <mxPoint x="240" y="55.0" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c163" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=2;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint y="55.0" as="sourcePoint"/>
-                        <mxPoint as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c164" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="15" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="15" y="44.0" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c165" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="41.875" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="41.875" y="24.75" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c166" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="68.75" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="68.75" y="36.3" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c167" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="95.625" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="95.625" y="8.25" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c168" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="122.5" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="122.5" y="39.6" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c169" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="149.375" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="149.375" y="19.25" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c170" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="176.25" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="176.25" y="46.2" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c171" edge="1" parent="c11" style="edgeStyle=none;html=1;strokeWidth=3;endArrow=none;startArrow=none;strokeColor=#8261AD;">
-                    <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="203.125" y="55.0" as="sourcePoint"/>
-                        <mxPoint x="203.125" y="30.25" as="targetPoint"/>
-                    </mxGeometry>
-                </mxCell>
-                <mxCell id="c172" parent="1" style="text;html=1;align=right;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=16;fontStyle=0;fontColor=#172B3A;" value="m/z" vertex="1">
-                    <mxGeometry height="20.8" width="32.4" x="1677.6" y="598" as="geometry"/>
-                </mxCell>
-                <mxCell id="c173" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontStyle=0;fontColor=#172B3A;fontSize=16;" value="Sum contributions at integer m/z&lt;br&gt;&lt;font style=&quot;font-size:18px&quot;&gt;&lt;b&gt;Predicted EI spectrum&lt;/b&gt;&lt;/font&gt;" vertex="1">
-                    <mxGeometry height="40" width="315" x="1430" y="614" as="geometry"/>
-                </mxCell>
                 <mxCell id="c33" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F4F6F8;strokeColor=none;strokeWidth=1.5;fontFamily=Arial;fontSize=16;fontStyle=0;fontColor=#172B3A;verticalAlign=top;" value="" vertex="1">
-                    <mxGeometry height="235" width="1730" x="35" y="690" as="geometry"/>
+                    <mxGeometry height="235" width="2030" x="35" y="690" as="geometry"/>
                 </mxCell>
                 <mxCell id="c174" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontStyle=1;fontColor=#172B3A;fontSize=22;" value="Training from nominal EI spectra" vertex="1">
                     <mxGeometry height="33.8" width="500" x="60" y="701" as="geometry"/>
                 </mxCell>
                 <mxCell id="c175" parent="1" style="text;html=1;align=right;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=18;fontStyle=0;fontColor=#607486;" value="No fragment annotations  •  No teacher forcing" vertex="1">
-                    <mxGeometry height="29.9" width="640.8" x="1089.2" y="704" as="geometry"/>
+                    <mxGeometry height="29.9" width="640.8" x="1389.2" y="704" as="geometry"/>
                 </mxCell>
                 <mxCell id="c12" connectable="0" parent="1" style="group;" value="" vertex="1">
                     <mxGeometry height="95" width="180" x="85" y="773" as="geometry"/>
@@ -1820,8 +1751,8 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="c208" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=15;fontStyle=0;fontColor=#68788b;" value="Configured nominal EI model · fixed natural isotope shares · molecular graphs and spectra are illustrative" vertex="1">
-                    <mxGeometry height="19.5" width="1300" x="45" y="935" as="geometry"/>
+                <mxCell id="c208" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=15;fontStyle=0;fontColor=#68788b;" value="Natural-isotope support uses fixed abundances and conserves channel intensity · nominal EI training · diagrams and spectra are illustrative" vertex="1">
+                    <mxGeometry height="19.5" width="1600" x="45" y="935" as="geometry"/>
                 </mxCell>
                 <mxCell id="c4" connectable="0" parent="1" style="group;" value="" vertex="1">
                     <mxGeometry height="61.2" width="120.7" x="604.9" y="314.9" as="geometry"/>
@@ -2303,37 +2234,108 @@
                 <mxCell id="c126" parent="c10" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#267D91;strokeColor=none;strokeWidth=0;fontFamily=Arial;fontSize=16;fontStyle=0;fontColor=#172B3A;" value="" vertex="1">
                     <mxGeometry height="12" width="36" x="190" y="112" as="geometry"/>
                 </mxCell>
-                <mxCell id="ei_isotopes" parent="1" vertex="1" value="" style="html=1;fontFamily=Arial;fontColor=#172B3A;whiteSpace=wrap;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#B49CCC;strokeWidth=1.5;container=1;collapsible=0;">
-                    <mxGeometry as="geometry" x="1430" y="390" width="315" height="125"/>
+                <mxCell id="ei_isotopes" parent="1" vertex="1" value="&lt;b&gt;Natural-isotope expansion&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:14px;font-weight:normal&quot;&gt;Ion formula → fixed natural-abundance weights&lt;br&gt;Split channel intensity across isotope peaks&lt;/span&gt;" style="html=1;fontFamily=Arial;fontColor=#172B3A;whiteSpace=wrap;rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#EDE3F7;strokeColor=#8261AD;strokeWidth=1.5;container=1;collapsible=0;fontSize=20;align=center;verticalAlign=middle;">
+                    <mxGeometry as="geometry" x="1530" y="360" width="415" height="80"/>
                 </mxCell>
-                <mxCell id="ei_isotope_title" parent="ei_isotopes" vertex="1" value="Natural isotope envelopes" style="html=1;fontFamily=Arial;fontColor=#172B3A;whiteSpace=wrap;text;align=center;fontSize=19;fontStyle=1;">
-                    <mxGeometry as="geometry" x="8" y="7" width="299" height="26"/>
+                <mxCell id="ei_output_nominal" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#B49CCC;strokeWidth=1.5;container=1;collapsible=0;html=1;">
+                    <mxGeometry as="geometry" x="1430" y="460" width="290" height="185"/>
                 </mxCell>
-                <mxCell id="ei_isotope_subtitle" parent="ei_isotopes" vertex="1" value="Ion composition → fixed isotope shares" style="html=1;fontFamily=Arial;fontColor=#172B3A;whiteSpace=wrap;text;align=center;fontSize=13;fontColor=#607486;">
-                    <mxGeometry as="geometry" x="8" y="33" width="299" height="22"/>
+                <mxCell id="ei_output_nominal_title" parent="ei_output_nominal" vertex="1" value="Nominal EI spectrum" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=19;fontStyle=1;">
+                    <mxGeometry as="geometry" x="10" y="9" width="270" height="25"/>
                 </mxCell>
-                <mxCell id="ei_isotope_bar_0" parent="ei_isotopes" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
-                    <mxGeometry as="geometry" x="78" y="89" width="5" height="5"/>
+                <mxCell id="ei_output_nominal_description" parent="ei_output_nominal" vertex="1" value="Natural-isotope peaks included&lt;br&gt;Sum isotope shares at integer m/z" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=14;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="8" y="37" width="274" height="38"/>
                 </mxCell>
-                <mxCell id="ei_isotope_bar_1" parent="ei_isotopes" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
-                    <mxGeometry as="geometry" x="122" y="60" width="5" height="34"/>
+                <mxCell id="ei_output_nominal_axis" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="20" y="145" width="250" height="1"/>
                 </mxCell>
-                <mxCell id="ei_isotope_bar_2" parent="ei_isotopes" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
-                    <mxGeometry as="geometry" x="166" y="79" width="5" height="15"/>
+                <mxCell id="ei_output_nominal_mz" parent="ei_output_nominal" vertex="1" value="Integer m/z" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=12;align=right;">
+                    <mxGeometry as="geometry" x="170" y="151" width="100" height="20"/>
                 </mxCell>
-                <mxCell id="ei_isotope_bar_3" parent="ei_isotopes" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
-                    <mxGeometry as="geometry" x="210" y="71" width="5" height="23"/>
+                <mxCell id="ei_output_nominal_peak_0" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="32" y="127" width="3" height="18"/>
                 </mxCell>
-                <mxCell id="ei_isotope_axis" parent="ei_isotopes" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
-                    <mxGeometry as="geometry" x="65" y="94" width="172" height="1"/>
+                <mxCell id="ei_output_nominal_peak_1" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="67" y="107" width="3" height="38"/>
                 </mxCell>
-                <mxCell id="ei_isotope_spectrum" parent="1" edge="1" source="ei_isotopes" style="edgeStyle=none;html=1;strokeColor=#8261AD;strokeWidth=2;endArrow=block;endFill=1;endSize=7;exitX=0.5;exitY=1;exitPerimeter=0;">
+                <mxCell id="ei_output_nominal_peak_2" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="110" y="87" width="3" height="58"/>
+                </mxCell>
+                <mxCell id="ei_output_nominal_peak_3" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="157" y="120" width="3" height="25"/>
+                </mxCell>
+                <mxCell id="ei_output_nominal_peak_4" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="195" y="103" width="3" height="42"/>
+                </mxCell>
+                <mxCell id="ei_output_nominal_peak_5" parent="ei_output_nominal" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="232" y="125" width="3" height="20"/>
+                </mxCell>
+                <mxCell id="ei_branch_nominal" parent="1" edge="1" source="ei_isotopes" target="ei_output_nominal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=10;html=1;strokeColor=#8261AD;strokeWidth=2;endArrow=block;endFill=1;exitX=.25;exitY=1;entryX=0.5;entryY=0;exitPerimeter=0;entryPerimeter=0;">
                     <mxGeometry as="geometry" relative="1">
-                        <mxPoint as="targetPoint" x="1587.5" y="535"/>
+                        <Array as="points">
+                            <mxPoint x="1633.75" y="450"/>
+                            <mxPoint x="1575" y="450"/>
+                        </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="ei_offset_label" parent="ei_isotopes" vertex="1" value="Signed isotope offsets" style="text;html=1;fontFamily=Arial;fontSize=12;fontColor=#607486;align=center;verticalAlign=middle;spacing=0;">
-                    <mxGeometry as="geometry" x="60" y="98" width="190" height="18"/>
+                <mxCell id="ei_output_exact" parent="1" vertex="1" value="" style="rounded=1;absoluteArcSize=1;arcSize=12;fillColor=#FFFFFF;strokeColor=#B49CCC;strokeWidth=1.5;container=1;collapsible=0;html=1;">
+                    <mxGeometry as="geometry" x="1755" y="460" width="290" height="185"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_title" parent="ei_output_exact" vertex="1" value="HR-EI-MS spectrum" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=19;fontStyle=1;">
+                    <mxGeometry as="geometry" x="10" y="9" width="270" height="25"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_description" parent="ei_output_exact" vertex="1" value="Natural-isotope peaks included&lt;br&gt;Resolve exact isotope fine structure" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=14;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="8" y="37" width="274" height="38"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_axis" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="20" y="145" width="250" height="1"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_mz" parent="ei_output_exact" vertex="1" value="Exact m/z" style="text;html=1;fontFamily=Arial;fontColor=#172B3A;align=center;verticalAlign=middle;spacing=0;fontSize=12;align=right;">
+                    <mxGeometry as="geometry" x="170" y="151" width="100" height="20"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_0" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="32" y="127" width="2" height="18"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_1" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="67" y="107" width="2" height="38"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_2" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="72" y="136" width="2" height="9"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_3" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="110" y="87" width="2" height="58"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_4" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="116" y="124" width="2" height="21"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_5" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="122" y="134" width="2" height="11"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_6" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="157" y="120" width="2" height="25"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_7" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="162" y="136" width="2" height="9"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_8" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="195" y="103" width="2" height="42"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_9" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="201" y="128" width="2" height="17"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_10" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="207" y="136" width="2" height="9"/>
+                </mxCell>
+                <mxCell id="ei_output_exact_peak_11" parent="ei_output_exact" vertex="1" value="" style="fillColor=#8261AD;strokeColor=none;">
+                    <mxGeometry as="geometry" x="232" y="125" width="2" height="20"/>
+                </mxCell>
+                <mxCell id="ei_branch_exact" parent="1" edge="1" source="ei_isotopes" target="ei_output_exact" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=10;html=1;strokeColor=#8261AD;strokeWidth=2;endArrow=block;endFill=1;exitX=.75;exitY=1;entryX=0.5;entryY=0;exitPerimeter=0;entryPerimeter=0;">
+                    <mxGeometry as="geometry" relative="1">
+                        <Array as="points">
+                            <mxPoint x="1841.25" y="450"/>
+                            <mxPoint x="1900" y="450"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
             </root>
         </mxGraphModel>
