@@ -6,16 +6,16 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="40" y="136.0" fill="#617487">Schematic examples · ⋯ / ⋮ indicate omitted set members · A model groups related operations; a head predicts a specific output.</text>
   <rect stroke-width="1.4" x="40" y="184" width="270" height="546" rx="4" fill="#F7F9FC" stroke="none" />
   <rect stroke-width="1.4" x="40" y="184" width="270" height="3" rx="0" fill="#396DA7" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" text-anchor="start" x="55" y="224.0" fill="#396DA7">1   Encode molecule</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" text-anchor="start" x="55" y="224.0" fill="#396DA7">1. Encode molecule</text>
   <rect stroke-width="1.4" x="335" y="184" width="600" height="546" rx="4" fill="#FDFBF7" stroke="none" />
   <rect stroke-width="1.4" x="335" y="184" width="600" height="3" rx="0" fill="#B87532" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="350" y="226.0" fill="#B87532">2   Proposal model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="350" y="226.0" fill="#B87532">2. Propose Fragments</text>
   <rect stroke-width="1.4" x="960" y="184" width="500" height="546" rx="4" fill="#F7FBFB" stroke="none" />
   <rect stroke-width="1.4" x="960" y="184" width="500" height="3" rx="0" fill="#247D89" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="975" y="226.0" fill="#247D89">3   Intensity model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="975" y="226.0" fill="#247D89">3. Predict Intensities</text>
   <rect stroke-width="1.4" x="1485" y="184" width="475" height="546" rx="4" fill="#FBF9FD" stroke="none" />
   <rect stroke-width="1.4" x="1485" y="184" width="475" height="3" rx="0" fill="#8060A6" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="1500" y="226.0" fill="#8060A6">4   Assemble spectrum</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="1500" y="226.0" fill="#8060A6">4. Assemble spectrum</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="355" y="265.0" fill="#617487">Inputs: atom / bond features + acquisition metadata</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="175.0" y="278.0" fill="#233647">Input molecular graph</text>
   <path d="M 78.0 355.5 L 103.0 318.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -170,7 +170,7 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="489.8" y="586.76" fill="#AE4F59">O</text>
   <path d="M 505 600 L 577 600" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="577,600 569.0,596.5 569.0,603.5" fill="#B87532" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="25" font-weight="400" text-anchor="middle" x="457.0" y="660.0" fill="#B87532">⋮</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="457.0" y="564.0" fill="#B87532">⋮</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="590" y="478.0" fill="#B87532">Extract connected fragments</text>
   <path d="M 615.0 518.8 L 632.2 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
   <path d="M 632.2 493.0 L 662.3 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -217,7 +217,7 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="812.3" y="628.04" fill="#617487">C</text>
   <rect stroke-width="1.4" x="775.32" y="616.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
   <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="782.2" y="628.04" fill="#617487">C</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="25" font-weight="400" text-anchor="middle" x="755.0" y="660.0" fill="#B87532">⋮</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="755.0" y="564.0" fill="#B87532">⋮</text>
   <path d="M 857 547 L 900.0 547.0 Q 912 547 912.0 559.0 L 912.0 656.0 Q 912 668 900.0 668.0 L 459.0 668.0 Q 455 668 455.0 672.0 L 455 676" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="455,676 458.5,668.0 451.5,668.0" fill="#B87532" />
   <rect stroke-width="1.4" x="355" y="676" width="200" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
@@ -376,6 +376,8 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="1028.0" fill="#617487">No spectrum gradient into proposal model</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="45" y="1074.0" fill="#617487">Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="start" x="45" y="1095.0" fill="#617487">Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.</text>
+  <path d="M 850 720 L 850.0 732.0 Q 850 744 862.0 744.0 L 993.0 744.0 Q 1005 744 1005.0 756.0 L 1005 850" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="1005,850 1008.5,842.0 1001.5,842.0" fill="#B87532" />
   <path d="M 1722 720 L 1963.0 720.0 Q 1975 720 1975.0 732.0 L 1975.0 932.0 Q 1975 944 1963.0 944.0 L 1015.0 944.0 Q 1005 944 1005.0 954.0 L 1005 964" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="1005,964 1008.5,956.0 1001.5,956.0" fill="#8060A6" />
 </svg>
