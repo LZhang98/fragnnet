@@ -123,7 +123,7 @@ ce_scaler_hidden_dim: 64      # hidden dim of CE→FiLM MLP
 # Training Hyperparameters
 # ============================================================================
 train_batch_size: 256
-eval_batch_size: 256
+eval_batch_size: 64  # 256 peaked 27-58 GiB on full H100s; 64 matches the MASSter SPV fix for 3g.40gb (2026-10-19)
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu

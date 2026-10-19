@@ -260,7 +260,7 @@ simple_group_sampler: false
 train_sample_weight: none
 eval_sample_weight: none
 train_batch_size: 512
-eval_batch_size: 512
+eval_batch_size: 64  # 512 OOMs on 3g.40gb in validation: calculate_match_mzs pads [batch, max_true, max_pred], 27-39 GiB at 512 (Fir jobs 2026-10-19)
 accumulate_grad_batches: 1
 automatic_optimization: true
 gradient_clip_val: 5.0
