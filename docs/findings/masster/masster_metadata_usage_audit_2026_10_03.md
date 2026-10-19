@@ -52,7 +52,7 @@ How the context is routed:
 - **Proposal heads.** The bond, atom and mixture heads get `context.detach()` when
   `proposal_selection_only` is True and proposal input gradients are disabled (MM:3265, 3382).
   They see CE and instrument as input, but their own loss cannot shape it. The
-  [head-input asymmetry finding](masster_head_input_asymmetry_2026_09_22.md) measured −0.011
+  head-input asymmetry finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md`) measured −0.011
   to −0.013 when gradients were connected.
 - **GNN.** Encodes the molecule metadata-blind (MM:3203).
 - **Off in the references.** Optional CE-FiLM and CE-pair attention bias on the intensity head
@@ -241,7 +241,7 @@ source-library provenance; and whether fixing units changes cosine (no run).
 ## 8. What we fed GLACIER (2026-10-03)
 
 The released-checkpoint comparisons
-([GLACIER vs `ll04i00m`](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md), the retrieval
+([GLACIER vs `ll04i00m`](masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set), the retrieval
 pilot and the formula-retrieval shards) all build an ms-pred labels TSV. For the test set it is
 `output/glacier_msg_eval_2026_09_24/labels_test.tsv`. Columns:
 `spec, ionization, formula, smiles, inchikey, instrument, collision_energies, precursor`.

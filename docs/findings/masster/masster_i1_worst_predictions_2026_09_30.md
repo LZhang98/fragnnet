@@ -6,7 +6,7 @@
 > Inference only: `i1_inst_ob_obf` (`i50ig7rf`) at epoch 59, all 52,020 val spectra and the
 > 4,000-molecule train sample (49,205 spectra). Stored predictions from the
 > [residual-structure](masster_i1_residual_structure_2026_09_28.md) and
-> [base-peak](masster_i1_base_peak_errors_2026_09_28.md) reads, plus two local GPU re-runs
+> [base-peak](masster_i1_base_peak_errors.md#wrong-base-peak-choices-of-i1-a-broad-transfer-deficit-not-one-missing-distinction) reads, plus two local GPU re-runs
 > (fragment-level internals; a larger candidate budget). The worst set is ranked by the
 > instrument-tolerance cosine `cos_hun_inst_tol` (10 ppm, 200 Da floor), per the user
 > (2026-09-30), not by the logged `cos_sim_0.01`.
@@ -449,7 +449,7 @@ compositions within 10 ppm and a connected-subgraph search under `i1`'s H bound 
   86% of the spectrum) and siloxane methyl migration have no rule in the vocabulary or the
   literature backlog. The registered sulfonamide SO2 rules reach 0.66% of this class's uncovered
   intensity. This is consistent with the
-  [SMARTS outlier read](masster_smarts_outlier_reach_2026_09_29.md).
+  [SMARTS outlier read](masster_smarts_findings.md#masster-smarts-rules-and-outlier-spectra).
 - **Selection misses are recoverable.**
   - Raising `masster_unique_fragment_target` / `masster_ranked_mask_budget` from 256 / 4096 to
     1024 / 16384 lifts candidate coverage on 9 sampled selection-miss spectra from 0.23 to 0.71
@@ -663,7 +663,7 @@ test on `i1`@59
 ## Next steps (training arms not built)
 
 **2026-10-01 follow-up:** the proposed frozen cut-to-intensity check is now complete and
-[CLOSED NULL](masster_cut_intensity_probe_2026_10_01.md). Both ambiguity-preserving train-only
+CLOSED NULL (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_cut_intensity_probe_2026_10_01.md`). Both ambiguity-preserving train-only
 probes select zero correction on separate tuning molecules; no training arm is justified by
 that additive gate. The original options below remain hypotheses, not established remedies.
 

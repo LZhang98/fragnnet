@@ -21,7 +21,7 @@ Three feature groups are compared under three splits: a random molecule-grouped 
 production InChIKey split, and the Murcko scaffold split.
 
 Results and their interpretation:
-``docs/findings/feature_headroom_2026_09_22.md`` (Shortcut learning section).
+``95341fce:docs/findings/feature_headroom_2026_09_22.md, removed 2026-10-18`` (Shortcut learning section).
 
 Usage:
     python scripts/debug/fragnnet/debug_charge_retention_shortcut.py

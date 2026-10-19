@@ -1,157 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1040" viewBox="0 0 1800 1040" role="img" aria-labelledby="title desc">
-  <title id="title">V1 shared-GNN proposal and spectral intensity design</title>
-  <desc id="desc">Architecture diagram for W&amp;B run 3oqibfwg, showing one shared molecular GNN, a detached proposal path for candidate support, and an intensity path trained by the normalized spectrum.</desc>
-  <defs>
-    <style>
-      .title { font: 700 38px Inter, Arial, sans-serif; fill: #172033; }
-      .subtitle { font: 400 19px Inter, Arial, sans-serif; fill: #596579; }
-      .section { font: 700 18px Inter, Arial, sans-serif; letter-spacing: 1.4px; }
-      .box-title { font: 700 22px Inter, Arial, sans-serif; fill: #172033; }
-      .box-body { font: 400 17px Inter, Arial, sans-serif; fill: #455268; }
-      .small { font: 400 15px Inter, Arial, sans-serif; fill: #596579; }
-      .loss-title { font: 700 21px Inter, Arial, sans-serif; fill: #ffffff; }
-      .loss-body { font: 400 15px Inter, Arial, sans-serif; fill: #ffffff; }
-      .callout { font: 700 17px Inter, Arial, sans-serif; fill: #9e3a2f; }
-      .arrow { fill: none; stroke: #67748a; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
-      .proposal-arrow { fill: none; stroke: #d06a58; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-proposal); }
-      .intensity-arrow { fill: none; stroke: #3979b8; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow-intensity); }
-      .loss-arrow { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 7; }
-    </style>
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#67748a"/>
-    </marker>
-    <marker id="arrow-proposal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#d06a58"/>
-    </marker>
-    <marker id="arrow-intensity" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-      <path d="M0,0 L8,4 L0,8 Z" fill="#3979b8"/>
-    </marker>
-    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#172033" flood-opacity="0.10"/>
-    </filter>
-  </defs>
-
-  <rect width="1800" height="1040" fill="#f7f9fc"/>
-  <text id="title-text" x="70" y="66" class="title">NONAME Spectra Prediction Model</text>
-  <text x="70" y="99" class="subtitle">Run 3oqibfwg · detached shared features train proposal heads; the spectrum objective trains emitted intensity.</text>
-
-  <!-- Inputs -->
-  <text x="70" y="155" class="section" fill="#6b7485">INPUTS</text>
-  <g filter="url(#shadow)">
-    <rect x="70" y="180" width="250" height="118" rx="18" fill="#ffffff" stroke="#cbd3df" stroke-width="2"/>
-    <text x="100" y="222" class="box-title">Molecule</text>
-    <text x="100" y="253" class="box-body">atom–bond graph</text>
-  </g>
-  <g filter="url(#shadow)">
-    <rect x="70" y="334" width="250" height="132" rx="18" fill="#ffffff" stroke="#cbd3df" stroke-width="2"/>
-    <text x="100" y="375" class="box-title">Acquisition</text>
-    <text x="100" y="406" class="box-body">collision energy · adduct</text>
-    <text x="100" y="434" class="box-body">instrument · precursor</text>
-  </g>
-
-  <!-- Shared encoder -->
-  <g filter="url(#shadow)">
-    <rect x="410" y="238" width="275" height="154" rx="20" fill="#eef2f8" stroke="#8797ad" stroke-width="2.5"/>
-    <text x="446" y="286" class="box-title">Shared GNN</text>
-    <text x="446" y="320" class="box-body">GNN atom and bond states</text>
-    <text x="446" y="350" class="box-body">+ precursor context</text>
-  </g>
-  <path d="M320 239 C360 239, 366 275, 410 286" class="arrow"/>
-  <path d="M320 400 C360 400, 370 356, 410 345" class="arrow"/>
-
-  <!-- Proposal lane -->
-  <rect x="750" y="141" width="980" height="310" rx="26" fill="#fff6f3" stroke="#efc4bb" stroke-width="2"/>
-  <text x="782" y="178" class="section" fill="#b24d3e">PROPOSAL MODEL</text>
-  <text x="782" y="204" class="small">Proposal scores determine which chemistry is evaluated.</text>
-
-  <path d="M685 280 L690 280" fill="none" stroke="#d06a58" stroke-width="3"/>
-  <rect x="690" y="260" width="70" height="72" rx="12" fill="#fff6f3" stroke="#d06a58" stroke-width="2"/>
-  <text x="725" y="287" class="small" text-anchor="middle" fill="#9e3a2f">detach</text>
-  <text x="725" y="310" class="small" text-anchor="middle" fill="#9e3a2f">features</text>
-  <path d="M760 296 L787 296" class="proposal-arrow"/>
-
-  <g>
-    <rect x="790" y="235" width="270" height="150" rx="18" fill="#ffffff" stroke="#dc8b7d" stroke-width="2.5"/>
-    <text x="820" y="275" class="box-title">Proposal heads</text>
-    <text x="820" y="309" class="box-body">bond-cut mask score</text>
-    <text x="820" y="338" class="box-body">charge score</text>
-  </g>
-  <path d="M1060 310 L1102 310" class="proposal-arrow"/>
-  <g>
-    <rect x="1105" y="235" width="270" height="150" rx="18" fill="#ffffff" stroke="#dc8b7d" stroke-width="2.5"/>
-    <text x="1137" y="275" class="box-title">Top-K masks</text>
-    <text x="1137" y="309" class="box-body">discrete selection</text>
-    <text x="1137" y="338" class="box-body">U256 / E4096</text>
-  </g>
-  <path d="M1375 310 L1407 310" class="proposal-arrow"/>
-  <g>
-    <rect x="1410" y="235" width="270" height="150" rx="18" fill="#ffffff" stroke="#dc8b7d" stroke-width="2.5"/>
-    <text x="1440" y="275" class="box-title">Ion-state generation</text>
-    <text x="1440" y="307" class="box-body">components × charge</text>
-    <text x="1440" y="336" class="box-body">CRF/CMF × ΔH → m/z</text>
-    <text x="1440" y="365" class="small">valid candidates + deduplication</text>
-  </g>
-
-  <!-- Intensity lane -->
-  <rect x="750" y="516" width="980" height="288" rx="26" fill="#f2f8ff" stroke="#b9d3ed" stroke-width="2"/>
-  <text x="782" y="555" class="section" fill="#286aa7">INTENSITY MODEL</text>
-  <text x="782" y="581" class="small">All retained ion candidates compete jointly for normalized spectral intensity.</text>
-
-  <path d="M1545 385 L1545 488 Q1545 500 1533 500 L747 500 Q735 500 735 512 L735 618 Q735 630 747 630 L787 630" class="intensity-arrow"/>
-  <path d="M685 351 L688 351 Q700 351 700 363 L700 668 Q700 680 712 680 L787 680" class="intensity-arrow"/>
-  <g>
-    <rect x="790" y="605" width="270" height="150" rx="18" fill="#ffffff" stroke="#6ba2d2" stroke-width="2.5"/>
-    <text x="820" y="646" class="box-title">Candidate features</text>
-    <text x="820" y="680" class="box-body">fragment + ion identity</text>
-    <text x="820" y="709" class="box-body">molecule + acquisition context</text>
-  </g>
-  <path d="M1060 680 L1117 680" class="intensity-arrow"/>
-  <g>
-    <rect x="1120" y="605" width="270" height="150" rx="18" fill="#ffffff" stroke="#6ba2d2" stroke-width="2.5"/>
-    <text x="1151" y="646" class="box-title">Intensity head</text>
-    <text x="1151" y="680" class="box-body">candidate set transformer</text>
-    <text x="1151" y="709" class="box-body">relative-intensity logits</text>
-  </g>
-  <path d="M1390 680 L1447 680" class="intensity-arrow"/>
-  <g>
-    <rect x="1450" y="605" width="270" height="150" rx="18" fill="#ffffff" stroke="#6ba2d2" stroke-width="2.5"/>
-    <text x="1480" y="646" class="box-title">Predicted spectrum</text>
-    <text x="1482" y="675" class="small">Σ intensity = 1</text>
-    <line x1="1485" y1="732" x2="1690" y2="732" stroke="#8ba0b7" stroke-width="2"/>
-    <line x1="1502" y1="732" x2="1502" y2="706" stroke="#3979b8" stroke-width="5"/>
-    <line x1="1543" y1="732" x2="1543" y2="685" stroke="#3979b8" stroke-width="5"/>
-    <line x1="1581" y1="732" x2="1581" y2="699" stroke="#3979b8" stroke-width="5"/>
-    <line x1="1632" y1="732" x2="1632" y2="676" stroke="#3979b8" stroke-width="5"/>
-    <line x1="1670" y1="732" x2="1670" y2="710" stroke="#3979b8" stroke-width="5"/>
-  </g>
-
-  <!-- Supervision and losses -->
-  <text x="70" y="832" class="section" fill="#6b7485">SUPERVISION</text>
-  <g filter="url(#shadow)">
-    <rect x="70" y="855" width="330" height="126" rx="18" fill="#ffffff" stroke="#8c98aa" stroke-width="2"/>
-    <text x="100" y="895" class="box-title">Observed spectrum</text>
-    <text x="100" y="928" class="box-body">normalized peak intensities</text>
-    <text x="100" y="956" class="small">matched at instrument tolerance</text>
-  </g>
-  <g>
-    <rect x="520" y="850" width="450" height="135" rx="20" fill="#ffffff" stroke="#c95f50" stroke-width="2.5"/>
-    <text x="550" y="893" class="box-title" fill="#b24d3e">Proposal loss</text>
-    <text x="550" y="925" class="box-body">intensity-weighted candidate coverage</text>
-    <text x="550" y="951" class="box-body">no learned ΔH / ion probability</text>
-  </g>
-  <g>
-    <rect x="1050" y="850" width="450" height="135" rx="20" fill="#ffffff" stroke="#3979b8" stroke-width="2.5"/>
-    <text x="1080" y="893" class="box-title" fill="#286aa7">Spectrum loss</text>
-    <text x="1080" y="925" class="box-body">normalized spectral-intensity objective</text>
-    <text x="1080" y="951" class="box-body">trains shared GNN + intensity head</text>
-  </g>
-  <path d="M400 897 L520 897" class="loss-arrow" stroke="#c95f50" marker-end="url(#arrow-proposal)"/>
-  <path d="M400 944 C445 944, 455 1008, 520 1008 L970 1008 C1010 1008, 1020 944, 1050 944" class="loss-arrow" stroke="#3979b8" marker-end="url(#arrow-intensity)"/>
-  <path d="M745 850 C745 815, 720 805, 720 770 L720 460 C720 425, 748 405, 785 405 L860 405 C885 405, 900 395, 900 385" class="loss-arrow" stroke="#c95f50" marker-end="url(#arrow-proposal)"/>
-  <path d="M1275 850 L1275 755" class="loss-arrow" stroke="#3979b8" marker-end="url(#arrow-intensity)"/>
-
-  <!-- Central design statement -->
-  <rect x="793" y="419" width="690" height="64" rx="16" fill="#fff0ec" stroke="#e2a094" stroke-width="2"/>
-  <text x="1138" y="458" class="callout" text-anchor="middle">Proposal probability selects candidates — it is not fragment intensity.</text>
-
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="740" viewBox="0 0 2000 740">
+  <rect width="2000" height="740" fill="white" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="32" font-weight="700" text-anchor="start" x="40" y="57.0" fill="#233647">MASSter | Separate proposal and intensity objectives</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="400" text-anchor="start" x="40" y="101.0" fill="#617487">Shared molecular representations; distinct probabilities, losses and parameter updates.</text>
+  <rect stroke-width="1.4" x="60" y="165" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#396DA7" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="210.0" y="191.0" fill="#396DA7">Shared encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="210.0" y="211.0" fill="#617487">Molecular GNN + context encoder</text>
+  <path d="M 360 194 L 430 194" fill="none" stroke="#396DA7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="430,194 422.0,190.5 422.0,197.5" fill="#396DA7" />
+  <rect stroke-width="1.4" x="430" y="165" width="260" height="58" rx="7" fill="#FFFFFF" stroke="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="560.0" y="191.0" fill="#B87532">Stop gradient</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="560.0" y="211.0" fill="#617487">Standard joint-training proposal path</text>
+  <path d="M 690 194 L 750 194" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="750,194 742.0,190.5 742.0,197.5" fill="#B87532" />
+  <rect stroke-width="1.4" x="750" y="165" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="191.0" fill="#B87532">Proposal model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="900.0" y="211.0" fill="#617487">Bond-cut and charge-affinity heads</text>
+  <path d="M 1050 194 L 1120 194" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="1120,194 1112.0,190.5 1112.0,197.5" fill="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="start" x="1130" y="192.0" fill="#B87532">Unique fragment set + proposal weights</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1130" y="220.0" fill="#617487">Discrete selection; weights supervise support</text>
+  <path d="M 210 223 L 210.0 274.0 Q 210 286 222.0 286.0 L 750 286" fill="none" stroke="#396DA7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="750,286 742.0,282.5 742.0,289.5" fill="#396DA7" />
+  <rect stroke-width="1.4" x="750" y="257" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#247D89" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="283.0" fill="#247D89">Intensity model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="900.0" y="303.0" fill="#617487">Transformer + output heads</text>
+  <path d="M 1050 286 L 1120 286" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="1120,286 1112.0,282.5 1112.0,289.5" fill="#247D89" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1130" y="285.0" fill="#247D89">Assembled spectrum</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1130" y="311.0" fill="#617487">Proposal weights are excluded from intensity scores</text>
+  <path d="M 1560 194 L 1618.0 194.0 Q 1630 194 1630.0 206.0 L 1630.0 323.0 Q 1630 335 1618.0 335.0 L 910.0 335.0 Q 900 335 900.0 325.0 L 900 315" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="900,315 896.5,323.0 903.5,323.0" fill="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="1660" y="256.0" fill="#617487">Candidate identities</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="1660" y="277.12" fill="#617487">and structural features</text>
+  <path d="M 40 365 L 1960 365" fill="none" stroke="#D6DEE4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="700" text-anchor="start" x="45" y="407.0" fill="#233647">Training: two objectives from the same observed spectrum</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="60" y="509.0" fill="#233647">Observed spectrum</text>
+  <path d="M 70 523 L 70 571 L 225 571" fill="none" stroke="#617487" stroke-width="1.2" stroke-linecap="butt" stroke-linejoin="miter" />
+  <path d="M 90.15 571 L 90.15 557.56" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 110.30000000000001 571 L 110.30000000000001 543.16" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 130.45 571 L 130.45 560.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 149.05 571 L 149.05 526.84" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 173.85000000000002 571 L 173.85000000000002 546.52" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 200.2 571 L 200.2 536.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="588.0" fill="#617487">m/z</text>
+  <path d="M 230 547 L 265 547" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 265 547 L 265.0 484.0 Q 265 474 275.0 474.0 L 285 474" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,474 277.0,470.5 277.0,477.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="483.0" fill="#617487">+</text>
+  <path d="M 775 474 L 845 474" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,474 837.0,470.5 837.0,477.5" fill="#B87532" />
+  <path d="M 1165 474 L 1240 474" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,474 1232.0,470.5 1232.0,477.5" fill="#B87532" />
+  <path d="M 265 547 L 265.0 578.0 Q 265 588 275.0 588.0 L 285 588" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,588 277.0,584.5 277.0,591.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="597.0" fill="#617487">+</text>
+  <path d="M 775 588 L 845 588" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,588 837.0,584.5 837.0,591.5" fill="#8060A6" />
+  <path d="M 1165 588 L 1240 588" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,588 1232.0,584.5 1232.0,591.5" fill="#247D89" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="462.0" fill="#B87532">Proposal weights + reachable masses</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="320" y="488.0" fill="#233647">Normalize marginal weights; match valid channels</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="510.0" fill="#617487">Each fragment counted once per observed peak</text>
+  <rect stroke-width="1.4" x="845" y="455" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="481.0" fill="#B87532">Compute proposal loss</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="468.0" fill="#B87532">Update proposal model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="1250" y="495.0" fill="#B87532">Bond-cut and charge-affinity heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="519.0" fill="#617487">Shared encoder inputs are stop-gradient</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="576.0" fill="#8060A6">Assembled predicted spectrum</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="320" y="603.0" fill="#233647">Learned fragment and ion-channel intensities</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="625.0" fill="#617487">Contributions summed at matching m/z</text>
+  <rect stroke-width="1.4" x="845" y="569" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#8060A6" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="595.0" fill="#8060A6">Compute spectrum loss</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="middle" x="1005.0" y="629.0" fill="#617487">Configured spectrum objective</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="582.0" fill="#233647">Update</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1340" y="582.0" fill="#396DA7">shared encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1560" y="582.0" fill="#233647">+</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1590" y="582.0" fill="#247D89">intensity model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="607.0" fill="#396DA7">Molecular / context encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="start" x="1575" y="605.0" fill="#247D89">Transformer + fragment-intensity / ion-channel heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="633.0" fill="#617487">No spectrum gradient into proposal model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="45" y="679.0" fill="#617487">Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="start" x="45" y="700.0" fill="#617487">Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.</text>
 </svg>

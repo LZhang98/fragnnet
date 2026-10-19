@@ -1,7 +1,7 @@
 # Rare chemistry augmentation for NIST20 and MassSpecGym
 
-> **Status:** PROPOSED · **Updated:** 2026-10-10
-> Proposed pilot: learn edit effects from measured molecular pairs, test transfer to rare chemistry, then augment with partial intensity constraints. No implementation or training started.
+> **Status:** PREPARED · **Updated:** 2026-10-14
+> Rare-element [route 1](#rare-element-handling-revised-2026-10-14) (`a_periodic` + hidden-Br test, A0/E0/E1/E2 on NIST20) prepared, not submitted. The A1/A3 sampling arms and their sampler were removed at the user's request on 2026-10-14, never run (code in Git at `ae0470d4`). Element-swap transfer is a NIST20 halogen study only.
 
 ## Objective and scope
 
@@ -176,10 +176,76 @@ structured substitutions and aligned donor combinations as hypotheses to validat
 measured analogues remain outside the benchmark-subset scope. The cm0–2 cross-molecule training
 integration, configs, launcher, manifest preparation and pilot tests were **removed/reverted
 at the user's request on 2026-09-30**, as recorded in the
-[cross-molecule plan](masster_cross_molecule_supervision_gate.md). Census code and
+cross-molecule plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cross_molecule_supervision_gate.md`). Census code and
 findings remain; this exploration does not restore the removed training implementation.
 
+## Rare-element handling (revised 2026-10-14)
+
+The class census found that the rarest classes are unusual elements and reactive groups (I, Se,
+As, Si, B, P(III), azide, peroxide, nitroso), not organic motifs. A general matched-edit network
+offers these little: an edit near the rare motif has no calibration context, and one far from it
+teaches nothing about the motif. The user chose this revised sequence on 2026-10-14; it replaces
+the molecular-networking branch below as the route for rare-element classes.
+
+1. **Check the gap first.** Score `i1` on the frozen rare cohort from
+   [`held_out_cohorts.csv`](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-census-a1-moves-exposure-a3-does-not) against
+   the common cohort, on val only. The cohort comes from training counts, so this keeps the
+   preregistration. If `i1` is not clearly worse on it, close the rare-element question.
+2. **Pool the cohort.** Report one "rare heteroatom" cohort (the element and reactive-group
+   classes in the 1–20 bins) in addition to the per-class counts; single classes cannot reach the
+   20-molecule support rule. A training-molecule k-fold may enlarge it for diagnostics only.
+3. **Element-swap transfer, NIST20 halogens only.** The
+   [element-swap census](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-element-swap-census-halogens-have-measured-pairs-seassi-do-not)
+   found 57 Br→Cl training pairs (35 sharing adduct, instrument and frag mode), 23 I→Br/Cl
+   pairs, and essentially none for Se, As, Si or Te; MSGYM has no usable pairs. Steps:
+   - **3a. Correspondence screen on training Br↔Cl pairs.** Transport the annotated peaks of one
+     partner (`ann_df` product formulas): a product retaining the halogen shifts by the
+     monoisotopic difference per swapped atom (79Br→35Cl −43.9495 Da); a product without it keeps
+     its m/z. Collapse halogen isotopologues before transport and comparison, since the Br 1:1
+     and Cl 3:1 patterns differ. Keep unannotated peaks unshifted and report them as their own
+     category. Pair spectra at the nearest recorded CE within the shared condition and report
+     |ΔCE|; only 8 pairs share an exact acquisition key. Compare against the unshifted copy and
+     the whole-precursor shift. Read the halogen-retaining versus halogen-lost intensity fraction
+     per pair: that difference is the edit effect a transported label would have to correct
+     (C–I < C–Br < C–Cl bond strength suggests more halogen loss for the heavier halogen).
+   - **3b. Decisive read: transported analogue versus `i1` on val.** 21 val Br molecules and 14
+     val I molecules have a training Br or Cl partner, and `i1` never trained on them. Compare
+     `i1`'s prediction with the transported training partner, paired by molecule, using
+     `cos_hun_inst_tol`. Proceed only if the paired 95% bootstrap interval of (transport − `i1`)
+     excludes zero in favour of transport. Otherwise the analogue holds no information the model
+     fails to use; close step 3. Test spectra stay unread.
+   - **3c. Only after 3b passes:** decide between retrieval-conditioned prediction (analogue
+     spectrum as input, MARASON-like) and swap augmentation (I analogues of training Br/Cl
+     molecules with transported, edit-corrected spectra), each under the evaluation gates in
+     section 5. Neither is designed yet.
+4. **Representation, for elements with no pairs (route 1, chosen 2026-10-14; PREPARED).**
+   MASSter's `a_onehot` already gives Se, As, Si, B, I, Br and P their own columns (only Te and
+   unlisted elements share the unknown bucket), but those columns train on 0–9 molecules and
+   nothing relates one element to another; `a_mass` is the only continuous element property.
+   New `a_periodic` atom feature: period/7, group/18, Pauling electronegativity/4, valence
+   electrons/8. RDKit covalent radii were rejected (P 0.75 Å vs S 1.02 Å), and a bond-enthalpy
+   feature was dropped: its C–Se and C–As values would be guesses, and the GNN sees each bond's
+   endpoint periods anyway. Rare elements cannot be measured directly (Se: 1 val molecule), so
+   **Br stands in**: `spec_params.split_filters.train.filter_exclude_elements: [Br]` drops all
+   997 Br training molecules (7.8% of spectra) while val keeps its 333. Arms in
+   `config/masster/rare_chemistry_2026_10_10/`: E0 hidden-Br control, E1 hidden Br +
+   `a_periodic`, E2 full data + `a_periodic`, against A0. Read: val Br molecules, E1 − E0
+   paired by molecule with a bootstrap CI, and the share of the A0 − E0 gap E1 closes; non-Br
+   val must stay within the 0.0042 seed spread. E2 vs A0 is the usual +0.005 overall screen.
+   E1 vs E0 tests periodic properties against `a_mass`, which both keep.
+   **E3 (added 2026-10-15):** E1 without `a_onehot`. In E0/E1 Br's one-hot column gets no
+   gradient, only AdamW decay, so val Br atoms carry residual init noise; E3 removes it, and
+   (period, group, EN, valence, mass) stays unique per element (checked over the 16 heavy
+   elements plus Te). Period stays scalar: a period one-hot would train period 4 on Se/As only.
+   Read E3 − E1 and E3 − E0 on val Br molecules; non-Br val vs E1 prices the lost one-hot.
+5. **Report the unreachable.** Azide, peroxide and boron classes have neither cousins nor pairs;
+   report them descriptively with counts and exclude them from promotion claims.
+
 ## Molecular networking exploration added 2026-10-10
+
+For rare-element classes this branch is superseded by the
+[rare-element handling](#rare-element-handling-revised-2026-10-14) above; it stays PROPOSED for
+general organic edits.
 
 An atom-mapped edit gives a testable correspondence hypothesis. The current preferred design
 is the edit-effect pilot below; the broader transfer options remain conditional alternatives.
@@ -309,7 +375,7 @@ shows that doing so improves reliability; shared family/parent evidence is corre
 
 #### Preregistered mapped coverage gate
 
-The [structural-alignment audit](../../findings/masster/masster_structural_alignment_audit_2026_09_29.md)
+The structural-alignment audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_structural_alignment_audit_2026_09_29.md`)
 retained **38.00%** of measured query intensity with formula matching but only **0.85%** with
 unambiguous connectivity on its unfamiliar-query cohort. Edit mapping is unmeasured and is
 not mathematically bounded by those numbers: it changes the correspondence rule and may
@@ -366,11 +432,11 @@ the stopped formula-alignment or cm0–2 training recipes unchanged.
   retrieval-conditioned forward spectrum prediction using neural graph matching. It supports
   testing learned donor use; it does not validate our proposed augmentation recipe or its
   expected gain on the current NIST20/MSGYM splits.
-- Our [cross-molecule census](../../findings/masster/masster_cross_molecule_supervision_gate_2026_09_29.md)
+- Our [cross-molecule census](../../findings/masster/masster_cross_molecule_supervision.md#cross-molecule-gate-transferable-spectral-relationships-weak-winner-labels)
   found soft measured relationships; strongest-outcome agreement was weak. Its training pilot
   was removed at user request, never measured as a training null.
-- [Formula-aligned corrections](../../findings/masster/masster_reference_information_gate_2026_09_29.md)
-  did not improve frozen i1, and [exact structural matching](../../findings/masster/masster_structural_alignment_audit_2026_09_29.md)
+- Formula-aligned corrections (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_reference_information_gate_2026_09_29.md`)
+  did not improve frozen i1, and exact structural matching (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_structural_alignment_audit_2026_09_29.md`)
   retained little useful measured intensity. That audit explicitly left mass-shifted analogies
   untested. The new hypothesis is edit-conditioned correspondence across changed formulas,
   rather than another exact-match or naive intensity-copying experiment.
@@ -457,10 +523,14 @@ relevant donors. This branch is proposed; no network, pseudo-labels or trainer h
 
 ## 4. Controlled experiment sequence
 
+**Removed 2026-10-14 (user):** the A1–A3 sampling arms below were built but never run; their
+sampler, configs and census script were removed and are in Git at `ae0470d4`. Only A0 survives, as
+route 1's control.
+
 | Arm | Change | Main comparison |
 | --- | --- | --- |
 | A0 | Uniform per-spectrum shuffle; fixed batch 512; optional samplers off | Reference |
-| A1 | Uniform molecule and acquisition-group sampling | A1 vs A0: spectrum multiplicity |
+| A1 | Uniform molecule and acquisition-group sampling | A1 vs A0: molecule and within-molecule condition exposure |
 | A2 | Capped rare-scaffold mixture; NIST first, MSGYM conditional on census | A2 vs A1: scaffold exposure |
 | A3 | Capped rare-class mixture | A3 vs A1: class exposure |
 | A4, conditional | Winning sampling policy plus validated replicate interpolation | A4 vs its exact sampling parent: synthetic variation |
@@ -518,9 +588,37 @@ retain measured spectra. Report each dataset independently.
 - Completed: reviewed workstream constraints, current sampler semantics and related
   reliability work; specified the census, arms, validity checks and evaluation gates. Refined
   the network branch to measured edit effects, family-held-out tests and partial ratio intervals.
-- Not started: data census, sampler changes, configs, augmentation or training.
-- First concrete check: training-only scaffold/class census, matched-edit coverage and replicate
-  eligibility. For the network branch, select one supported edit family for hidden-analogue tests.
+- **Removed 2026-10-14 (user), never run; in Git at `ae0470d4`:** what was built 2026-10-10: the A1/A3 sampler
+  `MoleculeAcquisitionSampler` in [data_sampler.py](../../../src/fragnnet/dataset/data_sampler.py);
+  molecule key, raw-CE acquisition key, frozen `functional_groups_v1` panel and class weights in
+  [rarity_sampling.py](../../../src/fragnnet/dataset/rarity_sampling.py); default-off
+  `molecule_acquisition_sampler*` template keys and validation in
+  [loading.py](../../../src/fragnnet/dataset/loading.py); tests in
+  `tests/test_rarity_sampling.py` and `tests/test_runner_config.py`. Every arm draws `len(train)`
+  spectra per epoch at fixed batch 512, matching A0's steps.
+- **Configs:** `config/masster/rare_chemistry_2026_10_10/` now holds only NIST20 A0 (the `i1`
+  rerun, seed 397623) and route 1's E0/E1/E2; the A1/A3 and MSGYM configs were removed.
+- **Census ([finding](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-census-a1-moves-exposure-a3-does-not)):** A1 moves
+  molecule exposure (total variation from A0: NIST20 0.109, MSGYM 0.479). A3 with this panel is
+  nearly identical to A1 and has under 30 held-out rare molecules per split; it fails the census
+  gate. Submit A0 and A1 only unless the user picks an A3 redesign from the finding.
+- **Verified:** 25 sampler/panel tests and 109 runner-config tests pass; two-epoch GPU smokes on
+  512 spectra exit 0 for MSGYM A1 and NIST20 A3 and redraw each epoch. The full suite has 17
+  failures in export-schema, MASSter export and post-cut gate tests that also fail on clean HEAD.
+- **Element-swap census 2026-10-14 ([finding](../../findings/masster/rare_chemistry_censuses.md#rare-chemistry-element-swap-census-halogens-have-measured-pairs-seassi-do-not)):**
+  structure-only; halogen pairs exist on NIST20, none usable on MSGYM.
+- **Built 2026-10-14 (route 1):** `a_periodic` (`AtomPeriodic`, `periodic_position`,
+  `PAULING_ELECTRONEGATIVITY`) in [feat_utils.py](../../../src/fragnnet/utils/feat_utils.py);
+  `filter_exclude_elements` split filter in
+  [base_dataset.py](../../../src/fragnnet/dataset/base_dataset.py); tests in
+  `tests/test_feat_utils.py` and `tests/test_split_filters.py`; configs E0/E1/E2. Verified:
+  1,027 tests pass; a two-epoch GPU smoke of E1 on 512 spectra exits 0 with the filter applied
+  to train only.
+- Not started: scaffold arm A2, replicate arm A4, matched-edit census, rare-element steps 1–3,
+  and any job submission.
+- Next concrete check: submit A0, E0, E1 and E2 on NIST20 with
+  `scripts/manual_slurm/fir/submit_masster_rare_chemistry.sh all`; build the val Br-cohort read
+  for E0/E1 while they run.
 - Future code belongs in the dataset/sampler layer and focused analysis scripts; expose
   default-off config keys only after reading the Python/ML rules. Tests must verify training-only
   counts, split isolation, reproducible draws, actual update budgets and unmodified evaluation.

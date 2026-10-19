@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from isotope_common import find_peak, halogen_class
 from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
@@ -44,18 +45,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ppm", type=float, default=10.0, help="Peak match tolerance")
     parser.add_argument("--min-tol", type=float, default=0.003, help="Da floor on the tolerance")
     return parser.parse_args()
-
-
-def find_peak(mzs: np.ndarray, target: float, tol: float) -> int | None:
-    """Index of the peak nearest ``target`` within ``tol``, or None."""
-    i = np.searchsorted(mzs, target)
-    hits = [j for j in (i - 1, i) if 0 <= j < len(mzs) and abs(mzs[j] - target) <= tol]
-    return min(hits, key=lambda j: abs(mzs[j] - target)) if hits else None
-
-
-def halogen_class(formula: str) -> str:
-    has_br, has_cl = "Br" in formula, "Cl" in formula
-    return "both" if has_br and has_cl else "Br" if has_br else "Cl" if has_cl else "none"
 
 
 def main() -> None:

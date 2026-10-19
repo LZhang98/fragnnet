@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-EVAL_SCRIPT_DP = Path(__file__).parents[1] / "scripts" / "eval"
+EVAL_SCRIPT_DP = Path(__file__).parents[1] / "scripts" / "debug" / "oracle"
 sys.path.insert(0, str(EVAL_SCRIPT_DP))
 
 from oracle_ce_sibling_trend_audit import (  # noqa: E402

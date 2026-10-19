@@ -10,8 +10,8 @@
 # by epoch 127 with train wrecall 0.8975 against validation 0.8911 -- a 0.0064 coverage
 # difference. ~98% of the gap is which candidate gets the intensity, not which candidates
 # exist, and the candidate token is what drives that choice.
-# See docs/plans/masster/masster_cut_set_features_plan.md and
-# docs/findings/masster/masster_overfit_readout_2026_09_22.md.
+# See 95341fce:docs/plans/masster/masster_cut_set_features_plan.md, removed 2026-10-18 and
+# 95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18.
 #
 # The second point of the dropout ladder; see e2 for the mechanism and for why the complement is
 # not held exact. Run e2 and e3 together: one point cannot tell a null mechanism from a rate

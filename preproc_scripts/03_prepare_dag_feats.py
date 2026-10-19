@@ -16,7 +16,7 @@ from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 # Default per-instrument m/z tolerance, matching inst_type_loss_tol in the training configs
 # (e.g. config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml) and the
-# cos_hun_inst_tol_opt convention in scripts/eval/dag_oracle_scores.py. Instrument types
+# cos_hun_inst_tol_opt convention in scripts/debug/oracle/dag_oracle_scores.py. Instrument types
 # not listed here fall back to a plain 10 ppm relative tolerance. Overridable via
 # --inst_type_loss_tol (JSON).
 DEFAULT_INST_TYPE_LOSS_TOL = {
@@ -190,7 +190,7 @@ def main(args):
         (default: ORB/ORB_F 10 ppm/200 Da, QTOF 20 ppm/750 Da; other instrument types fall back
         to 10 ppm).
         This mirrors the ``cos_hun_inst_tol_opt`` convention in
-        ``scripts/eval/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
+        ``scripts/debug/oracle/dag_oracle_scores.py`` so recall/wrecall use the same matching logic.
 
         Args:
             inst_type: Instrument type for this spectrum, used to select the inst-tol tolerance.

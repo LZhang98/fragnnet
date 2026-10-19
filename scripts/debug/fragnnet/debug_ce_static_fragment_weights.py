@@ -6,7 +6,7 @@ CE-specific target and a leave-one-CE-out context average, and measures exact no
 stability across adjacent CE levels.
 
 The constants below intentionally pin the provisional ``9t63zils`` checkpoint export and the
-base-peak analysis inputs used by ``fragment_intensity_ranking_findings.md``. Change the prediction,
+base-peak analysis inputs used by ``95341fce:docs/findings/fragnnet/fragment_intensity_ranking_findings.md, removed 2026-10-18``. Change the prediction,
 metadata, and output paths together when repeating the test on a matched GINE-1 checkpoint.
 
 Usage:
@@ -22,6 +22,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pandas as pd
+from debug_ce_replicate_noise_floors import sparse_cosine
 
 
 PRED_FP = Path("output/inference_eval/9t63zils/predictions_val.hdf5")
@@ -65,16 +66,6 @@ def sparse_linear_combination(
 
 def sparse_tv(a: dict[int, float], b: dict[int, float]) -> float:
     return 0.5 * sum(abs(a.get(key, 0.0) - b.get(key, 0.0)) for key in a.keys() | b.keys())
-
-
-def sparse_cosine(a: dict[int, float], b: dict[int, float]) -> float:
-    common = a.keys() & b.keys()
-    dot = sum(a[key] * b[key] for key in common)
-    norm_a = np.sqrt(sum(value * value for value in a.values()))
-    norm_b = np.sqrt(sum(value * value for value in b.values()))
-    if norm_a == 0 or norm_b == 0:
-        return np.nan
-    return float(dot / (norm_a * norm_b))
 
 
 def sparse_dot(a: dict[int, float], b: dict[int, float]) -> float:

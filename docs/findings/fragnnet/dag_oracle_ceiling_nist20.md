@@ -73,7 +73,7 @@ scored per spectrum:
 
 Ring-merge and d4 are tied on ceiling; ring-merge gets there without d4's combinatorial
 blowup risk (a 1.3M-node outlier was observed at depth 4 on a 3,000-mol sample — see
-[bond breakability mask plan](../../plans/fragnnet/bond_breakability_mask_plan.md)). SMARTS prepass barely moves anything
+bond breakability mask plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md`)). SMARTS prepass barely moves anything
 (+0.0006), consistent with `[[feedback_prepass_rule_id]]`.
 
 ### Provisional GLACIER coverage comparison
@@ -369,7 +369,7 @@ unweighted aggregate. Weighting by error mass: d4's extra recovery here (~+0.008
 + −0.0095 × 24,735 ≈ −256 units), so **on pure error-mass-weighted ceiling quality, d4 slightly
 edges out ring-merge** — the opposite of what the unweighted averages suggested. Ring-merge's
 real advantage is *tractability* (avoiding d4's combinatorial-blowup outlier risk,
-[bond breakability mask plan](../../plans/fragnnet/bond_breakability_mask_plan.md)), not ceiling quality — these are two separate axes
+bond breakability mask plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md`)), not ceiling quality — these are two separate axes
 that the earlier "ring-merge ties d4, so prefer it" framing had conflated. If blowup risk can be
 managed/filtered, d4 may be the better ceiling target specifically because of its edge in this
 one dominant bucket.

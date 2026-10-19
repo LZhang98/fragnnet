@@ -530,7 +530,7 @@ production-shaped MASSter model, predictions agree within 9.5e-7 and every non-n
 within 4.2e-7 relative; the FraGNNet `cut_bond` test model is bit-identical. Encoder forward FLOPs
 fell from 20.1 to 2.1 GFLOP (MASSter total 45.9 to 27.8). Expect little wall clock: removing the
 encoder outright (`c4a_no_bbe`) saved only 6% per epoch. The model function is unchanged, so the
-boundary block's [memorization finding](masster_memorization_route_probe_2026_09_23.md) is not
+boundary block's memorization finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`) is not
 affected. Tests: `tests/test_cut_bond.py`, `tests/test_masster_candidate_features.py` (per-row
 equivalence checks for both models, including a planted orientation bug).
 
@@ -590,7 +590,7 @@ identical loss across sizes). Sparse CE at lbs 8 / 32 / 128 took 23.5 / 8.0 / 7.
 At microbatch 256: lbs 8 gives 58 chunks / 0.90 GB, 32 gives 19 / 2.00 GB, 64 gives 10 / 4.89 GB,
 128 gives 5 / 5.86 GB, 256 gives 2 / OOM on 8 GB. 32 is the sweet spot for CE and `lbs >
 train_batch_size` is meaningless. For direct losses the setting differs by matching mode (see the
-[loss audit](masster_loss_audit_2026_09_19.md)). Not tried: bucketing spectra by peak count so
+loss audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_loss_audit_2026_09_19.md`)). Not tried: bucketing spectra by peak count so
 chunks are homogeneous. Other batching measurements (RTX 2070S, `dny62x0i` shapes, B=128):
 `_contextualize_by_molecule` bucket loop 78.8 ms against 63.8 ms for one padded pass, a win only
 when several buckets exist; candidate host prep is about 1 ms/batch and is not worth batching.

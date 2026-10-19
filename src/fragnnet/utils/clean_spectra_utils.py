@@ -301,7 +301,7 @@ def filter_above_precursor_peaks(
     keeping them means grading the model on intensity it structurally cannot produce.
 
     The cutoff is ``prec_mz`` widened by one matching tolerance, which is the same rule
-    ``scripts/eval/dag_oracle_scores.py`` applies for its ``1_above_prec`` tier, so a cleaned
+    ``scripts/debug/oracle/dag_oracle_scores.py`` applies for its ``1_above_prec`` tier, so a cleaned
     target and the oracle ceilings quoted against it are finally measured on the same peaks.
 
     A spectrum with no usable precursor m/z is returned unchanged rather than emptied.

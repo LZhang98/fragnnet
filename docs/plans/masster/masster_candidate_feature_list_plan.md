@@ -43,7 +43,7 @@ forward kwargs with five copies of the same two validation branches — and 32 c
 restate `masster_candidate_mass_features: true` / `..._charge_feature: true` to describe a
 token that never varies between them.
 
-Nothing here is wrong. It does not scale: [the cut-set plan](masster_cut_set_features_plan.md)
+Nothing here is wrong. It does not scale: the cut-set plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`)
 still has item D (free-valence slots) and item B (a candidate-side bond encoder) queued, and
 each would repeat all nine edits.
 
@@ -64,7 +64,7 @@ Precedent is `mol_params.pyg_node_feats` / `pyg_edge_feats`: a list of registere
 whose widths resolve at construction. The key stays flat and `masster_`-prefixed inside the
 `MASSter only` template section — `tests/test_config_templates.py` asserts prefixed keys live
 only in their own section, and the
-[shared-reader trap](masster_cut_set_features_plan.md) is the reason not to invent a nested
+shared-reader trap (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`) is the reason not to invent a nested
 `masster_params:` mapping for it.
 
 **The name keeps the `masster_` prefix.** A bare `candidate_features` is the shorter read,
@@ -198,7 +198,7 @@ to the inputs bundle.
 | Stays out | Why |
 |---|---|
 | fragment / complement / boundary pools, context | the token's backbone, not descriptors; removing one is an architecture change, not an ablation |
-| `mask_component_count`, charge/mask log-probabilities | proposal-derived, and their *presence* is derived from `masster_proposal_anchored` and unique mode rather than chosen. Listing them would allow the incoherent config "anchored **and** base-probability column", needing a cross-check that buys nothing. [Cut-set plan item C](masster_cut_set_features_plan.md) is a `proposal_anchored: false` question and stays where it is |
+| `mask_component_count`, charge/mask log-probabilities | proposal-derived, and their *presence* is derived from `masster_proposal_anchored` and unique mode rather than chosen. Listing them would allow the incoherent config "anchored **and** base-probability column", needing a cross-check that buys nothing. Cut-set plan item C (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`) is a `proposal_anchored: false` question and stays where it is |
 | `masster_boundary_bond_encoder` | a module (`CutBondEncoder`) that changes how a backbone block is *computed*; it owns no column |
 | `masster_candidate_atom_dropout` | a regularizer on the pooled embeddings with a continuous value, inert at eval; it owns no column |
 | `component_neutral_masses` for `mass_pair_bias` | an attention input, not a column; served from the cached bundle |
@@ -218,7 +218,7 @@ are not list-governed named explicitly, so the next reader does not have to redi
 | `c_nl_composition` | `len(CANONICAL_ELEMENT_ORDER) + 1` = 18 | `..._composition_features` | `log1p` complement element counts |
 | `c_cut_bonds` | `2 * edge_feature_dim` | `..._cut_bond_features` | summed + averaged `chemical_bond_attr` |
 | `c_cut_adjacency` | 2 | `..._cut_adjacency_features` | adjacent cut pairs, retained / lost |
-| `c_free_valence` | 1 | *(not built)* | [cut-set plan item D](masster_cut_set_features_plan.md), `atom_free_valence_slots` |
+| `c_free_valence` | 1 | *(not built)* | cut-set plan item D (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`), `atom_free_valence_slots` |
 
 Two judgment calls, made rather than deferred:
 
@@ -312,7 +312,7 @@ nothing is added to `migrate_legacy_hparams`. A stale config then fails
 5. **Rewrite the 32 configs** (scripted, one pass). *Verify:*
    `pytest tests/test_config_templates.py::test_every_tracked_config_still_resolves` — its
    `assert len(failures) == 18` is the tripwire: a config missed in the rewrite raises the count.
-6. **Docs.** Update [the cut-set plan](masster_cut_set_features_plan.md) key names, the
+6. **Docs.** Update the cut-set plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_cut_set_features_plan.md`) key names, the
    `docs/README.md` rows, and `docs/project-state.md`.
 
 Full suite before hand-off; report anything not run.

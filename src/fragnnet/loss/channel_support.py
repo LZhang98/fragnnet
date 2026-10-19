@@ -197,7 +197,8 @@ def matched_peak_candidate_pairs(
         peak_divisor=peak_divisor,
         tolerance=tolerance,
     )
-    return peak_idxs[matched], candidate_idxs[matched]
+    matched_idxs = th.nonzero(matched, as_tuple=True)[0]
+    return peak_idxs[matched_idxs], candidate_idxs[matched_idxs]
 
 
 def _pair_gaussian_log_likelihood(

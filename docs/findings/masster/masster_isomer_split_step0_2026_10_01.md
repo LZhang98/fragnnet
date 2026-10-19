@@ -5,7 +5,7 @@
 
 ## Question and gate
 
-The [identity-supervision finding](masster_identity_supervision_2026_09_22.md) withdrew its
+The identity-supervision finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_identity_supervision_2026_09_22.md`) withdrew its
 structural-teacher recommendation because moving intensity between same-mass isomers leaves the
 predicted spectrum unchanged. The remaining hypothesis is that the underdetermined split harms
 transfer to new molecules. The proposed cheap gate was: compare `i1` with an independent

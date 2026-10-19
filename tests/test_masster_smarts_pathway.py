@@ -1,6 +1,6 @@
 """SMARTS rules as part of MASSter's fragmentation pathway.
 
-Plan: docs/plans/masster/masster_smarts_pathway_plan.md. Phase 0 (fork_rng construction,
+Plan: 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18. Phase 0 (fork_rng construction,
 formed-bond valence, stable rule vocabulary, rule provenance) and arm ``p1`` (the
 rule-pathway token).
 """

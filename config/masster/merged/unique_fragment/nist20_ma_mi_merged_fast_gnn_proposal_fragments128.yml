@@ -1,7 +1,7 @@
 # Merged MA/MI connected-fragment proposal screen; three-hour Slurm jobs.
 # Same MA/MI split, adducts and instruments as the unmerged source config.
 # CMF is disabled for merged spectra; intensity head and losses are retained.
-# See docs/plans/masster/masster_fast_gnn_proposal.md. No speed/accuracy claim yet.
+# See 95341fce:docs/plans/masster/masster_fast_gnn_proposal.md, removed 2026-10-18. No speed/accuracy claim yet.
 masster_proposal_method: connected_fragment_beam
 masster_fast_gnn_beam_width: 128
 # 3 is the binding budget, not the fragment target: it halves candidates per molecule

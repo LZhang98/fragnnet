@@ -20,6 +20,7 @@ from fragnnet.utils.feat_utils import (
     AtomHybrid,
     AtomMass,
     AtomOneHot,
+    AtomPeriodic,
     AtomRadical,
     AtomRing,
     AtomRingSize,
@@ -34,6 +35,7 @@ from fragnnet.utils.feat_utils import (
     get_mol_fp,
     get_mol_graph,
     one_hot_encoding,
+    periodic_position,
     random_walk_pe,
 )
 
@@ -1286,6 +1288,67 @@ class TestGasteigerGraphField:
         graph = mol_graph.get_pyg_graph(aspirin_mol)
 
         assert th.allclose(graph.x[:, 0], graph.atom_gasteiger_charges)
+
+
+class TestAtomPeriodic:
+    """``a_periodic``: period, group, Pauling electronegativity and valence electrons."""
+
+    @pytest.mark.parametrize(
+        ("atomic_num", "expected"),
+        [
+            (1, (1, 1)),
+            (2, (1, 18)),
+            (6, (2, 14)),
+            (15, (3, 15)),
+            (26, (4, 8)),
+            (34, (4, 16)),
+            (53, (5, 17)),
+            (64, (6, 3)),
+            (72, (6, 4)),
+            (80, (6, 12)),
+            (82, (6, 14)),
+            (86, (6, 18)),
+        ],
+    )
+    def test_periodic_position(self, atomic_num, expected):
+        assert periodic_position(atomic_num) == expected
+
+    def test_periodic_position_rejects_out_of_range(self):
+        with pytest.raises(ValueError, match="atomic number 0"):
+            periodic_position(0)
+
+    def test_selenium_values(self):
+        """Se: period 4, group 16, Pauling 2.55, 6 valence electrons."""
+        atom = Chem.MolFromSmiles("C[Se]C").GetAtomWithIdx(1)
+        assert AtomPeriodic.featurize(atom) == pytest.approx([4 / 7, 16 / 18, 2.55 / 4, 6 / 8])
+
+    def test_group_cousins_are_close(self):
+        """Se differs from S only by period; the halogens share a group and order by period."""
+        feats = {
+            symbol: np.array(
+                AtomPeriodic.featurize(Chem.MolFromSmiles(f"C[{symbol}]").GetAtomWithIdx(1))
+            )
+            for symbol in ("S", "Se", "Cl", "Br", "I", "O")
+        }
+        assert feats["S"][1] == feats["Se"][1] and feats["S"][3] == feats["Se"][3]
+        assert np.linalg.norm(feats["S"] - feats["Se"]) < np.linalg.norm(feats["S"] - feats["O"])
+        assert feats["Cl"][0] < feats["Br"][0] < feats["I"][0]
+        assert feats["Cl"][2] > feats["Br"][2] > feats["I"][2]
+
+    def test_dummy_atom_is_zero(self):
+        atom = Chem.MolFromSmiles("*C").GetAtomWithIdx(0)
+        assert AtomPeriodic.featurize(atom) == [0.0, 0.0, 0.0, 0.0]
+
+    def test_missing_electronegativity_raises(self):
+        atom = Chem.MolFromSmiles("[Ar]").GetAtomWithIdx(0)
+        with pytest.raises(ValueError, match="Ar"):
+            AtomPeriodic.featurize(atom)
+
+    def test_graph_width(self):
+        """Appending a_periodic widens the node features by exactly four."""
+        base, _ = get_mol_feats_sizes(["a_onehot", "a_mass"], ["b_degree"], 0)
+        wide, _ = get_mol_feats_sizes(["a_onehot", "a_mass", "a_periodic"], ["b_degree"], 0)
+        assert wide - base == AtomPeriodic.feat_size == 4
 
 
 if __name__ == "__main__":

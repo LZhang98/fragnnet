@@ -544,7 +544,7 @@ SPECTRAVERSE_MGF_KEY_DICT = {
     #'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy',
     #'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
     #'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
-    # v1.0.2: one FOLD field per record (the benchmark's MCES fold, 1..10)
+    # v1.0.2+: one FOLD field per record (the benchmark's MCES fold, 1..10)
     "FOLD": "fold",
     # legacy (v1.0.0-era) fold fields and explicit spectrum index
     "FOLD_INCHI": "fold_inchi",
@@ -679,12 +679,12 @@ def _read_specverse_records(mgf_fp: str) -> list[dict]:
 
 
 def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
-    """Read a Spectraverse MGF (v1.0.2 or the legacy INDEX/FOLD_* format) into a spec_df.
+    """Read a Spectraverse MGF (v1.0.2+ or the legacy INDEX/FOLD_* format) into a spec_df.
 
     Header lines are matched on the exact key before the first "=" (so `INCHI` never matches an
     `INCHIKEY=` line). `spec_id` is the INDEX field when present (legacy) and otherwise the
     0-based record order; `dset_spec_id` is the integer parsed from TITLE. Fold columns present
-    in the file are kept in the returned split_df: `fold` (v1.0.2, one FOLD field per record,
+    in the file are kept in the returned split_df: `fold` (v1.0.2+, one FOLD field per record,
     1..10) and/or the legacy `fold_*` columns. The split_df also carries `dset_spec_id`, the
     key that stays stable through step 2 (which relabels `spec_id`). Files without any fold
     field (v1.0.0/1.0.1) yield no split_df and a warning.
@@ -722,14 +722,15 @@ def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame | None]:
         if spec_df["spec_id"].isna().any():
             raise ValueError(f"INDEX is missing for some records in {mgf_fp}")
     else:
-        # v1.0.2 has no INDEX: spec_id is the 0-based record order
+        # v1.0.2+ has no INDEX: spec_id is the 0-based record order
         spec_df["spec_id"] = np.arange(len(spec_df))
 
     # setup dset
     spec_df["dset"] = "spectraverse"
     spec_df["dset_spec_id"] = spec_df["title"].apply(lambda x: _parse_specverse_title(x, mgf_fp))
+    # the last character of the adduct is the charge sign: [M+Cl]- is negative
     spec_df["ion_mode"] = spec_df["prec_type"].apply(
-        lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan)
+        lambda x: {"+": "P", "-": "N"}.get(str(x)[-1:], np.nan)
     )
     if fold_cols:
         split_df = spec_df[["spec_id", "dset_spec_id"] + fold_cols].copy()
@@ -815,6 +816,202 @@ def process_enveda(jsonl_fp: str) -> pd.DataFrame:
     return spec_df
 
 
+ZENOTOF_INST = "SCIEX ZenoTOF 7600"
+MULTIMS2_MGF_KEY_DICT = {
+    "SOURCE_SCAN_USI": "dset_spec_id",
+    "COMPOUND_NAME": "name",
+    "PRECURSOR_MZ": "prec_mz",
+    "ADDUCT": "prec_type",
+    "SMILES": "smiles",
+    "INCHI": "inchi",
+    "INCHIAUX": "inchikey",
+    "FORMULA": "formula",
+    "EXACTMASS": "exact_mass",
+    "NUM_PEAKS": "num_peaks",
+    "IONMODE": "ion_mode",
+    "FRAGMENTATION_METHOD": "frag_mode",
+    "COLLISION_ENERGY": "col_energy",
+}
+MULTIMS2_ION_MODE_DICT = {"positive": "P", "negative": "N"}
+
+
+def process_multims2(mgf_fp: str) -> pd.DataFrame:
+    """Read the MultiMS2 MGF (Zenodo 10.5281/zenodo.17417089) into the unified spectrum table.
+
+    Every record is a single direct-infusion ESI MS2 scan from a SCIEX ZenoTOF 7600, with
+    FRAGMENTATION_METHOD CID (energies 20/40/60) or EAD (electron kinetic energies 12/16/24).
+    `col_energy` holds that energy in eV for both, so for EAD rows `ace` is the electron kinetic
+    energy and `frag_mode` says which scale it is. Compounds were infused as mixtures, and a scan
+    annotated as more than one compound (isobars in one well) is ambiguous: all of its records
+    are dropped. `dset_spec_id` is the scan USI, unique after that drop.
+
+    Args:
+        mgf_fp: Path to `multims2_spectra.mgf`.
+
+    Returns:
+        One row per spectrum in the unified schema.
+
+    Raises:
+        ValueError: On a line outside BEGIN/END IONS, an unterminated record, or an unknown
+            FRAGMENTATION_METHOD.
+    """
+    # 1. Read records: mapped header fields plus "mz int" peak lines.
+    rows: list[dict] = []
+    row: dict | None = None
+    with open(mgf_fp) as mgf_in:
+        for line in tqdm(mgf_in, desc=f"> processing {mgf_fp}"):
+            line = line.strip()
+            if not line:
+                continue
+            if line == "BEGIN IONS":
+                row, peaks = {}, []
+            elif row is None:
+                raise ValueError(f"{mgf_fp}: line outside BEGIN/END IONS: {line!r}")
+            elif line == "END IONS":
+                row["peaks"] = "\n".join(peaks)
+                rows.append(row)
+                row = None
+            elif line[0].isdigit():
+                peaks.append(" ".join(line.split()[:2]))
+            else:
+                key, value = line.split("=", 1)
+                if key in MULTIMS2_MGF_KEY_DICT:
+                    row[MULTIMS2_MGF_KEY_DICT[key]] = value
+    if row is not None:
+        raise ValueError(f"{mgf_fp} ends inside a record (no END IONS)")
+    spec_df = pd.DataFrame(rows)
+
+    # 2. Drop scans annotated as more than one compound.
+    n_annot = spec_df.groupby("dset_spec_id")["inchikey"].transform("nunique")
+    logger.info(f"> dropping {(n_annot > 1).sum()} records of ambiguous (multi-compound) scans")
+    spec_df = spec_df[n_annot == 1].reset_index(drop=True)
+    if not spec_df["dset_spec_id"].is_unique:
+        raise ValueError(f"{mgf_fp}: duplicate scan USI for one compound")
+
+    # 3. Normalise to the unified schema.
+    unknown_modes = set(spec_df["frag_mode"]) - {"CID", "EAD"}
+    if unknown_modes:
+        raise ValueError(f"{mgf_fp}: unknown FRAGMENTATION_METHOD {sorted(unknown_modes)}")
+    spec_df["dset_spec_id"] = spec_df["dset_spec_id"].str.strip('[]"')
+    spec_df["col_energy"] = spec_df["col_energy"].map(lambda ce: f"{float(ce.strip('[]')):g} eV")
+    spec_df["ion_mode"] = spec_df["ion_mode"].map(MULTIMS2_ION_MODE_DICT)
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_type"] = "MS2"
+    spec_df["ion_type"] = "ESI"
+    spec_df["inst_type"] = "QTOF"
+    spec_df["inst"] = ZENOTOF_INST
+    for value in MSP_KEY_DICT.values():
+        if value not in spec_df.columns:
+            spec_df[value] = np.nan
+    return spec_df
+
+
+MSDIAL5_MSP_KEY_DICT = {
+    "NAME": "name",
+    "PRECURSORMZ": "prec_mz",
+    "PRECURSORTYPE": "prec_type",
+    "IONMODE": "ion_mode",
+    "FORMULA": "formula",
+    "SMILES": "smiles",
+    "INCHIKEY": "inchikey",
+    "INSTRUMENTTYPE": "inst_type",
+    "COLLISIONENERGY": "col_energy",
+    "Num Peaks": "num_peaks",
+}
+MSDIAL5_ION_MODE_DICT = {"Positive": "P", "Negative": "N"}
+MSDIAL5_CID_RE = re.compile(r"^CID (\d+(?:\.\d+)?)V$")
+MSDIAL5_CID_CES_RE = re.compile(r"^CID \d+(?:\.\d+)?V CES \d+(?:\.\d+)?V$")
+MSDIAL5_EAD_RE = re.compile(r"^EAD (\d+(?:\.\d+)?)eV CID \d+(?:\.\d+)?V$")
+
+
+def parse_msdial5_ce_str(ce_str: str) -> tuple[str, str] | None:
+    """Map an MS-DIAL 5 standards COLLISIONENERGY string to (frag_mode, "<x> eV").
+
+    "CID 20V" is CID at 20 eV (singly charged). "EAD 15eV CID 10V" is EAD whose recorded energy is
+    the 15 eV electron kinetic energy; the constant 10 V CID voltage is dropped. "CID 20V CES 15V"
+    is a SCIEX collision-energy spread whose actual energies are not recorded, so it returns None.
+
+    Args:
+        ce_str: Raw COLLISIONENERGY value.
+
+    Returns:
+        (frag_mode, energy string), or None for a CE-spread spectrum.
+
+    Raises:
+        ValueError: If the string matches none of the three patterns.
+    """
+    if match := MSDIAL5_CID_RE.match(ce_str):
+        return "CID", f"{float(match.group(1)):g} eV"
+    if match := MSDIAL5_EAD_RE.match(ce_str):
+        return "EAD", f"{float(match.group(1)):g} eV"
+    if MSDIAL5_CID_CES_RE.match(ce_str):
+        return None
+    raise ValueError(f"Unrecognised MS-DIAL 5 collision energy {ce_str!r}")
+
+
+def process_msdial5_ead(msp_dp: str) -> pd.DataFrame:
+    """Read the MS-DIAL 5 authentic-standard MSPs (RIKEN DropMet DM0054) into the unified table.
+
+    Reads every `.msp` in `msp_dp` (use the `subtracted/` folder: background-subtracted spectra).
+    Each file holds one compound measured under nine LC-MS/MS conditions on a SCIEX ZenoTOF 7600:
+    CID 10/20/40 V, the same with a 15 V CE spread, and EAD 10/15/20 eV. CE-spread spectra are
+    skipped (see `parse_msdial5_ce_str`), as are zero-intensity peaks, which the background
+    subtraction leaves behind. `dset_spec_id` is "<file stem>|<COLLISIONENERGY>".
+
+    Args:
+        msp_dp: Directory of MS-DIAL 5 `.msp` files.
+
+    Returns:
+        One row per spectrum in the unified schema.
+
+    Raises:
+        ValueError: On an unknown collision-energy string, a peak count different from
+            `Num Peaks`, or a duplicate `dset_spec_id`.
+    """
+    rows: list[dict] = []
+    n_ces = 0
+    for msp_fp in tqdm(sorted(glob.glob(os.path.join(msp_dp, "*.msp"))), desc=f"> {msp_dp}"):
+        stem = os.path.splitext(os.path.basename(msp_fp))[0]
+        # records are separated by blank lines; header lines are "KEY: value", peaks "mz\tint"
+        with open(msp_fp) as msp_in:
+            blocks = [b for b in msp_in.read().split("\n\n") if b.strip()]
+        for block in blocks:
+            row, peaks = {}, []
+            for line in block.strip().splitlines():
+                if line[0].isdigit():
+                    mz, inten = line.split()[:2]
+                    peaks.append(f"{mz} {inten}")
+                else:
+                    key, value = line.split(":", 1)
+                    if key in MSDIAL5_MSP_KEY_DICT:
+                        row[MSDIAL5_MSP_KEY_DICT[key]] = value.strip()
+            if len(peaks) != int(row["num_peaks"]):
+                raise ValueError(f"{msp_fp}: {len(peaks)} peaks but Num Peaks {row['num_peaks']}")
+            parsed = parse_msdial5_ce_str(row["col_energy"])
+            if parsed is None:
+                n_ces += 1
+                continue
+            row["dset_spec_id"] = f"{stem}|{row['col_energy']}"
+            row["frag_mode"], row["col_energy"] = parsed
+            row["peaks"] = "\n".join(p for p in peaks if float(p.split()[1]) > 0.0)
+            rows.append(row)
+    logger.info(f"> skipped {n_ces} CE-spread spectra")
+
+    spec_df = pd.DataFrame(rows)
+    if not spec_df["dset_spec_id"].is_unique:
+        raise ValueError(f"{msp_dp}: duplicate file/collision-energy records")
+    spec_df["ion_mode"] = spec_df["ion_mode"].map(MSDIAL5_ION_MODE_DICT)
+    spec_df["num_peaks"] = spec_df["peaks"].str.count("\n") + 1
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_type"] = "MS2"
+    spec_df["ion_type"] = "ESI"
+    spec_df["inst"] = ZENOTOF_INST
+    for value in MSP_KEY_DICT.values():
+        if value not in spec_df.columns:
+            spec_df[value] = np.nan
+    return spec_df
+
+
 def process_nist_ei_csv(csv_fp: str) -> pd.DataFrame:
     spec_df = pd.read_csv(csv_fp)
     logger.info(f"Processing nist csv file {csv_fp}")
@@ -873,6 +1070,7 @@ if __name__ == "__main__":
     parser.add_argument("--mgf_file", type=str, required=False)
     parser.add_argument("--csv_file", type=str, required=False)
     parser.add_argument("--jsonl_file", type=str, required=False)
+    parser.add_argument("--msp_dir", type=str, required=False)
 
     parser.add_argument(
         "--input_format",
@@ -889,6 +1087,8 @@ if __name__ == "__main__":
             "spectraverse",
             "nist_csv",
             "enveda",
+            "multims2",
+            "msdial5_ead",
         ],
         required=True,
     )
@@ -962,7 +1162,7 @@ if __name__ == "__main__":
             print(f"> WARNING: {mgf_fp} has no fold field; no fold helper written")
         else:
             if "fold" in split_df.columns:
-                # v1.0.2: one file for the whole set; dset_spec_id is the key that survives step 2
+                # v1.0.2+: one file for the whole set; dset_spec_id is the key that survives step 2
                 split_df_fp = os.path.join(args.output_dp, f"{args.output_name}_fold.csv")
                 print(f"> saving fold helper ({len(split_df)} spectra) to {split_df_fp}")
                 split_df[["spec_id", "dset_spec_id", "fold"]].to_csv(split_df_fp, index=False)
@@ -986,6 +1186,14 @@ if __name__ == "__main__":
         jsonl_fp = os.path.join(args.raw_data_dp, args.jsonl_file)
         assert os.path.isfile(jsonl_fp), jsonl_fp
         spec_df = process_enveda(jsonl_fp)
+    elif args.input_format == "multims2":
+        mgf_fp = os.path.join(args.raw_data_dp, args.mgf_file)
+        assert os.path.isfile(mgf_fp), mgf_fp
+        spec_df = process_multims2(mgf_fp)
+    elif args.input_format == "msdial5_ead":
+        msp_dp = os.path.join(args.raw_data_dp, args.msp_dir)
+        assert os.path.isdir(msp_dp), msp_dp
+        spec_df = process_msdial5_ead(msp_dp)
     else:
         raise ValueError(f"Invalid input format: {args.input_format}")
 

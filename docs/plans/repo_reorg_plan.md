@@ -472,7 +472,7 @@ Phase 1 delivers `model_cls`, `dataset_cls`, the alias table, `RETIRED_MODEL_TYP
      - `config/README.md:114-120` (already-dead ICEBERG links → retirement note and ms-pred pointer);
      - `preproc_scripts/README.md` Steps 5-6 (mark retired, point to the archive SHA, renumber if needed);
      - `INSTALL.md:99` and `:207`;
-     - `docs/findings/masster/masster_channel_selection_findings.md:191`: repoint to a permalink at the archive SHA. Path-only citations in plans stay as historical.
+     - `95341fce:docs/findings/masster/masster_channel_selection_findings.md, removed 2026-10-18:191`: repoint to a permalink at the archive SHA. Path-only citations in plans stay as historical.
    - **Local checkpoints:** the two local ICEBERG checkpoints get a provenance note naming the archive SHA and are not loaded in the main environment.
 3. **Move MassFormer and GRAFF molecule handling out of `SpecMolDataset`.** The `mol_params.mf`/`graff` keys stay.
    - **Why a subclass override is not enough.** Collation is dispatched statically, not by inheritance: `SpecMolDataset.get_collate_fn()` returns `SpecMolDataset.collate_fn`, which calls `SpecMolDataset._special_collate` by name ([spec_mol_dataset.py:242-298](../../src/fragnnet/dataset/spec_mol_dataset.py#L242)).
@@ -890,7 +890,7 @@ All entries through Phase 5 (2026-10-11 and 2026-10-12) are in the [plan log](..
   - Docs: the fine-tuning guide points at the `nps_pcdl_nist23_ft` example and a generic
     checkpoint; the architecture map and the FraGNNet hub's Settled list record the retirement.
 - 2026-10-12: ChemLM retired (user decision; the ChemBERTa-3 runs barely beat a structure-blind
-  prior, [results](chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)). A three-scout
+  prior, results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`)). A three-scout
   inventory with a completeness critic found ChemLM the only user of the `transformers` stack.
   `BinnedPL`, `SpecFFN`/`NeimsBlock`, the conditioning mixins and `neims_bottleneck_factor` are
   shared with NEIMS, GNN and MassFormer and stay.

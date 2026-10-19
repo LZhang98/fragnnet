@@ -1,4 +1,11 @@
-"""Batch top-ranked bond masks into sparse MASSter component tensors."""
+"""Batch top-ranked bond masks into sparse MASSter component tensors.
+
+Status: PRODUCTION. `build_masster_candidates` is the entry point for every MASSter run. It
+dispatches to the CUDA backend in `cuda_candidates` (``masster_candidate_backend: cuda``, the
+current recipe) or runs the CPU backend here (the template default, and the reference the CUDA
+backend must reproduce exactly). `MassterStaticGraph`, `MassterCandidateBatch`,
+`MassterCandidateTimings` and the mask-probability scoring are shared by both backends.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +24,7 @@ import torch as th
 import torch.nn.functional as F
 
 if TYPE_CHECKING:
+    from fragnnet.models.masster.candidates.rewire_rules import RewireMatchSet
     from fragnnet.models.masster.candidates.smarts_templates import MassterTemplate
 
 
@@ -77,6 +85,7 @@ class MassterStaticGraph:
     atom_batch_indices: th.Tensor
     atom_ptr: th.Tensor
     smarts_templates: tuple[tuple[MassterTemplate, ...], ...] | None = None
+    rewire_matches: tuple[RewireMatchSet, ...] | None = None  # one per spectrum; rewire arms only
 
 
 @dataclass(frozen=True)

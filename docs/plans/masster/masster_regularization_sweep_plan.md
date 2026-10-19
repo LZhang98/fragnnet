@@ -24,7 +24,7 @@
 > `spectrum_pl.py` (see [Stage A incident](#stage-a-incident-2026-09-19--out-of-range-predicted-peaks)).
 >
 > **Resubmitted and completed 2026-09-19/20. Read the
-> [campaign read-out](../../findings/masster/masster_campaign_readout_2026_09_21.md) before acting on this
+> campaign read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md`) before acting on this
 > plan.** Six of eight arms produced data — `_drop02` was killed by the pre-fix bug and `_ctxnorm`
 > was never submitted. A1-A5 pass (`E* = 64`, controls agree to 0.0016); **A6 does not**: the 2g
 > pilot OOM'd and the fan-out proceeded on `3g.40gb` by default rather than by measurement, so the
@@ -38,10 +38,10 @@
 > (`masster_h_transfer_bound: valence`, `masster_intensity_atom_decoder_num_layers: 0`).
 
 Executes the "sweep second" half of the
-[regularization audit](../../findings/masster/masster_regularization_audit_2026_09_19.md), whose census
+regularization audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_regularization_audit_2026_09_19.md`), whose census
 established that `masster_head_dropout`, `weight_decay`, `lr` and `gradient_clip_val` are
 identical in all 226 (now 232) `model_type: masster` runs, and that
-[the overfit audit's](../../findings/masster/masster_unmerged_overfitting_2026_09_16.md) instrument gate
+[the overfit audit's](../../findings/masster/masster_memorization_audits.md#unmerged-masster-generalization-audit) instrument gate
 is still closed.
 
 ## Objective
@@ -149,7 +149,7 @@ averaging 51.9 peaks), well under a GiB. The instrumentation costs **time, not m
 > memory. The 2g pilot `ybmf4gaq` OOM'd at 19.62 GiB and these arms cannot fit `3g.40gb` (39.5 GiB); they
 > ran on full 80 GB cards. Two identical controls spanned 36.2 and 40.8 GiB, so single-run memory is too
 > noisy to attribute. A MIG slice with train instrumentation needs the match-based aux scores off on train.
-> See the [campaign read-out](../../findings/masster/masster_campaign_readout_2026_09_21.md#7-guards-for-anyone-reading-these-numbers).
+> See the campaign read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md`).
 
 ### Equal-budget shapes, decided by the Stage A measurement
 

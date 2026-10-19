@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 
 sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "eval")
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "oracle")
 )
 
 from dag_oracle_decomposition import load_test_spec_df

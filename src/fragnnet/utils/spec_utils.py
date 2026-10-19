@@ -397,9 +397,11 @@ def batched_filter_func(
         both_mask = thresh_mask & max_mask
     else:
         both_mask = thresh_mask
-    mzs = mzs[both_mask]
-    ints = ints[both_mask]
-    batch_idxs = batch_idxs[both_mask]
+    # One nonzero (one host sync) shared by the three gathers instead of one per masked index.
+    keep_idxs = th.nonzero(both_mask, as_tuple=True)[0]
+    mzs = mzs[keep_idxs]
+    ints = ints[keep_idxs]
+    batch_idxs = batch_idxs[keep_idxs]
 
     if top_k_peaks is not None and top_k_peaks == 0:
         raise ValueError(f"top_k_peaks must be positive or None, got {top_k_peaks}")
@@ -473,7 +475,8 @@ def batched_rel_filter_func(
         mask = ints > 0
     if mz_max > 0.0:
         mask = mask & (mzs < mz_max)
-    return mzs[mask], ints[mask], batch_idxs[mask]
+    keep_idxs = th.nonzero(mask, as_tuple=True)[0]
+    return mzs[keep_idxs], ints[keep_idxs], batch_idxs[keep_idxs]
 
 
 def batched_bin_func(
@@ -572,18 +575,21 @@ def batched_l1_normalize(ints, batch_idxs):
     return ints
 
 
-def batched_mf1000_normalize(ints, batch_idxs):
+def batched_mf1000_normalize(ints, batch_idxs, dim_size=None):
     """mf 1000 normalize implemention in pytorch, batched
 
     Args:
         ints (_type_): _description_
         batch_idxs (_type_): _description_
+        dim_size: Number of spectra when the caller knows it on the host; derived from
+            ``batch_idxs`` (one host sync) when None.
 
     Returns:
         _type_: _description_
     """
 
-    dim_size = int(th.max(batch_idxs).item()) + 1
+    if dim_size is None:
+        dim_size = int(th.max(batch_idxs).item()) + 1
     max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=dim_size)
     ints = (ints / max_ints[batch_idxs]) * 1000.0
     return ints

@@ -129,6 +129,21 @@ def test_v102_inchikey_before_inchi(tmp_path: Path):
     assert spec_df.loc[0, "inchikey"] == "AAA-BBB-N"
 
 
+def test_ion_mode_from_adduct_charge_sign(tmp_path: Path):
+    """Negative adducts that contain a "+" ([M+Cl]-, [M+HCOOH-H]-) are N, not P."""
+    module = load_prepare_module()
+    fp = tmp_path / "ion_mode.mgf"
+    adducts = ["[M+H]+", "[M-H]-", "[M+Cl]-", "[M+HCOOH-H]-", "[M]+"]
+    fp.write_text(
+        "".join(
+            f"BEGIN IONS\nTITLE=SPECTRAVERSE{i + 1:010d}\nADDUCT={a}\nFOLD=1\n41.0 1.0\nEND IONS\n"
+            for i, a in enumerate(adducts)
+        )
+    )
+    spec_df, _ = module.process_specverse(str(fp))
+    assert spec_df["ion_mode"].tolist() == ["P", "N", "N", "N", "P"]
+
+
 def test_v102_field_values(mgf_v102: Path):
     """Typed fields: floats, eV energies, NaN energies, smiles trimmed, peaks text."""
     module = load_prepare_module()

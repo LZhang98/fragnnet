@@ -42,9 +42,9 @@ def _explained(args) -> tuple[float, float, float]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--spec-fp", default="data/proc/spectraverse/spec_df.pkl")
-    parser.add_argument("--mol-fp", default="data/proc/spectraverse/mol_df.pkl")
-    parser.add_argument("--out-fp", default="data/proc/spectraverse/subformula_explained.csv")
+    parser.add_argument("--spec-fp", default="data/proc/spectraverse_1_0_3/spec_df.pkl")
+    parser.add_argument("--mol-fp", default="data/proc/spectraverse_1_0_3/mol_df.pkl")
+    parser.add_argument("--out-fp", default="data/proc/spectraverse_1_0_3/subformula_explained.csv")
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
 

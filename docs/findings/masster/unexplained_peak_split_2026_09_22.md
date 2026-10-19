@@ -5,7 +5,7 @@
 
 ## Question
 
-The [2026-09-22 overfit read-out](masster_overfit_readout_2026_09_22.md) established that
+The 2026-09-22 overfit read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md`) established that
 the train/validation gap is almost entirely intensity allocation, and that the only genuine
 coverage ceiling is the ~11% of target intensity no candidate reaches (`val_wrecall` 0.8911).
 That residual holds two populations that need opposite fixes:

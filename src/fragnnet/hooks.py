@@ -96,6 +96,18 @@ class ModelHooks:
             config: The constructor's keyword arguments (the resolved config).
         """
 
+    def needs_graph_mol(self, config: dict[str, Any]) -> bool:
+        """Whether batches carry ``mol_graph_binary``, the RDKit molecule the graph is built from.
+
+        ``SpecMolDataset`` reads it before preprocessing. Matching chemistry on the batch's
+        ``mol_smiles`` instead is only safe when re-parsing the SMILES reproduces the graph's
+        atoms in order, which retrieval candidates and a few tautomers do not.
+
+        Args:
+            config: The dataset constructor's keyword arguments (the resolved config).
+        """
+        return False
+
     def build_batch_sampler(
         self, ds: Any, config_d: dict[str, Any], sampler: Any, generator: Any
     ) -> Any | None:

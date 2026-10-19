@@ -4,6 +4,11 @@ Search is discrete and detached. Each fragment scores boundary bonds as cut and 
 outside bonds unrestricted. The model normalizes over retained fragments.
 This is not MASSter's marginalized cut-pathway probability. One adapter row per
 fragment reuses the downstream sparse membership contract without topology enumeration.
+
+Status: PROTOTYPE, STOPPED 2026-10-06 (95341fce:docs/plans/masster/masster_fast_gnn_proposal.md, removed 2026-10-18).
+Selected by ``masster_proposal_method: connected_fragment_beam``; the default ``cut_masks``
+uses `builder`. On trained bond logits the beam kept a flat 0.8695 of probability mass where
+``cut_masks`` kept 1.0000, and no training run was made. Kept as a working option.
 """
 
 from __future__ import annotations

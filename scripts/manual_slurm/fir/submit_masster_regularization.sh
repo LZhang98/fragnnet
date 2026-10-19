@@ -3,7 +3,7 @@
 # does weight_decay 0.1 narrow the train/validation gap at full screen length without
 # suppressing train cosine?
 # Plans: docs/plans/masster/masster_regularization_sweep_plan.md
-#        docs/findings/masster/masster_overfit_readout_2026_09_22.md, section 7.2 item 1 / section 8 item 3
+#        95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18, section 7.2 item 1 / section 8 item 3
 #
 # STAGE selects which jobs are generated:
 #   wd10     (default) BOTH jobs -- the arm and its train-metric control. Submit them together.
@@ -14,7 +14,7 @@
 #   transfer the 2026-09-23 ranking-transfer screen: the same control plus t2 below.
 #   t2       t2_ema998 alone (EMA of the weights, decay 0.998).
 #
-# RANKING-TRANSFER ARMS (2026-09-23, plan docs/plans/masster/masster_ranking_transfer_plan.md).
+# RANKING-TRANSFER ARMS (2026-09-23, plan 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md, removed 2026-10-18).
 # The val ranking error is a generalization failure (train ranking gap 0.011 vs val 0.121), so
 # this arm tries to make the ranking transfer rather than add a ranking loss. It is one key off
 # c4a_base_s1_trainaux, the SAME control job as the wd10 stage: submit that control once, whichever

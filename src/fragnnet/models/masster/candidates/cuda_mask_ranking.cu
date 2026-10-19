@@ -1,4 +1,5 @@
-// Exact single-component ranked masks. CUDA is an optional, explicit prototype.
+// Exact single-component ranked masks: production mask ranking of the CUDA candidate
+// backend, loaded by cuda_mask_ranking.py.
 #include <cuda_runtime.h>
 #include <math.h>
 #include <stdint.h>

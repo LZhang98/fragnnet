@@ -1,24 +1,24 @@
-"""Learned bond-priority scorer prototype (Step 2 of docs/plans/fragnnet/dag_full_recall_tractability_plan.md).
+"""Learned bond-priority scorer prototype (Step 2 of 95341fce:docs/plans/fragnnet/dag_full_recall_tractability_plan.md, removed 2026-10-18).
 
 Trains a small linear (logistic regression over hashed features) scorer that predicts
 whether a bond is "load-bearing" -- appears in at least one route to a formula first-matched
 at the deepest mined depth -- as a candidate replacement for the hand-mined BUCKET_LOSS_RANK
-table used by docs/plans/fragnnet/dag_fanout_cap_plan.md's per-parent fan-out cap.
+table used by 95341fce:docs/plans/fragnnet/dag_fanout_cap_plan.md, removed 2026-10-18's per-parent fan-out cap.
 
 Positive ("critical") examples: bonds that appear in EVERY route (per analyze_dag, reused
 from debug_dag_bond_radius_env_stats.py) to some depth-max matched formula -- i.e. masking
 that single bond alone would make the formula entirely unreachable. This mirrors
-bond_breakability_mask_plan.md's per-bucket `bucket_loss` computation, applied per-bond
+95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18's per-bucket `bucket_loss` computation, applied per-bond
 instead of per-bucket. A weaker "appears in at least one route" label was tried first and
 was degenerate (95%+ positive rate at full D4 enumeration, since redundant multi-parent
 routes mean nearly every bond gets touched by *some* route to *some* formula -- see
-bond_breakability_mask_plan.md Step 4's "3.00 edges per node" finding for why).
+95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18 Step 4's "3.00 edges per node" finding for why).
 Negative examples: every other real bond in the molecule (a valid BFS candidate cut that
 is never singly-critical for any matched formula at the deepest depth).
 
 Features are radius-1 and radius-2 bond environment buckets (same descriptor as the sibling
 script), hashed via sklearn's FeatureHasher so the model needs no fixed vocabulary -- this is
-the point of a learned scorer over a hand-mined table per docs/plans/fragnnet/dag_bond_radius_env_plan.md's
+the point of a learned scorer over a hand-mined table per 95341fce:docs/plans/fragnnet/dag_bond_radius_env_plan.md, removed 2026-10-18's
 finding that cardinality (~2,000 buckets at radius 2) is too large to hand-curate even though
 it isn't data-starved.
 
@@ -196,7 +196,7 @@ def main() -> None:
 
     # Human-readable check: inspect the highest-scored bonds' raw environment strings to
     # sanity-check the model recovers known chemistry (e.g. ring C-heteroatom bonds should
-    # score high, per docs/plans/fragnnet/bond_breakability_mask_plan.md's Step 3 findings). Feature hashing
+    # score high, per 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md, removed 2026-10-18's Step 3 findings). Feature hashing
     # collapses names to indices, so coefficients aren't directly inspectable -- read the
     # examples themselves instead.
     print(f"\nTop {args.top_k} highest-scored test bonds (env string, true label):")

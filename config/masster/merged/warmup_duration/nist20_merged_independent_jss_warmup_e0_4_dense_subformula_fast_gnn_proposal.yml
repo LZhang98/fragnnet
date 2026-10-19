@@ -28,7 +28,7 @@
 #
 # Note the beam bypasses charge/pathway marginalization entirely: masster_charge_pooling
 # is inert and the charge head is frozen, so this is NOT an ablation of the proposal search
-# alone - it also drops the learned charge split. See docs/plans/masster/masster_fast_gnn_proposal.md.
+# alone - it also drops the learned charge split. See 95341fce:docs/plans/masster/masster_fast_gnn_proposal.md, removed 2026-10-18.
 #
 # Everything else - split, subformula filter, merge method, encoder, intensity head,
 # jss_distance objective, warmup boundary at epoch 4, seed, LR, batch sizes, epoch budget -

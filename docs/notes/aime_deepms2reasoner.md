@@ -136,7 +136,7 @@ beaten by >10% at top-1 and top-10.
 - **No fixed maximum depth.** Pathways are expanded by probability mass, with canonical graph
   hashing merging equivalent states, so the DAG grows where the model puts probability. Contrast
   with our fixed d3/d4 enumeration — this is the same axis as
-  [`bond_breakability_mask_plan`](../plans/fragnnet/bond_breakability_mask_plan.md) fan-out control, solved by learned expansion instead.
+  `bond_breakability_mask_plan` (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md`) (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/bond_breakability_mask_plan.md`) fan-out control, solved by learned expansion instead.
 - Markovian factorization over the DAG; KL-divergence loss against the experimental spectrum;
   curriculum learning from low-mass to high-mass compounds.
 - Conditioned on global experimental metadata including collision energy.
@@ -191,7 +191,7 @@ tables are fully specified and are what our 2026-09-20 audit should be read agai
 3. Formula-coordinate inverted indexing is directly reusable for our retrieval work regardless of
    the predictor.
 4. Our coverage of their worked examples (Fig. 2c hydroxamic acid, Fig. 3k biotin) is checked in
-   [`masster_smarts_cuda_audit_2026_09_27.md` §6](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#6-aimes-worked-examples-and-the-other-rule-lists).
+   [`masster_smarts_findings.md#masster-smarts-templates-cuda-enablement-audit-and-proposal-reach` §6](../findings/masster/masster_smarts_findings.md#6-aimes-worked-examples-and-the-other-rule-lists).
    MASSter's plain cuts reach 14 of the 15 annotated fragments, and excision inside rings needs
    no rule for their masses. The miss is a hydroxamic-acid NH excision. The later §7 gate
    admitted its rule with weak evidence; §6 records the earlier rejection. These are mass

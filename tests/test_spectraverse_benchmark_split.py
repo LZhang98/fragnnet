@@ -236,13 +236,55 @@ def test_check_against_reports_set_and_id_differences(fixture_files: dict[str, P
     assert any("DIFFER" in ln for ln in lines)
 
 
-def test_bad_title_rejected(fixture_files: dict[str, Path]) -> None:
+def test_repeated_title_rejected(fixture_files: dict[str, Path]) -> None:
     text = (
         fixture_files["mgf"].read_text().replace("SPECTRAVERSE0000000002", "SPECTRAVERSE0000000009")
     )
     fixture_files["mgf"].write_text(text)
-    with pytest.raises(ValueError, match="TITLE number"):
+    with pytest.raises(ValueError, match="repeats TITLE number 9"):
         bbs.read_mgf_folds(fixture_files["mgf"])
+
+
+def test_sparse_titles_join_on_title_number(fixture_files: dict[str, Path]) -> None:
+    """v1.0.3 TITLE numbers have gaps; folds still follow the TITLE, not the record position."""
+    tmp = fixture_files["tmp"]
+    ref = tmp / "ref"
+    assert _run(fixture_files, ref) == 0
+    # renumber every TITLE n -> 2n + 5 in both the MGF and spec_df
+    n = N_FOLDS * PER_FOLD
+    text = fixture_files["mgf"].read_text()
+    for i in range(n, 0, -1):
+        text = text.replace(f"SPECTRAVERSE{i:010d}", f"SPECTRAVERSE{2 * i + 5:010d}")
+    fixture_files["mgf"].write_text(text)
+    spec_df = pd.read_pickle(fixture_files["spec"])
+    spec_df["dset_spec_id"] = (2 * spec_df["dset_spec_id"].astype(int) + 5).astype(str)
+    spec_df.to_pickle(fixture_files["spec"])
+    assert _run(fixture_files, tmp / "out", "--check-against", str(ref)) == 0
+    for cv in range(N_FOLDS):
+        for name in bbs.SPLITS:
+            a = (ref / f"cv{cv}" / f"{name}_ids.csv").read_text()
+            assert a == (tmp / "out" / f"cv{cv}" / f"{name}_ids.csv").read_text()
+    # a TITLE outside spec_df's dset_spec_id set is refused
+    spec_df.loc[0, "dset_spec_id"] = "1"
+    with pytest.raises(ValueError, match="TITLE numbers differ"):
+        bbs.assign_folds_from_mgf(spec_df, bbs.read_mgf_folds(fixture_files["mgf"])[0])
+
+
+def test_source_filter_reads_sources_by_title(tmp_path: Path) -> None:
+    """``read_mgf_sources`` keys SOURCE by TITLE number, so sparse titles map correctly."""
+    sfs_path = Path(__file__).resolve().parents[1] / "preproc_scripts/spectraverse/source_filter_split.py"
+    spec = importlib.util.spec_from_file_location("source_filter_split", sfs_path)
+    sfs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sfs)
+    mgf = tmp_path / "s.mgf"
+    mgf.write_text(
+        "BEGIN IONS\nTITLE=SPECTRAVERSE0000000001\nSOURCE=GNPS\nEND IONS\n\n"
+        "BEGIN IONS\nTITLE=SPECTRAVERSE0000000003\nSOURCE=MS-DIAL\nEND IONS\n"
+    )
+    assert sfs.read_mgf_sources(str(mgf)) == {1: "GNPS", 3: "MS-DIAL"}
+    mgf.write_text(mgf.read_text().replace("0000000003", "0000000001"))
+    with pytest.raises(ValueError, match="repeats TITLE number 1"):
+        sfs.read_mgf_sources(str(mgf))
 
 
 def test_fold_csv_wrong_columns_or_ids_rejected(fixture_files: dict[str, Path]) -> None:

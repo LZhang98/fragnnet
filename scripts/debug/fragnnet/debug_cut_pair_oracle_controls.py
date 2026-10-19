@@ -9,7 +9,7 @@ import pandas as pd
 import torch as th
 
 sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "eval")
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "oracle")
 )
 
 from dag_oracle_scores import _tolerance_for_inst_type

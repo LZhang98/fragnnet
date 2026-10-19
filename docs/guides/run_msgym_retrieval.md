@@ -1,9 +1,9 @@
 # MassSpecGym retrieval runs, end to end
 
-> **Status:** GUIDE · **Updated:** 2026-10-06
+> **Status:** GUIDE · **Updated:** 2026-10-16
 > One command scores a MASSter checkpoint on MSGYM 1.5 retrieval, locally or on Fir/Vulcan.
 > Verified locally on the formula val fold. Prepare reproduces the
-> [2026-10-03 run's](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+> [2026-10-03 run's](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier)
 > 20 shards exactly. Scoring reproduces its per-candidate values from the same predictions.
 > No cluster job has been submitted yet.
 
@@ -83,6 +83,29 @@ sbatch slurm_scripts/msgym_ret_formula_test_<ckpt stem>.sh
 - **Resuming.** Re-submitting after a timeout resumes from the last finished shard.
 - **Exit status.** The generated script ends with an `echo`, so the scheduler reports exit 0 even
   when the driver fails. Check the `.err` log and `summary_<ckpt stem>.csv`.
+
+## GPU usage (2026-10-16)
+
+Every inferred shard writes `shard_NNN/<label>/gpu_usage.json`: host, `SLURM_JOB_ID`, the
+prediction loop's seconds and predictions per second, the device and its memory, the PyTorch
+allocator peaks (`peak_allocated_gib`, `peak_reserved_gib`), and the driver's `infer_wall_s` /
+`score_wall_s` (subprocess start-up included). After the infer/score loop the driver writes
+`gpu_usage_<label>.csv` (one row per shard) and logs the maxima and totals. Shards inferred
+before this change have no row.
+
+- NVML reports no SM utilization on a MIG slice, so utilization is not recorded; size slices
+  from `peak_allocated_gib` (what the model needs) and throughput. `peak_reserved_gib` includes
+  allocator caching and grows to fill whatever the device has.
+- Local check, `pow075` on formula test shard 0 (RTX 2070 SUPER, 8 GB): 65,406 predictions in
+  166.5 s (393/s), `peak_allocated_gib` 1.22, `peak_reserved_gib` 7.23, `infer_wall_s` 223.3
+  (57 s of start-up, checkpoint load and featurization outside the prediction loop).
+- **Batch size (default 256 since 2026-10-16, was 64).** Same shard and GPU: batch 256 runs the
+  loop in 108.8 s (601/s, 1.53x) at `peak_allocated_gib` 3.96; batch 512 ran out of memory on the
+  8 GB card. Against batch 64, 0.77% of spectra differ (max 0.0094 cosine, mean 5e-6), the size of
+  GPU run-to-run noise, so reads stay comparable with the batch-64 `pow075` / `f44tzxoc` runs.
+  256 fits a 1g.10gb slice; set `FRAGNNET_EVAL_BATCH_SIZE=512` only on 2g.20gb or larger, and
+  check the rewire arms' `peak_allocated_gib` first (not measured).
+- Job-level CPU memory and elapsed time: `sacct -j <id> --format=JobID,JobName%50,Elapsed,State,MaxRSS,AllocTRES%60,TRESUsageInMax%80`.
 
 ## Cost (local, formula val)
 

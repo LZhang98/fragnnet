@@ -9,20 +9,20 @@
 This document defines which gas-phase rearrangement rules belong in MASSter,
 records the rules currently registered, and keeps literature candidates separate from
 validated code. It is intentionally narrower than the general
-[rearrangement review](rearrangement_smarts.md).
+[rearrangement review](smarts_surveys.md#gas-phase-msms-rearrangement-smarts-review).
 
 Related records:
 
-- [2026-09-27 CUDA audit](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md): pool
+- [2026-09-27 CUDA audit](../findings/masster/masster_smarts_findings.md#masster-smarts-templates-cuda-enablement-audit-and-proposal-reach): pool
   reach (§3), the ring-rule and duplicate-template drop (§5) and the per-class gate (§7). The
   registry tests are in [`test_masster_smarts.py`](../../tests/test_masster_smarts.py).
 - [2026-09-28 primary-literature follow-up](../notes/masster_excision_literature_2026_09_28.md):
   an uncovered N-phenylbenzamide O-transfer branch, and mass coverage versus product
   connectivity. Its candidates have not been gated.
-- [SMARTS pathway plan](../plans/masster/masster_smarts_pathway_plan.md): planned use of these
+- SMARTS pathway plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md`): planned use of these
   rules inside the MASSter pathway (rule provenance to the intensity head, gated rule steps on
   candidates, `[M-H]-`), including `t1i`, the first templates-on arm.
-- [2026-09-13 set and literature audit](../findings/masster/masster_smarts_review_2026_09_13.md):
+- [2026-09-13 set and literature audit](../findings/masster/masster_smarts_findings.md#masster-smarts-set-and-literature-review):
   earlier eligibility checks and positive-ion expansion priorities.
 - Paper URLs are attached to every MASSter-only rule definition in
   [`candidates/smarts_templates.py`](../../src/fragnnet/models/masster/candidates/smarts_templates.py), disabled ones
@@ -122,7 +122,7 @@ from `c0`'s val pool:
   partition of its own cut.
 
 The shared `FRAG_RULES`/`NL_RULES` keep all of them for FraGNNet's prepass
-([finding](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md)).
+([finding](../findings/masster/masster_smarts_findings.md#masster-smarts-templates-cuda-enablement-audit-and-proposal-reach)).
 
 ### Compound-fragment rules
 
@@ -172,7 +172,7 @@ Enveda-180. Evidence is in
   stay in `NL_RULES` for FraGNNet's prepass.
 - **Enveda-180 check (2026-09-29): none finds support.** Five match no Enveda-180 molecule
   (the library has no ketones). Methyl benzoate and diarylvinyl match but score 0.00
-  ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)). The probe,
+  ([finding](../findings/masster/masster_smarts_findings.md#masster-smarts-rules-on-enveda-180-per-class-gate)). The probe,
   `scripts/debug/smarts/debug_masster_smarts_rule_gate_enveda.py`, scores these rules from copies of
   their definitions, so re-checking them on another dataset needs no uncommenting.
 
@@ -200,7 +200,7 @@ instruments:
 
 Each new rule is restricted to the polarity that passes. `tertiary_aryl_sulfonamide_so2`
 passes both and is left unguarded. Full table:
-[finding §7](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#7-new-rules-from-the-documented-lists).
+[finding §7](../findings/masster/masster_smarts_findings.md#7-new-rules-from-the-documented-lists).
 
 | Rule | Mode | NIST20 molecules | Beyond random, % of intensity (95% CI) | Strength |
 |---|---|---:|---|---|
@@ -229,7 +229,7 @@ Candidates not admitted:
 - **ChemFrag's 32 rearrangement transforms, all closed (2026-09-28):** 26 change no
   heavy-atom bond. Thioether cyclization (#16) scores below random, and every Wagner–Meerwein
   fragment has a formula twin
-  ([triage](../findings/masster/chemfrag_rearrangement_triage_2026_09_14.md#unique-coverage-check-2026-09-28)).
+  (triage (removed 2026-10-18; `git show 95341fce:docs/findings/masster/chemfrag_rearrangement_triage_2026_09_14.md`)).
 
 ### Existing rules under the gate
 
@@ -237,7 +237,7 @@ The 14 rules registered before 2026-09-27 were scored the same way. Three pass, 
 and three never fire on NIST20. Numbers are from
 `output/smarts_reach_2026_09_27/rule_gate_log.txt`, except the last three rows' molecule
 counts, which are a direct SMARTS count on 2026-09-29. The pool column is
-[finding §3.1](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#31-coverage-the-templates-add-beyond-the-pool),
+[finding §3.1](../findings/masster/masster_smarts_findings.md#31-coverage-the-templates-add-beyond-the-pool),
 measured on `c0`'s `[M+H]+` pool only.
 
 | Rule | Mode | NIST20 molecules | Beyond random, % (95% CI) | Gain on `c0`'s pool | Status |
@@ -275,10 +275,10 @@ User decisions (2026-09-29):
   spectra where much of the intensity sits at rule-only m/z. On `i1`'s val set those are 37
   `[M+H]+` spectra with cosine 0.25-0.56. They are not the floor: none of the bottom 500
   spectra carries rule-only intensity. `[M-H]-` is untested
-  ([finding](../findings/masster/masster_smarts_outlier_reach_2026_09_29.md)).
+  ([finding](../findings/masster/masster_smarts_findings.md#masster-smarts-rules-and-outlier-spectra)).
 - **Enveda-180 (2026-09-29):** sulfoxide passes there, +0.56% in `[M-H]-` (CI 0.23 to 1.01).
   N-phenylbenzamide still scores 0.00, and no Enveda-180 molecule matches the C2 haloalkyl rule
-  ([finding](../findings/masster/masster_smarts_enveda_gate_2026_09_29.md)).
+  ([finding](../findings/masster/masster_smarts_findings.md#masster-smarts-rules-on-enveda-180-per-class-gate)).
 
 ## Rule added from the `i1` worst-prediction read (2026-09-30)
 
@@ -382,9 +382,13 @@ Three EI candidate families were screened; **none is admitted**. Anisoyl fluorid
 narrow para-hydroxyazobenzene products add no nominal coverage beyond ordinary cuts and
 natural isotope support. The N-H aromatic-acyl arylsulfonamide O-transfer candidate has
 seven training molecules and no validation support. The production allowlist and guards
-remain unchanged. See the [screen finding](../findings/masster/masster_ei_smarts_screen_2026_10_01.md)
+remain unchanged. See the screen finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_ei_smarts_screen_2026_10_01.md`)
 for exact SMARTS scope, null controls, isotope collisions and limits. This closes the
 coverage screen only; it does not establish an intensity-model null.
+
+TMS rearrangements are planned in the [EI SMARTS plan](../plans/masster/masster_ei_smarts_plan.md)
+(2026-10-18, PROPOSED). Only the Si–O–Si ion at m/z 147 is unreachable by bond cuts, so it is the one build
+candidate, as an `[M]+` rewire rule. The two TMS backlog rows below remain backlog.
 
 ## Additional literature backlog
 
@@ -466,5 +470,5 @@ name to `MASSTER_RULE_VOCABULARY`, and never remove or reorder a name there; to 
 comment it out of the allowlist, as on 2026-09-29
 ([How MASSter represents a rule](#how-masster-represents-a-rule)). `MASSTER_NUM_RULES`
 counts the vocabulary, not the registered rules. Keep broad chemistry surveys in
-[`rearrangement_smarts.md`](rearrangement_smarts.md); this file should remain the decision
+[`smarts_surveys.md`](smarts_surveys.md); this file should remain the decision
 record for MASSter candidate generation.

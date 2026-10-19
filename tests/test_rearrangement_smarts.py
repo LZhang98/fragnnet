@@ -1,7 +1,7 @@
 """Tests for validated gas-phase rearrangement SMARTS rules.
 
 Covers the 7 SMIRKS-implementable rearrangement rules identified in the
-rearrangement SMARTS review (docs/reference/rearrangement_smarts.md).  Each test
+rearrangement SMARTS review (docs/reference/smarts_surveys.md).  Each test
 checks substrate match, correct product SMILES, and at least one negative
 (non-matching) case.
 

@@ -422,7 +422,7 @@ None of the following code is on the current branch (`scatter_sparsemax`, `Inten
   softmax ~0.709. More leash was better, so the extra capacity earned nothing. The CE-response variant (per-bag
   quadratic energy curve) learned a degenerate near-constant attractor (`mirlys0d` b_NCE +11.98 std 0.10; `ykh2hts0`
   +12.48 std 0.32), nearly uniform corrections that cancel under softmax; see also the Git-history report cited in
-  `energy_based_spectrum_reranking_plan.md`. Formula-level `delta_f` leaves P(r|f) exactly invariant; "smaller
+  `energy_based_spectrum_reranking_plan.md` (removed 2026-10-18; `git show 95341fce:docs/plans/energy_based_spectrum_reranking_plan.md`). Formula-level `delta_f` leaves P(r|f) exactly invariant; "smaller
   softmax denominator" is not a real advantage because logsumexp regroups the same Z.
 - **Per-fragment CE features (`ce_perfrag_feats`, `zhjgd01n`, 2026-07-13): null.** `ce_insert_location: mol,mlp` plus
   `b_ring`, `b_conj`, `num_heavy_atoms`: best 0.7112 vs baseline `9t63zils` 0.7119 (-0.0007), final 0.7091. CE-binned

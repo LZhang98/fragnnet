@@ -1,6 +1,6 @@
 # Artifact storage rules
 
-> **Status:** REFERENCE · **Updated:** 2026-10-04
+> **Status:** REFERENCE · **Updated:** 2026-10-17
 > Where checkpoints and run outputs go, how to name them, and how to cite them. Applies to
 > `ckpts/`, `saved_ckpts/`, `output/` and `tmp_profile/`. All four are gitignored and
 > unversioned, so a path is the only link between a doc and its evidence.
@@ -25,7 +25,7 @@
 - Give every local run a unique `job_id`: `<arm>_<seed>`, or add a date suffix. Lightning
   does not overwrite a checkpoint with the same name. It writes `model-epoch=000-v1.ckpt`
   beside it, so `-v1` files mean two runs collided. Reusing a name also resumes the old
-  checkpoint ([shared-proposal audit](../findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md)).
+  checkpoint (shared-proposal audit (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_shared_proposal_pathway_audit_2026_09_26.md`)).
 - Do not write anything else into `ckpts/`. A loose `ckpts/<run_id>.ckpt` belongs in
   `saved_ckpts/` (§2.2).
 - Do not put pytest temp dirs (`--basetemp`) or copies of test checkpoints under
@@ -79,8 +79,10 @@ resolved config. Cite the copy, not `ckpts/`.
   `analysis/`, `diagnostics/`, `eval/` or `tmp/`.
 - **Code goes in the repo, data goes in `output/`.** A script whose result a doc cites goes
   under `scripts/` (usually the matching topic folder of `scripts/debug/`: `dag/`, `fragnnet/`,
-  `isotopes/`, `bench/`, `masster_candidates/`, `masster_memorization/`, `smarts/`, `ei/`,
-  `spectraverse/`, `casmi26/`; import as `scripts.debug.<group>.<name>`), where Git tracks it. It does not go inside
+  `oracle/`, `isotopes/`, `masster_core/`, `masster_memorization/`, `smarts/`, `ei/`,
+  `spectraverse/`, `casmi_enveda/`, `dataset_umap/`; import as `scripts.debug.<group>.<name>`).
+  One-off diagnostics go there too, not in `scripts/eval/`, which holds the reusable
+  inference, scoring and retrieval tools. Git tracks it there. It does not go inside
   `output/`, because `output/` is unversioned. Shell wrappers and logs may stay with the data.
 - **No checkpoints in `output/`.** Use §2.2.
 - **No third-party code in `output/`.** Clone external repos (DreaMS, ms-pred) outside the

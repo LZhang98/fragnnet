@@ -9,7 +9,7 @@
 # on linear targets gives sub-1% peaks almost no weight. This arm keeps the loss and trains on
 # sqrt targets (target q ~ sqrt(I) after the mf1000 scaling, then L1); evaluation and export square
 # the prediction back to linear, so val_cos_sim_0.01 stays comparable to the control.
-# docs/findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md
+# docs/findings/masster/masster_msgym_formula_retrieval.md
 #
 # masster_merge_same_mz_rows: training sums the pathways at one m/z inside the Gaussian mixture, so
 # the model learns sqrt(I) of each m/z; per-pathway squaring at eval would give sum p^2 instead of
@@ -53,7 +53,7 @@
 # READ: best val_cos_sim_0.01_epoch/mean and the 118-127 tail against 1imawkx1. No MSGYM seed
 # spread exists; the NIST20 0.0042 is the only reference. Then score the best checkpoint on the
 # 9,954-spectrum test set against ll04i00m's 0.5713 and GLACIER's 0.5455
-# (docs/findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+# (docs/findings/masster/masster_glacier_released_ckpt.md).
 #
 # Base config follows: msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml.
 # MASSter on MassSpecGym v1.5 (benchmark subset), forked from
@@ -97,13 +97,13 @@
 # 4. masster_intensity_norm_placement: pre. `a1_prenorm` (q4t4udee) is the only clean
 #    single-key PASS of the 128-epoch merged screen: +0.0056 tail mean (118-127) against the
 #    0.7270 control, parameter-identical, and it halves the calibration drift.
-#    docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18
 #
 # 5. Cosine LR to 1% of peak with the template's 1000-step linear warmup, i.e. arm
 #    `d3_cosine_warmup1000` (rcfzf67p): best <=127 0.7357 against a 0.7286 control mean; d1/d2
 #    (no warmup) reached 0.7329/0.7326. n=1. lr_total_steps = 128 x 194 = 24,832; change it
 #    with max_epochs. The schedule clamps at the floor, so an overshoot is harmless.
-#    docs/findings/masster/masster_overfit_readout_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18
 #    4 + 5 together are UNTESTED: every NIST20 read above changed one of them alone, and a7
 #    showed attention-side gains are not additive.
 #

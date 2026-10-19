@@ -7,7 +7,11 @@ from dataclasses import dataclass
 import numpy as np
 import torch as th
 
-from fragnnet.inference.export_columns import get_export_adapter, selected_column_specs
+from fragnnet.inference.export_columns import (
+    get_export_adapter,
+    rewire_provenance_enabled,
+    selected_column_specs,
+)
 from fragnnet.utils.formula_utils import formula_delta_to_signed_str
 from fragnnet.utils.misc_utils import to_device
 from fragnnet.utils.spec_utils import batched_mf1000_normalize, get_split_fn
@@ -59,7 +63,7 @@ def process_batch_to_tabular_row(
     """
     # Emitted column order; the same call `get_tabular_columns` makes for the header.
     selected_columns = selected_column_specs(
-        return_formula_str, return_cc_hash, return_rule_provenance
+        return_formula_str, return_cc_hash, return_rule_provenance, rewire_provenance_enabled(model.hparams)
     )
     export_adapter = get_export_adapter(model)
     if return_rule_provenance and not export_adapter.supports_rule_provenance:
@@ -438,6 +442,10 @@ def process_batch_to_tabular_row(
             row_d["pred_node_rules"] = export_adapter.export_node_rules(
                 b_idx, b_node_idxs, annotation
             )
+            if rewire_provenance_enabled(model.hparams):
+                row_d["pred_node_rewire_rules"] = export_adapter.export_node_rewire_rules(
+                    b_idx, b_node_idxs, annotation
+                )
 
         # Move every exported tensor to the CPU here. Only some of the arrays above are
         # explicitly moved, so without this the saved predictions mix CPU and CUDA tensors

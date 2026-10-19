@@ -83,11 +83,13 @@ _MCES_RETIRED = (
 )
 
 # ChemLM (a pretrained ChemBERTa-3 SMILES encoder with the NEIMS binned head) was removed on
-# 2026-10-12: it did not beat the structure-blind prior (docs/plans/chemberta3_msgym_plan.md).
+# 2026-10-12: it did not beat the structure-blind prior
+# (plan: `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`).
 CHEMLM_ARCHIVE_SHA = ICEBERG_ARCHIVE_SHA
 _CHEMLM_RETIRED = (
     "model_type {model_type!r} is retired: ChemLM (ChemBERTa-3 encoder with the NEIMS head) did "
-    "not help and was removed on 2026-10-12 (docs/plans/chemberta3_msgym_plan.md). Its model, "
+    "not help and was removed on 2026-10-12 "
+    "(plan: `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`). Its model, "
     f"configs and tests belong to revision {CHEMLM_ARCHIVE_SHA}. NEIMS is unaffected."
 )
 

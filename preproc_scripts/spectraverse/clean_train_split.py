@@ -6,7 +6,7 @@ the peak-level form of the ``sub_inst`` oracle in
 ``scripts/debug/spectraverse/spectraverse_oracle_ceiling.py`` (that one bins at 0.01 Da after model
 preprocessing). Train spectra with a ceiling at or below ``--min-ceiling`` are removed;
 val and test ids are copied unchanged, so held-out scores stay comparable with the source
-split. See docs/findings/masster/spectraverse_oracle_ceiling_2026_10_03.md.
+split. See docs/findings/masster/spectraverse_masster_findings.md.
 
     python preproc_scripts/spectraverse/clean_train_split.py --folds 0 1
 """
@@ -67,11 +67,11 @@ def _ceiling(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--spec-fp", default="data/proc/spectraverse/spec_df.pkl")
-    parser.add_argument("--mol-fp", default="data/proc/spectraverse/mol_df.pkl")
-    parser.add_argument("--src-split-dp", default="data/split/spectraverse_benchmark")
-    parser.add_argument("--dst-split-dp", default="data/split/spectraverse_benchmark_subceil05")
-    parser.add_argument("--ceiling-fp", default="data/proc/spectraverse/subformula_ceiling.csv")
+    parser.add_argument("--spec-fp", default="data/proc/spectraverse_1_0_3/spec_df.pkl")
+    parser.add_argument("--mol-fp", default="data/proc/spectraverse_1_0_3/mol_df.pkl")
+    parser.add_argument("--src-split-dp", default="data/split/spectraverse_1_0_3_benchmark")
+    parser.add_argument("--dst-split-dp", default="data/split/spectraverse_1_0_3_benchmark_subceil05")
+    parser.add_argument("--ceiling-fp", default="data/proc/spectraverse_1_0_3/subformula_ceiling.csv")
     parser.add_argument("--min-ceiling", type=float, default=0.5)
     parser.add_argument("--folds", type=int, nargs="+", required=True)
     parser.add_argument("--workers", type=int, default=8)

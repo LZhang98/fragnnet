@@ -17,7 +17,7 @@
 > ms-pred's entropy, the similarity its paper's retrieval numbers use. The released GLACIER
 > checkpoint is the contrastively fine-tuned (CF) model. On ms-pred's own candidate table it
 > reproduces the paper's w/ CF row: 49.67 / 78.20 / 90.80 vs 49.88 / 78.13 / 90.75 hit@1/5/20.
-> [Full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md)
+> [Full finding](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier)
 > · [pilot finding](../findings/masster/masster_annotation_retrieval_pilot_2026_10_02.md).
 > Cross-model, so it sits at the top of `plans/`.
 
@@ -99,7 +99,7 @@ unfiltered export has a median of 924 peaks per spectrum.
 
 **Anchors.**
 - MASSter: `ll04i00m` at epoch 60 (W&B), the checkpoint in the
-  [GLACIER comparison](../findings/masster/masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+  [GLACIER comparison](../findings/masster/masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set).
   MASSter model code has changed since that measurement (SMARTS rules, Si fix, NCE-encoder arms,
   ion-H channel work). The checkpoint's hparams set its behaviour, and the template fills keys
   added since. **Re-checked 2026-10-02:** MSGYM test mean `cos_sim_0.01` is 0.571272 against
@@ -114,10 +114,10 @@ unfiltered export has a median of 924 peaks per spectrum.
 - On the NIST20 FraGNNet test export, base-peak misses are about 7:1 misranking against missing
   coverage ([dominant-peak decomposition](../findings/fragnnet/dominant_peak_outcome_decomposition.md)).
 - The MASSter ranking error is a generalization failure: val ranking 0.121 against train 0.011
-  ([ranking decomposition](../findings/masster/masster_ranking_decomposition_2026_09_23.md)).
+  (ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)).
 - Independent runs agree less on novel molecules. Agreement falls from 0.94 to 0.75 as
   nearest-train Tanimoto drops from above 0.8 to below 0.3
-  ([variance is epistemic](../findings/masster/masster_variance_novelty_2026_09_24.md)).
+  (variance is epistemic (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
   Decoy candidates are unseen molecules by construction, so their intensities are the least
   reliable part of their predictions.
 
@@ -253,7 +253,7 @@ Read the test fold once, after freezing.
   substructure voting are applications, worth building only after a score has proven itself.
 - **Per-peak uncertainty as a cosine weight.** This was rejected in design. Ensemble spread is
   mostly spectrum-level: inside one spectrum, the higher-spread peak is the worse one only 58-60%
-  of the time ([per-peak uncertainty](../findings/masster/masster_per_peak_uncertainty_2026_09_24.md)).
+  of the time (per-peak uncertainty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_per_peak_uncertainty_2026_09_24.md`)).
   Across candidates, unusual decoys are the uncertain ones, so down-weighting their mismatches
   would reward them. Uncertainty may enter only as a predictive spread inside score (c).
 
@@ -263,7 +263,7 @@ Read the test fold once, after freezing.
 - Queries without a CE, and `[M+Na]+` queries, need a separate CE and adduct policy, such as a CE
   grid with a max over it. They are excluded here.
 
-**Related.** [Energy-based spectrum reranking](energy_based_spectrum_reranking_plan.md) reranks
+**Related.** Energy-based spectrum reranking (removed 2026-10-18; `git show 95341fce:docs/plans/energy_based_spectrum_reranking_plan.md`) reranks
 alternative intensity allocations for one molecule. This plan ranks molecules. They share the
 `--min_intensity -1` export contract.
 
@@ -340,7 +340,7 @@ fold is read.
 ## Next concrete check
 
 **Superseded 2026-10-03.** The full formula track (val + test) ran under the frozen protocol
-above; see the [full finding](../findings/masster/masster_msgym_formula_retrieval_full_2026_10_03.md).
+above; see the [full finding](../findings/masster/masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier).
 Open next steps:
 - a policy for `[M+Na]+` and no-CE queries, needed for leaderboard-comparable numbers;
 - a query-level strongest-decoy peak comparison for the QTOF deficit;

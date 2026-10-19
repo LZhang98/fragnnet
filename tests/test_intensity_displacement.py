@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "intensity_displacement.py"
+SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "debug" / "masster_memorization" / "intensity_displacement.py"
 SPEC = importlib.util.spec_from_file_location("intensity_displacement", SCRIPT_PATH)
 ID = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None

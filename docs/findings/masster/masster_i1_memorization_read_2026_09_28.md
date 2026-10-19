@@ -41,8 +41,8 @@ memorization instruments are:
 
 - the eval-mode train/val gap;
 - the route map, which corrupts one route at inference and compares train and val damage
-  ([route map](masster_route_map_2026_09_24.md),
-  [set-message probe on `c0`](masster_memorization_energy_vs_parts_2026_09_26.md#set-message-probe-on-c0-r2-nl1-and-nl2-2026-09-27));
+  (route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`),
+  set-message probe on `c0` (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`));
 - the novelty bins.
 
 ## Method
@@ -62,7 +62,7 @@ memorization instruments are:
     on `spec_df.pkl` md5 `bdc009bb…`.
 - **Full val split.** `i1`@59 also ran on all 52,020 val spectra, 5 min.
   - The probe's val sample is the `spec_id`-ordered prefix
-    ([audit, correction 8](masster_memorization_attempts_audit_2026_09_27.md#corrections-to-the-record)).
+    ([audit, correction 8](masster_memorization_audits.md#corrections-to-the-record)).
   - It turns out to be 90% Elite, against 74% for the split.
 - **`c0` references.**
   - The stored `c0`@42 probe (`output/allocator_route_nl_2026_09_26/`).
@@ -228,7 +228,9 @@ Paired `i1`@59 − `c0`@42 on the probe sample, by nearest-train Tanimoto. Stand
   point needs 100 spectra.
 - Everything is in `output/ev_ladder_census_2026_09_28/`. Velos (1,446 val spectra) is left out.
 
-![i1 vs c0 per NCE](../../figures/masster_i1_vs_c0_elite_vs_lumos_per_nce.png)
+The `i1` vs `c0` per-NCE figure (`masster_i1_vs_c0_elite_vs_lumos_per_nce.png`) was never
+committed, and `output/ev_ladder_census_2026_09_28/` no longer exists; only the whole-split
+table below remains.
 
 On the whole val split, with 95% molecule-bootstrap intervals for `i1`:
 

@@ -2,7 +2,7 @@
 # Base: nist20_ma_mi_merged_fast_batch512_cuda_lb64_c4a_base_s1.yml, same seed (397623), same
 # 128-epoch box and monitoring. The existing c4a_base_s1/s2 runs are the control (tail mean
 # 0.7270, the two replicates spanning 0.0007); read the 118-127 tail mean against them with the
-# +/-0.005 gate of docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md.
+# +/-0.005 gate of 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18.
 #
 # Three keys, deliberately, not a one-key arm. The control spends its depth in two places: 2
 # GINE_GSA atom layers, then 3 alternating bond<->atom refinement blocks inside

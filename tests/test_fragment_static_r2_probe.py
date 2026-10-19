@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "fragment_static_r2_probe.py"
+SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "debug" / "fragnnet" / "fragment_static_r2_probe.py"
 SPEC = importlib.util.spec_from_file_location("fragment_static_r2_probe", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 PROBE = importlib.util.module_from_spec(SPEC)

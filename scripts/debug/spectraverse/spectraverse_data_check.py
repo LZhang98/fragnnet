@@ -15,7 +15,7 @@
    SpectralEntropy is not on PyPI; pass a checkout of github.com/YuanyueLi/SpectralEntropy.
 
 See docs/notes/spectraverse_curation_paper.md and
-docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md.
+docs/findings/masster/spectraverse_masster_findings.md.
 """
 
 from __future__ import annotations

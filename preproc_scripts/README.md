@@ -82,10 +82,30 @@ and only warns when an MGF has no fold field at all (v1.0.0/v1.0.1).
 overwritten. A new `--output_name` would not do instead: step 2 labels the `dset` column with the
 `--dsets` name, and the Spectraverse configs and splits select the dataset `spectraverse`.
 
+`ion_mode` comes from the last character of the adduct (`+` gives `P`, `-` gives `N`). Before 2026-10-18 the reader gave
+`P` to any adduct containing a `+`, so `[M+Cl]-`, `[M+HCOOH-H]-` and `[M+CH3COOH-H]-` were labelled
+`P`; the stored v1.0.2 `data/proc/spectraverse/spec_df.pkl` (30,550 such spectra) still is. Only the
+`--ion_modes` split filter reads the column.
+
+#### Spectraverse v1.0.3
+`data/raw/spectraverse/spectraverse-1.0.3/spectraverse-1.0.3.mgf` (md5
+`52ed27db2d5b764a636fb2ce246004aa`, 464,228 records) has the same header keys as v1.0.2. Its `TITLE`
+numbers are unique but sparse (1..665,783), so `dset_spec_id` is no longer the record index.
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+    --input_format=spectraverse \
+    --output_format=csv \
+    --raw_data_dp=data/raw \
+    --output_dp=data/df_spectraverse_1_0_3 \
+    --output_name=spectraverse \
+    --mgf_file=spectraverse/spectraverse-1.0.3/spectraverse-1.0.3.mgf
+```
+
 **Never join `data/df/spectraverse_df.csv` or `data/df/spectraverse_fold_*.csv` to the current
 `data/proc/spectraverse`.** They are an older build (v1.0.0 era; `INDEX` and `FOLD_*` keys, 8-digit
 titles, 478,530 rows) whose `spec_id`/`dset_spec_id` do not match the current ones. See
-[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md)
+[the source and replicate audit](../docs/findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape)
 and [the curation note](../docs/notes/spectraverse_curation_paper.md).
 
 ### Enveda-180
@@ -103,6 +123,22 @@ python preproc_scripts/01_prepare_df.py \
     --jsonl_file=enveda-180/enveda-180-filtered.jsonl.gz
 ```
 
+### MultiMS2 and MS-DIAL 5 (ZenoTOF CID + EAD)
+Both are SCIEX ZenoTOF 7600 libraries with CID and EAD spectra; EAD rows get `frag_mode` `EAD` and
+their `col_energy` is the electron kinetic energy. Sources, counts and what each reader drops are in
+[the dataset finding](../docs/findings/zenotof_ead_libraries_2026_10_15.md).
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+    --input_format=multims2 \
+    --output_name=multims2 \
+    --mgf_file=multims2/MultiMS2/data/multims2_spectra.mgf
+python preproc_scripts/01_prepare_df.py \
+    --input_format=msdial5_ead \
+    --output_name=msdial5_ead \
+    --msp_dir=msdial5_ead/mspformat_716authenticstandards/subtracted
+```
+
 ## Step 2: Processing CSV into Pickle Files
 
 This step  reads the stage-1 CSVs, converts the data into binary format (pickle), writes pickles to `proc_dp` for training and evaluation.
@@ -112,7 +148,7 @@ This step  reads the stage-1 CSVs, converts the data into binary format (pickle)
 	- `mol_id`: integer id linking to `mol_df`.
 	- `prec_type`: standardized precursor/adduct string.
 	- `inst_type`: standardized instrument type: `ORB_F` (Orbitrap Fusion family, e.g. NIST's Lumos), `ORB` (every other Orbitrap: Elite, Velos, unnamed), `QTOF`, `IT`, `QQQ`, `EI`, `Other`. `FT` is retired and refused on load.
-	- `frag_mode`: standardized fragmentation mode.
+	- `frag_mode`: standardized fragmentation mode: `HCD`, `CID`, `EAD` (its `ace` is the electron kinetic energy), `EI`, or `NA`.
 	- `spec_type`: spectrum type (e.g., `MS2`).
 	- `ion_mode`: `P`/`N`.
 	- `dset`: dataset name.
@@ -128,7 +164,7 @@ This step  reads the stage-1 CSVs, converts the data into binary format (pickle)
 	- `formula`: molecular formula from source (dropped before saving when inconsistent with molecule formula).
 	- `inchikey`: full InChIKey from source (dropped before saving when inconsistent).
 	- `exact_mass`: exact mass from source (dropped before saving when inconsistent).
-	- `group_id`: grouping id for spectra sharing compound/precursor context.
+	- `group_id`: grouping id for spectra sharing compound/precursor context: one id per (`mol_id`, `prec_type`, `inst_type`, `frag_mode`), so merging never sums CID and EAD spectra. `frag_mode` joined the key on 2026-10-15; no earlier dataset had a group with two frag modes, so their ids are unchanged.
 
 - `mol_df.pkl` — contains molecule information, one row per unique canonical SMILES:
 	- `smiles`, `mol_id`, `mol` (RDKit Mol object).
@@ -186,11 +222,29 @@ record (488,797). `inst_type` comes from the MGF `INSTRUMENT_TYPE` (`orbitrap` g
 The stored `spec_df.pkl` was built on 2026-05-04 with the retired `FT` label; it was relabelled in place
 to `OB`/`ORB` on 2026-09-28 and renamed to `ORB` on 2026-10-01 (the two sections below). A fresh run
 emits `ORB` directly, so no migration is needed on a rebuild.
+
+#### Spectraverse v1.0.3
+```bash
+python preproc_scripts/02_prepare_proc.py \
+    --df_dp=data/df_spectraverse_1_0_3 \
+    --proc_dp=data/proc/spectraverse_1_0_3 \
+    --dsets spectraverse \
+    --skip_standardize
+```
+Built 2026-10-18: 464,228 spectra (none dropped; all debug pickles empty), 44,300 molecules, 96,537
+groups. `inst_type`: `ORB` 317,727, `QTOF` 119,871, `Other` 20,688, `NA` 5,942. `ion_mode`: `P`
+334,367, `N` 129,861, matching the MGF `IONMODE`. 232,506 spectra have an `ace`; `nce*` are NaN as
+in v1.0.2. md5: `spec_df.pkl` `a2a0fb63...1e56c3d`, `mol_df.pkl` `f797f152...a60e`.
 ### Enveda-180
 ```bash
 python preproc_scripts/02_prepare_proc.py \
     --proc_dp=data/proc/enveda_180 \
     --dsets enveda_180
+```
+### MultiMS2 and MS-DIAL 5
+```bash
+python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets multims2 --proc_dp data/proc/multims2
+python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets msdial5_ead --proc_dp data/proc/msdial5_ead
 ```
 
 ### Relabelling existing Orbitrap spectra (FT → ORB / ORB_F, 2026-09-28)
@@ -318,16 +372,18 @@ and train is the other eight folds. Every spectrum is in exactly one of the thre
 by 2D InChIKey (not by formula). Each `cv` holds `train_ids.csv`, `val_ids.csv`, `test_ids.csv`
 (`mol_id,spec_id,group_id`); the existing directory has no `stats.json`, but the rebuild writes one
 per `cv<k>`. See
-[the source and replicate audit](../docs/findings/masster/spectraverse_source_replicate_audit_2026_10_03.md).
+[the source and replicate audit](../docs/findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape).
 
 `build_benchmark_split.py` rebuilds them from the MGF, with `mol_id`/`spec_id`/`group_id` taken from the
 current `spec_df.pkl`. `--dst-split-dp` is required, has no default, and must not be the existing
-benchmark directory. A bare `--mgf-fp` selects the v1.0.2 MGF path above.
+benchmark directory. MGF records are matched to `spec_df` rows by `TITLE` number = `dset_spec_id`,
+so both the dense v1.0.2 and the sparse v1.0.3 titles work. A bare `--mgf-fp` and the default
+`--spec-fp` select v1.0.3 (next block); for v1.0.2 pass both paths:
 
 ```bash
 python preproc_scripts/spectraverse/build_benchmark_split.py \
     --spec-fp data/proc/spectraverse/spec_df.pkl \
-    --mgf-fp \
+    --mgf-fp data/raw/spectraverse/spectraverse-1.0.2/spectraverse-1.0.2.mgf \
     --expect-md5 50803b370a118299bfef3e9485ef6895 \
     --dst-split-dp data/split/spectraverse_benchmark_rebuild \
     --check-against data/split/spectraverse_benchmark
@@ -343,38 +399,59 @@ all 30 files, but its `mol_id` and `group_id` columns are a stale permutation of
 loaders select spectra by `spec_id` only; do not join on those two columns. The splits derived from it
 (variants below) inherit the same columns.
 
+v1.0.3 (the defaults):
+
+```bash
+python preproc_scripts/spectraverse/build_benchmark_split.py \
+    --mgf-fp \
+    --expect-md5 52ed27db2d5b764a636fb2ce246004aa \
+    --dst-split-dp data/split/spectraverse_1_0_3_benchmark
+```
+`--fold-fp data/df_spectraverse_1_0_3/spectraverse_fold.csv` gives byte-identical id files (checked
+2026-10-18).
+The ten folds are disjoint over 44,234 2D InChIKeys and each `cv<k>` covers every `spec_id` once.
+cv0 is train 367,561 / val 43,895 / test 52,772; cv1 is 367,274 / 52,772 / 44,182. Of the variants
+below, only the per-adduct NEIMS splits exist for v1.0.3 (2026-10-18, all nine adducts:
+`--adducts "[M+H]+" "[M-H]-" "[M+Na]+" "[M+NH4]+" "[M+HCOOH-H]-" "[M+K]+" "[M+CH3COOH-H]-" "[M+Cl]-" "[M]+"`).
+Some adduct folds are lopsided: `[M+CH3COOH-H]-` has 18 cv0 val spectra, and its cv1 test (4,483)
+is larger than its cv1 train (1,948).
+
 #### Spectraverse train-side variants
-Each reads `data/split/spectraverse_benchmark` and the current `data/proc/spectraverse/spec_df.pkl` and
-writes `cv<k>` directories. The first three also write one `stats.json` and change only the training
+Since 2026-10-18 every default path is v1.0.3: each reads `data/split/spectraverse_1_0_3_benchmark` and
+`data/proc/spectraverse_1_0_3/spec_df.pkl`, writes beside them, and writes `cv<k>` directories. The
+existing v1.0.2 variants (`data/split/spectraverse_benchmark_{dedup,subceil05,nomsdial,neims_adduct}`)
+were built with the then-default `data/proc/spectraverse` and `data/split/spectraverse_benchmark`;
+rebuilding one needs those paths passed explicitly (`--spec-fp`, `--src-split-dp`, `--dst-split-dp`
+and the script's other `data/proc` paths). The first three also write one `stats.json` and change only the training
 spectra: `val_ids.csv` and `test_ids.csv` are copied unchanged, so held-out scores stay comparable with
 the benchmark. They require `--folds` and were run for `--folds 0 1` only. `split_by_adduct.py` has no
 `--folds` and writes no `stats.json`.
 
 ```bash
-# Near-duplicate removal -> data/split/spectraverse_benchmark_dedup. One spectrum per cluster of
+# Near-duplicate removal -> data/split/spectraverse_1_0_3_benchmark_dedup. One spectrum per cluster of
 # same molecule + adduct spectra with cosine > 0.99 (instrument and CE must match; missing values match
-# anything). Also writes data/proc/spectraverse/near_dup_{clusters,edges}.csv.
+# anything). Also writes data/proc/spectraverse_1_0_3/near_dup_{clusters,edges}.csv.
 python preproc_scripts/spectraverse/dedup_train_split.py --folds 0 1
 
-# Drop train spectra with subformula ceiling <= 0.5 -> data/split/spectraverse_benchmark_subceil05.
-# Reuses data/proc/spectraverse/subformula_ceiling.csv if it exists (delete it after any spec_df
+# Drop train spectra with subformula ceiling <= 0.5 -> data/split/spectraverse_1_0_3_benchmark_subceil05.
+# Reuses data/proc/spectraverse_1_0_3/subformula_ceiling.csv if it exists (delete it after any spec_df
 # rebuild), else computes it.
 python preproc_scripts/spectraverse/clean_train_split.py --folds 0 1
 
-# Drop train spectra from a raw SOURCE -> data/split/spectraverse_benchmark_nomsdial. Reads SOURCE= from
-# the v1.0.2 MGF and writes data/proc/spectraverse/spec_source.csv. The default --dst-split-dp is the
+# Drop train spectra from a raw SOURCE -> data/split/spectraverse_1_0_3_benchmark_nomsdial. Reads SOURCE=
+# from the v1.0.3 MGF (keyed by TITLE number) and writes data/proc/spectraverse_1_0_3/spec_source.csv. The default --dst-split-dp is the
 # nomsdial directory whatever --drop-sources is; set --dst-split-dp when dropping another source.
 python preproc_scripts/spectraverse/source_filter_split.py --folds 0 1 --drop-sources MS-DIAL
 
-# Per-adduct splits for the NEIMS models -> data/split/spectraverse_benchmark_neims_adduct/<adduct>/cv<k>.
+# Per-adduct splits for the NEIMS models -> data/split/spectraverse_1_0_3_benchmark_neims_adduct/<adduct>/cv<k>.
 # All ten folds, and val and test are filtered to the adduct as well. The directory tag is the lowercase
 # adduct, e.g. m+h+, m-h-, m+.
 python preproc_scripts/spectraverse/split_by_adduct.py --adducts "[M+H]+" "[M-H]-" "[M+Na]+"
 ```
 
 Plans: [dedup](../docs/plans/masster/spectraverse_dedup_plan.md),
-[subformula-ceiling arms](../docs/plans/masster/spectraverse_short_clean_arms_plan.md),
-[merged train with MS-DIAL dropped](../docs/plans/masster/spectraverse_merged_train_plan.md).
+subformula-ceiling arms (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_short_clean_arms_plan.md`),
+merged train with MS-DIAL dropped (removed 2026-10-18; `git show 95341fce:docs/plans/masster/spectraverse_merged_train_plan.md`).
 The resulting train sizes are in each variant's `stats.json`.
 
 ### Enveda-180

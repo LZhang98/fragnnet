@@ -5,7 +5,7 @@
 > A literature search for the
 > [memorization-route plan](../plans/masster/masster_memorization_route_plan.md). Each
 > method family is mapped onto the mechanism the
-> [route map](../findings/masster/masster_route_map_2026_09_24.md) measured:
+> route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`) measured:
 >
 > - the encoder's global attention writes a per-(molecule, atom) key;
 > - the boundary block reads it;
@@ -114,7 +114,7 @@ version, and matters here because MASSter's per-batch overhead is sync-bound.
   about 2x compute; ESAM brings that down to about 1.4x.
 
 Status here: weight EMA already passed on both lineages (+0.0094 unmerged, +0.0097 merged,
-[ranking-transfer tail read](../plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24)).
+ranking-transfer tail read (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md`)).
 SAM is an optional later arm.
 
 ## 6. Augment inputs, with caution
@@ -358,7 +358,7 @@ Links go to the Consensus paper pages.
   A molecule-identity key is exactly such an easy-to-fit patch. Every MASSter run, the Step 1
   arms included, uses a constant `lr: 1e-3` with no warmup or decay. The one LR-decay arm with a
   result, `d3` (cosine decay with a 1000-step warmup; merged lineage; n=1), gained +0.0072
-  ([overfit read-out](../findings/masster/masster_overfit_readout_2026_09_22.md)). See
+  (overfit read-out (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md`)). See
   decision C in the plan.
 - **Ratio of learning rate to batch size.** A higher ratio finds wider minima and generalizes
   better

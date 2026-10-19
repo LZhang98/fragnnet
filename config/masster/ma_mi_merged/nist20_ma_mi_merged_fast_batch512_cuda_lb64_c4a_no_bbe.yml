@@ -17,7 +17,7 @@
 # lift survived. The 2026-07-13 removal was a different FraGNNet idea (BoundaryBondEncoder);
 # this key reuses CutBondEncoder and first appeared in MASSter on 2026-09-20, so there is no
 # earlier removal to stand. Result (tail 118-127): 0.7246, -0.0024 vs the 0.7270 control, inside
-# the gate. See docs/findings/masster/masster_campaign_readout_2026_09_21.md section 8.
+# the gate. See 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md, removed 2026-10-18 section 8.
 #
 # HORIZON (2026-09-21): resized 630 -> 128 epochs. The horizon probe `tkkesus9` ran the full
 # 630-epoch schedule and val cosine SATURATES BY ~EPOCH 100: 0.7232@64 -> 0.7292@100 ->

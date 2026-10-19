@@ -109,4 +109,47 @@ def test_dataset_filter_runs_before_preprocessing(
         masster_max_h_transfer=0,
         masster_include_cmf=False,
         masster_h_transfer_bound="none",
+        masster_smarts_templates=False,
+        masster_rewire_rules=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("smarts", "rewire", "expected"), [(False, False, False), (True, False, True), (False, True, True)]
+)
+def test_dataset_emits_the_graph_molecule_for_chemistry_matching(
+    monkeypatch: pytest.MonkeyPatch, smarts: bool, rewire: bool, expected: bool
+) -> None:
+    monkeypatch.setattr(SpecMolDataset, "_base_init", lambda self, **kwargs: None)
+    monkeypatch.setattr(SpecMolDataset, "_preprocess_spec", lambda self, cache: None)
+    monkeypatch.setattr(SpecMolDataset, "_preprocess_mol", lambda self, cache: None)
+    monkeypatch.setattr(
+        "fragnnet.models.masster.masster_hooks.MassterHooks.filter_dataset",
+        lambda self, dataset, config: None,
+    )
+    dataset = SpecMolDataset(
+        spec_fp="",
+        mol_fp="",
+        split_dp="",
+        split="val",
+        subsample_params={},
+        spec_params={},
+        mol_params={"mf": False, "smiles": True, "fingerprint": False, "pyg": False},
+        model_type="masster",
+        masster_smarts_templates=smarts,
+        masster_rewire_rules=rewire,
+    )
+    assert dataset.emit_graph_mol is expected
+    # A molecule whose atoms are not in the order its SMILES parses to (a retrieval candidate).
+    smiles = "CCO.c1ccccc1"
+    parsed = Chem.MolFromSmiles(smiles)
+    mol = Chem.RenumberAtoms(parsed, list(reversed(range(parsed.GetNumAtoms()))))
+    mol_data = dataset._process_mol({"mol": mol, "smiles": smiles})
+    assert mol_data["mol_smiles"] == [smiles]
+    if not expected:
+        assert "mol_graph_binary" not in mol_data
+        return
+    (binary,) = mol_data["mol_graph_binary"]
+    restored = Chem.Mol(binary)
+    assert [a.GetAtomicNum() for a in restored.GetAtoms()] == [a.GetAtomicNum() for a in mol.GetAtoms()]
+    assert [a.GetAtomicNum() for a in restored.GetAtoms()] != [a.GetAtomicNum() for a in parsed.GetAtoms()]

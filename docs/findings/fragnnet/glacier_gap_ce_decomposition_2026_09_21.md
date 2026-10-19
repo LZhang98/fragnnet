@@ -41,7 +41,7 @@ training data.** The entire gap is CE-dependent intensity allocation.
 
 ## How to get there, ranked
 
-1. **Marginal sibling-ranking loss on P(n)** ([sibling-ranking plan](../../plans/fragnnet/sibling_ranking_target_plan.md), GREEN,
+1. **Marginal sibling-ranking loss on P(n)** (sibling-ranking plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md`), GREEN,
    583,539 clean targets at margin 0.1). A ranking/allocation fix, and
    the branching headroom probe ([FluxMPNN plan](../../plans/fragnnet/fluxmpnn_plan.md)) independently measured that observed sibling branching is
    strongly CE-dependent (same-NCE floor 0.11 -> 0.68 at max NCE gap) — the same mechanism reached

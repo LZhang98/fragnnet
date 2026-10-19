@@ -9,7 +9,7 @@ from torch_geometric.data import Batch
 from fragnnet.models.masster.candidates.smarts_templates import build_masster_templates
 from fragnnet.models.masster.masster_pl import MassterPL
 from fragnnet.utils.feat_utils import get_mol_graph
-from scripts.eval.masster_ion_h_top_k_sweep import (
+from scripts.debug.masster_core.masster_ion_h_top_k_sweep import (
     build_selections,
     build_support_selections,
     evaluate_selection,
@@ -18,7 +18,7 @@ from scripts.eval.masster_ion_h_top_k_sweep import (
     validate_joint_relative_thresholds,
     validate_top_ks,
 )
-from scripts.eval.masster_mask_budget_sweep import evaluate_budget
+from scripts.debug.masster_core.masster_mask_budget_sweep import evaluate_budget
 
 
 @pytest.fixture
@@ -45,6 +45,7 @@ def test_evaluate_selection_prepares_smarts_templates(
             ]
         ),
         "mol_smiles": [smiles],
+        "mol_graph_binary": [molecule.ToBinary()],
     }
     expected_templates = build_masster_templates(molecule)
     assert expected_templates

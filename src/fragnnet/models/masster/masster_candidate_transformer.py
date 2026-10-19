@@ -722,6 +722,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         nl_positional_encoding: bool = False,
         candidate_graph: bool = False,
         rule_pathway_dim: int = 0,
+        rewire_pathway_dim: int = 0,
     ) -> None:
         super().__init__()
         dimensions = (
@@ -796,6 +797,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             )
         if rule_pathway_dim < 0:
             raise ValueError(f"rule_pathway_dim must be nonnegative, got {rule_pathway_dim}")
+        if rewire_pathway_dim < 0:
+            raise ValueError(f"rewire_pathway_dim must be nonnegative, got {rewire_pathway_dim}")
 
         self.fragment_embedding_dim = fragment_embedding_dim
         self.context_dim = context_dim
@@ -948,6 +951,14 @@ class CandidateIntensityTransformerHead(nn.Module):
             with th.random.fork_rng(devices=[]):
                 self.rule_pathway_residual = nn.Linear(rule_pathway_dim, model_dim, bias=False)
             nn.init.zeros_(self.rule_pathway_residual.weight)
+        # Rewire rule provenance (arm a0): one column per REWIRE_RULE_VOCABULARY rule, zero-init
+        # and bias-free like the SMARTS branch. Absent (no module, no RNG draw) when 0.
+        self.rewire_pathway_dim = rewire_pathway_dim
+        self.rewire_pathway_residual: nn.Linear | None = None
+        if rewire_pathway_dim > 0:
+            with th.random.fork_rng(devices=[]):
+                self.rewire_pathway_residual = nn.Linear(rewire_pathway_dim, model_dim, bias=False)
+            nn.init.zeros_(self.rewire_pathway_residual.weight)
 
     def _load_from_state_dict(
         self,
@@ -1267,6 +1278,7 @@ class CandidateIntensityTransformerHead(nn.Module):
         precursor_neutral_masses: th.Tensor | None = None,
         candidate_graph_edges: th.Tensor | None = None,
         rule_pathway_features: th.Tensor | None = None,
+        rewire_pathway_features: th.Tensor | None = None,
     ) -> tuple[th.Tensor, ...]:
         """Return intensity logits and, when enabled, one OOS logit per molecule.
 
@@ -1281,6 +1293,8 @@ class CandidateIntensityTransformerHead(nn.Module):
         ``rule_pathway_features`` holds each component's 0/1 SMARTS rule indicators, shape
         ``(num_components, rule_pathway_dim)``, required exactly when ``rule_pathway_dim`` is
         positive.
+        ``rewire_pathway_features`` likewise holds the 0/1 rewire rule indicators, shape
+        ``(num_components, rewire_pathway_dim)``.
         """
         embeddings = (fragment_embeddings, complement_embeddings, boundary_embeddings)
         num_components = fragment_embeddings.shape[0]
@@ -1305,9 +1319,10 @@ class CandidateIntensityTransformerHead(nn.Module):
             ((component_mask_indices >= 0) & (component_mask_indices < num_masks)).all(),
             "component_mask_indices references a missing mask",
         )
-        mask_component_counts = th.bincount(
-            component_mask_indices,
-            minlength=num_masks,
+        # Every index was just checked to lie in [0, num_masks), so this equals th.bincount
+        # without its host syncs.
+        mask_component_counts = component_mask_indices.new_zeros(num_masks).index_add_(
+            0, component_mask_indices, th.ones_like(component_mask_indices)
         )
         _validate_tensor_condition(
             (mask_component_counts > 0).all(),
@@ -1356,6 +1371,19 @@ class CandidateIntensityTransformerHead(nn.Module):
                 f"rule_pathway_features must have shape ({num_components}, "
                 f"{self.rule_pathway_dim})"
             )
+        if (self.rewire_pathway_dim > 0) != (rewire_pathway_features is not None):
+            raise ValueError(
+                "rewire_pathway_features must be supplied exactly when rewire_pathway_dim is "
+                "positive"
+            )
+        if rewire_pathway_features is not None and rewire_pathway_features.shape != (
+            num_components,
+            self.rewire_pathway_dim,
+        ):
+            raise ValueError(
+                f"rewire_pathway_features must have shape ({num_components}, "
+                f"{self.rewire_pathway_dim})"
+            )
 
         features = [*embeddings]
         if context is not None:
@@ -1384,6 +1412,8 @@ class CandidateIntensityTransformerHead(nn.Module):
             tokens = tokens + self.connectivity_residual(connectivity_embeddings.to(tokens))
         if self.rule_pathway_residual is not None:
             tokens = tokens + self.rule_pathway_residual(rule_pathway_features.to(tokens))
+        if self.rewire_pathway_residual is not None:
+            tokens = tokens + self.rewire_pathway_residual(rewire_pathway_features.to(tokens))
         if self.input_dropout > 0.0:
             tokens = F.dropout(tokens, p=self.input_dropout, training=self.training)
         if self.ce_conditioned != (ce_features is not None):

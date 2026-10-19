@@ -198,7 +198,7 @@ that differ only by H count onto one mask.
 NL rules fire when the product contains a **new bond**, so its atoms are disconnected in the
 precursor graph (BFS cannot produce them). The retained atoms get an H cap at each free valence;
 the correct formula lands at H_delta = -2. Rule principle from the NIST FT NCE 30-40 worst-case
-audit (2026-06-20; case list in [rearrangement_smarts.md](rearrangement_smarts.md)): the GNN only
+audit (2026-06-20; case list in [smarts_surveys.md](smarts_surveys.md#gas-phase-msms-rearrangement-smarts-review)): the GNN only
 re-ranks fragments already in the DAG, so any new-bond pathway needs a `NeutralLossRule` first.
 
 | Rule | SMARTS and notes |

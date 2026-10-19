@@ -15,6 +15,7 @@ plans are kept deliberately; read a hub's "Settled" list before re-proposing a m
 | [project-state.md](project-state.md) | Dashboard: one block per workstream, next actions, uncommitted work |
 | [architecture.md](architecture.md) | Verified entry points and architectural boundaries |
 | [workflow/session.md](workflow/session.md) | Development, experiment provenance, validation, and handoff |
+| [workflow/history_and_summary.md](workflow/history_and_summary.md) | Handoff summaries, plan-log rotation to `docs/history/`, project-state compaction, merging and retiring documents |
 | [rules/engineering.md](rules/engineering.md) | Core behavior, environment, compatibility, validation, and Git rules |
 | [rules/python.md](rules/python.md) | Python formatting, imports, docstrings, testing, and hyperparameters |
 | [rules/documentation.md](rules/documentation.md) | Placement, status vocabulary, hubs, project-state cap, history |
@@ -34,6 +35,20 @@ Each hub has "Where it stands", "Open threads", "Settled — read before re-prop
 | [nist23_ei.md](workstreams/nist23_ei.md) | MASSter on nominal NIST23 EI |
 | [casmi_enveda.md](workstreams/casmi_enveda.md) | CASMI 2026 data, Enveda-180, combined PCDL/NIST23/Enveda split, shared NIST data quality and isotope/subformula detection |
 | [fragnnet.md](workstreams/fragnnet.md) | FraGNNet and the DAG: recall, oracle ceilings, intensity ranking, FluxMPNN, conditioning refactor, curated missing-peak logs |
+
+## results/ — one ledger per benchmark
+
+Every measured result as a table row (run@epoch, split, setup, metrics, comparator) linking the
+finding or plan that stays canonical. Each ledger opens with "Current best" and "Comparability".
+Append a row at handoff ([rule](rules/documentation.md#where-each-kind-of-fact-goes)).
+
+| Ledger | Covers |
+| --- | --- |
+| [msgym.md](results/msgym.md) | MassSpecGym 1.5: test spectrum prediction vs GLACIER, val screens and sweep, formula- and mass-track retrieval, pilot, swap tests |
+| [nist20.md](results/nist20.md) | NIST20 MS/MS: MASSter `i`-line tails and checkpoint reads, merged 128-epoch screen, FraGNNet, DAG ceilings, GLACIER Table 15, seed spreads |
+| [spectraverse.md](results/spectraverse.md) | Spectraverse v1.0.2 cv0/cv1 controls, oracle ceilings, recall rescoring, source/adduct strata |
+| [nist23_ei.md](results/nist23_ei.md) | Nominal NIST23 EI (e0/e1/e5), support oracles, EI SMARTS gate, held-out HR-EI by library and tolerance |
+| [casmi_enveda.md](results/casmi_enveda.md) | RT/CCS debug runs and Enveda-180 isotope ceilings; no trained CASMI/Enveda/EAD result yet |
 
 ## guides/ — how to run things
 
@@ -60,10 +75,11 @@ Data preprocessing commands (including Spectraverse folds) are in
 | [frag_gen_prepass.md](reference/frag_gen_prepass.md) | How BFS + SMARTS prepass build the fragment DAG. |
 | [feature_set_audit.md](reference/feature_set_audit.md) | Which FraGNNet features are wired. Its "open gaps" line is stale (`a_ring_size`/`b_ring` are enabled in 44 configs). |
 | [masster_feature_set_audit.md](reference/masster_feature_set_audit.md) | Which atom/bond/candidate/conditioning features MASSter consumes. |
+| [masster_method.md](reference/masster_method.md) | Formal MASSter method, probability-ranked candidate-selection algorithm, and comparison with FraGNNet. |
+| [masster_ei_method.md](reference/masster_ei_method.md) | Probabilistic MASSter EI-MS method, nominal/exact ion channels, natural isotope assembly, and training setup. |
 | [pairwise_loss.md](reference/pairwise_loss.md) | Design of the shipped pairwise loss + sampler. |
 | [detect_isotope_peaks_tuning.md](reference/detect_isotope_peaks_tuning.md) | Isotope-peak cleanup for training. |
-| [smarts.md](reference/smarts.md) | 72-rule coverage survey with per-rule status codes. |
-| [rearrangement_smarts.md](reference/rearrangement_smarts.md) | Literature survey + SMARTS validation for gas-phase rearrangements. |
+| [smarts_surveys.md](reference/smarts_surveys.md) | PPGB-MS2 72-rule coverage survey and gas-phase rearrangement SMIRKS review (merged 2026-10-18). |
 | [masster_smarts_rules.md](reference/masster_smarts_rules.md) | MASSter SMARTS allowlist, literature additions, exclusions, and validation gate. |
 | [fragnnet_pl_memory_review.md](reference/fragnnet_pl_memory_review.md) | GPU/CPU memory pressure points in the training loop, and FraGNNet training memory levers. |
 | [inference_pitfalls.md](reference/inference_pitfalls.md) | Fixed inference/DAG bugs, `dags.h5` and HDF5 export sizing, batching, config precedence (checkpoint hparams are the custom config), known-broken scripts. |
@@ -89,13 +105,16 @@ Data preprocessing commands (including Spectraverse folds) are in
 Verbatim dated logs moved out of live documents on 2026-10-06. Read the hub or plan first;
 these are records, not current guidance.
 
+[retired_docs.md](history/retired_docs.md) summarizes the 68 plans and findings removed on
+2026-10-18, by workstream, each with the Git command that shows its last version.
+
 | Doc | Moved from |
 |-----|-----------|
 | [handoff_log.md](history/handoff_log.md) | `project-state.md` handoff, research navigation and next-task sections |
 | [masster_memorization_route_plan_log.md](history/masster_memorization_route_plan_log.md) | [memorization-route plan](plans/masster/masster_memorization_route_plan.md) |
 | [masster_plan_log.md](history/masster_plan_log.md) | [MASSter plan](plans/masster/masster_plan.md) |
-| [masster_ion_h_channel_selection_plan_log.md](history/masster_ion_h_channel_selection_plan_log.md) | [ion-H channel selection plan](plans/masster/masster_ion_h_channel_selection_plan.md) |
-| [global_fragment_intensity_ranking_experiment_plan_log.md](history/global_fragment_intensity_ranking_experiment_plan_log.md) | [global intensity ranking plan](plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md) |
+| [masster_ion_h_channel_selection_plan_log.md](history/masster_ion_h_channel_selection_plan_log.md) | ion-H channel selection plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ion_h_channel_selection_plan.md`) |
+| [global_fragment_intensity_ranking_experiment_plan_log.md](history/global_fragment_intensity_ranking_experiment_plan_log.md) | global intensity ranking plan (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/global_fragment_intensity_ranking_experiment_plan.md`) |
 | [repo_reorg_plan_log.md](history/repo_reorg_plan_log.md) | [repository reorganization plan](plans/repo_reorg_plan.md) |
 
 ### Removed historical plans
@@ -109,7 +128,7 @@ history only; do not treat references to them as current guidance.
 [missing_peak_findings.md](findings/fragnnet/missing_peak_findings.md) (FT `[M+H]+`) and
 [missing_peak_findings_m-h.md](findings/fragnnet/missing_peak_findings_m-h.md) (FT `[M-H]-`)
 are append-only. Add sections with `/analyze-subclass` and `/analyze-subclass-mh`; the
-measurement comes from `scripts/eval/find_missing_peaks.py`.
+measurement comes from `scripts/debug/dag/find_missing_peaks.py`.
 `src/fragnnet/fragmentation/smarts_prepass.py` cites the first one by path.
 
 Spectrum cleanup is implemented in
@@ -118,5 +137,11 @@ Spectrum cleanup is implemented in
 
 ## figures/
 
-PNGs referenced by findings, e.g. [oracle_recall_wrecall_by_ce.md](findings/fragnnet/oracle_recall_wrecall_by_ce.md)
-(generated by `scripts/plotting/plot_oracle_ce_coverage.py`).
+Images and drawing sources (PNG, SVG, draw.io) embedded in documents. Put each figure's data
+in `tables/`, not here.
+
+## tables/
+
+Small result CSVs that a finding or plan cites, one subdirectory per citing document stem
+(`tables/<doc stem>/`). Copy the summary tables here so they are versioned; per-query or
+per-candidate outputs and logs stay in `output/` (see [artifact rules](rules/artifacts.md)).

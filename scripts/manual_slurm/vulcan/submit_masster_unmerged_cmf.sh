@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate (but do not submit) the Vulcan L40S job for the unmerged MASSter CMF anchor.
 #
-# This is the corrected unmerged control of docs/plans/masster/masster_improvement_plan.md step 1.
+# This is the corrected unmerged control of 95341fce:docs/plans/masster/masster_improvement_plan.md, removed 2026-10-18 step 1.
 # Two things differ from the earlier three-hour unmerged jobs that never converged:
 #   - a twelve-hour wall time;
 #   - a job id (j=), which records job_id/<JOB_NAME>.id and makes a re-submission resume

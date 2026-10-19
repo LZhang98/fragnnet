@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import torch
 
-SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "eval" / "node_vs_h_transfer_diagnostic.py"
+SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "debug" / "masster_core" / "node_vs_h_transfer_diagnostic.py"
 SPEC = importlib.util.spec_from_file_location(
     "node_vs_h_transfer_diagnostic",
     SCRIPT_PATH,

@@ -26,7 +26,7 @@ see whether fragment-level scoring is worth building at full scale.
     has one Orbitrap label, and the sorted embedding rows (FT, QTOF) → (ORB, QTOF) are
     unchanged. The weights are not modified.
   - **Re-check under current code:** MSGYM test mean `cos_sim_0.01` is **0.571272**, against
-    0.571277 recorded ([GLACIER comparison](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md)).
+    0.571277 recorded ([GLACIER comparison](masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set)).
     87 of 9,954 spectra moved by more than 1e-4 (max 0.0145).
 - **Queries.** 400 molecules sampled with seed 20261002 from the 2,331 molecules of the
   `ms_gym_benchmark_1_5` val split (all `[M+H]+` with a CE), one spectrum each. That gives 375
@@ -215,7 +215,7 @@ distinct formulas.
 
 The same 72,946 candidate spectra (each under its query's CE, instrument and precursor) were run
 through ms-pred's `predict_smis_joint.py` with the checkpoint, ms-pred checkout and
-`--sparse-k 256` of the [GLACIER comparison](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md).
+`--sparse-k 256` of the [GLACIER comparison](masster_glacier_released_ckpt.md#masster-vs-glaciers-released-checkpoint-on-the-massspecgym-simulation-test-set).
 Its output is squared to linear intensity. Every candidate got a prediction.
 
 - `cos` uses that comparison's exact CUDA scorer.
@@ -331,7 +331,7 @@ All under `output/annotation_retrieval_pilot_2026_10_02/`:
 
 ## Retrieval versus forward similarity (2026-10-03, interim full-test read)
 
-> Superseded by the complete 20-shard read: [full formula-track finding](masster_msgym_formula_retrieval_full_2026_10_03.md).
+> Superseded by the complete 20-shard read: [full formula-track finding](masster_msgym_formula_retrieval.md#msgym-15-formula-track-retrieval-full-val-and-test-masster-vs-glacier).
 
 The full-test run now supersedes the 400-query pilot for the available matched population.
 Read `output/msgym_formula_retrieval_2026_10_02/interim_compare.py` against the completed
@@ -375,4 +375,4 @@ strongest-decoy peak comparison is the next causal check.
 Verification: reran the existing interim comparison with the configured FRAGNNET-GPU interpreter;
 checked margins directly from its loaded MASSter/GLACIER candidate tables. No inference or
 training launched. The simulation-only instrument audit is linked in the
-[forward comparison](masster_msgym_vs_glacier_released_ckpt_2026_09_24.md#instrument-prediction-audit-2026-10-03).
+[forward comparison](masster_glacier_released_ckpt.md#instrument-prediction-audit-2026-10-03).

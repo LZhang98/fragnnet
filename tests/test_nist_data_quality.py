@@ -13,7 +13,7 @@ import pytest
 import torch as th
 from matplotlib import pyplot as plt
 
-EVAL_SCRIPTS_DP = Path(__file__).parents[1] / "scripts" / "eval"
+EVAL_SCRIPTS_DP = Path(__file__).parents[1] / "scripts" / "debug" / "oracle"
 sys.path.insert(0, str(EVAL_SCRIPTS_DP))
 
 import dag_oracle_scores  # noqa: E402

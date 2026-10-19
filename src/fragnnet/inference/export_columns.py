@@ -59,6 +59,7 @@ COLUMN_SPECS = (
     ColumnSpec("pred_formula_adducts", "formula", flag="return_annotation"),
     ColumnSpec("pred_node_ccs", "node", flag="return_cc_hash"),
     ColumnSpec("pred_node_rules", "node", flag="return_rule_provenance"),
+    ColumnSpec("pred_node_rewire_rules", "node", flag="return_rewire_provenance"),
 )
 
 
@@ -70,6 +71,7 @@ def selected_column_specs(
     return_formula_str: bool,
     return_cc_hash: bool,
     return_rule_provenance: bool = False,
+    return_rewire_provenance: bool = False,
 ) -> list[ColumnSpec]:
     """The columns this run emits, in order.
 
@@ -78,8 +80,10 @@ def selected_column_specs(
     names and the row values are built from this one function, so a row can never be
     misaligned against its header.
 
-    `return_rule_provenance` adds `pred_node_rules`, MASSter's SMARTS rules behind each
-    node. It describes the nodes `pred_node_ccs` identifies, so it requires `return_cc_hash`.
+    `return_rule_provenance` adds `pred_node_rules` (MASSter's SMARTS rules behind each
+    node). It describes the nodes `pred_node_ccs` identifies, so it requires `return_cc_hash`.
+    `return_rewire_provenance` (needs `return_rule_provenance`; see `rewire_provenance_enabled`) adds
+    `pred_node_rewire_rules`, so a run without rewire keeps its column set unchanged.
 
     Raises:
         ValueError: If `return_rule_provenance` is set without `return_cc_hash`.
@@ -90,6 +94,7 @@ def selected_column_specs(
         "return_formula_str": return_formula_str,
         "return_cc_hash": return_cc_hash,
         "return_rule_provenance": return_rule_provenance,
+        "return_rewire_provenance": return_rule_provenance and return_rewire_provenance,
         # `pred_formula_adducts` is what makes either annotation resolvable: it turns a
         # neutral `pred_formula_strs` entry into the observed ion, and tells a `pred_node_ccs`
         # bitmask which adduct that fragment carries on the CRF/CMF row it was reached by.
@@ -331,6 +336,15 @@ def get_score_types(config_d: dict[str, Any]) -> list[str]:
     return eval_score_types
 
 
+def rewire_provenance_enabled(config_d: Any) -> bool:
+    """True for a MASSter model trained/run with masster_rewire_rules (a checkpoint predating the key: False)."""
+    return (
+        "masster_rewire_rules" in config_d
+        and config_d["model_type"] == "masster"
+        and bool(config_d["masster_rewire_rules"])
+    )
+
+
 def get_tabular_columns(
     config_d: dict[str, Any],
     return_formula_str: bool = False,
@@ -354,7 +368,9 @@ def get_tabular_columns(
     """
     columns_name = [
         c.name
-        for c in selected_column_specs(return_formula_str, return_cc_hash, return_rule_provenance)
+        for c in selected_column_specs(
+            return_formula_str, return_cc_hash, return_rule_provenance, rewire_provenance_enabled(config_d)
+        )
     ]
     columns_name.extend(get_score_types(config_d))
 

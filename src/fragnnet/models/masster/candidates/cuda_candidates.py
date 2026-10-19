@@ -1,4 +1,9 @@
-"""Optional CUDA candidates: exact ranking, topology and differentiable scoring.
+"""CUDA candidates: exact ranking, topology and differentiable scoring.
+
+Status: PRODUCTION. This is the backend of the current recipe (`i4`) and nearly every MASSter
+experiment config, selected with ``masster_candidate_backend: cuda``; the template default
+stays ``cpu``. Supports finite FP32 logits, one mixture, unique-fragment mode and no mask
+floor; unsupported requests raise instead of falling back to CPU.
 
 Static graph metadata may be prepared on CPU. Proposal logits and ranked-mask CSR
 remain on CUDA; only grouped-equality flags and native ragged counts synchronize.

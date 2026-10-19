@@ -146,8 +146,8 @@ if __name__ == "__main__":
         "--return_rule_provenance",
         type=booltype,
         default=False,
-        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node "
-        "(requires --return_cc_hash)",
+        help="MASSter only: add pred_node_rules, the SMARTS rules behind each node, and "
+        "pred_node_rewire_rules, its rewire rules (requires --return_cc_hash)",
     )
     parser.add_argument(
         "--drop_none_cols",

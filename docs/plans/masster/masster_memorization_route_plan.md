@@ -3,15 +3,15 @@
 > **Status:** ACTIVE · **Updated:** 2026-10-06
 > Next check is the computed-energetics information gate (policy and protocol first); route-removal, architecture and conditioning screens are finished with no single-seed pass beyond `i3`/`i4`. Dated log: [history](../../history/masster_memorization_route_plan_log.md).
 
-The [memorization probe](../../findings/masster/masster_memorization_route_probe_2026_09_23.md)
+The memorization probe (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_route_probe_2026_09_23.md`)
 found the lookup in the boundary block. But every candidate input MASSter builds comes from
 the same globally attended atom embeddings, so blocking that one input can move the lookup
 instead of removing it. This plan first maps every route by which the lookup can reach the
 output, including two the probe cannot see: the encoder, and the ion/H head. It then removes
 molecule identity at its source, or caps what passes after the token, and re-maps the routes
-after each change. It complements the [ranking-transfer](masster_ranking_transfer_plan.md)
+after each change. It complements the ranking-transfer (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md`)
 arms `h1`, `h2` and `u2`. The identity-blind lability prior in the final score belongs to the
-[intensity-displacement plan](masster_intensity_displacement_plan.md) (its arm 2A). Adding
+intensity-displacement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_intensity_displacement_plan.md`) (its arm 2A). Adding
 data is out of scope.
 
 
@@ -63,7 +63,7 @@ results on the old `FT` labels (`f0`/`f1`) are retired. Screen: tail mean of
 
 ## Objective and acceptance
 
-**Review, 2026-09-27:** the [plan review](../../findings/masster/masster_memorization_plan_review_2026_09_27.md)
+**Review, 2026-09-27:** the plan review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_memorization_plan_review_2026_09_27.md`)
 recommends separating held-out performance promotion from the mechanistic criteria below.
 Route corruption measures dependence, not a guarantee that removing identity improves transfer;
 the numerical seed-noise thresholds are screening heuristics. Historical gates and results are
@@ -77,7 +77,7 @@ Make the intensity allocation transfer to new molecules. On unmerged `[M+H]+`/FT
 - The eval-mode train/val cosine gap is 0.19, and coverage differs by 0.007.
 - The ranking gap is 0.011 on a train sample and 0.121 on val.
 - The base-peak hit rate is 84.5% on train and 56.7% on val
-  ([ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md)).
+  (ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)).
 
 The model fits each training molecule and ranks new ones poorly.
 
@@ -91,7 +91,7 @@ An arm passes only if all five hold against a same-code control at matched epoch
    eval-mode gap falling. No route's train/val asymmetry at matched validation damage may grow
    beyond its control value.
 4. **Novelty.** The gain is largest in the nearest-train Tanimoto bins at or below 0.6
-   ([variance-novelty](../../findings/masster/masster_variance_novelty_2026_09_24.md)).
+   (variance-novelty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)).
 5. **Coverage.** `wrecall` stays within 0.005 of the control.
 
 Narrowing the gap by lowering train fit is underfitting, not a pass. `drop03` (−0.0149) did
@@ -133,8 +133,8 @@ Where the lookup can get its key (K), where it can be stored (S), and what drive
 | K1 | **Global attention in the encoder.** Every atom embedding carries a whole-molecule read-out, so every token input derived from atoms identifies the molecule. The encoder is CE-blind, so a molecule's key is identical across its 12.4 spectra: about 800 presentations of the same key over 64 epochs. | No MASSter run compares GINE with GINE_GSA on the current lineage. The August GINE runs (val about 0.60) predate most of today's model. `g1` (5-layer encoder, no bond head, no `CutBondEncoder`) was −0.016. | no |
 | K2 | **The boundary block.** Given the precursor, the oriented cut set fixes the fragment, and `in⊙out` multiplies two global read-outs. So this block separates the 256 candidates sharply *and* names the molecule. The encoder is 0.79M parameters with no dropout ([`base_model.py:857`](../../../src/fragnnet/model/base_model.py#L948)), and `candidate_atom_dropout` skips it by design. | Probe: at matched validation damage, boundary corruption leaves a 0.022 gap against 0.059-0.086 for the pools. `c4a_no_bbe` (endpoint mean instead of the encoder) was −0.0024, with no train metrics and no checkpoint. | yes |
 | K3 | **Fragment and complement pools.** They name the molecule but separate candidates only weakly, since overlapping fragments share most of their atoms. | Probe: used symmetrically by both splits today. `e2`/`e3` (atom dropout on the pools only) were null. | yes |
-| K4 | **Exact descriptors and inputs.** `c_mass` (log1p neutral mass plus precursor mass fraction) nearly fixes the formula. `c_charge` and the `a_charge` atom input are continuous Gasteiger values. | Probe: descriptors used symmetrically. Removing `c_mass` +0.0012, `c_charge` −0.0012, `a_charge` −0.0025, all inside the merged ±0.005 gate ([campaign read-out §8](../../findings/masster/masster_campaign_readout_2026_09_21.md#8-the-bundles-leave-one-out-arms-read-at-the-128-epoch-screen-added-2026-09-24)). | partly |
-| K5 | **The candidate set.** In evaluation, the 256 selected fragments are a fixed function of the molecule, and the allocator attends over all of them. | Probe: `set_drop` closes 9-10% of the gap. Training already perturbs the set through BatchNorm, and the lookup forms anyway. (A random-weight probe measured train-versus-eval Jaccard 0.60-0.77 at dropout 0.1; the trained magnitude is unmeasured, [regularization audit §2.2](../../findings/masster/masster_regularization_audit_2026_09_19.md).) | yes |
+| K4 | **Exact descriptors and inputs.** `c_mass` (log1p neutral mass plus precursor mass fraction) nearly fixes the formula. `c_charge` and the `a_charge` atom input are continuous Gasteiger values. | Probe: descriptors used symmetrically. Removing `c_mass` +0.0012, `c_charge` −0.0012, `a_charge` −0.0025, all inside the merged ±0.005 gate (campaign read-out §8 (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_campaign_readout_2026_09_21.md`)). | partly |
+| K5 | **The candidate set.** In evaluation, the 256 selected fragments are a fixed function of the molecule, and the allocator attends over all of them. | Probe: `set_drop` closes 9-10% of the gap. Training already perturbs the set through BatchNorm, and the lookup forms anyway. (A random-weight probe measured train-versus-eval Jaccard 0.60-0.77 at dropout 0.1; the trained magnitude is unmeasured, regularization audit §2.2 (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_regularization_audit_2026_09_19.md`).) | yes |
 | S1 | **Allocator capacity.** No dropout on the token projection or the cut-bond encoder. | `a2_full_attention` cut the head 43.6% and scored +0.0030, so val does not need this capacity. `h1`/`h2` are prepared. | partly |
 | S2 | **The ion/H head: a second per-candidate store.** A 9-way H-shift distribution per fragment, read from the same contextualized token. | The probe corrupts the token before both heads, so it cannot say which head holds the memorized allocation. | no |
 | I1 | **Exposure and objective.** Each key is seen about 800 times, and cross-entropy is minimized by fitting each molecule. | Train `cos_hun` 0.961 against val 0.762. Exposure is flat (Spearman 0.058): every molecule is memorized about equally. The precursor fallback appears only on unseen molecules. | yes |
@@ -167,7 +167,7 @@ Run locally on `6h67zps9` and `3bej6fq7`. Each probe run takes about 45 min per 
 3. **Descriptor and input scopes (K4).** Corrupt `c_mass`, `c_size`+`c_cut_count` and `c_charge`
    separately, and round `a_charge` to 0.1.
 4. **Cross-molecule collision census.** The
-   [cut-descriptor finding](../../findings/masster/masster_candidate_cut_descriptors_2026_09_22.md)
+   cut-descriptor finding (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_candidate_cut_descriptors_2026_09_22.md`)
    counts buckets within a molecule. A lookup needs buckets across molecules.
    - On MASSter's own selected candidates for about 2,000 train molecules, count the distinct
      training molecules per bucket for cut-bond environment multisets at radius 0, 1 and 2, and
@@ -199,7 +199,7 @@ production checkpoints uses 17 paired conditions and 60 batches of 512 per split
 `output/memorization_route_step0_2026_09_24/run_probe.sh`, read with `analyze_route_map.py`
 beside it.
 
-**Result, 2026-09-24 ([route map](../../findings/masster/masster_route_map_2026_09_24.md)).**
+**Result, 2026-09-24 (route map (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_route_map_2026_09_24.md`)).**
 Both checkpoints agree to about 0.01.
 
 - **Global attention is where the key is written.** Replacing each atom's global message with
@@ -320,12 +320,12 @@ each one: once the token cannot name the molecule, the candidate set is the rema
   re-form from the other blocks.
 - **Formula or composition columns in the token.** They make candidates more identifiable, and
   the whole formula prior is worth +0.005
-  ([formula baseline](../../findings/masster/masster_formula_only_baseline_2026_09_23.md)).
+  (formula baseline (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_formula_only_baseline_2026_09_23.md`)).
 - **A train-set ranking loss.** The train ranking gap is 0.011.
 - **Global dropout** (`drop03`, −0.0149) and **pool-only atom dropout** (`e2`/`e3`, null).
 - **Reconnecting the proposal gradient**, which costs about 0.01 through a convergence delay
-  ([head-input asymmetry §8.2](../../findings/masster/masster_head_input_asymmetry_2026_09_22.md#82-the-71-deficit-is-a-convergence-delay-not-a-lower-endpoint)).
-- **Target cleaning**, a [closed null](../../findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md).
+  (head-input asymmetry §8.2 (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_head_input_asymmetry_2026_09_22.md`)).
+- **Target cleaning**, a closed null (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_target_cleaning_cross_eval_2026_09_23.md`).
 - **An identity-blind lability prior in the final score**, which is the displacement plan's
   arm 2A.
 
@@ -374,7 +374,7 @@ floors overlap at Jaccard 0.36-0.46
 The subtraction direction was corrected in the 2026-10-02 precision audit; it still spans zero.
 A costly pilot on this small, unstable endpoint could remain inconclusive. `i3`, full attention
 and checkpoint averaging have no demonstrated independent-floor recovery. The additive
-[cut probe null](../../findings/masster/masster_cut_intensity_probe_2026_10_01.md) is another
+cut probe null (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_cut_intensity_probe_2026_10_01.md`) is another
 negative result for an available correction, but does not rule out every transferable feature.
 
 **Technical qualification.** Current `SpectrumPL` rejects manual optimization and the MASSter
@@ -465,7 +465,7 @@ held-molecule ranking information beyond frozen MASSter scores and existing desc
 a plausible way to address wrong-side and wrong-parity choices without relying on analogue
 consensus. A benefit for the 44.9% no-similar-analogue class is a hypothesis, not a measured result.
 The [residual finding's limits](../../findings/masster/masster_i1_residual_structure_2026_09_28.md#limits)
-leave computed proton affinity/BDE untested. The [post-cut gate](../../findings/masster/masster_i1_postcut_information_gate_2026_09_29.md)
+leave computed proton affinity/BDE untested. The [post-cut gate](../../findings/masster/masster_i1_base_peak_errors.md#post-cut-information-gate-on-i1-explicit-fragment-and-charge-descriptors-add-nothing)
 already found little incremental value from generic charge/structural descriptors, so the bar
 is additional information, not another descriptor inventory.
 

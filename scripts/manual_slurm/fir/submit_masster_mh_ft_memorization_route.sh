@@ -7,7 +7,7 @@
 # removed with their configs on 2026-09-29: on FT labels the identity routes stood in for the missing
 # instrument, and the relabelled spec_df.pkl no longer reproduces them. Their configs and stages are
 # in Git at 8c52c6d3; their results are in docs/plans/masster/masster_memorization_route_plan.md and
-# docs/findings/masster/masster_memorization_attempts_audit_2026_09_27.md. The route arms among them
+# docs/findings/masster/masster_memorization_audits.md. The route arms among them
 # are rerun below (stage rerun).
 #
 # Added 2026-09-28, after i1_inst_ob_obf (i50ig7rf, n4 on the ORB / ORB_F instrument labels) led n4
@@ -53,8 +53,15 @@
 # Added 2026-09-30: SMARTS templates on i1, after i1's worst-prediction read found sulfonamide tail
 # spectra missing rearranged candidates and substituted_aryl_sulfonamide_o_transfer was registered:
 #   so1  i1 + masster_smarts_templates                               (control: i1, i50ig7rf)
+# Added 2026-10-15: rewire rules after selection on i1 (config/masster/mh_rewire_after_selection_2026_10_15/;
+# plan docs/plans/masster/masster_rewire_rules_training_plan.md, G0b in output/rewire_g0b_2026_10_15/):
+#   a0      i1 + 17 admitted rewire rules on the kept pool, depth 0, extras capped at 0.5 x kept fragments  (control: i1, i50ig7rf)
+#   a0d1    a0 + depth-1 continuation, top-4 bond cuts per product (masster_rewire_continuation_cuts: 4)    (control: i1; read vs a0)
+#   a0null  a0 with random same-shape edits (masster_rewire_null: true)                                     (control: i1; read vs a0)
+# Added 2026-10-18: GNN encoder dropout 0.5 on i4, extrapolating the MSGYM sweep (tiwhun9q) trend:
+#   md05  i4 + mol_dropout 0.5                                       (control: i4, rd9rsdqx)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
-# nl finding: docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md
+# nl finding: 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md, removed 2026-10-18
 #
 # STAGE (required):
 #   stack i3 and i4 (i1 has run or is running).
@@ -65,8 +72,10 @@
 #   rerun   r2_ob, r1_ob, r0_ob, nl1_ob, nl2_ob, sd1_ob and fa1_s2 (i1 and fa1 have run).
 #   ce      ce1 and ce2 (i1 has run).
 #   smarts  so1 (i1 has run).
+#   rewire  a0, a0d1 and a0null (i1 has run; needs a checkout with masster_rewire_rules, 2026-10-15).
+#   md05    md05 (i4 has run).
 #   i3 | i4 | fa1 | mz1 | i5 | mznl1 | nlpe1 | mw30 | mw10 | mlp1 | cg1 | r2_ob | r1_ob | r0_ob
-#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2 | so1  one job.
+#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2 | so1 | a0 | a0d1 | a0null | md05  one job.
 #
 # CONTROLS: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63) and fa1_full_attention_ob_obf
 # (0vn8m2gr, tail 0.7651) have run; each arm's header names its control. READ: the tail mean of
@@ -114,6 +123,10 @@ declare -A JOB_BY_ARM=(
     [ce1]=msh_mhft_ce1_context_gnn_ob_obf
     [ce2]=msh_mhft_ce2_context_token_ob_obf
     [so1]=msh_mhft_so1_smarts_o_transfer_ob_obf
+    [a0]=msh_mhft_a0_rewire_after_selection_ob_obf
+    [a0d1]=msh_mhft_a0d1_rewire_after_selection_d1_ob_obf
+    [a0null]=msh_mhft_a0null_rewire_after_selection_null_ob_obf
+    [md05]=msh_mhft_md05_mol_dropout05_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [i3]=i3_k1_ema_ob_obf.yml
@@ -137,7 +150,14 @@ declare -A CONFIG_BY_ARM=(
     [ce1]=ce1_context_gnn_ob_obf.yml
     [ce2]=ce2_context_token_ob_obf.yml
     [so1]=so1_smarts_o_transfer_ob_obf.yml
+    [a0]=a0_rewire_after_selection_ob_obf.yml
+    [a0d1]=a0d1_rewire_after_selection_d1_ob_obf.yml
+    [a0null]=a0null_rewire_after_selection_null_ob_obf.yml
+    [md05]=md05_mol_dropout05_ob_obf.yml
 )
+# The rewire arms live in their own config directory; every other arm uses CONFIG_DIR.
+REWIRE_CONFIG_DIR="config/masster/mh_rewire_after_selection_2026_10_15"
+declare -A DIR_BY_ARM=([a0]="${REWIRE_CONFIG_DIR}" [a0d1]="${REWIRE_CONFIG_DIR}" [a0null]="${REWIRE_CONFIG_DIR}")
 # cg1, the window ladder, the pos arms, the ORB/ORB_F reruns and the ce arms keep their checkpoints
 # on Fir for now (user, 2026-09-29); the seed replicate fa1_s2 is read on W&B only.
 declare -A NO_CKPT_UPLOAD=([cg1]=1 [mw30]=1 [mw10]=1 [mlp1]=1
@@ -153,9 +173,11 @@ case "${STAGE}" in
     rerun) ARMS=(r2_ob r1_ob r0_ob nl1_ob nl2_ob sd1_ob fa1_s2) ;;
     ce)   ARMS=(ce1 ce2) ;;
     smarts) ARMS=(so1) ;;
-    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|so1) ARMS=("${STAGE}") ;;
+    rewire) ARMS=(a0 a0d1 a0null) ;;
+    md05) ARMS=(md05) ;;
+    i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|so1|a0|a0d1|a0null) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|smarts|so1]" >&2
+        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|smarts|so1|rewire|a0|a0d1|a0null|md05]" >&2
         exit 1
         ;;
 esac
@@ -164,7 +186,7 @@ cd "${REPO_ROOT}"
 
 # 1. Validate before creating any job script.
 for arm in "${ARMS[@]}"; do
-    config_fp="${CONFIG_DIR}/${CONFIG_BY_ARM[${arm}]}"
+    config_fp="${DIR_BY_ARM[${arm}]:-${CONFIG_DIR}}/${CONFIG_BY_ARM[${arm}]}"
     if [[ ! -f "${config_fp}" ]]; then
         echo "Missing config: ${config_fp}" >&2
         exit 1
@@ -209,6 +231,14 @@ for wheel in wheels/pyteomics-4.7.5-py3-none-any.whl wheels/torch_linear_assignm
     fi
 done
 
+# The rewire arms run <= 1.3x i1's 3.2-3.3 h (G0b: forward 1.13x, forward+backward 1.11x at fraction 0.5); a0d1
+# is unmeasured at depth 1. Ask 6 h for them; j=<job_name> resumes a requeue.
+for arm in "${ARMS[@]}"; do
+    if [[ -n "${DIR_BY_ARM[${arm}]:-}" ]]; then
+        TIME="6:00:00"
+    fi
+done
+
 # 2. Generate the Fir job scripts.
 for arm in "${ARMS[@]}"; do
     python scripts/setup_job_cc.py \
@@ -221,7 +251,7 @@ for arm in "${ARMS[@]}"; do
         --time "${TIME}" \
         --cc_account "${ACCOUNT}" \
         --cc_email "${EMAIL}" \
-        --script_kwargs w=online c="${CONFIG_DIR}/${CONFIG_BY_ARM[${arm}]}" j="${JOB_BY_ARM[${arm}]}" \
+        --script_kwargs w=online c="${DIR_BY_ARM[${arm}]:-${CONFIG_DIR}}/${CONFIG_BY_ARM[${arm}]}" j="${JOB_BY_ARM[${arm}]}" \
         --no_submit=True
 done
 
@@ -256,3 +286,9 @@ echo "  read them against the 0.0042 seed spread."
 echo "ce (ce1, ce2): their control i1 (i50ig7rf) has run; read each against the other too. They need"
 echo "  the relabelled spec_df.pkl and a checkout with masster_encoder_context_token (nn_blocks.py"
 echo "  GINE_GSA context_token_dim, 2026-09-30). ce1 shifts the init RNG; ce2 is init-matched to i1."
+echo "rewire (a0, a0d1, a0null): their control i1 (i50ig7rf) has run; read a0d1 and a0null against a0 too."
+echo "  They need the relabelled spec_df.pkl and a checkout with masster_rewire_rules (the 17-rule"
+echo "  REWIRE_RULES list, src/fragnnet/models/masster/rewire_expansion.py). Time 6:00:00. Watch peak GPU"
+echo "  on the 3g.40gb slice: i1 peaks near 26.8 GiB and these add up to +26% nodes per matching spectrum."
+echo "md05: its control i4 (rd9rsdqx) has run. It needs the relabelled spec_df.pkl; mol_dropout is a"
+echo "  long-standing key. Read a negative tail against i4's epoch-63 slope before rejecting."

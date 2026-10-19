@@ -1,6 +1,6 @@
 # ARM t1i_smarts_templates -- i1 plus MASSter SMARTS templates, unmerged [M+H]+ on ORB / ORB_F,
 # 2026-09-29. NOT SUBMITTED: the plan runs Phase 2 only after a positive G1 (ranking headroom on
-# rule-explained peaks). Plan: docs/plans/masster/masster_smarts_pathway_plan.md
+# rule-explained peaks). Plan: 95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18
 # i1_inst_ob_obf.yml with masster_smarts_templates: true and W&B naming; nothing else changes.
 # Replaces t1 (config/masster/mh_ft_smarts_2026_09_27/t1_smarts_templates.yml), which was built
 # on c0 and FT labels and never ran.
@@ -22,9 +22,9 @@
 # eligible template, so the whole split moves about 0.05x the template-subset change and the
 # +0.003 gate needs about +0.06 on those spectra. GATES (2026-09-30): G1 STOPPED p1, and t1i ran
 # only as p1's control, so do not submit this config
-# (docs/findings/masster/masster_smarts_pathway_gates_2026_09_30.md). On c0's val pool the precursor templates added +0.196% of the bearing spectra's
+# (docs/findings/masster/masster_smarts_findings.md). On c0's val pool the precursor templates added +0.196% of the bearing spectra's
 # intensity (95% CI 0.089-0.333). A whole-split null is the expected result.
-# Finding: docs/findings/masster/masster_smarts_cuda_audit_2026_09_27.md
+# Finding: docs/findings/masster/masster_smarts_findings.md
 #
 # CONTROL: i1_inst_ob_obf (i50ig7rf), tail 0.7607 over epochs 54-63. Seed 397623, 64 epochs.
 # READ: (1) val_candidate_wrecall against i1; (2) tail mean of val_cos_sim_0.01_epoch/mean over

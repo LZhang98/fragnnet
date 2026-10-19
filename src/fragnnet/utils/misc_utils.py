@@ -292,6 +292,22 @@ def _validate_tensor_condition(condition: th.Tensor, message: str) -> None:
         raise ValueError(message)
 
 
+def bincount_in_range(idxs: th.Tensor, size: int) -> th.Tensor:
+    """``th.bincount(idxs, minlength=size)`` without its host syncs.
+
+    ``th.bincount`` reads the maximum back to size its output; here the output size is the
+    host-known ``size`` and the range check is asynchronous on CUDA. Integer addition is
+    exact and order-independent, so the counts equal bincount's whenever every index is in range.
+    """
+    _validate_tensor_condition(
+        ((idxs >= 0) & (idxs < size)).all(),
+        "indices must lie in [0, size)",
+    )
+    return idxs.new_zeros(size, dtype=th.long).index_add_(
+        0, idxs, th.ones_like(idxs, dtype=th.long)
+    )
+
+
 def th_setdiff1d(t1: th.Tensor, t2: th.Tensor) -> th.Tensor:
     """Set difference of two 1D torch tensors."""
 

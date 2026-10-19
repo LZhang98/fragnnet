@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 class SpecMolDataset(BaseDataset):
     # Whether this class builds MassFormer's ``mol_mf`` input; only ``SpecMolMFDataset`` does.
     handles_mol_mf = False
+    # Whether samples carry ``mol_graph_binary`` (set per instance from the model's hooks);
+    # subclasses with their own __init__ keep the default.
+    emit_graph_mol = False
 
     def __init__(
         self,
@@ -57,9 +60,9 @@ class SpecMolDataset(BaseDataset):
         )
         # Model-specific filtering (MASSter drops pairs without a valid ion), after the frames are
         # built and before preprocessing. Unknown, legacy or missing types filter nothing.
-        registry.get_model_hooks(kwargs.get("model_type"), strict=False).filter_dataset(
-            self, kwargs
-        )
+        hooks = registry.get_model_hooks(kwargs.get("model_type"), strict=False)
+        hooks.filter_dataset(self, kwargs)
+        self.emit_graph_mol = hooks.needs_graph_mol(kwargs)
 
         if spec_pp_sd is None:
             spec_pp_sd = {}
@@ -169,6 +172,10 @@ class SpecMolDataset(BaseDataset):
         if self.mol_params["smiles"]:
             smiles = mol_entry["smiles"]
             mol_data["mol_smiles"] = [smiles]
+        if self.emit_graph_mol:
+            # The graph's own molecule, atom order and chemistry intact: re-parsing mol_smiles
+            # does not reproduce either for some retrieval candidates and tautomers.
+            mol_data["mol_graph_binary"] = [mol.ToBinary()]
         if self.mol_params["fingerprint"]:
             fingerprint = get_mol_fp(
                 mol,

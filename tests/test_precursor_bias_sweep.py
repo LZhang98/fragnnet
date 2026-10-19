@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from scripts.eval.precursor_bias_sweep import Spectrum, evaluate_spectrum
+from scripts.debug.masster_memorization.precursor_bias_sweep import Spectrum, evaluate_spectrum
 
 
 def _spectrum(true_ints: list[float], pred_ints: list[float]) -> Spectrum:

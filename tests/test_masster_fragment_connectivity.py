@@ -1,6 +1,6 @@
 """The retained-fragment connectivity branch (arm ``fc1``).
 
-``docs/plans/masster/masster_hierarchical_fragment_graph_plan.md`` adds a small
+``95341fce:docs/plans/masster/masster_hierarchical_fragment_graph_plan.md, removed 2026-10-18`` adds a small
 message-passing branch that runs a k-layer GINE over each candidate fragment's OWN retained
 (post-cut) bond graph, seeded from raw atom/bond features -- never the shared encoder's
 globally attended ``atom_embeddings`` -- plus a per-(fragment, atom) retained-bond degree and

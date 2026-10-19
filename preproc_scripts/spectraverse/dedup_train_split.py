@@ -146,12 +146,12 @@ def ce_signature(spec: pd.DataFrame) -> pd.Series:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--spec-fp", default="data/proc/spectraverse/spec_df.pkl")
-    parser.add_argument("--src-split-dp", default="data/split/spectraverse_benchmark")
-    parser.add_argument("--dst-split-dp", default="data/split/spectraverse_benchmark_dedup")
-    parser.add_argument("--cluster-fp", default="data/proc/spectraverse/near_dup_clusters.csv")
-    parser.add_argument("--source-fp", default="data/proc/spectraverse/spec_source.csv")
-    parser.add_argument("--edges-fp", default="data/proc/spectraverse/near_dup_edges.csv")
+    parser.add_argument("--spec-fp", default="data/proc/spectraverse_1_0_3/spec_df.pkl")
+    parser.add_argument("--src-split-dp", default="data/split/spectraverse_1_0_3_benchmark")
+    parser.add_argument("--dst-split-dp", default="data/split/spectraverse_1_0_3_benchmark_dedup")
+    parser.add_argument("--cluster-fp", default="data/proc/spectraverse_1_0_3/near_dup_clusters.csv")
+    parser.add_argument("--source-fp", default="data/proc/spectraverse_1_0_3/spec_source.csv")
+    parser.add_argument("--edges-fp", default="data/proc/spectraverse_1_0_3/near_dup_edges.csv")
     parser.add_argument("--min-cosine", type=float, default=0.99)
     parser.add_argument("--ppm", type=float, default=5.0)
     parser.add_argument("--min-mz", type=float, default=200.0)

@@ -2,6 +2,11 @@
 
 This private hybrid preserves the CPU candidate contract; it is not a public CUDA
 backend. Native topology is optional and imported only when explicitly requested.
+
+Status: PROTOTYPE, BENCHMARK ONLY. No config can select it; only
+scripts/debug/masster_core/benchmark_masster_full_training.py and tests call
+`build_masster_candidates_cuda_topology`. The full CUDA backend in `cuda_candidates`
+superseded it (docs/findings/masster/masster_training_speed_2026_09_17.md).
 """
 
 from __future__ import annotations

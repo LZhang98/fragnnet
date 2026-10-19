@@ -3,7 +3,7 @@
 # Candidate coverage is incomplete -- merged MA/MI val wrecall is ~0.891 -- so part of the
 # observed intensity sits at m/z values no candidate reaches. Without an escape the predicted
 # intensities normalize over candidates alone and the model must over-allocate everything it
-# CAN reach. See docs/plans/masster/masster_supervised_escape_plan.md and the sizing in
+# CAN reach. See 95341fce:docs/plans/masster/masster_supervised_escape_plan.md, removed 2026-10-18 and the sizing in
 # docs/findings/masster/unexplained_peak_split_2026_09_22.md.
 #
 # Pair this with debug_tiny_masster_intensity_escape_control.yml, which is identical

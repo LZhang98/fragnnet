@@ -1,7 +1,7 @@
 # FluxMPNN — FraGNNet-CFM: a directional neural flow model over the fragmentation DAG
 
 > **Status:** STOPPED · **Updated:** 2026-10-06
-> Stage 0 headroom gate was GREEN, but conserved DAG flow trained null-to-harmful and the unsupervised competition line is dead (learned beta collapsed to a bond-type lookup: explains 72% of itself, 18% of real branching). Read before reviving; superseded in practice by `sibling_ranking_target_plan.md`.
+> Stage 0 headroom gate was GREEN, but conserved DAG flow trained null-to-harmful and the unsupervised competition line is dead (learned beta collapsed to a bond-type lookup: explains 72% of itself, 18% of real branching). Read before reviving; superseded in practice by `sibling_ranking_target_plan.md` (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md`).
 
 ## One-line thesis
 
@@ -308,10 +308,10 @@ where the environment recurs and *unmeasurable* where it does not. The binding c
 in the rare-environment tail**, not expressiveness, radius, or absence of tying. Coarse tying therefore
 survives only as a way to borrow strength into the tail — a much smaller predicted effect than "fix
 global arbitrariness", and not currently ranked above the marginal-level work in
-`docs/plans/fragnnet/sibling_ranking_target_plan.md`.
+`95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md, removed 2026-10-18`.
 
 **Open reference test.** *(ANSWERED 2026-07-22; see "Stage 3 trained verdict" below and
-`fragment_bond_set_representation.md` §6.3: observed ICC r2 0.1331 raw / 0.1817 noise-corrected, so
+`fragment_bond_set_representation.md` (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/fragment_bond_set_representation.md`) §6.3: observed ICC r2 0.1331 raw / 0.1817 noise-corrected, so
 β was over-determined, not arbitrary.)* The same decomposition on observed `q_obs` gives the ceiling:
 how much of REAL branching variance bond environment explains at all.
 
@@ -354,7 +354,7 @@ Only `scripts/eval/flux_beta_bucket_variance.py`, `stage0_branching_model_vs_ora
   nodes, 2026-07-21):** multi-parent fraction of non-root nodes is 95.3% (full DAG), 87.7% after min-depth pruning
   with no tie-break (fragmentation is order-invariant, so diamonds not chains), and 0% for a spanning arborescence
   that keeps only 35.2% of branching parents. Edge-beta supervision stays dead; the marginal ranking target in
-  `sibling_ranking_target_plan.md` needs neither arborescence nor tie-break (the `indeg==1` filter selects only the
+  `sibling_ranking_target_plan.md` (removed 2026-10-18; `git show 95341fce:docs/plans/fragnnet/sibling_ranking_target_plan.md`) needs neither arborescence nor tie-break (the `indeg==1` filter selects only the
   root: 620 usable targets vs 583,539 without it).
 - **beta pooling test (2026-07-22):** refuted "no tying"; the observed-branching reference test (ICC 0.0157 / 0.0936 /
   0.1331 raw, 0.1817 corrected at r0/r1/r2; 173,930 edges) shows beta was over-determined (72% vs 18%).

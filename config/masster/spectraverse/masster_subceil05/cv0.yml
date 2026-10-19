@@ -1,6 +1,6 @@
 # 2026-10-03 arm `masster_subceil05` (fold cv0): clean train: split_dp drops train spectra whose subformula ceiling is <= 0.5 (preproc_scripts/spectraverse/clean_train_split.py); val/test ids unchanged. Changes split_dp and lr_total_steps (40 x ceil(train / 512)).
 # Read against masster_c0rerun/cv0.yml on best and epoch-tail val_cos_sim_0.01; see
-# docs/findings/masster/spectraverse_oracle_ceiling_2026_10_03.md.
+# docs/findings/masster/spectraverse_masster_findings.md.
 #
 # MASSter on Spectraverse, fold cv0, 2026-09-25. Unmerged, CMF on, dual CE on a fourier table, weight EMA.
 #
@@ -248,7 +248,7 @@ simple_group_sampler: false
 train_sample_weight: none
 eval_sample_weight: none
 train_batch_size: 512
-eval_batch_size: 512
+eval_batch_size: 64  # 512 OOMs on 3g.40gb in validation: calculate_match_mzs pads [batch, max_true, max_pred], 27-39 GiB at 512 (Fir jobs 2026-10-19)
 accumulate_grad_batches: 1
 automatic_optimization: true
 gradient_clip_val: 5.0

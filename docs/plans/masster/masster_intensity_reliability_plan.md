@@ -14,10 +14,10 @@ Existing evidence already favors model/generalization error over measurement var
 The immediate task is to correct the existing estimates, add dominant-pair stability, and
 prioritize transfer. Uncertainty follows the existing ensemble finding, not a new dispersion head.
 
-This extends the [intensity-displacement plan](masster_intensity_displacement_plan.md).
+This extends the intensity-displacement plan (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_intensity_displacement_plan.md`).
 The [generalization literature review](../../notes/masster_generalization_methods_2026_09_27.md)
 owns detailed R-Drop and representation-learning recipes; the
-[memorization review](../../findings/masster/masster_memorization_plan_review_2026_09_27.md)
+memorization review (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_memorization_plan_review_2026_09_27.md`)
 owns the critique of identity-removal experiments. This document owns the reliability diagnostic
 and the choice among the following three directions.
 
@@ -35,24 +35,24 @@ unrecorded acquisition setting is not an immutable physical noise floor.
 
 Read the existing analyses before proposing new noise or uncertainty work:
 
-- [Displacement Phase 0](../../findings/masster/masster_intensity_displacement_phase0_2026_09_24.md)
+- Displacement Phase 0 (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_intensity_displacement_phase0_2026_09_24.md`)
   already measured the squared-error floor: 1,315 val pairs, floor 0.0132 against 0.1616
   displacement on the repeat subset, leaving 67% reducible shared error (63% on test).
-- [Per-peak uncertainty](../../findings/masster/masster_per_peak_uncertainty_2026_09_24.md)
+- Per-peak uncertainty (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_per_peak_uncertainty_2026_09_24.md`)
   already measured 9.8% noise share (19% below NCE 20) on its repeat subset. Replicate cosine
   is 0.970 mean / 0.989 median in its 10-ppm clustered frame. Its ensemble uncertainty test
   found mostly spectrum-level signal; per-peak spread/votes added presence AUC 0.793 → 0.800
   and within-spectrum intensity-matched error concordance was about 58-60%.
-- The 0.946 figure in the [attempts audit](../../findings/masster/masster_memorization_attempts_audit_2026_09_27.md)
+- The 0.946 figure in the [attempts audit](../../findings/masster/masster_memorization_audits.md#audit-of-every-attempt-to-close-massters-memorization-gap)
   uses a different, 0.01-Da binned frame. It is not interchangeable with clustered cosine and
   should not anchor a new noise estimate. Neither number is a universal prediction ceiling.
 - Both historical replicate analyses matched NCE only. Their results remain historical
   measurements, but their attribution to observation noise needs strict eV matching.
-- [Ranking decomposition](../../findings/masster/masster_ranking_decomposition_2026_09_23.md):
+- Ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`):
   train/val ranking error 0.011/0.121; little train ranking error remains to optimize.
-- [Energy/parts](../../findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md):
+- Energy/parts (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md`):
   27.7% unseen-environment share is of fragment-explained intensity, not total intensity.
-  [Bond-local learner](../../findings/masster/masster_bond_local_learner_2026_09_24.md): only
+  Bond-local learner (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_bond_local_learner_2026_09_24.md`): only
   about +0.0006 beyond NCE 60, so local supervision needs a complementary-signal gate.
 
 ### User-reported strict-energy census (2026-09-27)
@@ -127,7 +127,7 @@ of magnitude below the +0.003 experiment gate. Treat this as a rounding-headroom
 that cohort/metric, not a demonstrated model gain or a universal bound. Missing eV (21.3% in
 the latest report) and inconsistent conversion on the second ladder further undermine treating
 eV as one interchangeable input scale. This agrees with keeping the
-[feature-headroom audit](../../findings/feature_headroom_2026_09_22.md) as the metadata baseline.
+feature-headroom audit (removed 2026-10-18; `git show 95341fce:docs/findings/feature_headroom_2026_09_22.md`) as the metadata baseline.
 
 Energy mismatch can inflate apparent replicate noise, but the historical ~10% noise share is
 not a proven population upper bound: changing the key also changes cohorts, pair weights and
@@ -136,7 +136,7 @@ The direction remains transfer-first; this correction concerns measurement attri
 
 ## 1. Uncertainty: extend the existing ensemble route
 
-The [per-peak finding](../../findings/masster/masster_per_peak_uncertainty_2026_09_24.md) is the
+The per-peak finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_per_peak_uncertainty_2026_09_24.md`) is the
 starting point. Ensemble uncertainty has been tested; what remains untested is whether independent
 seeds materially improve per-peak information beyond spectrum-level confidence and intensity.
 
@@ -292,7 +292,7 @@ both arms receive the same calibration opportunity. Use molecule-level paired un
 confirm promising screens with additional seeds and reserved molecules, and retain coverage
 checks. A lower representation loss or training ranking loss alone is not success.
 
-**Data comparator:** the [variance/novelty finding](../../findings/masster/masster_variance_novelty_2026_09_24.md)
+**Data comparator:** the variance/novelty finding (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_variance_novelty_2026_09_24.md`)
 projects +0.018 single-model cosine from NIST23 coverage via the observed similarity curve.
 Compare each transfer arm’s measured gain and cost with that projection and the measured ensemble
 benefit. +0.018 is an opportunity-cost comparator, not a measured NIST23 training result or a

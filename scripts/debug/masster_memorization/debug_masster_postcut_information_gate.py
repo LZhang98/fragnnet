@@ -2,7 +2,7 @@
 checkpoint does not use? A cross-fitted, per-candidate correction gate on validation molecules.
 
 Step 2 of the wrong-peak analysis (2026-09-29), after
-``docs/findings/masster/masster_i1_base_peak_errors_2026_09_28.md``. Subcommands ``extract`` and
+``docs/findings/masster/masster_i1_base_peak_errors.md``. Subcommands ``extract`` and
 ``fit`` (plus ``ceiling``, below):
 
 ``extract`` runs one annotated eval-mode forward per batch, as
@@ -32,7 +32,7 @@ model's validation error the family predicts on molecules the correction never s
 ``context`` family (``g`` of ``log p`` and context alone) is the calibration baseline; a family
 earns information only by its gain over that.
 
-Rule provenance (G1 of ``docs/plans/masster/masster_smarts_pathway_plan.md``). ``extract`` also
+Rule provenance (G1 of ``95341fce:docs/plans/masster/masster_smarts_pathway_plan.md, removed 2026-10-18``). ``extract`` also
 saves, per candidate peak, the float64 ``mz`` and ``rule_x``: whether the peak's m/z is a valid
 production ion channel (``MassterModel._fragment_masses_and_valid_channels`` with the template's
 cut count and formed-bond count) of either side of an eligible SMARTS template of the molecule.
@@ -95,10 +95,10 @@ from fragnnet.utils.setup_utils import get_dataset_cls
 
 # Support both the script entry point and imports from pytest.
 try:
-    from .debug_masster_base_peak_errors import SAVE_FLOOR, map_targets, merge_channels
+    from .debug_masster_base_peak_errors import SAVE_FLOOR, _identity, map_targets, merge_channels
     from .debug_masster_base_peak_tables import BASE_SMARTS, MoleculeChemistry, clustered_bootstrap
 except ImportError:
-    from debug_masster_base_peak_errors import SAVE_FLOOR, map_targets, merge_channels
+    from debug_masster_base_peak_errors import SAVE_FLOOR, _identity, map_targets, merge_channels
     from debug_masster_base_peak_tables import BASE_SMARTS, MoleculeChemistry, clustered_bootstrap
 
 RDLogger.DisableLog("rdApp.*")
@@ -626,11 +626,6 @@ def parse_mol_ids(value: str) -> np.ndarray:
         return np.asarray([int(t) for t in tokens], dtype=np.int64)
     except ValueError as error:
         raise ValueError(f"--mol_ids holds a non-integer token: {error}") from error
-
-
-def _identity(path: str) -> dict:
-    data = Path(path).read_bytes()
-    return {"path": path, "bytes": len(data), "md5": hashlib.md5(data).hexdigest()}
 
 
 def select_spectra(specs: pd.DataFrame, sides_of: object, args: argparse.Namespace) -> list[int]:

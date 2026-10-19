@@ -37,13 +37,13 @@
    fine-tuning) was retired on 2026-10-12 because it did not help; its code and configs are at
    revision `13b1599d`. ChemLM (`chemlm`, a ChemBERTa-3 SMILES encoder with the NEIMS head) was
    retired the same day: it barely beat a structure-blind prior
-   ([results](plans/chemberta3_msgym_plan.md#results-2026-09-28-runs-finished)); code at `13b1599d`.
+   (results (removed 2026-10-14; `git show 8a3cc7a5:docs/plans/chemberta3_msgym_plan.md`)); code at `13b1599d`.
    CLIP spectrum-molecule contrastive pretraining (`clip`, `spec_mol_clip_pretraining`) was
    retired the same day as no longer used; code at `13b1599d`.
    MASSter was named MASShatter until 2026-09-25. Pre-rename configs, checkpoints and W&B runs
    declare `model_type: mass_shatter` and `mass_shatter_*` keys; `migrate_legacy_masster_name`
    in [migrations.py](../src/fragnnet/utils/migrations.py) renames them wherever a config is loaded.
-   MASSter also offers [FastGNN-style connected-fragment proposals](plans/masster/masster_fast_gnn_proposal.md),
+   MASSter also offers FastGNN-style connected-fragment proposals (removed 2026-10-18; `git show 95341fce:docs/plans/masster/masster_fast_gnn_proposal.md`),
    sharing its chemistry and intensity model while changing proposal score semantics.
    MASSter defaults to CPU candidate construction; its optional CUDA backend performs exact
    selection and topology for the supported modes. See the

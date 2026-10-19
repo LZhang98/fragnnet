@@ -6,7 +6,7 @@
 # to the unmerged lineage? a1_prenorm (q4t4udee) was +0.0056 over its merged control and was
 # still rising at epoch 127; it has never run unmerged. Pre-norm is the placement that tolerates a
 # constant LR with no warmup, which every arm here uses.
-# Finding: docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md
+# Finding: 95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18
 #
 # CONTROL: i3_k1_ema_ob_obf, submitted alongside. This config differs from it by
 # masster_intensity_norm_placement and W&B naming only.

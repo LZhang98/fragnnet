@@ -10,7 +10,7 @@ import numpy as np
 import torch as th
 
 sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "eval")
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "oracle")
 )
 from build_cut_pair_targets import load_spec_df_with_ce_fill
 

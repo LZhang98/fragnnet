@@ -44,6 +44,25 @@ from fragnnet.layers.cut_bond_encoder import CutBondEncoder, encode_cut_bond_pai
 from fragnnet.layers.gnn import GNN
 from fragnnet.layers.int_featurizer import get_embedder
 from fragnnet.layers.metadata_embedding import QET_ACE_OFFSET, QETEnergyEncoder
+from fragnnet.models.masster.candidates.builder import (
+    MassterCandidateBatch,
+    MassterStaticGraph,
+    build_masster_candidates,
+)
+from fragnnet.models.masster.candidates.connected_fragment_beam import (
+    build_connected_fragment_beam_candidates,
+)
+from fragnnet.models.masster.candidates.rewire_rules import (
+    MASSTER_NUM_REWIRE_RULES,
+    REWIRE_RULE_SPEC_HASHES,
+    filter_rewire_matches,
+)
+from fragnnet.models.masster.candidates.smarts_templates import (
+    MASSTER_NUM_RULES,
+    MASSTER_RULE_NAME_HASHES,
+    MassterTemplate,
+    filter_masster_templates,
+)
 from fragnnet.models.masster.masster_candidate_features import (
     COMPOSITION_FEATURE_DIM,
     COMPOSITION_HYDROGEN_COLUMN,
@@ -59,20 +78,6 @@ from fragnnet.models.masster.masster_candidate_transformer import (
     CandidateIntensityTransformerHead,
     candidate_graph_edges,
 )
-from fragnnet.models.masster.candidates.builder import (
-    MassterCandidateBatch,
-    MassterStaticGraph,
-    build_masster_candidates,
-)
-from fragnnet.models.masster.candidates.connected_fragment_beam import (
-    build_connected_fragment_beam_candidates,
-)
-from fragnnet.models.masster.candidates.smarts_templates import (
-    MASSTER_NUM_RULES,
-    MASSTER_RULE_NAME_HASHES,
-    MassterTemplate,
-    filter_masster_templates,
-)
 from fragnnet.models.masster.masster_component_pooling import (
     boundary_bond_endpoint_orientation,
     component_membership_rows,
@@ -81,6 +86,7 @@ from fragnnet.models.masster.masster_component_pooling import (
     pool_component_and_complement_embeddings,
     pool_component_embeddings,
 )
+from fragnnet.models.masster.masster_exact_isotopes import exact_isotope_pattern
 from fragnnet.models.masster.masster_nominal_isotopes import (
     nominal_isotope_distribution,
     nominal_isotope_pattern,
@@ -99,6 +105,10 @@ from fragnnet.models.masster.masster_proposal_heads import (
     IonModeProposalHead,
 )
 from fragnnet.models.masster.masster_rt_ccs_heads import CCSHead, RTHead, pool_property_atoms
+from fragnnet.models.masster.rewire_expansion import (
+    EDIT_FEATURE_DIM,
+    expand_rewire_candidates,
+)
 from fragnnet.utils.formula_utils import (
     CANONICAL_ELEMENT_ORDER,
     H_MASS,
@@ -109,7 +119,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
-from fragnnet.utils.misc_utils import _validate_tensor_condition
+from fragnnet.utils.misc_utils import _validate_tensor_condition, bincount_in_range
 from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 
 
@@ -177,7 +187,7 @@ def _relative_fragment_keep_mask(
         raise ValueError("batch_size must be positive")
     if not math.isfinite(min_relative_probability) or not 0.0 <= min_relative_probability <= 1.0:
         raise ValueError("min_relative_probability must be finite and in [0, 1]")
-    fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size)
+    fragment_counts = bincount_in_range(fragment_batch_indices, batch_size)
     _validate_tensor_condition(
         (fragment_counts > 0).all(),
         "every molecule must contain at least one fragment",
@@ -565,6 +575,10 @@ ISOTOPE_ENVELOPES = ("none", "natural")
 # Atom counts past this share the last isotope-table row. A fragment below m/z 1500 holds at
 # most 1500 hydrogens, so the clamp only keeps the lookup in bounds.
 ISOTOPE_MAX_ATOM_COUNT = 2048
+
+# Proposal log-probability of a rewire extra: finite, so far below any real value that
+# exp(. - max) underflows to an exact zero without inf - inf NaNs where a spectrum has no row.
+REWIRE_NO_PROPOSAL = -1.0e30
 
 
 def _cmf_duplicate_crf_shift(
@@ -1146,6 +1160,11 @@ class MassterModel(nn.Module):
         light_side_token: bool = False,
         intensity_candidate_graph: bool = False,
         rule_pathway_token: bool = False,
+        use_rewire_rules: bool = False,
+        rewire_max_extra_fraction: float = 0.5,
+        rewire_max_extra: int = 256,
+        rewire_continuation_cuts: int = 0,
+        rewire_pair_chunk: int = 65536,
         mass_mode: str = "exact",
         merge_same_mz_rows: bool = False,
         isotope_envelope: str = "none",
@@ -1404,6 +1423,20 @@ class MassterModel(nn.Module):
                 zero-initialized, bias-free projection, i.e. the sum of the fragment's rule
                 embeddings. An indicator, not a pathway count, so mask multiplicity does not
                 leak in. Requires ``use_smarts_templates`` and ``unique_fragment_mode``.
+            use_rewire_rules: Append candidates produced by the REWIRE_RULE_VOCABULARY edits
+                (arm ``a0``): after fragment selection, each kept fragment that contains a
+                rule's motif spawns the edited product (deleted atoms leave in the neutral, cut
+                bonds removed, bonds formed). Extras only receive intensity-loss gradients; the
+                proposal outputs stay those of the ordinary fragments. Requires unique-fragment
+                mode, ``mask_order`` selection, ``proposal_selection_only``,
+                ``h_transfer_bound: valence`` and ``cut_masks`` proposals, and
+                ``static_graph.rewire_matches`` at forward time.
+            rewire_max_extra_fraction: Extras per spectrum are at most this fraction of its kept
+                ordinary fragments (floored); positive and finite.
+            rewire_max_extra: Absolute per-spectrum ceiling on extras (a memory bound), >= 1.
+            rewire_continuation_cuts: Single-bond continuation cuts tried inside each product
+                (0 = depth 0 only), >= 0.
+            rewire_pair_chunk: Element budget of one (fragment, match) chunk of the stage, >= 1.
             mass_mode: ``exact`` emits monoisotopic ion m/z. ``nominal`` emits the integer
                 nominal m/z of unit-resolution libraries such as NIST EI: the sum of each
                 atom's most-abundant-isotope mass number (implicit hydrogens at 1), plus the H
@@ -1414,8 +1447,8 @@ class MassterModel(nn.Module):
                 (probabilities summed) in ``exact`` mode too. Exact for the loss (coincident
                 Gaussians) and the metrics; needed when the targets are intensity-transformed,
                 so evaluation untransforms each m/z's sum.
-            isotope_envelope: ``none`` emits one row per pathway. ``natural`` (requires
-                ``nominal``) splits each emitted pathway over nominal offsets by the natural
+            isotope_envelope: ``none`` emits one row per pathway. ``natural`` splits each
+                emitted pathway over nominal offsets or exact isotope fine structure by the natural
                 isotope pattern of its ion composition (fragment atoms, the channel's
                 hydrogens, the adduct's atoms), conserving its probability. Candidate,
                 proposal and dense channel outputs stay monoisotopic.
@@ -1523,6 +1556,48 @@ class MassterModel(nn.Module):
             )
         if not isinstance(fragment_connectivity_messages, bool):
             raise ValueError("fragment_connectivity_messages must be boolean")
+        if not isinstance(use_rewire_rules, bool):
+            raise ValueError("use_rewire_rules must be boolean")
+        if "c_rewire_edit" in candidate_features and not use_rewire_rules:
+            raise ValueError("c_rewire_edit in candidate_features requires use_rewire_rules")
+        if use_rewire_rules:
+            if not unique_fragment_mode:
+                raise ValueError("use_rewire_rules requires unique_fragment_mode")
+            if fragment_selection != "mask_order":
+                raise ValueError("use_rewire_rules requires fragment_selection 'mask_order'")
+            if not proposal_selection_only:
+                raise ValueError("use_rewire_rules requires proposal_selection_only")
+            if h_transfer_bound != "valence":
+                raise ValueError("use_rewire_rules requires h_transfer_bound 'valence'")
+            if proposal_method != "cut_masks":
+                raise ValueError("use_rewire_rules requires proposal_method 'cut_masks'")
+            if separate_ion_mode_proposal_head:
+                raise ValueError(
+                    "use_rewire_rules rejects separate_ion_mode_proposal_head: extras must not "
+                    "reach a proposal-side head"
+                )
+            if fragment_connectivity_layers > 0:
+                raise ValueError("use_rewire_rules requires fragment_connectivity_layers 0")
+            if intensity_candidate_graph:
+                raise ValueError("use_rewire_rules rejects intensity_candidate_graph")
+            if return_base_spectrum:
+                raise ValueError("use_rewire_rules rejects return_base_spectrum")
+            if use_base_probability_feature:
+                raise ValueError("use_rewire_rules rejects use_base_probability_feature")
+            if (
+                isinstance(rewire_max_extra_fraction, bool)
+                or not isinstance(rewire_max_extra_fraction, (int, float))
+                or not math.isfinite(rewire_max_extra_fraction)
+                or rewire_max_extra_fraction <= 0
+            ):
+                raise ValueError("rewire_max_extra_fraction must be finite and positive")
+            for name, value, minimum in (
+                ("rewire_max_extra", rewire_max_extra, 1),
+                ("rewire_continuation_cuts", rewire_continuation_cuts, 0),
+                ("rewire_pair_chunk", rewire_pair_chunk, 1),
+            ):
+                if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+                    raise ValueError(f"{name} must be an integer >= {minimum}, got {value!r}")
         if memorization_sink_dim < 0 or memorization_sink_num_molecules < 0:
             raise ValueError("memorization sink dimensions must be nonnegative")
         if (memorization_sink_dim > 0) != (memorization_sink_num_molecules > 0):
@@ -1730,8 +1805,6 @@ class MassterModel(nn.Module):
                 f"isotope_envelope must be one of {ISOTOPE_ENVELOPES}, got {isotope_envelope!r}"
             )
         if isotope_envelope != "none":
-            if mass_mode != "nominal":
-                raise ValueError("isotope_envelope requires mass_mode='nominal'")
             if isotope_max_order < 1:
                 raise ValueError("isotope_max_order must be at least 1")
             if not 0.0 <= isotope_min_ratio < 1.0 / (2 * isotope_max_order + 1):
@@ -1754,6 +1827,12 @@ class MassterModel(nn.Module):
         self.charge_pooling = charge_pooling
         self.use_smarts_templates = use_smarts_templates
         self.rule_pathway_token = rule_pathway_token
+        self.use_rewire_rules = use_rewire_rules
+        if use_rewire_rules:
+            self.rewire_max_extra_fraction = float(rewire_max_extra_fraction)
+            self.rewire_max_extra = rewire_max_extra
+            self.rewire_continuation_cuts = rewire_continuation_cuts
+            self.rewire_pair_chunk = rewire_pair_chunk
         self.use_mask_residuals = use_mask_residuals
         self.intensity_output = intensity_output
         self.return_base_spectrum = return_base_spectrum
@@ -2014,6 +2093,7 @@ class MassterModel(nn.Module):
             nl_positional_encoding=intensity_nl_positional_encoding,
             candidate_graph=intensity_candidate_graph,
             rule_pathway_dim=MASSTER_NUM_RULES if rule_pathway_token else 0,
+            rewire_pathway_dim=MASSTER_NUM_REWIRE_RULES if use_rewire_rules else 0,
         )
         self.rt_head = None
         self.ccs_head = None
@@ -2037,6 +2117,13 @@ class MassterModel(nn.Module):
                 th.tensor(MASSTER_RULE_NAME_HASHES, dtype=th.long),
             )
             self._register_load_state_dict_pre_hook(self._restore_smarts_rule_vocabulary)
+        if use_rewire_rules:
+            # The rewire rules this model knows, in rule-index order (append-only).
+            self.register_buffer(
+                "rewire_rule_name_hashes",
+                th.tensor(REWIRE_RULE_SPEC_HASHES, dtype=th.long),
+            )
+            self._register_load_state_dict_pre_hook(self._restore_rewire_rule_vocabulary)
 
     def _migrate_property_head_state(self, state_dict, prefix, *args) -> None:
         """Load the original combined-wrapper checkpoints into independent heads."""
@@ -2113,6 +2200,54 @@ class MassterModel(nn.Module):
             pad_shape = list(weight.shape)
             pad_shape[axis] = current.numel() - num_saved
             state_dict[prefix + name] = th.cat((weight, weight.new_zeros(pad_shape)), dim=axis)
+
+    def _restore_rewire_rule_vocabulary(
+        self,
+        state_dict: dict[str, th.Tensor],
+        prefix: str,
+        *args: object,
+    ) -> None:
+        """Load a checkpoint trained on a prefix of ``REWIRE_RULE_VOCABULARY``.
+
+        The vocabulary is append-only and each hash covers the rule's edit spec. A shorter
+        checkpoint gets zero columns for the appended rules and keeps its own list, so rules
+        appended later produce no extras for it.
+
+        Raises:
+            ValueError: If the checkpoint has residual weights but no rule list, or its list is
+                not a prefix of the current one. A checkpoint with neither (a control) loads with
+                the current vocabulary and the zero-init residual.
+        """
+        key = prefix + "rewire_rule_name_hashes"
+        residual_name = prefix + "intensity_head.rewire_pathway_residual.weight"
+        if key not in state_dict:
+            if residual_name in state_dict:
+                raise ValueError(
+                    "this checkpoint has rewire residual weights but no rewire rule list"
+                )
+            # A control (flag-off) checkpoint: start the rewire parameters as built, i.e. the
+            # current vocabulary and the zero-init residual, so the model begins as the control.
+            state_dict[key] = self.rewire_rule_name_hashes.detach().clone()
+            state_dict[residual_name] = (
+                self.intensity_head.rewire_pathway_residual.weight.detach().clone()
+            )
+            return
+        saved = state_dict[key].detach().cpu()
+        current = th.tensor(REWIRE_RULE_SPEC_HASHES, dtype=th.long)
+        num_saved = saved.numel()
+        if num_saved > current.numel() or not th.equal(saved, current[:num_saved]):
+            raise ValueError(
+                "the checkpoint's rewire rules are not a prefix of REWIRE_RULE_VOCABULARY; a "
+                "rule was reordered, renamed or its SMARTS/edit/precursors changed"
+            )
+        self.rewire_rule_name_hashes = saved.to(self.rewire_rule_name_hashes.device)
+        if num_saved == current.numel():
+            return
+        name = residual_name
+        weight = state_dict.get(name)
+        if weight is not None and weight.shape[1] == num_saved:
+            pad = weight.new_zeros((weight.shape[0], current.numel() - num_saved))
+            state_dict[name] = th.cat((weight, pad), dim=1)
 
     def set_evaluation_ion_h_top_k(self, top_k: int) -> None:
         """Set evaluation-only fixed-k ion/H selection; zero disables it."""
@@ -2249,6 +2384,11 @@ class MassterModel(nn.Module):
                     column = int(composition_columns[PERIODIC_TABLE.GetAtomicNumber(element)])
                     adduct_composition_deltas[precursor_index, mode, column] += count
         order = self.isotope_max_order
+        self.register_buffer(
+            "isotope_adduct_composition_deltas", adduct_composition_deltas, persistent=False
+        )
+        if self.mass_mode == "exact":
+            return
         heavy_columns, heavy_tables = [], []
         for column, element in enumerate(CANONICAL_ELEMENT_ORDER):
             if element == "H":
@@ -2274,9 +2414,6 @@ class MassterModel(nn.Module):
         convolution_map = (
             (offsets[:, None, None] + offsets[None, :, None] - order) == offsets[None, None, :]
         ).float()
-        self.register_buffer(
-            "isotope_adduct_composition_deltas", adduct_composition_deltas, persistent=False
-        )
         self.register_buffer(
             "isotope_heavy_columns", th.tensor(heavy_columns, dtype=th.long), persistent=False
         )
@@ -2380,6 +2517,47 @@ class MassterModel(nn.Module):
         log_shares = th.log(kept) - th.log(totals[source_rows])
         return source_rows, columns - order, log_shares
 
+    def _exact_isotope_rows(
+        self,
+        fragment_compositions: th.Tensor,
+        fragment_precursor_types: th.Tensor,
+        row_fragments: th.Tensor,
+        row_modes: th.Tensor,
+        row_shifts: th.Tensor,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        """Expand ion rows into natural exact-mass isotopologues.
+
+        Returns row indices, signed nominal offsets, exact mass increments (float64),
+        and log shares. Chemistry is cached on CPU; scores stay differentiable on device.
+        """
+        counts = fragment_compositions[row_fragments] + self.isotope_adduct_composition_deltas[
+            fragment_precursor_types[row_fragments], row_modes
+        ]
+        counts = counts.clone()
+        counts[:, COMPOSITION_HYDROGEN_COLUMN] += row_shifts
+        unique, inverse = th.unique(counts, dim=0, return_inverse=True)
+        patterns = [
+            exact_isotope_pattern(
+                tuple((element, count) for element, count in zip(CANONICAL_ELEMENT_ORDER, values)
+                      if count),
+                self.isotope_max_order,
+                self.isotope_min_ratio,
+            )
+            for values in unique.cpu().tolist()
+        ]
+        source_rows, offsets, shifts, shares = [], [], [], []
+        for row, pattern_index in enumerate(inverse.cpu().tolist()):
+            for offset, shift, share in patterns[pattern_index]:
+                source_rows.append(row)
+                offsets.append(offset)
+                shifts.append(shift)
+                shares.append(share)
+        return (
+            row_fragments.new_tensor(source_rows), row_fragments.new_tensor(offsets),
+            th.tensor(shifts, device=counts.device, dtype=th.float64),
+            th.tensor(shares, device=counts.device, dtype=th.float64).log(),
+        )
+
     def _transferable_hydrogen_shifts(
         self,
         mol_pyg: Batch,
@@ -2393,6 +2571,7 @@ class MassterModel(nn.Module):
         atom_hydrogens: th.Tensor,
         batch_size: int,
         fragment_formed_bond_counts: th.Tensor | None = None,
+        fragment_valence_adjustment: th.Tensor | None = None,
     ) -> th.Tensor:
         """Return which hydrogen shifts a source of hydrogen can actually supply.
 
@@ -2414,6 +2593,8 @@ class MassterModel(nn.Module):
             batch_size: Number of spectra in the batch.
             fragment_formed_bond_counts: Bonds a SMARTS assembly forms inside each fragment,
                 or None when none can. Used by ``valence`` only.
+            fragment_valence_adjustment: Signed slot correction of a rewire product (added to
+                the valence gain), or None. Used by ``valence`` only.
 
         Returns:
             Bool tensor of shape ``(num_fragments, num_h_shifts)``.
@@ -2455,6 +2636,11 @@ class MassterModel(nn.Module):
                 # A bond a SMARTS assembly forms between two of its pieces takes back the
                 # slot each endpoint gained from its severed bond.
                 valence_gain = valence_gain - 2 * fragment_formed_bond_counts.to(fragment_slots)
+            if fragment_valence_adjustment is not None:
+                # A rewire product's own edit: -2 per formed bond inside it (both endpoints spend a slot),
+                # +2 per rule cut inside it (both endpoints free one). Bonds to deleted atoms are already
+                # in fragment_cut_counts; slots are summed over the fragment's own atoms only.
+                valence_gain = valence_gain + fragment_valence_adjustment.to(fragment_slots)
             max_gain = th.minimum(max_gain, valence_gain)
 
         return h_shifts[None, :] <= max_gain.clamp_min(0)[:, None]
@@ -2469,6 +2655,7 @@ class MassterModel(nn.Module):
         precursor_type_indices: th.Tensor,
         fragment_cut_counts: th.Tensor | None = None,
         fragment_formed_bond_counts: th.Tensor | None = None,
+        fragment_valence_adjustment: th.Tensor | None = None,
     ) -> tuple[th.Tensor, th.Tensor]:
         """Translate fragment atom sets into monoisotopic ion channels.
 
@@ -2483,6 +2670,8 @@ class MassterModel(nn.Module):
                 hydrogen-transfer bound and ignored by the others.
             fragment_formed_bond_counts: Bonds a SMARTS assembly forms inside each fragment,
                 read by the ``valence`` bound; None when no fragment is an assembly.
+            fragment_valence_adjustment: Signed valence-gain correction per fragment (rewire
+                products), read by the ``valence`` bound; None otherwise.
 
         Returns:
             Tuple of ``(ion_mzs, valid_channels)``, both shaped
@@ -2553,6 +2742,7 @@ class MassterModel(nn.Module):
             atom_hydrogens,
             precursor_type_indices.shape[0],
             fragment_formed_bond_counts,
+            fragment_valence_adjustment,
         )
         # CRF channel: the fragment keeps the adduct, so apply the adduct's element and
         # mass deltas, then sweep the hydrogen-transfer offsets. A channel is invalid
@@ -2996,18 +3186,15 @@ class MassterModel(nn.Module):
         )
 
         atom_unique_indices = representative_to_unique[candidates.atom_component_indices]
-        atom_keep = atom_unique_indices >= 0
+        atom_keep = (atom_unique_indices >= 0).nonzero(as_tuple=True)[0]
         unique_atom_indices = candidates.atom_indices[atom_keep]
         atom_unique_indices = atom_unique_indices[atom_keep]
 
         boundary_unique_indices = representative_to_unique[candidates.boundary_component_indices]
-        boundary_keep = boundary_unique_indices >= 0
+        boundary_keep = (boundary_unique_indices >= 0).nonzero(as_tuple=True)[0]
         unique_boundary_bond_indices = candidates.boundary_bond_indices[boundary_keep]
         boundary_unique_indices = boundary_unique_indices[boundary_keep]
-        boundary_counts = th.bincount(
-            boundary_unique_indices,
-            minlength=num_unique_components,
-        )
+        boundary_counts = bincount_in_range(boundary_unique_indices, num_unique_components)
         unique_batch_indices = candidates.component_batch_indices[representatives]
         return (
             unique_batch_indices,
@@ -3017,6 +3204,253 @@ class MassterModel(nn.Module):
             boundary_unique_indices,
             boundary_counts,
         )
+
+    def _append_rewire_rows(
+        self,
+        *,
+        static_graph: MassterStaticGraph | None,
+        mol_pyg: Batch,
+        precursor_type_indices: th.Tensor,
+        bond_logits: th.Tensor,
+        fragment_atom_indices: th.Tensor,
+        atom_fragment_indices: th.Tensor,
+        fragment_boundary_bond_indices: th.Tensor,
+        boundary_fragment_indices: th.Tensor,
+        fragment_batch_indices: th.Tensor,
+        fragment_cut_counts: th.Tensor,
+        ion_mzs: th.Tensor,
+        valid_channels: th.Tensor,
+        fragment_rule_indicators: th.Tensor | None,
+        fragment_log_probabilities: th.Tensor,
+        base_fragment_log_probabilities: th.Tensor,
+        parent_blocked: th.Tensor | None,
+        batch_size: int,
+    ) -> dict[str, th.Tensor]:
+        """Append the rewire-rule products after every kept ordinary fragment.
+
+        Extras follow all ordinary rows, so ordinary indices never move. An extra equal to an
+        ordinary fragment adds no row: that row gains the rule indicator and, for the intensity
+        head only, the channels the edited valence budget allows (``ordinary_valid_channels``
+        keeps the pre-merge validity for every proposal-side quantity).
+
+        The head's ``fragment_log_probabilities`` argument is read only through
+        ``use_base_probability_feature`` (guarded off with ``proposal_selection_only``) and as a
+        shape in ``th.zeros_like`` for the charge column, so the extras' 0 filler is unread. The
+        base (proposal) column carries ``REWIRE_NO_PROPOSAL`` for extras and for ordinary rows
+        invalid before the merge: a finite value so far below any log-probability that
+        ``exp(. - max)`` is an exact zero, which leaves every ordinary row's normalizer
+        bit-identical to the control without an ``inf - inf`` NaN where a spectrum has no
+        ordinary valid row.
+
+        Returns:
+            Dict of the extended row tensors plus ``ordinary_valid_channels``,
+            ``fragment_rewire_indicators``, ``fragment_rewire_edit_features``,
+            ``fragment_rewire_parent`` (-1 for ordinary rows), ``rewire_is_extra`` and
+            ``diagnostics``.
+        """
+        if static_graph is None or static_graph.rewire_matches is None:
+            raise ValueError(
+                "rewire-enabled models require static_graph.rewire_matches; use MassterPL with "
+                "mol_graph_binary or supply matched rewire sets"
+            )
+        precursor_indices = precursor_type_indices.detach().cpu().reshape(-1).tolist()
+        if len(static_graph.rewire_matches) != batch_size or len(precursor_indices) != batch_size:
+            raise ValueError("rewire matches must contain one set per spectrum")
+        num_known_rules = self.rewire_rule_name_hashes.numel()
+        match_sets = tuple(
+            filter_rewire_matches(
+                match_set,
+                precursor_type=self.precursor_types[index],
+                num_known_rules=num_known_rules,
+            )
+            for match_set, index in zip(static_graph.rewire_matches, precursor_indices)
+        )
+
+        def channel_fn(atom_indices, atom_group_indices, group_batch, num_groups, cuts, adjustment):
+            return self._fragment_masses_and_valid_channels(
+                mol_pyg,
+                atom_indices,
+                atom_group_indices,
+                group_batch,
+                num_groups,
+                precursor_type_indices,
+                cuts,
+                None,
+                adjustment,
+            )
+
+        num_ordinary = int(fragment_batch_indices.shape[0])
+        expansion = expand_rewire_candidates(
+            match_sets=match_sets,
+            atom_ptr=mol_pyg.ptr,
+            atom_numbers=mol_pyg.atom_atomic_numbers,
+            chemical_bond_index=mol_pyg.chemical_bond_index,
+            host_chemical_bond_index=static_graph.chemical_bond_index,
+            fragment_atom_indices=fragment_atom_indices,
+            atom_fragment_indices=atom_fragment_indices,
+            fragment_batch_indices=fragment_batch_indices,
+            parent_log_probabilities=base_fragment_log_probabilities.detach(),
+            parent_blocked=parent_blocked,
+            bond_logits=bond_logits.detach() if self.rewire_continuation_cuts > 0 else None,
+            channel_fn=channel_fn,
+            max_extra_fraction=self.rewire_max_extra_fraction,
+            max_extra=self.rewire_max_extra,
+            continuation_cuts=self.rewire_continuation_cuts,
+            pair_chunk=self.rewire_pair_chunk,
+            num_rules=MASSTER_NUM_REWIRE_RULES,
+        )
+        num_extra = expansion.num_extra
+        ordinary_valid_channels = valid_channels
+        ordinary_has_channel = valid_channels.flatten(1).any(dim=1)
+        merged_valid = valid_channels
+        if expansion.merged_rows.numel() > 0:
+            merged_valid = valid_channels.clone()
+            merged_valid[expansion.merged_rows] |= expansion.merged_valid_channels
+            base_fragment_log_probabilities = th.where(
+                ordinary_has_channel,
+                base_fragment_log_probabilities,
+                base_fragment_log_probabilities.new_full((), REWIRE_NO_PROPOSAL),
+            )
+        indicators = th.zeros(
+            (num_ordinary + num_extra, MASSTER_NUM_REWIRE_RULES),
+            dtype=th.float32,
+            device=fragment_batch_indices.device,
+        )
+        edit_features = th.zeros(
+            (num_ordinary + num_extra, EDIT_FEATURE_DIM),
+            dtype=th.float32,
+            device=fragment_batch_indices.device,
+        )
+        parents = fragment_batch_indices.new_full((num_ordinary + num_extra,), -1)
+        is_extra = th.zeros(
+            num_ordinary + num_extra, dtype=th.bool, device=fragment_batch_indices.device
+        )
+        if expansion.merged_rows.numel() > 0:
+            indicators[expansion.merged_rows] = expansion.merged_rule_indicators
+            edit_features[expansion.merged_rows] = expansion.merged_edit_features
+        result = {
+            "fragment_atom_indices": fragment_atom_indices,
+            "atom_fragment_indices": atom_fragment_indices,
+            "fragment_boundary_bond_indices": fragment_boundary_bond_indices,
+            "boundary_fragment_indices": boundary_fragment_indices,
+            "fragment_batch_indices": fragment_batch_indices,
+            "fragment_cut_counts": fragment_cut_counts,
+            "ion_mzs": ion_mzs,
+            "valid_channels": merged_valid,
+            "ordinary_valid_channels": ordinary_valid_channels,
+            "fragment_rule_indicators": fragment_rule_indicators,
+            "fragment_log_probabilities": fragment_log_probabilities,
+            "base_fragment_log_probabilities": base_fragment_log_probabilities,
+            "fragment_rewire_indicators": indicators,
+            "fragment_rewire_edit_features": edit_features,
+            "fragment_rewire_parent": parents,
+            "rewire_is_extra": is_extra,
+            "diagnostics": expansion.diagnostics,
+        }
+        if num_extra == 0:
+            return result
+        result["fragment_atom_indices"] = th.cat(
+            [fragment_atom_indices, expansion.extra_atom_indices]
+        )
+        result["atom_fragment_indices"] = th.cat(
+            [atom_fragment_indices, num_ordinary + expansion.extra_atom_extra_indices]
+        )
+        result["fragment_boundary_bond_indices"] = th.cat(
+            [fragment_boundary_bond_indices, expansion.extra_boundary_bond_indices]
+        )
+        result["boundary_fragment_indices"] = th.cat(
+            [boundary_fragment_indices, num_ordinary + expansion.extra_boundary_extra_indices]
+        )
+        result["fragment_batch_indices"] = th.cat(
+            [fragment_batch_indices, expansion.extra_batch_indices]
+        )
+        result["fragment_cut_counts"] = th.cat(
+            [fragment_cut_counts, expansion.extra_cut_counts.to(fragment_cut_counts)]
+        )
+        result["ion_mzs"] = th.cat([ion_mzs, expansion.extra_ion_mzs.to(ion_mzs)])
+        result["valid_channels"] = th.cat([merged_valid, expansion.extra_valid_channels])
+        result["ordinary_valid_channels"] = th.cat(
+            [ordinary_valid_channels, th.zeros_like(expansion.extra_valid_channels)]
+        )
+        if fragment_rule_indicators is not None:
+            result["fragment_rule_indicators"] = th.cat(
+                [
+                    fragment_rule_indicators,
+                    fragment_rule_indicators.new_zeros(
+                        (num_extra, fragment_rule_indicators.shape[1])
+                    ),
+                ]
+            )
+        result["fragment_log_probabilities"] = th.cat(
+            [fragment_log_probabilities, fragment_log_probabilities.new_zeros(num_extra)]
+        )
+        result["base_fragment_log_probabilities"] = th.cat(
+            [
+                base_fragment_log_probabilities,
+                base_fragment_log_probabilities.new_full((num_extra,), REWIRE_NO_PROPOSAL),
+            ]
+        )
+        indicators[num_ordinary:] = expansion.extra_rule_indicators
+        edit_features[num_ordinary:] = expansion.extra_edit_features
+        parents[num_ordinary:] = expansion.extra_parent
+        is_extra[num_ordinary:] = True
+        return result
+
+    @staticmethod
+    def _rewire_outputs(
+        rewire_rows: dict[str, th.Tensor],
+        chemically_valid_fragments: th.Tensor,
+        valid_fragment_idxs: th.Tensor,
+        full_flat_valid: th.Tensor,
+        full_candidate_fragment_idxs: th.Tensor,
+        full_candidate_mzs: th.Tensor,
+        base_fragment_log_probabilities: th.Tensor,
+        fragment_batch_indices: th.Tensor,
+        return_annotation: bool,
+    ) -> dict[str, th.Tensor]:
+        """Proposal view restricted to ordinary fragments, plus the rewire outputs.
+
+        The proposal view is built from the PRE-merge validity, so extras and merge-gained
+        channels or rows never reach the proposal-loss tensors (arm a0 contract).
+        """
+        ordinary_valid = rewire_rows["ordinary_valid_channels"][valid_fragment_idxs]
+        candidate_is_ordinary = ordinary_valid.flatten()[full_flat_valid]
+        candidate_ordinary_idxs = candidate_is_ordinary.nonzero(as_tuple=True)[0]
+        row_is_proposal = ordinary_valid.flatten(1).any(dim=1)
+        proposal_row_idxs = row_is_proposal.nonzero(as_tuple=True)[0]
+        proposal_row_map = row_is_proposal.to(th.long).cumsum(0) - 1
+        is_extra = rewire_rows["rewire_is_extra"][valid_fragment_idxs]
+        output = {
+            "proposal_candidate_mzs": full_candidate_mzs[candidate_ordinary_idxs],
+            "proposal_candidate_fragment_idxs": proposal_row_map[
+                full_candidate_fragment_idxs[candidate_ordinary_idxs]
+            ],
+            "proposal_fragment_logprobs": base_fragment_log_probabilities[proposal_row_idxs],
+            "proposal_fragment_batch_idxs": fragment_batch_indices[proposal_row_idxs],
+            "rewire_is_extra": is_extra,
+            "rewire_candidate_is_extra_by_cut": is_extra[full_candidate_fragment_idxs],
+            "rewire_candidate_is_ordinary_by_cut": candidate_is_ordinary,
+        }
+        output.update(rewire_rows["diagnostics"])
+        if return_annotation:
+            indicators = rewire_rows["fragment_rewire_indicators"][valid_fragment_idxs]
+            pairs = th.nonzero(indicators)
+            old_to_new = chemically_valid_fragments.to(th.long).cumsum(0) - 1
+            parents = rewire_rows["fragment_rewire_parent"][valid_fragment_idxs]
+            kept_parent = (parents >= 0) & chemically_valid_fragments[parents.clamp_min(0)]
+            output.update(
+                {
+                    "fragment_rewire_fragment_idxs": pairs[:, 0],
+                    # 0-based index into REWIRE_RULE_VOCABULARY.
+                    "fragment_rewire_rule_idxs": pairs[:, 1],
+                    "fragment_rewire_parent_idxs": th.where(
+                        kept_parent,
+                        old_to_new[parents.clamp_min(0)],
+                        th.full_like(parents, -1),
+                    ),
+                }
+            )
+        return output
 
     @staticmethod
     def _shared_proposal_layout(
@@ -3457,7 +3891,7 @@ class MassterModel(nn.Module):
             if static_graph is None or static_graph.smarts_templates is None:
                 raise ValueError(
                     "SMARTS-enabled models require static_graph.smarts_templates; "
-                    "use MassterPL with mol_smiles or supply matched templates"
+                    "use MassterPL with mol_graph_binary or supply matched templates"
                 )
             smarts_templates = self._eligible_smarts_templates(
                 static_graph.smarts_templates,
@@ -3521,6 +3955,7 @@ class MassterModel(nn.Module):
         # Marginal fragment selection replaces the proposal outputs with whole-pool ones.
         pool_proposal_outputs: dict[str, th.Tensor] = {}
         learned_ion_mode_proposal_logits: th.Tensor | None = None
+        rewire_rows: dict[str, th.Tensor] | None = None
         if self.unique_fragment_mode:
             (
                 fragment_batch_indices,
@@ -3647,7 +4082,7 @@ class MassterModel(nn.Module):
                     batch_size,
                     self.selected_fragment_target,
                 )
-                pool_flat_valid = valid_channels.flatten()
+                pool_flat_valid = valid_channels.flatten().nonzero(as_tuple=True)[0]
                 pool_candidate_fragment_idxs = (
                     th.arange(num_fragments, device=fragment_batch_indices.device)
                     .reshape(-1, 1, 1)
@@ -3704,15 +4139,16 @@ class MassterModel(nn.Module):
                 fragment_keep |= valid_fragments & (
                     valid_scores == best_valid_scores[fragment_batch_indices]
                 )
-            ion_mzs = ion_mzs[fragment_keep]
-            valid_channels = valid_channels[fragment_keep]
-            fragment_count_before_cutoff = th.bincount(
+            fragment_keep_idxs = fragment_keep.nonzero(as_tuple=True)[0]
+            ion_mzs = ion_mzs[fragment_keep_idxs]
+            valid_channels = valid_channels[fragment_keep_idxs]
+            fragment_count_before_cutoff = bincount_in_range(
                 fragment_batch_indices,
-                minlength=batch_size,
+                batch_size,
             ).to(bond_logits)
-            fragment_count_after_cutoff = th.bincount(
-                fragment_batch_indices[fragment_keep],
-                minlength=batch_size,
+            fragment_count_after_cutoff = bincount_in_range(
+                fragment_batch_indices[fragment_keep_idxs],
+                batch_size,
             ).to(bond_logits)
             # Autocast keeps exp() in float32 while bond_logits stays bfloat16, so the
             # accumulator is built in the contribution dtype and cast back afterwards.
@@ -3729,20 +4165,20 @@ class MassterModel(nn.Module):
             )
 
             old_to_new_fragment = fragment_keep.to(th.long).cumsum(0) - 1
-            old_to_new_fragment[~fragment_keep] = -1
-            atom_keep = fragment_keep[atom_fragment_indices]
+            old_to_new_fragment.masked_fill_(~fragment_keep, -1)
+            atom_keep = fragment_keep[atom_fragment_indices].nonzero(as_tuple=True)[0]
             fragment_atom_indices = fragment_atom_indices[atom_keep]
             atom_fragment_indices = old_to_new_fragment[atom_fragment_indices[atom_keep]]
-            boundary_keep = fragment_keep[boundary_fragment_indices]
+            boundary_keep = fragment_keep[boundary_fragment_indices].nonzero(as_tuple=True)[0]
             fragment_boundary_bond_indices = fragment_boundary_bond_indices[boundary_keep]
             boundary_fragment_indices = old_to_new_fragment[
                 boundary_fragment_indices[boundary_keep]
             ]
-            fragment_batch_indices = fragment_batch_indices[fragment_keep]
-            fragment_cut_counts = fragment_cut_counts[fragment_keep]
+            fragment_batch_indices = fragment_batch_indices[fragment_keep_idxs]
+            fragment_cut_counts = fragment_cut_counts[fragment_keep_idxs]
             if fragment_rule_indicators is not None:
-                fragment_rule_indicators = fragment_rule_indicators[fragment_keep]
-            fragment_log_probabilities = fragment_log_probabilities[fragment_keep]
+                fragment_rule_indicators = fragment_rule_indicators[fragment_keep_idxs]
+            fragment_log_probabilities = fragment_log_probabilities[fragment_keep_idxs]
             num_fragments = int(fragment_log_probabilities.shape[0])
             retained_proposal_log_normalizers = _segment_logsumexp(
                 fragment_log_probabilities,
@@ -3753,6 +4189,42 @@ class MassterModel(nn.Module):
                 fragment_log_probabilities
                 - retained_proposal_log_normalizers[fragment_batch_indices]
             )
+            if self.use_rewire_rules:
+                rewire_rows = self._append_rewire_rows(
+                    static_graph=static_graph,
+                    mol_pyg=mol_pyg,
+                    precursor_type_indices=precursor_type_indices,
+                    bond_logits=bond_logits,
+                    fragment_atom_indices=fragment_atom_indices,
+                    atom_fragment_indices=atom_fragment_indices,
+                    fragment_boundary_bond_indices=fragment_boundary_bond_indices,
+                    boundary_fragment_indices=boundary_fragment_indices,
+                    fragment_batch_indices=fragment_batch_indices,
+                    fragment_cut_counts=fragment_cut_counts,
+                    ion_mzs=ion_mzs,
+                    valid_channels=valid_channels,
+                    fragment_rule_indicators=fragment_rule_indicators,
+                    fragment_log_probabilities=fragment_log_probabilities,
+                    base_fragment_log_probabilities=base_fragment_log_probabilities,
+                    parent_blocked=(
+                        None
+                        if fragment_formed_bond_counts is None
+                        else fragment_formed_bond_counts[fragment_keep_idxs] > 0
+                    ),
+                    batch_size=batch_size,
+                )
+                fragment_atom_indices = rewire_rows["fragment_atom_indices"]
+                atom_fragment_indices = rewire_rows["atom_fragment_indices"]
+                fragment_boundary_bond_indices = rewire_rows["fragment_boundary_bond_indices"]
+                boundary_fragment_indices = rewire_rows["boundary_fragment_indices"]
+                fragment_batch_indices = rewire_rows["fragment_batch_indices"]
+                fragment_cut_counts = rewire_rows["fragment_cut_counts"]
+                ion_mzs = rewire_rows["ion_mzs"]
+                valid_channels = rewire_rows["valid_channels"]
+                fragment_rule_indicators = rewire_rows["fragment_rule_indicators"]
+                fragment_log_probabilities = rewire_rows["fragment_log_probabilities"]
+                base_fragment_log_probabilities = rewire_rows["base_fragment_log_probabilities"]
+                num_fragments = int(fragment_batch_indices.shape[0])
             pooled_atom_indices, pooled_atom_fragment_indices = self._candidate_atom_dropout(
                 fragment_atom_indices,
                 atom_fragment_indices,
@@ -3808,6 +4280,9 @@ class MassterModel(nn.Module):
                 num_components=num_fragments,
                 batch_size=batch_size,
                 dtype=fragment_embeddings.dtype,
+                rewire_edit_features=(
+                    None if rewire_rows is None else rewire_rows["fragment_rewire_edit_features"]
+                ),
             )
             fragment_candidate_features = build_candidate_features(
                 self.candidate_feature_specs,
@@ -3885,6 +4360,9 @@ class MassterModel(nn.Module):
                 connectivity_embeddings=connectivity_embeddings,
                 rule_pathway_features=(
                     fragment_rule_indicators if self.rule_pathway_token else None
+                ),
+                rewire_pathway_features=(
+                    None if rewire_rows is None else rewire_rows["fragment_rewire_indicators"]
                 ),
                 sink_vectors=None if sink_rows is None else sink_rows[fragment_batch_indices],
                 precursor_neutral_masses=(
@@ -4123,6 +4601,7 @@ class MassterModel(nn.Module):
 
         # 4. Remove fragments that cannot form an ion under the configured adduct.
         chemically_valid_fragments = valid_channels.flatten(1).any(dim=1)
+        valid_fragment_idxs = chemically_valid_fragments.nonzero(as_tuple=True)[0]
         if return_annotation:
             # The true atom memberships of the fragment rows, re-indexed onto the fragments
             # that survive this step. Nothing downstream reads memberships, so they are
@@ -4134,7 +4613,9 @@ class MassterModel(nn.Module):
                 membership_atoms = candidates.atom_indices
                 membership_fragments = candidates.atom_component_indices
             old_to_new_valid = chemically_valid_fragments.to(th.long).cumsum(0) - 1
-            membership_keep = chemically_valid_fragments[membership_fragments]
+            membership_keep = chemically_valid_fragments[membership_fragments].nonzero(
+                as_tuple=True
+            )[0]
             annotation_atom_indices = membership_atoms[membership_keep]
             annotation_atom_fragment_indices = old_to_new_valid[
                 membership_fragments[membership_keep]
@@ -4143,7 +4624,7 @@ class MassterModel(nn.Module):
                 annotation_rule_pairs = fragment_batch_indices.new_zeros((0, 2))
             else:
                 annotation_rule_pairs = th.nonzero(
-                    fragment_rule_indicators[chemically_valid_fragments]
+                    fragment_rule_indicators[valid_fragment_idxs]
                 )
         if self.isotope_envelope != "none":
             # Same memberships as the annotation export above.
@@ -4161,23 +4642,23 @@ class MassterModel(nn.Module):
                 self.composition_element_columns,
                 COMPOSITION_FEATURE_DIM,
                 COMPOSITION_HYDROGEN_COLUMN,
-            )[chemically_valid_fragments]
-        fragment_batch_indices = fragment_batch_indices[chemically_valid_fragments]
-        fragment_cut_counts = fragment_cut_counts[chemically_valid_fragments]
-        ion_mzs = ion_mzs[chemically_valid_fragments]
-        valid_channels = valid_channels[chemically_valid_fragments]
-        ion_h_logits = ion_h_logits[chemically_valid_fragments]
-        ion_h_support_logits = ion_h_support_logits[chemically_valid_fragments]
+            )[valid_fragment_idxs]
+        fragment_batch_indices = fragment_batch_indices[valid_fragment_idxs]
+        fragment_cut_counts = fragment_cut_counts[valid_fragment_idxs]
+        ion_mzs = ion_mzs[valid_fragment_idxs]
+        valid_channels = valid_channels[valid_fragment_idxs]
+        ion_h_logits = ion_h_logits[valid_fragment_idxs]
+        ion_h_support_logits = ion_h_support_logits[valid_fragment_idxs]
         if learned_ion_mode_proposal_logits is not None:
             learned_ion_mode_proposal_logits = learned_ion_mode_proposal_logits[
-                chemically_valid_fragments
+                valid_fragment_idxs
             ]
         if self.intensity_output == "independent":
-            corrected_fragment_logits = corrected_fragment_logits[chemically_valid_fragments]
+            corrected_fragment_logits = corrected_fragment_logits[valid_fragment_idxs]
         # Normalize the final and proposal distributions together over valid fragments.
         fragment_scores = th.stack(
             (fragment_log_probabilities, base_fragment_log_probabilities), dim=1
-        )[chemically_valid_fragments]
+        )[valid_fragment_idxs]
         score_batch_indices = 2 * fragment_batch_indices[:, None] + th.arange(
             2,
             device=fragment_batch_indices.device,
@@ -4284,8 +4765,8 @@ class MassterModel(nn.Module):
         base_pathway_log_probabilities = (
             base_fragment_log_probabilities[:, None, None] + base_ion_h_log_probabilities
         )
-        full_flat_valid = valid_channels.flatten()
-        selected_flat_valid = spectral_output_channels.flatten()
+        full_flat_valid = valid_channels.flatten().nonzero(as_tuple=True)[0]
+        selected_flat_valid = spectral_output_channels.flatten().nonzero(as_tuple=True)[0]
         full_candidate_mzs = ion_mzs.flatten()[full_flat_valid]
         pred_mzs = ion_mzs.flatten()[selected_flat_valid]
         pred_logprobs = pathway_log_probabilities.flatten()[selected_flat_valid]
@@ -4306,15 +4787,9 @@ class MassterModel(nn.Module):
         )
         full_candidate_fragment_idxs = fragment_channel_indices.flatten()[full_flat_valid]
 
-        fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size).to(bond_logits)
-        valid_ion_h_count = th.bincount(
-            full_candidate_batch_idxs,
-            minlength=batch_size,
-        ).to(bond_logits)
-        retained_ion_h_count = th.bincount(
-            pred_batch_idxs,
-            minlength=batch_size,
-        ).to(bond_logits)
+        fragment_counts = bincount_in_range(fragment_batch_indices, batch_size).to(bond_logits)
+        valid_ion_h_count = bincount_in_range(full_candidate_batch_idxs, batch_size).to(bond_logits)
+        retained_ion_h_count = bincount_in_range(pred_batch_idxs, batch_size).to(bond_logits)
         retained_intensity_mass = (
             dense_intensity_log_probabilities.exp() * spectral_output_channels
         ).sum(dim=(1, 2))
@@ -4373,14 +4848,8 @@ class MassterModel(nn.Module):
             candidates.mask_batch_indices,
             selected_mask_probabilities,
         )
-        selected_mask_count = th.bincount(
-            candidates.mask_batch_indices,
-            minlength=batch_size,
-        )
-        component_pathway_count = th.bincount(
-            candidates.component_batch_indices,
-            minlength=batch_size,
-        )
+        selected_mask_count = bincount_in_range(candidates.mask_batch_indices, batch_size)
+        component_pathway_count = bincount_in_range(candidates.component_batch_indices, batch_size)
         selected_mask_count_float = selected_mask_count.to(bond_logits)
         component_pathway_count_float = component_pathway_count.to(bond_logits)
         unique_component_count_float = candidates.unique_component_count.to(bond_logits)
@@ -4462,14 +4931,21 @@ class MassterModel(nn.Module):
             # 6. Isotope rows: every emitted pathway becomes one row per isotope offset, with its
             # probability split by natural abundance. The channel diagnostics above stay
             # monoisotopic.
-            emitted_rows, isotope_offsets, isotope_log_shares = self._isotope_rows(
+            isotope_args = (
                 fragment_compositions,
                 precursor_type_indices[fragment_batch_indices],
                 fragment_channel_indices.flatten()[selected_flat_valid],
                 mode_channel_indices.flatten()[selected_flat_valid],
                 h_channel_shifts.flatten()[selected_flat_valid],
             )
-            pred_mzs = pred_mzs[emitted_rows] + isotope_offsets.to(pred_mzs)
+            if self.mass_mode == "exact":
+                emitted_rows, isotope_offsets, isotope_mass_shifts, isotope_log_shares = (
+                    self._exact_isotope_rows(*isotope_args)
+                )
+                pred_mzs = pred_mzs[emitted_rows].double() + isotope_mass_shifts
+            else:
+                emitted_rows, isotope_offsets, isotope_log_shares = self._isotope_rows(*isotope_args)
+                pred_mzs = pred_mzs[emitted_rows] + isotope_offsets.to(pred_mzs)
             pred_batch_idxs = pred_batch_idxs[emitted_rows]
             pred_logprobs = pred_logprobs[emitted_rows] + isotope_log_shares.to(pred_logprobs)
             if pred_intensities is not None:
@@ -4480,8 +4956,24 @@ class MassterModel(nn.Module):
                 base_pred_logprobs = base_pred_logprobs[emitted_rows] + isotope_log_shares.to(
                     base_pred_logprobs
                 )
+        merges_rows = self.mass_mode == "nominal" or self.merge_same_mz_rows
+        row_order = None
+        if rewire_rows is not None and not merges_rows:
+            # Rewire extras are appended after every ordinary fragment, so their rows follow all
+            # spectra's ordinary rows. The losses slice rows by per-spectrum counts and need them
+            # grouped by spectrum (the merge below re-sorts by spectrum on its own). The sort is
+            # stable, so each spectrum keeps its own row order and spectra without extras are
+            # unchanged.
+            row_order = th.argsort(pred_batch_idxs, stable=True)
+            pred_mzs = pred_mzs[row_order]
+            pred_batch_idxs = pred_batch_idxs[row_order]
+            pred_logprobs = pred_logprobs[row_order]
+            if pred_intensities is not None:
+                pred_intensities = pred_intensities[row_order]
+            if base_pred_logprobs is not None:
+                base_pred_logprobs = base_pred_logprobs[row_order]
         merged_pathway_scores = None
-        if self.mass_mode == "nominal" or self.merge_same_mz_rows:
+        if merges_rows:
             # 7. At nominal mass many pathways land on the same integer of a spectrum. The loss
             # and metrics see only (m/z, probability), so merging those rows is exact, and it
             # divides the loss's target-by-prediction work several-fold. merge_same_mz_rows
@@ -4617,6 +5109,20 @@ class MassterModel(nn.Module):
                     "proposal_fragment_batch_idxs": fragment_batch_indices,
                 }
             )
+        if rewire_rows is not None:
+            output.update(
+                self._rewire_outputs(
+                    rewire_rows,
+                    chemically_valid_fragments,
+                    valid_fragment_idxs,
+                    full_flat_valid,
+                    full_candidate_fragment_idxs,
+                    full_candidate_mzs,
+                    base_fragment_log_probabilities,
+                    fragment_batch_indices,
+                    return_annotation,
+                )
+            )
         output.update(pool_proposal_outputs)
         if self.rt_head is not None or self.ccs_head is not None:
             pooled = pool_property_atoms(atom_embeddings, mol_pyg.batch, precursor_type_indices.numel())
@@ -4635,6 +5141,10 @@ class MassterModel(nn.Module):
             if emitted_rows is not None:
                 pathway_rows = {name: rows[emitted_rows] for name, rows in pathway_rows.items()}
                 pathway_rows["pred_pathway_isotope_offsets"] = isotope_offsets
+                if self.mass_mode == "exact":
+                    pathway_rows["pred_pathway_isotope_mass_shifts"] = isotope_mass_shifts
+            if row_order is not None:
+                pathway_rows = {name: rows[row_order] for name, rows in pathway_rows.items()}
             if merged_pathway_scores is not None:
                 pathway_rows.update(merged_pathway_scores)
             output.update(

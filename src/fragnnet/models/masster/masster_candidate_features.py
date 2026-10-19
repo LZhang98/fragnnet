@@ -55,7 +55,7 @@ from fragnnet.models.masster.masster_component_pooling import (
     pool_boundary_bond_embeddings,
 )
 from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX, H_MASS
-from fragnnet.utils.misc_utils import _validate_tensor_condition
+from fragnnet.utils.misc_utils import _validate_tensor_condition, bincount_in_range
 
 # Element vocabulary for composition features: the canonical order plus one shared column for
 # anything outside it, matching the unknown bucket ``a_onehot`` gives unlisted elements.
@@ -185,6 +185,7 @@ class CandidateFeatureInputs:
         num_components: Number of components.
         batch_size: Number of spectra in the batch.
         dtype: Dtype every built column is emitted in, the token's own dtype.
+        rewire_edit_features: Per-candidate rule-edit descriptors, set only by rewire models.
     """
 
     mol_pyg: Batch
@@ -198,6 +199,7 @@ class CandidateFeatureInputs:
     num_components: int
     batch_size: int
     dtype: th.dtype
+    rewire_edit_features: th.Tensor | None = None
 
     @cached_property
     def edge_feature_dim(self) -> int:
@@ -207,7 +209,7 @@ class CandidateFeatureInputs:
     @cached_property
     def component_sizes(self) -> th.Tensor:
         """Atom count per component, ``th.long``."""
-        return th.bincount(self.atom_component_indices, minlength=self.num_components)
+        return bincount_in_range(self.atom_component_indices, self.num_components)
 
     @cached_property
     def component_neutral_masses(self) -> th.Tensor:
@@ -424,6 +426,15 @@ def _build_cut_adjacency(inputs: CandidateFeatureInputs) -> th.Tensor:
     return th.stack(sides, dim=1).to(inputs.dtype)
 
 
+def _build_rewire_edit(inputs: CandidateFeatureInputs) -> th.Tensor:
+    """n_formed, n_internal_cut, n_deleted_heavy, depth of the rule edit; zeros for ordinary rows."""
+    if inputs.rewire_edit_features is None:
+        raise ValueError(
+            "c_rewire_edit needs masster_rewire_rules (no rewire edit features were built)"
+        )
+    return inputs.rewire_edit_features.to(inputs.dtype)
+
+
 @dataclass(frozen=True)
 class CandidateFeatureSpec:
     """One named descriptor group inside the candidate token.
@@ -484,6 +495,11 @@ CANDIDATE_FEATURE_SPECS: tuple[CandidateFeatureSpec, ...] = (
         name="c_heavy_side",
         width=lambda edge_feature_dim: 1 + COMPOSITION_FEATURE_DIM,
         build=_build_heavy_side,
+    ),
+    CandidateFeatureSpec(
+        name="c_rewire_edit",
+        width=lambda edge_feature_dim: 4,
+        build=_build_rewire_edit,
     ),
 )
 

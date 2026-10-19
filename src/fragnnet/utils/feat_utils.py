@@ -489,6 +489,97 @@ class AtomMass(FeatBase):
         return [x.GetMass() * cls.coef]
 
 
+# Pauling electronegativity (CRC Handbook) by element symbol. Noble gases He/Ne/Ar and Pm have no
+# Pauling value and are absent; ``AtomPeriodic`` raises on them.
+PAULING_ELECTRONEGATIVITY = {
+    "H": 2.20, "Li": 0.98, "Be": 1.57, "B": 2.04, "C": 2.55, "N": 3.04, "O": 3.44, "F": 3.98,
+    "Na": 0.93, "Mg": 1.31, "Al": 1.61, "Si": 1.90, "P": 2.19, "S": 2.58, "Cl": 3.16,
+    "K": 0.82, "Ca": 1.00, "Sc": 1.36, "Ti": 1.54, "V": 1.63, "Cr": 1.66, "Mn": 1.55, "Fe": 1.83,
+    "Co": 1.88, "Ni": 1.91, "Cu": 1.90, "Zn": 1.65, "Ga": 1.81, "Ge": 2.01, "As": 2.18,
+    "Se": 2.55, "Br": 2.96, "Kr": 3.00,
+    "Rb": 0.82, "Sr": 0.95, "Y": 1.22, "Zr": 1.33, "Nb": 1.60, "Mo": 2.16, "Tc": 1.90,
+    "Ru": 2.20, "Rh": 2.28, "Pd": 2.20, "Ag": 1.93, "Cd": 1.69, "In": 1.78, "Sn": 1.96,
+    "Sb": 2.05, "Te": 2.10, "I": 2.66, "Xe": 2.60,
+    "Cs": 0.79, "Ba": 0.89, "La": 1.10, "Ce": 1.12, "Pr": 1.13, "Nd": 1.14, "Sm": 1.17,
+    "Eu": 1.20, "Gd": 1.20, "Tb": 1.20, "Dy": 1.22, "Ho": 1.23, "Er": 1.24, "Tm": 1.25,
+    "Yb": 1.10, "Lu": 1.27, "Hf": 1.30, "Ta": 1.50, "W": 2.36, "Re": 1.90, "Os": 2.20,
+    "Ir": 2.20, "Pt": 2.28, "Au": 2.54, "Hg": 2.00, "Tl": 1.62, "Pb": 2.33, "Bi": 2.02,
+    "Po": 2.00, "At": 2.20,
+}  # fmt: skip
+# Atomic number of the last element of each period 1..7.
+_PERIOD_ENDS = (2, 10, 18, 36, 54, 86, 118)
+
+
+def periodic_position(atomic_num: int) -> tuple[int, int]:
+    """Return the (period, IUPAC group) of an element; lanthanides and actinides get group 3.
+
+    Args:
+        atomic_num: Atomic number, 1 to 118.
+
+    Returns:
+        Period 1-7 and group 1-18.
+
+    Raises:
+        ValueError: If ``atomic_num`` is outside 1-118.
+    """
+    if not 1 <= atomic_num <= _PERIOD_ENDS[-1]:
+        raise ValueError(f"no periodic position for atomic number {atomic_num}")
+    period = next(p for p, end in enumerate(_PERIOD_ENDS, start=1) if atomic_num <= end)
+    pos = atomic_num - (_PERIOD_ENDS[period - 2] if period > 1 else 0) - 1
+    if period == 1:
+        return period, 1 if pos == 0 else 18
+    if period <= 3:
+        # s block, then p block from group 13.
+        return period, pos + 1 if pos < 2 else pos + 11
+    if period <= 5:
+        return period, pos + 1
+    # s block, 15 lanthanides/actinides in group 3, then groups 4-18.
+    if pos < 2:
+        return period, pos + 1
+    return period, 3 if pos <= 16 else pos - 13
+
+
+@register_atom_feat
+class AtomPeriodic(FeatBase):
+    """Continuous periodic-table properties, so a rare element can share what its group learned.
+
+    Four values: period / 7, group / 18, Pauling electronegativity / 4 and valence (outer-shell)
+    electrons / 8. Se then sits next to S, As next to P, and Br between Cl and I, where the
+    element one-hot keeps every element orthogonal. A dummy atom (atomic number 0) gets zeros.
+    """
+
+    name = "a_periodic"
+    feat_size = 4
+
+    @classmethod
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[float]:
+        """Compute the scaled periodic properties of an atom.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            ``[period / 7, group / 18, electronegativity / 4, valence electrons / 8]``.
+
+        Raises:
+            ValueError: If the element has no Pauling electronegativity in the table.
+        """
+        atomic_num = x.GetAtomicNum()
+        if atomic_num == 0:
+            return [0.0] * cls.feat_size
+        symbol = x.GetSymbol()
+        if symbol not in PAULING_ELECTRONEGATIVITY:
+            raise ValueError(f"a_periodic has no Pauling electronegativity for {symbol}")
+        period, group = periodic_position(atomic_num)
+        outer_electrons = Chem.GetPeriodicTable().GetNOuterElecs(atomic_num)
+        return [
+            period / 7,
+            group / 18,
+            PAULING_ELECTRONEGATIVITY[symbol] / 4,
+            outer_electrons / 8,
+        ]
+
+
 @register_atom_feat
 class AtomRingSize(FeatBase):
     """Ring size membership features for atoms.

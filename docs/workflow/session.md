@@ -82,9 +82,12 @@ their documented stores; include accessible identities and links in the record.
 
 At meaningful checkpoints, update the plan with observed results. Put supported durable
 conclusions and negative results in `docs/findings/`; preserve evidence and uncertainty.
+Append each new measurement as a row to its benchmark ledger in `docs/results/`.
 Update the workstream hub's "Where it stands" and "Open threads", then **replace** that
 workstream's block in [project state](../project-state.md) (no dated entries there; it stays
 under about 200 lines). Keep useful closed plans and their status banners. Do not copy transcripts into docs.
+The [history and summary workflow](history_and_summary.md) gives the handoff checklist and the
+procedures for rotating plan logs, compacting project state, merging and retiring documents.
 
 Report what changed, checks actually run and their outcomes, remaining limitations, and artifact
 locations. Leave Git staging, history, and branch state to the user under the shared rules.
@@ -95,5 +98,5 @@ Keep one canonical location per fact. Preserve the existing `guides/`, `referenc
 and `plans/` layout. Check status and evidence before following older documents; a GUIDE banner
 alone is not verification. Reusable procedures belong here or in `guides/`; add tool-specific
 skill wrappers only when a concrete recurring task needs them. Periodically check stale plans,
-links, commands, and local guidance for drift. Runtime permissions and hooks need a separate
+links, commands, and local guidance for drift ([sweep](history_and_summary.md#sweep)). Runtime permissions and hooks need a separate
 review of their actual configuration, not assumptions based on prose.

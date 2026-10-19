@@ -24,6 +24,7 @@ from fragnnet.utils.isotope_cleanup_utils import (
 )
 from fragnnet.utils.migrations import RETIRED_INST_TYPE_HELP, RETIRED_INST_TYPES
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
+from fragnnet.utils.mol_utils import rdkit_import
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import (
     CHARGE_FACTOR_MAP,
@@ -281,6 +282,34 @@ class BaseDataset(Dataset):
                 sorted(allowed_adducts),
                 orig_n,
                 len(spec_df),
+            )
+
+        # Element filter: drop molecules containing any listed element, e.g. to hold an element
+        # out of training and measure transfer to it.
+        exclude_elements = _split_filter.get("filter_exclude_elements", [])
+        if exclude_elements:
+            (Chem,) = rdkit_import("rdkit.Chem")
+            for symbol in exclude_elements:
+                try:
+                    Chem.GetPeriodicTable().GetAtomicNumber(symbol)
+                except RuntimeError as err:
+                    raise ValueError(
+                        f"filter_exclude_elements: unknown element {symbol!r}"
+                    ) from err
+            excluded = set(exclude_elements)
+            keep_mol = mol_df["mol"].map(
+                lambda mol: excluded.isdisjoint(atom.GetSymbol() for atom in mol.GetAtoms())
+            )
+            orig_n = len(spec_df)
+            mol_df = mol_df[keep_mol.to_numpy()]
+            spec_df = spec_df[spec_df["mol_id"].isin(mol_df["mol_id"])]
+            logger.info(
+                "split_filter [%s] filter_exclude_elements %s: %d -> %d spectra, %d molecules kept",
+                splits[0],
+                sorted(excluded),
+                orig_n,
+                len(spec_df),
+                len(mol_df),
             )
 
         # Determine which CE columns to compute and which is primary.

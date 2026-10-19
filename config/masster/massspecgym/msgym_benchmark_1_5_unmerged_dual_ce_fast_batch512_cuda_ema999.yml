@@ -4,7 +4,7 @@
 # cos_sim_0.01 best 0.5754 @ epoch 62, 118-127 tail 0.5695) plus ema_decay 0.999, the one lever
 # that passed on both NIST20 lineages (2026-09-24): u2_ema999 c8hh9j1b +0.0094 on unmerged
 # [M+H]+/FT, t2_ema998 49ub2p8y +0.0097 on merged, both above control at every epoch.
-# docs/plans/masster/masster_ranking_transfer_plan.md#tail-read-from-wb-2026-09-24
+# 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md, removed 2026-10-18#tail-read-from-wb-2026-09-24
 # At 194 steps/epoch, 0.999 gives a mean weight age of ~1,000 steps (~5.2 epochs), the same
 # step age as u2. Validation, best-checkpoint selection, the post-fit test and saved state_dicts
 # all use the average (fragnnet.utils.trainer_utils.ExponentialMovingAverage).
@@ -60,13 +60,13 @@
 # 4. masster_intensity_norm_placement: pre. `a1_prenorm` (q4t4udee) is the only clean
 #    single-key PASS of the 128-epoch merged screen: +0.0056 tail mean (118-127) against the
 #    0.7270 control, parameter-identical, and it halves the calibration drift.
-#    docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_architecture_arms_epoch128_2026_09_22.md, removed 2026-10-18
 #
 # 5. Cosine LR to 1% of peak with the template's 1000-step linear warmup, i.e. arm
 #    `d3_cosine_warmup1000` (rcfzf67p): best <=127 0.7357 against a 0.7286 control mean; d1/d2
 #    (no warmup) reached 0.7329/0.7326. n=1. lr_total_steps = 128 x 194 = 24,832; change it
 #    with max_epochs. The schedule clamps at the floor, so an overshoot is harmless.
-#    docs/findings/masster/masster_overfit_readout_2026_09_22.md
+#    95341fce:docs/findings/masster/masster_overfit_readout_2026_09_22.md, removed 2026-10-18
 #    4 + 5 together are UNTESTED: every NIST20 read above changed one of them alone, and a7
 #    showed attention-side gains are not additive.
 #

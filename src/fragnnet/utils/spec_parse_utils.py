@@ -132,6 +132,7 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
             "QFT": "ORB",
             "orbitrap": "ORB",
             "qtof": "QTOF",
+            "iontrap": "IT",
         }
         inst_type = inst_type_map.get(inst_type_str, "Other")
     if inst_type == "ORB" and isinstance(inst_str, str) and "Fusion" in inst_str:
@@ -144,6 +145,9 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
         frag_mode = "CID"
     elif frag_mode_str == "HCD":
         frag_mode = "HCD"
+    elif frag_mode_str == "EAD":
+        # electron-activated dissociation (SCIEX ZenoTOF); its ace is the electron kinetic energy
+        frag_mode = "EAD"
     else:
         frag_mode = np.nan
     return inst_type, frag_mode

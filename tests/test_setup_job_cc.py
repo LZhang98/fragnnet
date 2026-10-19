@@ -223,7 +223,7 @@ def test_channel_selection_audit_stages_checkpoint_and_preserves_output(tmp_path
             sys.executable,
             str(repo_root / "scripts" / "setup_job_cc.py"),
             "--job_name=channel_audit",
-            "--python_script_fp=./scripts/eval/masster_ion_h_top_k_sweep.py",
+            "--python_script_fp=./scripts/debug/masster_core/masster_ion_h_top_k_sweep.py",
             "--frag_gnn_dp=./",
             "--script_dp=slurm_scripts",
             "--job_dp=jobs",

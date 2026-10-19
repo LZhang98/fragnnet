@@ -2,7 +2,7 @@
 
 Consumes the per-spectrum CSV produced alongside the oracle scoring
 (``recall_wrecall_by_ce.csv`` with columns spec_id, inst_type, prec_type, ce, recall,
-wrecall) and regenerates every figure in ``docs/findings/fragnnet/oracle_recall_wrecall_by_ce.md``:
+wrecall) and regenerates every figure in ``95341fce:docs/findings/fragnnet/oracle_recall_wrecall_by_ce.md, removed 2026-10-18``:
 
   1. recall & wrecall means vs CE, one line per adduct (FT + QTOF panels)
   2. wrecall mean vs median vs CE (tail-broadening view)
@@ -16,7 +16,7 @@ order); CE uses the sequential blue ramp (light -> dark = low -> high energy).
 Usage:
     python scripts/plotting/plot_oracle_ce_coverage.py \\
         --csv data/eval/oracle_cos_nist20_default/recall_wrecall_by_ce.csv \\
-        --out_dp docs/figures
+        --out_dp output/oracle_ce_coverage
 """
 
 from __future__ import annotations
@@ -242,7 +242,7 @@ def plot_scatter_by_adduct(df: pd.DataFrame, metric: str, out_fp: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Plot oracle recall/wrecall vs CE for NIST20")
     parser.add_argument("--csv", default="data/eval/oracle_cos_nist20_default/recall_wrecall_by_ce.csv")
-    parser.add_argument("--out_dp", default="docs/figures")
+    parser.add_argument("--out_dp", default="output/oracle_ce_coverage")
     args = parser.parse_args()
 
     df = load_binned(args.csv)

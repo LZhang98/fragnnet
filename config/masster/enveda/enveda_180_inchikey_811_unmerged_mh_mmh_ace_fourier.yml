@@ -1,7 +1,7 @@
 # BASELINE -- MASSter on Enveda-180 alone, [M+H]+ and [M-H]-, 2026-09-26.
 #
 # First Enveda run. It was built as control `i0` of
-# docs/plans/masster/masster_isotope_envelope_plan.md, which closed null at its model-free gate on
+# 95341fce:docs/plans/masster/masster_isotope_envelope_plan.md, removed 2026-10-18, which closed null at its model-free gate on
 # 2026-09-27, so it is now only the Enveda baseline. Forked from
 # config/masster/massspecgym/msgym_benchmark_1_5_unmerged_dual_ce_fast_batch512_cuda.yml
 # (QTOF, unmerged, dual CE, cosine LR with warmup, no EMA). Model and loss keys are unchanged

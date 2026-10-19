@@ -95,7 +95,7 @@ This finding starts there.
   - The **support bound** is the cosine of predicting the target exactly on the bins the
     prediction's candidates cover. It is split by tolerance: a target peak with a candidate
     within 10 ppm (200 Da floor, as in the
-    [ranking decomposition](masster_ranking_decomposition_2026_09_23.md)) but in another bin is
+    ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)) but in another bin is
     proposed but split by the binning; a peak with none is not proposed.
 - **Energy offset.** A series is one molecule's spectra on one instrument, ordered along its NCE
   ladder. A shift of s steps scores each target against the prediction s rungs higher, clipped at
@@ -300,7 +300,7 @@ whose measured precursor fraction is below 0.05.
   - On unfamiliar molecules the prediction is flatter than the spectrum: 1.31× the effective
     peaks at Tanimoto ≤ 0.4.
   - On close analogues it is sharper.
-  - The [ranking decomposition](masster_ranking_decomposition_2026_09_23.md)'s "slightly too
+  - The ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`)'s "slightly too
     sharp" on f0/f1 is the average over these.
 - **This is the pattern of prediction by similarity to training molecules.** With a close
   analogue the model commits to that analogue's pattern, too firmly. Without one it spreads its
@@ -344,7 +344,7 @@ whose measured precursor fraction is below 0.05.
 - **The remaining val deficit is structural.** 64% is how intensity is shared among fragments
   the model already proposes, within an extent band. Another 8% is fragments no candidate
   reaches, and 9% is lost to the metric's bins.
-  - This agrees with the [ranking decomposition](masster_ranking_decomposition_2026_09_23.md) on
+  - This agrees with the ranking decomposition (removed 2026-10-18; `git show 731fe493:docs/findings/masster/masster_ranking_decomposition_2026_09_23.md`) on
     f0/f1: candidate ordering is half the gap, coverage 6%, and the ranking error nearly vanishes
     on training molecules.
   - That split is fixed by molecular structure, and the model reads the structure. So the deficit

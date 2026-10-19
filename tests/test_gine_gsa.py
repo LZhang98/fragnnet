@@ -593,3 +593,15 @@ def test_gine_gsa_context_token_requires_matching_context() -> None:
         _context_encoder(6)(*inputs, context=th.randn(3, 6))
     with pytest.raises(ValueError, match="nonnegative"):
         _context_encoder(-1)
+
+
+def test_graph_softmax_attn_host_max_nodes_is_bit_identical() -> None:
+    th.manual_seed(12)
+    batch_index = th.tensor([0, 0, 0, 2, 2, 3])
+    queries, keys, values = _random_qkv(6, 3, 8)
+
+    derived = _graph_softmax_attn(queries, keys, values, batch_index, 4)
+    given = _graph_softmax_attn(queries, keys, values, batch_index, 4, max_nodes=3)
+
+    assert th.equal(derived, given)
+    assert th.allclose(derived, _reference_attention(queries, keys, values, batch_index, 4))

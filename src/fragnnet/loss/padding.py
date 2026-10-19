@@ -4,6 +4,8 @@ memory.
 
 import torch as th
 
+from fragnnet.utils.misc_utils import bincount_in_range
+
 
 def paired_batch_offsets(
     true_batch_idxs: th.Tensor, pred_batch_idxs: th.Tensor, batch_size: int
@@ -13,8 +15,8 @@ def paired_batch_offsets(
     Offsets describe contiguous slices only when each input is sorted by batch index.
     Empty rows are retained. Callers own sorting, empty-input policy and chunk selection.
     """
-    true_counts = th.bincount(true_batch_idxs, minlength=batch_size)
-    pred_counts = th.bincount(pred_batch_idxs, minlength=batch_size)
+    true_counts = bincount_in_range(true_batch_idxs, batch_size)
+    pred_counts = bincount_in_range(pred_batch_idxs, batch_size)
     offsets = th.cat(
         (
             true_counts.new_zeros(1),

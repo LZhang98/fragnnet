@@ -3,7 +3,7 @@
 import pytest
 import torch as th
 
-from scripts.eval.masster_mask_budget_sweep import (
+from scripts.debug.masster_core.masster_mask_budget_sweep import (
     WeightedMetricAccumulator,
     sample_weights,
     validate_mask_budgets,

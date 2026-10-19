@@ -21,7 +21,7 @@ formula alone cannot establish its atom mapping or reaction mechanism.
 
 The current implementation represents **precursor atom partitions**, including disconnected
 retained assemblies, rather than newly bonded product graphs with sequential fragmentation.
-See the [implementation audit](../findings/masster/masster_smarts_review_2026_09_13.md) and
+See the [implementation audit](../findings/masster/masster_smarts_findings.md#masster-smarts-set-and-literature-review) and
 [registry](../../src/fragnnet/models/masster/candidates/smarts_templates.py). Thus adding candidate support and
 learning the actual rearranged connectivity are different implementation scopes.
 
@@ -51,7 +51,7 @@ intermediate.
 
 **Correction to earlier state:** `hydroxamic_acid_nh_excision` is already in the executable
 registry, guarded to `[M+H]+`. The initial rejection in the
-[SMARTS audit §6](../findings/masster/masster_smarts_cuda_audit_2026_09_27.md#6-aimes-worked-examples-and-the-other-rule-lists)
+[SMARTS audit §6](../findings/masster/masster_smarts_findings.md#6-aimes-worked-examples-and-the-other-rule-lists)
 was followed by a weak positive gate and addition in §7. Its existence is not new in this
 search. The [current catalog](../reference/masster_smarts_rules.md) is authoritative for the
 22-rule set and measured gates. That gate measures peak coverage, not mechanistic proof.
@@ -93,7 +93,7 @@ operator specification was obtained, so this is not an exact reproduction propos
 
 ## Subsequent coverage probe
 
-The [continuation gate](../findings/masster/masster_excision_continuation_gate_2026_09_28.md)
+The continuation gate (removed 2026-10-18; `git show 95341fce:docs/findings/masster/masster_excision_continuation_gate_2026_09_28.md`)
 subsequently tested generic bridge losses over c0 candidates on train and frozen validation
 families. Aromatic nitro NO-loss continuations confirmed. A follow-up primary source,
 [Pandeti et al., 2017](https://pubs.rsc.org/en/content/articlepdf/2017/ra/c7ra08312b), reports

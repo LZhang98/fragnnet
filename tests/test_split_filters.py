@@ -14,6 +14,7 @@ import tempfile
 
 import pandas as pd
 import pytest
+from rdkit import Chem
 
 from fragnnet.dataset.base_dataset import BaseDataset
 from fragnnet.utils import formula_utils, spec_parse_utils
@@ -793,3 +794,45 @@ class TestFillMissingAce:
         ces = self._ces(ce_spec_df, fill=fill)
         assert ces.loc[3, "nce"] == pytest.approx([20.0 * 500.0 / 300.0])
         assert ces.loc[3, "ace"] == pytest.approx([20.0])
+
+
+# ============================================================================
+# Tests: filter_exclude_elements
+# ============================================================================
+
+
+class TestFilterExcludeElements:
+    @pytest.fixture
+    def halogen_mol_df(self) -> pd.DataFrame:
+        """Molecules 1-6: chloro, bromo, iodo, dibromo, plain and bromo-chloro benzenes."""
+        smiles = [
+            "Clc1ccccc1",
+            "Brc1ccccc1",
+            "Ic1ccccc1",
+            "Brc1ccc(Br)cc1",
+            "c1ccccc1",
+            "Clc1ccc(Br)cc1",
+        ]
+        return pd.DataFrame(
+            {"mol_id": list(range(1, 7)), "mol": [Chem.MolFromSmiles(s) for s in smiles]}
+        )
+
+    def test_drops_every_molecule_with_the_element(self, mixed_spec_df, halogen_mol_df):
+        """Bromine molecules 2, 4 and 6 and all their spectra are removed; the rest are kept."""
+        params = _base_spec_params(split_filters={"train": {"filter_exclude_elements": ["Br"]}})
+        out_spec, out_mol = _run_setup_dfs(mixed_spec_df, halogen_mol_df, "train", params)
+        assert set(out_mol["mol_id"]) == {1, 3, 5}
+        kept = mixed_spec_df[mixed_spec_df["mol_id"].isin([1, 3, 5])]["spec_id"]
+        assert set(out_spec["spec_id"]) == set(kept)
+
+    def test_other_split_unfiltered(self, mixed_spec_df, halogen_mol_df):
+        """A train-only exclusion leaves val molecules untouched."""
+        params = _base_spec_params(split_filters={"train": {"filter_exclude_elements": ["Br"]}})
+        out_spec, _ = _run_setup_dfs(mixed_spec_df, halogen_mol_df, "val", params)
+        assert len(out_spec) == len(mixed_spec_df)
+
+    def test_unknown_symbol_raises(self, mixed_spec_df, halogen_mol_df):
+        """A misspelled symbol must not silently exclude nothing."""
+        params = _base_spec_params(split_filters={"train": {"filter_exclude_elements": ["BR"]}})
+        with pytest.raises(ValueError, match="unknown element 'BR'"):
+            _run_setup_dfs(mixed_spec_df, halogen_mol_df, "train", params)

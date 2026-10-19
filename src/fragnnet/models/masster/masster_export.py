@@ -11,6 +11,7 @@ import numpy as np
 import torch as th
 from pyteomics.mass import Composition
 
+from fragnnet.models.masster.candidates.rewire_rules import REWIRE_RULE_VOCABULARY
 from fragnnet.models.masster.candidates.smarts_templates import MASSTER_RULE_VOCABULARY
 from fragnnet.utils.formula_utils import (
     ELEMENT_TO_IDX,
@@ -54,6 +55,9 @@ class MassterAnnotationTables:
         num_multi_formula_peaks: Peaks whose pathways carry more than one formula row.
         node_rules: SMARTS rule names behind each node, ``";"``-joined in vocabulary order
             and empty for a node no rule produces, shape (N,); None when not requested.
+        node_rewire_rules: Rewire rule names behind each node, ``";"``-joined in
+            REWIRE_RULE_VOCABULARY order and empty for a node no rewire rule produces, shape
+            (N,); None when not requested (always None without rewire).
     """
 
     frag_formula_peak_idxs: th.Tensor
@@ -73,6 +77,7 @@ class MassterAnnotationTables:
     node_ccs: th.Tensor | None
     num_multi_formula_peaks: int
     node_rules: np.ndarray | None = None
+    node_rewire_rules: np.ndarray | None = None
 
 
 def _unique_rows(rows: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
@@ -127,6 +132,8 @@ def masster_annotation_tables(
     return_node_ccs: bool,
     fragment_rule_fragment_idxs: th.Tensor | None = None,
     fragment_rule_idxs: th.Tensor | None = None,
+    fragment_rewire_fragment_idxs: th.Tensor | None = None,
+    fragment_rewire_rule_idxs: th.Tensor | None = None,
 ) -> MassterAnnotationTables:
     """Group MASSter's output pathways into FraGNNet's formula / joint / node annotation.
 
@@ -166,6 +173,10 @@ def masster_annotation_tables(
             (R,), or None to skip the node rules.
         fragment_rule_idxs: Rule index of every pair, from 1 into
             ``MASSTER_RULE_VOCABULARY``, shape (R,). Given exactly with the fragments.
+        fragment_rewire_fragment_idxs: Fragment of every (fragment, rewire rule) pair, shape
+            (R,), or None to skip the node rewire rules.
+        fragment_rewire_rule_idxs: 0-based index of every pair into REWIRE_RULE_VOCABULARY.
+            Given exactly with the fragments.
 
     Returns:
         The annotation tables, on the device of the pathway tensors.
@@ -233,6 +244,22 @@ def masster_annotation_tables(
         node_rules = np.full(node_keys.shape[0], "", dtype=object)
         for node, rules in rules_by_node.items():
             node_rules[node] = ";".join(MASSTER_RULE_VOCABULARY[rule - 1] for rule in sorted(rules))
+    if (fragment_rewire_fragment_idxs is None) != (fragment_rewire_rule_idxs is None):
+        raise ValueError(
+            "fragment_rewire_fragment_idxs and fragment_rewire_rule_idxs go together"
+        )
+    node_rewire_rules = None
+    if fragment_rewire_fragment_idxs is not None:
+        # Same node mapping as node_rules: an extra and an ordinary fragment of one atom set
+        # are one node and carry both names.
+        rewire_nodes = fragment_to_node[fragment_rewire_fragment_idxs].tolist()
+        rewire_by_node: dict[int, set[int]] = {}
+        for node, rule in zip(rewire_nodes, fragment_rewire_rule_idxs.tolist(), strict=True):
+            if node >= 0:
+                rewire_by_node.setdefault(node, set()).add(rule)
+        node_rewire_rules = np.full(node_keys.shape[0], "", dtype=object)
+        for node, rules in rewire_by_node.items():
+            node_rewire_rules[node] = ";".join(REWIRE_RULE_VOCABULARY[rule] for rule in sorted(rules))
 
     # 3. Neutral formula and precursor delta per pathway; fold negative neutral formulas.
     deltas = sorted(
@@ -332,4 +359,5 @@ def masster_annotation_tables(
         node_ccs=node_keys[:, 1 : 1 + MASK_SIZE // 64] if return_node_ccs else None,
         num_multi_formula_peaks=int((rows_per_peak > 1).sum().item()),
         node_rules=node_rules,
+        node_rewire_rules=node_rewire_rules,
     )

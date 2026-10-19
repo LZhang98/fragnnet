@@ -12,7 +12,7 @@
 #        becomes the training weights at the start of every epoch)
 # The boundary-block dropout arm (u1) was dropped on 2026-09-24: blocking one input can reroute the
 # lookup. The key stays in the code, off by default.
-# Plan: docs/plans/masster/masster_ranking_transfer_plan.md
+# Plan: 95341fce:docs/plans/masster/masster_ranking_transfer_plan.md, removed 2026-10-18
 #
 # STAGE:
 #   all   (default) h1, h2 and u2.

@@ -35,6 +35,11 @@ def _assert_graph_contiguous(batch_index: th.Tensor) -> None:
         raise ValueError(message)
 
 
+def _nodes_per_graph(batch_index: th.Tensor, num_graphs: int) -> th.Tensor:
+    """Node count of each graph; a sync-free ``bincount`` for ids known to be in range."""
+    return batch_index.new_zeros(num_graphs).index_add_(0, batch_index, th.ones_like(batch_index))
+
+
 def _graph_softmax_attn(
     Q: th.Tensor,
     K: th.Tensor,
@@ -43,6 +48,7 @@ def _graph_softmax_attn(
     num_graphs: int,
     extra_keys: th.Tensor | None = None,
     extra_values: th.Tensor | None = None,
+    max_nodes: int | None = None,
 ) -> th.Tensor:
     """Exact per-graph softmax attention on flat PyG node tensors.
 
@@ -71,6 +77,8 @@ def _graph_softmax_attn(
             layer.
         extra_keys: Optional per-graph key of shape (num_graphs, num_heads, head_dim).
         extra_values: Per-graph value of the same shape, given exactly with ``extra_keys``.
+        max_nodes: Largest node count of any graph, when the caller already holds it on the
+            host; derived here (one host sync) when omitted. Must not be below the true maximum.
 
     Returns:
         Attended values of shape (N, num_heads, head_dim), in the input node order.
@@ -81,21 +89,23 @@ def _graph_softmax_attn(
     """
     _assert_graph_contiguous(batch_index)
     num_nodes, num_heads, head_dim = Q.shape
-    dense_queries, node_mask = pyg.utils.to_dense_batch(
-        Q.reshape(num_nodes, num_heads * head_dim),
-        batch_index,
-        batch_size=num_graphs,
-    )
-    dense_keys, _ = pyg.utils.to_dense_batch(
-        K.reshape(num_nodes, num_heads * head_dim),
-        batch_index,
-        batch_size=num_graphs,
-    )
-    dense_values, _ = pyg.utils.to_dense_batch(
-        V.reshape(num_nodes, num_heads * head_dim),
-        batch_index,
-        batch_size=num_graphs,
-    )
+    # The packing PyG's to_dense_batch performs, with the slot layout computed once for Q, K and
+    # V and without its host syncs: node i of graph g lands in dense row g * max_nodes + slot.
+    # batch_index values are in [0, num_graphs): num_graphs comes from batch_index.max().
+    counts = _nodes_per_graph(batch_index, num_graphs)
+    if max_nodes is None:
+        max_nodes = int(counts.max())
+    slot = th.arange(num_nodes, device=Q.device) - (counts.cumsum(0) - counts)[batch_index]
+    flat_index = slot + batch_index * max_nodes
+    node_mask = th.zeros(num_graphs * max_nodes, dtype=th.bool, device=Q.device)
+    node_mask = node_mask.index_fill_(0, flat_index, True).view(num_graphs, max_nodes)
+
+    def pack(nodes: th.Tensor) -> th.Tensor:
+        dense = nodes.new_zeros(num_graphs * max_nodes, num_heads * head_dim)
+        dense = dense.index_copy(0, flat_index, nodes.reshape(num_nodes, num_heads * head_dim))
+        return dense.view(num_graphs, max_nodes, num_heads * head_dim)
+
+    dense_queries, dense_keys, dense_values = pack(Q), pack(K), pack(V)
 
     def split_heads(dense: th.Tensor) -> th.Tensor:
         return dense.view(num_graphs, dense.shape[1], num_heads, head_dim).transpose(1, 2)
@@ -122,7 +132,7 @@ def _graph_softmax_attn(
         split_heads(dense_values),
         attn_mask=key_mask[:, None, None, :],
     )
-    return attended.transpose(1, 2)[node_mask]
+    return attended.transpose(1, 2)[batch_index, slot]
 
 
 class GINE_GSA(nn.Module):
@@ -299,7 +309,17 @@ class GINE_GSA(nn.Module):
             message_scale = 1.0 / (1.0 - self.bond_dropout)
             edge_attr = edge_attr * message_scale
         # One host sync for the whole encoder instead of one per attention pass.
-        num_graphs = int(batch_index.max().item()) + 1
+        # The largest graph is the longest run of equal ids, found without knowing num_graphs
+        # so both values come back in the same transfer (batch_index is sorted, see
+        # _assert_graph_contiguous).
+        positions = th.arange(batch_index.shape[0], device=batch_index.device)
+        is_start = th.ones_like(batch_index, dtype=th.bool)
+        is_start[1:] = batch_index[1:] != batch_index[:-1]
+        run_slot = positions - th.cummax(th.where(is_start, positions, 0), dim=0).values
+        num_graphs, max_nodes = (
+            th.stack((batch_index.max(), run_slot.max() + 1)).tolist()
+        )
+        num_graphs += 1
         if (self.context_token_dim > 0) != (context is not None):
             raise ValueError("context must be given exactly when context_token_dim is positive")
         if context is not None and context.shape != (num_graphs, self.context_token_dim):
@@ -344,7 +364,7 @@ class GINE_GSA(nn.Module):
                 context_keys = self.gsa_context_k[layer_index](context).view(heads)
                 context_values = self.gsa_context_v[layer_index](context).view(heads)
             gsa_out = _graph_softmax_attn(
-                Q, K, V, batch_index, num_graphs, context_keys, context_values
+                Q, K, V, batch_index, num_graphs, context_keys, context_values, max_nodes
             ).reshape(N, C)
             gsa_out = dropout(out_proj(F.relu(gsa_out)))
             gsa_out = self.norm_fn(gsa_out, batch_index, gsa_norm)
