@@ -455,7 +455,9 @@ class SpectrumPL(L.LightningModule):
             )
         if transform_spec:
             # normalize to mf1000
-            spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
+            spec_ints = batched_mf1000_normalize(
+                spec_ints, spec_batch_idxs, dim_size=batch_size
+            )
             # transform
             spec_ints = self.ints_transform_func(spec_ints)
         if normalize_spec:

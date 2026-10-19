@@ -360,7 +360,7 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
         ]
     ).detach()
 
-    losses = pl.loss_fn(
+    loss_inputs = dict(
         **output,
         true_mzs=targets,
         true_ints=th.ones(2),
@@ -368,8 +368,17 @@ def test_candidate_coverage_metrics_survive_the_fast_gnn_metric_rename():
         true_batch_idxs=th.arange(2),
         batch_size=2,
     )
+    # Training skips the auxiliary coverage metric; the loss itself is unchanged.
+    assert pl.training and not pl.hparams.compute_train_auxiliary_metrics
+    train_losses = pl.loss_fn(**loss_inputs)
+    assert "candidate_wrecall" not in train_losses
+    assert "candidate_wrecall" not in pl._get_active_metric_names("train")
+    assert "candidate_wrecall" in pl._get_active_metric_names("val")
+    pl.eval()
+    losses = pl.loss_fn(**loss_inputs)
     assert set(pl.loss_names) <= losses.keys()
     assert losses["candidate_wrecall"].tolist() == pytest.approx([1.0, 1.0])
+    assert th.equal(train_losses["loss"], losses["loss"])
 
     metrics = pl.metric_fn(
         true_mzs=targets,

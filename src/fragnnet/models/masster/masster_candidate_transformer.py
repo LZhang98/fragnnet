@@ -1319,9 +1319,10 @@ class CandidateIntensityTransformerHead(nn.Module):
             ((component_mask_indices >= 0) & (component_mask_indices < num_masks)).all(),
             "component_mask_indices references a missing mask",
         )
-        mask_component_counts = th.bincount(
-            component_mask_indices,
-            minlength=num_masks,
+        # Every index was just checked to lie in [0, num_masks), so this equals th.bincount
+        # without its host syncs.
+        mask_component_counts = component_mask_indices.new_zeros(num_masks).index_add_(
+            0, component_mask_indices, th.ones_like(component_mask_indices)
         )
         _validate_tensor_condition(
             (mask_component_counts > 0).all(),

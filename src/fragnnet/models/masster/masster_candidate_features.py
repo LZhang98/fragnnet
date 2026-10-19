@@ -55,7 +55,7 @@ from fragnnet.models.masster.masster_component_pooling import (
     pool_boundary_bond_embeddings,
 )
 from fragnnet.utils.formula_utils import CANONICAL_ELEMENT_ORDER, CANONICAL_H_IDX, H_MASS
-from fragnnet.utils.misc_utils import _validate_tensor_condition
+from fragnnet.utils.misc_utils import _validate_tensor_condition, bincount_in_range
 
 # Element vocabulary for composition features: the canonical order plus one shared column for
 # anything outside it, matching the unknown bucket ``a_onehot`` gives unlisted elements.
@@ -209,7 +209,7 @@ class CandidateFeatureInputs:
     @cached_property
     def component_sizes(self) -> th.Tensor:
         """Atom count per component, ``th.long``."""
-        return th.bincount(self.atom_component_indices, minlength=self.num_components)
+        return bincount_in_range(self.atom_component_indices, self.num_components)
 
     @cached_property
     def component_neutral_masses(self) -> th.Tensor:

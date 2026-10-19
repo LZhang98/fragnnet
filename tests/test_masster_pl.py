@@ -2377,6 +2377,8 @@ def test_masster_primary_loss_uses_candidate_only_sparse_cross_entropy(
         "fragnnet.models.masster.masster_pl._candidate_coverage_by_cut_count",
         unexpected_bucket_matching,
     )
+    # The loss path emits candidate_wrecall outside training only (validation/test).
+    model.eval()
     actual = model.loss_fn(
         true_mzs=true_mzs,
         true_logprobs=true_logprobs,

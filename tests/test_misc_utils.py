@@ -57,3 +57,13 @@ def test_to_device_and_to_cpu_roundtrip() -> None:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_bincount_in_range_matches_bincount() -> None:
+    idxs = th.tensor([2, 0, 2, 2, 5])
+    th.testing.assert_close(misc_utils.bincount_in_range(idxs, 7), th.bincount(idxs, minlength=7))
+    assert misc_utils.bincount_in_range(idxs[:0], 3).tolist() == [0, 0, 0]
+    with pytest.raises(ValueError):
+        misc_utils.bincount_in_range(th.tensor([0, 3]), 3)
+    with pytest.raises(ValueError):
+        misc_utils.bincount_in_range(th.tensor([0, -1]), 3)

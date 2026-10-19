@@ -51,6 +51,10 @@ def _load_migration():
         (np.nan, "Orbitrap", "ORB"),
         ("FTICR (LCMS)", np.nan, "Other"),
         ("Q-TOF", "Agilent QTOF 6530", "QTOF"),
+        # Spectraverse INSTRUMENT_TYPE values
+        ("orbitrap", np.nan, "ORB"),
+        ("qtof", np.nan, "QTOF"),
+        ("iontrap", np.nan, "IT"),
     ],
 )
 def test_parse_inst_info_labels_orbitraps(inst_type, inst, expected):

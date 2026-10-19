@@ -132,6 +132,7 @@ def parse_inst_info(df: pd.Series) -> tuple[str, str]:
             "QFT": "ORB",
             "orbitrap": "ORB",
             "qtof": "QTOF",
+            "iontrap": "IT",
         }
         inst_type = inst_type_map.get(inst_type_str, "Other")
     if inst_type == "ORB" and isinstance(inst_str, str) and "Fusion" in inst_str:

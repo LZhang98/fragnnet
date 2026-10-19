@@ -19,9 +19,13 @@ def scatter_logsumexp(
         return th.full((k,), LOG_ZERO(logits.dtype), device=logits.device, dtype=logits.dtype)
 
     if dim_size is None:
-        k = th.max(subset_idxs) + 1
+        # An int, not a tensor: a tensor dim_size would sync again in every scatter_reduce.
+        k = int(th.max(subset_idxs).item()) + 1
     else:
-        assert dim_size >= th.max(subset_idxs) + 1
+        # On CUDA the scatter_reduce calls below bound-check subset_idxs against dim_size
+        # asynchronously, so a blocking assert here would only add a host sync.
+        if subset_idxs.device.type != "cuda":
+            assert dim_size >= th.max(subset_idxs) + 1
         k = dim_size
 
     sm = scatter_reduce(

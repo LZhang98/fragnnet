@@ -119,7 +119,7 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_MASS_DIFF,
     cmf_duplicate_crf_h_shift,
 )
-from fragnnet.utils.misc_utils import _validate_tensor_condition
+from fragnnet.utils.misc_utils import _validate_tensor_condition, bincount_in_range
 from fragnnet.utils.spec_utils import round_aggregate_peaks, weighted_mean_by_batch
 
 
@@ -187,7 +187,7 @@ def _relative_fragment_keep_mask(
         raise ValueError("batch_size must be positive")
     if not math.isfinite(min_relative_probability) or not 0.0 <= min_relative_probability <= 1.0:
         raise ValueError("min_relative_probability must be finite and in [0, 1]")
-    fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size)
+    fragment_counts = bincount_in_range(fragment_batch_indices, batch_size)
     _validate_tensor_condition(
         (fragment_counts > 0).all(),
         "every molecule must contain at least one fragment",
@@ -3186,18 +3186,15 @@ class MassterModel(nn.Module):
         )
 
         atom_unique_indices = representative_to_unique[candidates.atom_component_indices]
-        atom_keep = atom_unique_indices >= 0
+        atom_keep = (atom_unique_indices >= 0).nonzero(as_tuple=True)[0]
         unique_atom_indices = candidates.atom_indices[atom_keep]
         atom_unique_indices = atom_unique_indices[atom_keep]
 
         boundary_unique_indices = representative_to_unique[candidates.boundary_component_indices]
-        boundary_keep = boundary_unique_indices >= 0
+        boundary_keep = (boundary_unique_indices >= 0).nonzero(as_tuple=True)[0]
         unique_boundary_bond_indices = candidates.boundary_bond_indices[boundary_keep]
         boundary_unique_indices = boundary_unique_indices[boundary_keep]
-        boundary_counts = th.bincount(
-            boundary_unique_indices,
-            minlength=num_unique_components,
-        )
+        boundary_counts = bincount_in_range(boundary_unique_indices, num_unique_components)
         unique_batch_indices = candidates.component_batch_indices[representatives]
         return (
             unique_batch_indices,
@@ -3403,6 +3400,7 @@ class MassterModel(nn.Module):
     def _rewire_outputs(
         rewire_rows: dict[str, th.Tensor],
         chemically_valid_fragments: th.Tensor,
+        valid_fragment_idxs: th.Tensor,
         full_flat_valid: th.Tensor,
         full_candidate_fragment_idxs: th.Tensor,
         full_candidate_mzs: th.Tensor,
@@ -3415,28 +3413,30 @@ class MassterModel(nn.Module):
         The proposal view is built from the PRE-merge validity, so extras and merge-gained
         channels or rows never reach the proposal-loss tensors (arm a0 contract).
         """
-        ordinary_valid = rewire_rows["ordinary_valid_channels"][chemically_valid_fragments]
+        ordinary_valid = rewire_rows["ordinary_valid_channels"][valid_fragment_idxs]
         candidate_is_ordinary = ordinary_valid.flatten()[full_flat_valid]
+        candidate_ordinary_idxs = candidate_is_ordinary.nonzero(as_tuple=True)[0]
         row_is_proposal = ordinary_valid.flatten(1).any(dim=1)
+        proposal_row_idxs = row_is_proposal.nonzero(as_tuple=True)[0]
         proposal_row_map = row_is_proposal.to(th.long).cumsum(0) - 1
-        is_extra = rewire_rows["rewire_is_extra"][chemically_valid_fragments]
+        is_extra = rewire_rows["rewire_is_extra"][valid_fragment_idxs]
         output = {
-            "proposal_candidate_mzs": full_candidate_mzs[candidate_is_ordinary],
+            "proposal_candidate_mzs": full_candidate_mzs[candidate_ordinary_idxs],
             "proposal_candidate_fragment_idxs": proposal_row_map[
-                full_candidate_fragment_idxs[candidate_is_ordinary]
+                full_candidate_fragment_idxs[candidate_ordinary_idxs]
             ],
-            "proposal_fragment_logprobs": base_fragment_log_probabilities[row_is_proposal],
-            "proposal_fragment_batch_idxs": fragment_batch_indices[row_is_proposal],
+            "proposal_fragment_logprobs": base_fragment_log_probabilities[proposal_row_idxs],
+            "proposal_fragment_batch_idxs": fragment_batch_indices[proposal_row_idxs],
             "rewire_is_extra": is_extra,
             "rewire_candidate_is_extra_by_cut": is_extra[full_candidate_fragment_idxs],
             "rewire_candidate_is_ordinary_by_cut": candidate_is_ordinary,
         }
         output.update(rewire_rows["diagnostics"])
         if return_annotation:
-            indicators = rewire_rows["fragment_rewire_indicators"][chemically_valid_fragments]
+            indicators = rewire_rows["fragment_rewire_indicators"][valid_fragment_idxs]
             pairs = th.nonzero(indicators)
             old_to_new = chemically_valid_fragments.to(th.long).cumsum(0) - 1
-            parents = rewire_rows["fragment_rewire_parent"][chemically_valid_fragments]
+            parents = rewire_rows["fragment_rewire_parent"][valid_fragment_idxs]
             kept_parent = (parents >= 0) & chemically_valid_fragments[parents.clamp_min(0)]
             output.update(
                 {
@@ -4082,7 +4082,7 @@ class MassterModel(nn.Module):
                     batch_size,
                     self.selected_fragment_target,
                 )
-                pool_flat_valid = valid_channels.flatten()
+                pool_flat_valid = valid_channels.flatten().nonzero(as_tuple=True)[0]
                 pool_candidate_fragment_idxs = (
                     th.arange(num_fragments, device=fragment_batch_indices.device)
                     .reshape(-1, 1, 1)
@@ -4139,15 +4139,16 @@ class MassterModel(nn.Module):
                 fragment_keep |= valid_fragments & (
                     valid_scores == best_valid_scores[fragment_batch_indices]
                 )
-            ion_mzs = ion_mzs[fragment_keep]
-            valid_channels = valid_channels[fragment_keep]
-            fragment_count_before_cutoff = th.bincount(
+            fragment_keep_idxs = fragment_keep.nonzero(as_tuple=True)[0]
+            ion_mzs = ion_mzs[fragment_keep_idxs]
+            valid_channels = valid_channels[fragment_keep_idxs]
+            fragment_count_before_cutoff = bincount_in_range(
                 fragment_batch_indices,
-                minlength=batch_size,
+                batch_size,
             ).to(bond_logits)
-            fragment_count_after_cutoff = th.bincount(
-                fragment_batch_indices[fragment_keep],
-                minlength=batch_size,
+            fragment_count_after_cutoff = bincount_in_range(
+                fragment_batch_indices[fragment_keep_idxs],
+                batch_size,
             ).to(bond_logits)
             # Autocast keeps exp() in float32 while bond_logits stays bfloat16, so the
             # accumulator is built in the contribution dtype and cast back afterwards.
@@ -4164,20 +4165,20 @@ class MassterModel(nn.Module):
             )
 
             old_to_new_fragment = fragment_keep.to(th.long).cumsum(0) - 1
-            old_to_new_fragment[~fragment_keep] = -1
-            atom_keep = fragment_keep[atom_fragment_indices]
+            old_to_new_fragment.masked_fill_(~fragment_keep, -1)
+            atom_keep = fragment_keep[atom_fragment_indices].nonzero(as_tuple=True)[0]
             fragment_atom_indices = fragment_atom_indices[atom_keep]
             atom_fragment_indices = old_to_new_fragment[atom_fragment_indices[atom_keep]]
-            boundary_keep = fragment_keep[boundary_fragment_indices]
+            boundary_keep = fragment_keep[boundary_fragment_indices].nonzero(as_tuple=True)[0]
             fragment_boundary_bond_indices = fragment_boundary_bond_indices[boundary_keep]
             boundary_fragment_indices = old_to_new_fragment[
                 boundary_fragment_indices[boundary_keep]
             ]
-            fragment_batch_indices = fragment_batch_indices[fragment_keep]
-            fragment_cut_counts = fragment_cut_counts[fragment_keep]
+            fragment_batch_indices = fragment_batch_indices[fragment_keep_idxs]
+            fragment_cut_counts = fragment_cut_counts[fragment_keep_idxs]
             if fragment_rule_indicators is not None:
-                fragment_rule_indicators = fragment_rule_indicators[fragment_keep]
-            fragment_log_probabilities = fragment_log_probabilities[fragment_keep]
+                fragment_rule_indicators = fragment_rule_indicators[fragment_keep_idxs]
+            fragment_log_probabilities = fragment_log_probabilities[fragment_keep_idxs]
             num_fragments = int(fragment_log_probabilities.shape[0])
             retained_proposal_log_normalizers = _segment_logsumexp(
                 fragment_log_probabilities,
@@ -4208,7 +4209,7 @@ class MassterModel(nn.Module):
                     parent_blocked=(
                         None
                         if fragment_formed_bond_counts is None
-                        else fragment_formed_bond_counts[fragment_keep] > 0
+                        else fragment_formed_bond_counts[fragment_keep_idxs] > 0
                     ),
                     batch_size=batch_size,
                 )
@@ -4600,6 +4601,7 @@ class MassterModel(nn.Module):
 
         # 4. Remove fragments that cannot form an ion under the configured adduct.
         chemically_valid_fragments = valid_channels.flatten(1).any(dim=1)
+        valid_fragment_idxs = chemically_valid_fragments.nonzero(as_tuple=True)[0]
         if return_annotation:
             # The true atom memberships of the fragment rows, re-indexed onto the fragments
             # that survive this step. Nothing downstream reads memberships, so they are
@@ -4611,7 +4613,9 @@ class MassterModel(nn.Module):
                 membership_atoms = candidates.atom_indices
                 membership_fragments = candidates.atom_component_indices
             old_to_new_valid = chemically_valid_fragments.to(th.long).cumsum(0) - 1
-            membership_keep = chemically_valid_fragments[membership_fragments]
+            membership_keep = chemically_valid_fragments[membership_fragments].nonzero(
+                as_tuple=True
+            )[0]
             annotation_atom_indices = membership_atoms[membership_keep]
             annotation_atom_fragment_indices = old_to_new_valid[
                 membership_fragments[membership_keep]
@@ -4620,7 +4624,7 @@ class MassterModel(nn.Module):
                 annotation_rule_pairs = fragment_batch_indices.new_zeros((0, 2))
             else:
                 annotation_rule_pairs = th.nonzero(
-                    fragment_rule_indicators[chemically_valid_fragments]
+                    fragment_rule_indicators[valid_fragment_idxs]
                 )
         if self.isotope_envelope != "none":
             # Same memberships as the annotation export above.
@@ -4638,23 +4642,23 @@ class MassterModel(nn.Module):
                 self.composition_element_columns,
                 COMPOSITION_FEATURE_DIM,
                 COMPOSITION_HYDROGEN_COLUMN,
-            )[chemically_valid_fragments]
-        fragment_batch_indices = fragment_batch_indices[chemically_valid_fragments]
-        fragment_cut_counts = fragment_cut_counts[chemically_valid_fragments]
-        ion_mzs = ion_mzs[chemically_valid_fragments]
-        valid_channels = valid_channels[chemically_valid_fragments]
-        ion_h_logits = ion_h_logits[chemically_valid_fragments]
-        ion_h_support_logits = ion_h_support_logits[chemically_valid_fragments]
+            )[valid_fragment_idxs]
+        fragment_batch_indices = fragment_batch_indices[valid_fragment_idxs]
+        fragment_cut_counts = fragment_cut_counts[valid_fragment_idxs]
+        ion_mzs = ion_mzs[valid_fragment_idxs]
+        valid_channels = valid_channels[valid_fragment_idxs]
+        ion_h_logits = ion_h_logits[valid_fragment_idxs]
+        ion_h_support_logits = ion_h_support_logits[valid_fragment_idxs]
         if learned_ion_mode_proposal_logits is not None:
             learned_ion_mode_proposal_logits = learned_ion_mode_proposal_logits[
-                chemically_valid_fragments
+                valid_fragment_idxs
             ]
         if self.intensity_output == "independent":
-            corrected_fragment_logits = corrected_fragment_logits[chemically_valid_fragments]
+            corrected_fragment_logits = corrected_fragment_logits[valid_fragment_idxs]
         # Normalize the final and proposal distributions together over valid fragments.
         fragment_scores = th.stack(
             (fragment_log_probabilities, base_fragment_log_probabilities), dim=1
-        )[chemically_valid_fragments]
+        )[valid_fragment_idxs]
         score_batch_indices = 2 * fragment_batch_indices[:, None] + th.arange(
             2,
             device=fragment_batch_indices.device,
@@ -4761,8 +4765,8 @@ class MassterModel(nn.Module):
         base_pathway_log_probabilities = (
             base_fragment_log_probabilities[:, None, None] + base_ion_h_log_probabilities
         )
-        full_flat_valid = valid_channels.flatten()
-        selected_flat_valid = spectral_output_channels.flatten()
+        full_flat_valid = valid_channels.flatten().nonzero(as_tuple=True)[0]
+        selected_flat_valid = spectral_output_channels.flatten().nonzero(as_tuple=True)[0]
         full_candidate_mzs = ion_mzs.flatten()[full_flat_valid]
         pred_mzs = ion_mzs.flatten()[selected_flat_valid]
         pred_logprobs = pathway_log_probabilities.flatten()[selected_flat_valid]
@@ -4783,15 +4787,9 @@ class MassterModel(nn.Module):
         )
         full_candidate_fragment_idxs = fragment_channel_indices.flatten()[full_flat_valid]
 
-        fragment_counts = th.bincount(fragment_batch_indices, minlength=batch_size).to(bond_logits)
-        valid_ion_h_count = th.bincount(
-            full_candidate_batch_idxs,
-            minlength=batch_size,
-        ).to(bond_logits)
-        retained_ion_h_count = th.bincount(
-            pred_batch_idxs,
-            minlength=batch_size,
-        ).to(bond_logits)
+        fragment_counts = bincount_in_range(fragment_batch_indices, batch_size).to(bond_logits)
+        valid_ion_h_count = bincount_in_range(full_candidate_batch_idxs, batch_size).to(bond_logits)
+        retained_ion_h_count = bincount_in_range(pred_batch_idxs, batch_size).to(bond_logits)
         retained_intensity_mass = (
             dense_intensity_log_probabilities.exp() * spectral_output_channels
         ).sum(dim=(1, 2))
@@ -4850,14 +4848,8 @@ class MassterModel(nn.Module):
             candidates.mask_batch_indices,
             selected_mask_probabilities,
         )
-        selected_mask_count = th.bincount(
-            candidates.mask_batch_indices,
-            minlength=batch_size,
-        )
-        component_pathway_count = th.bincount(
-            candidates.component_batch_indices,
-            minlength=batch_size,
-        )
+        selected_mask_count = bincount_in_range(candidates.mask_batch_indices, batch_size)
+        component_pathway_count = bincount_in_range(candidates.component_batch_indices, batch_size)
         selected_mask_count_float = selected_mask_count.to(bond_logits)
         component_pathway_count_float = component_pathway_count.to(bond_logits)
         unique_component_count_float = candidates.unique_component_count.to(bond_logits)
@@ -5122,6 +5114,7 @@ class MassterModel(nn.Module):
                 self._rewire_outputs(
                     rewire_rows,
                     chemically_valid_fragments,
+                    valid_fragment_idxs,
                     full_flat_valid,
                     full_candidate_fragment_idxs,
                     full_candidate_mzs,

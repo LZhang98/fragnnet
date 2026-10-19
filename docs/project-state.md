@@ -36,7 +36,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 
 ## MASSter core
 
-- **Speed audit:** [current opportunities](findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16): main speed switches already active in `i1`/`i4`; rewire host round-trips/repeated reductions and base packing/loss padding are next profiling targets. CPU regressions pass; current GPU timing unavailable.
+- **Speed:** [host-sync removal](findings/masster/masster_code_audits.md#host-sync-removal-in-the-ei-train-step-2026-10-18-uncommitted) (uncommitted): EI H100 runs are host-bound (one core, 30-40% power); train-step syncs 145.7 → 58.7 per batch, outputs bit-identical, local step −4.5%. **Next:** Fir H100 before/after timing; then bucket layout in `_contextualize_by_molecule`.
 
 - **Current path audit:** [2026-10-16 findings](findings/masster/masster_code_audits.md#masster-current-code-path-audit): retired-config tests repaired; 177 MASSter PL tests pass. Four package lint violations remain. Rewire row-order and 14 new batch/padding cases pass. **Next:** package lint; GPU/real-checkpoint validation remains open.
 

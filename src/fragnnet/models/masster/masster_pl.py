@@ -1891,10 +1891,14 @@ class MassterPL(SpectrumPL, ExportAdapter):
                     kl_epsilon=self.hparams.masster_kl_epsilon,
                     loss_batch_size=self.hparams.loss_batch_size,
                 )
+            # Monitoring only, and the overall coverage alone: the per-cut-count buckets
+            # belong to the validation metric path. It is an auxiliary metric, so training
+            # skips it (and its device syncs) unless compute_train_auxiliary_metrics is set.
+            compute_candidate_wrecall = candidate_coverage_enabled and (
+                not self.training or self.hparams.compute_train_auxiliary_metrics
+            )
             candidate_wrecall = None
-            if candidate_coverage_enabled:
-                # Monitoring only, and the overall coverage alone: the per-cut-count
-                # buckets belong to the validation metric path.
+            if compute_candidate_wrecall:
                 candidate_wrecall = _candidate_weighted_recall(
                     true_mzs=true_mzs,
                     true_ints=proposal_true_intensities,
@@ -2111,7 +2115,7 @@ class MassterPL(SpectrumPL, ExportAdapter):
                     for name in _MASK_DIAGNOSTIC_NAMES
                 },
             }
-            if candidate_coverage_enabled:
+            if compute_candidate_wrecall:
                 loss_values["candidate_wrecall"] = candidate_wrecall
             if self._rewire_enabled:
                 loss_values.update(
@@ -2303,6 +2307,17 @@ class MassterPL(SpectrumPL, ExportAdapter):
                 loss_names.append("ccs_mape")
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
+
+    def _get_active_metric_names(self, split: str) -> set[str]:
+        """Drop the loss-path candidate_wrecall from training unless auxiliaries are on.
+
+        loss_fn skips that monitoring-only metric (and its device syncs) in training, under
+        the same rule SpectrumPL applies to its auxiliary metrics.
+        """
+        names = super()._get_active_metric_names(split)
+        if split == "train" and not self.hparams.compute_train_auxiliary_metrics:
+            return names - {"candidate_wrecall"}
+        return names
 
     def _setup_metric_fns(self) -> None:
         """Add validation candidate coverage when the coverage metrics are enabled."""

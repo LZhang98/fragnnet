@@ -338,6 +338,39 @@ binary bytes from Lightning's recursive device transfer. Preserve it; its commen
 was not independently benchmarked here. CPU candidate threading, cut-bond deduplication,
 unique-fragment transformer tokens and persistent loader workers also already exist.
 
+#### Host-sync removal in the EI train step (2026-10-18, uncommitted)
+
+**Why.** Fir H100 EI runs (`e0`–`e5`, W&B e.g. `uzw32hc1`) draw 200–300 W of 700 W, use
+under 29 GB, and pin the main process at one core (~155 s/epoch, 64 epochs ≈ 2.8 h). Fir logs
+no SM utilization. A local RTX 2070 profile of `e2_nominal_control` (batch 128) showed a 0.6%
+loader gap, 4,813 kernel launches, 345 memcpys and 162 stream syncs per step; the 2070 itself is
+GPU-bound (86% utilization), so the H100 split between host and device is inferred, not measured.
+
+**Changed (base path; outputs bit-identical).** (1) Training no longer computes the
+monitoring-only `candidate_wrecall` (`MassterPL._get_active_metric_names`; validation keeps the
+same loss-path value; `compute_train_auxiliary_metrics` restores it). (2) Boolean masks that
+index several tensors compute one `nonzero` and reuse it (`masster_model.py`, `spec_utils.py`,
+`channel_support.py`); CUDA `bincount` with a host size became `misc_utils.bincount_in_range`
+(integer `index_add_` with an async range check); `GINE_GSA` packs Q/K/V once without
+`to_dense_batch`; `scatter_logsumexp` and `batched_mf1000_normalize` take host sizes.
+Out-of-range indices now raise (CPU) or assert asynchronously (CUDA) where `bincount` returned a
+longer vector.
+
+**Verification.** A scratch harness (fixed 64-spectrum EI batches, train forward+backward and
+eval forward, `torch.cuda.set_sync_debug_mode`) against HEAD `0e5e1e91`: syncs per train batch
+145.7 → 58.7; every non-timing output bit-identical; gradient differences 6.0e-8, within the
+HEAD-vs-HEAD noise of 5.6e-8 (atomic adds); only difference is the intended absent train
+`candidate_wrecall`. Local step time 169.8 → 162.4 ms median (two repeats). CPU tests of the
+touched modules pass; 5 `test_reorg_*` golden failures predate this change (also fail on HEAD).
+Artifacts: `output/ei_profile_2026_10_18/`.
+
+**Not done.** Moving `_prepare_graph_batch` and the topology endpoint arrays into collate
+measured 4.3 + 4.7 ms per 512-spectrum step (≈2%; cProfile had inflated it fourfold), so it
+was held. The remaining syncs are in `_contextualize_by_molecule` bucket layout (item 3 above),
+the CUDA candidate backend (ranking/topology reads are necessary), and data-dependent
+`nonzero`/`unique`. **Next:** a short Fir H100 job before/after (step time, GPU power) to
+measure the real gain.
+
 #### Validation and next measurement
 
 Configured interpreter: PyTorch `2.4.1+cu121`; `torch.cuda.is_available()` returned false.

@@ -20,6 +20,7 @@
 | [Dedup train](../plans/masster/spectraverse_dedup_plan.md) | PREPARED | Copy `spectraverse_benchmark_dedup/`, check md5s, launch; if it wins, build merged on the dedup split |
 | Recall window calibration | OPEN | Calibrate on trusted fragment assignments plus shifted-mass controls before changing any loss window ([recall finding](../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-recall-at-instrument-tolerance)) |
 | v1.0.3 training | OPEN | Point a config at `data/proc/spectraverse_1_0_3` and `data/split/spectraverse_1_0_3_benchmark`; decide which train-side variants to rebuild |
+| Ion trap `inst_type` | OPEN, parser fixed 2026-10-18 | `parse_inst_info` now maps MGF `INSTRUMENT_TYPE=iontrap` to `IT` (was `Other`: 20,688 v1.0.3 spectra). Stored v1.0.2 and v1.0.3 `spec_df.pkl` still say `Other`; rerun step 2 before the v1.0.3 DAGs, and list `IT` in any v1.0.3 config `inst_types` |
 | v1.0.2 `ion_mode` labels | OPEN, harmless so far | Stored `data/proc/spectraverse/spec_df.pkl` labels 30,550 `[M+Cl]-`/`[M+HCOOH-H]-`/`[M+CH3COOH-H]-` spectra `P` (reader fixed 2026-10-18); only the `--ion_modes` split filter reads it. Rebuild or patch before filtering v1.0.2 by ion mode |
 | Quaternary-ammonium candidate gap (m/z 60.0808) | OPEN, small (0.26% of spectra) | Decide on a `valence` bound change ([`[M]+` finding](../findings/masster/spectraverse_masster_findings.md#masster-m-handling-on-spectraverse)) |
 
