@@ -24,6 +24,7 @@ configuration using the new split. Do not initialize it from the contaminated e1
   Castro structure mapping remains unresolved.
 - [Frozen e1 comparison](../../findings/masster/masster_ei_evaluation.md#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra):
   962 consistent mapping records evaluated, but exact output currently lacks isotopes.
+  Superseded 2026-10-19: e1 is not a valid HR-EI comparison (trained on most of these molecules).
 - Existing natural isotope rows require nominal mass mode. Their nominal mass offsets
   cannot be reused as exact-mass increments.
 

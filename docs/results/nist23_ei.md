@@ -1,6 +1,6 @@
 # NIST23 EI results
 
-> **Status:** LEDGER · **Updated:** 2026-10-18
+> **Status:** LEDGER · **Updated:** 2026-10-19
 > Every measured model result on nominal NIST23 EI and on held-out HR-EI spectra, one row per run, checkpoint, split and evaluation. Numbers are copied from the linked source, which stays canonical.
 
 Add a row when a finding or plan records a new measurement; fix a row when its source is corrected. Hub: [nist23_ei](../workstreams/nist23_ei.md).
@@ -21,7 +21,7 @@ Add a row when a finding or plan records a new measurement; fix a row when its s
 - HR-EI reference set: 962 mapping-consistent records (329 HREI-MSDB, 383 RECETOX Exposome, 250 RECETOX Metabolome); Castro excluded (no resolved structures). Counts are spectrum records, not unique molecules.
 - HR-EI score: mean linear-intensity cosine with maximum-product one-to-one peak assignment; unmatched predicted and reference peaks stay in the norms. Headline tolerance is 10 ppm with a 1 mDa floor (user decision 2026-10-18), natural exact isotopes on. Floors for 5/10/20 ppm are 0.0005/0.001/0.002 Da. HREI-MSDB predictions are restricted to 40-500 m/z; others use 0-1500 m/z.
 - Exposome 5 to 10 ppm sensitivity is a property of the reference masses or matching floor (peak annotations about 7 ppm above reported masses), not of the checkpoint.
-- e1 is contaminated on HR-EI (trained on 197 HREI-MSDB, 220 Exposome, 114 Metabolome overlapping records by the raw-audit flag) and its HR-EI numbers are an implementation baseline; e5 is trained on `nist23_ei_inchikey_hr_ei_excluded_2026_10_17` and is the held-out result. e1 HR-EI ran on CPU, e5 on a local RTX 2070 SUPER.
+- e1 is not a valid comparison for HR-EI (user decision 2026-10-19): it trained on 197 HREI-MSDB, 220 Exposome and 114 Metabolome overlapping records by the raw-audit flag, and possibly on native parents of others. Its HR-EI rows stay as an implementation record only; do not compare them with e5. e5 is trained on `nist23_ei_inchikey_hr_ei_excluded_2026_10_17` and is the HR-EI result.
 - Rounded-mass control: the same monoisotopic exact predictions and measured masses rounded to integers and summed; not a forward pass of the nominal/natural-isotope configuration.
 - HR-vs-NIST23 library comparisons are nominal linear cosines cut to the source window (40-500 HREI-MSDB, >=67 Exposome, >=70 Metabolome), over the 860 of 962 records with a NIST23 spectrum of the same 2D connectivity; e5 never trained on these.
 - Metabolome: 243 of 250 records are TMS derivatives; the 149.045 ion is instrument-specific, and its reference isotope peaks look incomplete or merged.
@@ -123,19 +123,19 @@ NIST23 gate, train and val peaks scored, test structures counted only; decision 
 
 ## Held-out HR-EI (10 ppm)
 
-Isotope output "natural exact" is `masster_isotope_envelope: natural` (order 4, minimum ratio 0.001) with exact masses; "monoisotopic" is envelope `none`. Mean cosine is the 10 ppm value with a 1 mDa floor. Rows for e1 are contaminated by training overlap.
+Isotope output "natural exact" is `masster_isotope_envelope: natural` (order 4, minimum ratio 0.001) with exact masses; "monoisotopic" is envelope `none`. Mean cosine is the 10 ppm value with a 1 mDa floor. Rows for e1 are not a valid HR-EI comparison (2026-10-19); see Comparability.
 
 | Date | Model / arm | Run@epoch | Reference (spectra) | Isotope output | Mean cosine | Median cosine | Measured intensity with predicted match | vs comparator | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | monoisotopic | 0.8391 | — | — | Rounded-mass control 0.8491 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | monoisotopic | 0.6549 | — | — | Rounded-mass control 0.6902 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | monoisotopic | 0.6009 | — | — | Rounded-mass control 0.6517 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | natural exact | 0.8618 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | natural exact | 0.7549 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | natural exact | 0.5973 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | HREI-MSDB (329) | natural exact | 0.8497 | 0.8712 | 0.973 | e1 natural exact 0.8618 | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
-| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Exposome (383) | natural exact | 0.7062 | 0.7772 | 0.844 | e1 natural exact 0.7549 | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
-| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Metabolome (250) | natural exact | 0.5726 | 0.5743 | 0.768 | e1 natural exact 0.5973 | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | monoisotopic | 0.8391 | — | — | Rounded-mass control 0.8491 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | monoisotopic | 0.6549 | — | — | Rounded-mass control 0.6902 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | monoisotopic | 0.6009 | — | — | Rounded-mass control 0.6517 | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | natural exact | 0.8618 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | natural exact | 0.7549 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | natural exact | 0.5973 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | HREI-MSDB (329) | natural exact | 0.8497 | 0.8712 | 0.973 | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
+| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Exposome (383) | natural exact | 0.7062 | 0.7772 | 0.844 | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
+| 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Metabolome (250) | natural exact | 0.5726 | 0.5743 | 0.768 | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | HREI-MSDB (329) | monoisotopic | 0.8272 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Exposome (383) | monoisotopic | 0.6127 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Metabolome (250) | monoisotopic | 0.5764 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
@@ -144,21 +144,21 @@ Isotope output "natural exact" is `masster_isotope_envelope: natural` (order 4, 
 
 | Date | Model / arm | Run@epoch | Reference (spectra) | Tolerance | Isotope output | Mean cosine | Median cosine | Share of spectra cosine >=0.8 | Mean measured intensity with any predicted supporting mass | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | 5 ppm | monoisotopic | 0.8390 | 0.8662 | about 69.3% | 87.65% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | 5 ppm | monoisotopic | 0.6114 | 0.6997 | about 36.6% | 61.12% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | 5 ppm | monoisotopic | 0.6009 | 0.6263 | about 28.4% | 57.94% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | 20 ppm | monoisotopic | 0.8392 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | 20 ppm | monoisotopic | 0.6592 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | 20 ppm | monoisotopic | 0.6025 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | Rounded-mass control | monoisotopic, rounded to integers | 0.8491 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | Rounded-mass control | monoisotopic, rounded to integers | 0.6902 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | Rounded-mass control | monoisotopic, rounded to integers | 0.6517 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | 5 ppm | natural exact | 0.8617 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | 5 ppm | natural exact | 0.6804 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | 5 ppm | natural exact | 0.5971 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | HREI-MSDB (329) | 20 ppm | natural exact | 0.8619 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Exposome (383) | 20 ppm | natural exact | 0.7615 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
-| 2026-10-17 | e1 (frozen, contaminated) | `jeljdikj`@37 | RECETOX Metabolome (250) | 20 ppm | natural exact | 0.5986 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | 5 ppm | monoisotopic | 0.8390 | 0.8662 | about 69.3% | 87.65% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | 5 ppm | monoisotopic | 0.6114 | 0.6997 | about 36.6% | 61.12% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | 5 ppm | monoisotopic | 0.6009 | 0.6263 | about 28.4% | 57.94% | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | 20 ppm | monoisotopic | 0.8392 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | 20 ppm | monoisotopic | 0.6592 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | 20 ppm | monoisotopic | 0.6025 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | Rounded-mass control | monoisotopic, rounded to integers | 0.8491 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | Rounded-mass control | monoisotopic, rounded to integers | 0.6902 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | Rounded-mass control | monoisotopic, rounded to integers | 0.6517 | — | — | — | [Frozen e1 results](../findings/masster/masster_ei_evaluation.md#results) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | 5 ppm | natural exact | 0.8617 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | 5 ppm | natural exact | 0.6804 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | 5 ppm | natural exact | 0.5971 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | HREI-MSDB (329) | 20 ppm | natural exact | 0.8619 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Exposome (383) | 20 ppm | natural exact | 0.7615 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
+| 2026-10-17 | e1 (frozen, not a valid HR-EI comparison) | `jeljdikj`@37 | RECETOX Metabolome (250) | 20 ppm | natural exact | 0.5986 | — | — | — | [Natural exact follow-up](../findings/masster/masster_ei_evaluation.md#follow-up-natural-exact-mass-isotope-output) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | HREI-MSDB (329) | 5 ppm | natural exact | 0.8495 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Exposome (383) | 5 ppm | natural exact | 0.6315 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Metabolome (250) | 5 ppm | natural exact | 0.5724 | — | — | — | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1) |
@@ -172,6 +172,8 @@ Isotope output "natural exact" is `masster_isotope_envelope: natural` (order 4, 
 | 2026-10-18 | e5 (held out) | `eugy8s9n`@45 | RECETOX Metabolome (250) | -0.0038 [-0.0057, -0.0021] | +0.177 (cosine -0.004 in the isotope section) | [e5 results](../findings/masster/masster_ei_evaluation.md#results-1), [isotope output](../findings/masster/masster_ei_evaluation.md#isotope-output-against-the-hr-references) |
 
 ## Held-out HR-EI by e1 training overlap (10 ppm, natural isotopes, paired e5 minus e1)
+
+Retracted 2026-10-19: e1 is not a valid HR-EI comparison, and the finding no longer reports these rows (git history at `d57d4224`). Rows kept per ledger rules; do not cite.
 
 | Date | Reference | e1 overlap | n | e1 (`jeljdikj`@37) | e5 (`eugy8s9n`@45) | Delta | 95% CI (2,000 bootstrap resamples) | Source |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

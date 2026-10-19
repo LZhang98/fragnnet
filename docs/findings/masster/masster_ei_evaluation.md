@@ -1,18 +1,20 @@
 # MASSter EI checkpoints: NIST23 audit and measured HR-EI evaluation
 
-> **Status:** FINDING · **Updated:** 2026-10-18
-> Four EI evaluation findings: the `e1` NIST23 performance audit, the HR-EI raw-data audit, frozen `e1` on HR-EI, and held-out `e5` on HR-EI (the headline).
+> **Status:** FINDING · **Updated:** 2026-10-19
+> Four EI evaluation findings: the `e1` NIST23 performance audit, the HR-EI raw-data audit, frozen `e1` on HR-EI (superseded: not a valid HR-EI comparison), and held-out `e5` on HR-EI (the headline).
 
 Merged 2026-10-18 from 4 findings on one topic. Each part below is the original
 document unchanged except for heading levels; its own status line keeps its original date.
+Exception, 2026-10-19 (user decision): `e1` is not a valid comparison for HR-EI, so the frozen
+`e1` part is marked `SUPERSEDED` and every `e1` comparison was removed from the `e5` part.
 Former file names are listed so old links and `git log -- <former path>` can be traced.
 
 | Part | Updated | Verdict | Former file |
 | --- | --- | --- | --- |
 | [MASSter EI performance audit](#masster-ei-performance-audit) | 2026-10-06 | `e1` `jeljdikj`@37: Stein 0.8868 on NIST23 test; RASSP comparison unrun | `masster_ei_performance_audit_2026_10_01.md` |
 | [HR-EI raw peak and structure audit](#hr-ei-raw-peak-and-structure-audit) | 2026-10-17 | All four HR-EI libraries have fractional-mass peaks; structure mappings need source-specific exclusions | `hr_ei_raw_audit_2026_10_17.md` |
-| [Frozen MASSter EI checkpoint on measured HR-EI spectra](#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra) | 2026-10-17 | Frozen `e1` agrees closely with HREI-MSDB, weaker and source-dependent on RECETOX; no overlap exclusion | `hr_ei_checkpoint_eval_2026_10_17.md` |
-| [Held-out e5 EI checkpoint on measured HR-EI spectra](#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra) | 2026-10-18 | Held-out `e5`: below `e1` only where `e1` trained on the molecule; headline 10 ppm, natural isotopes | `hr_ei_e5_holdout_eval_2026_10_18.md` |
+| [Frozen MASSter EI checkpoint on measured HR-EI spectra](#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra) | 2026-10-19 | SUPERSEDED: not a valid HR-EI comparison (`e1` trained on most of these molecules); kept as an implementation record | `hr_ei_checkpoint_eval_2026_10_17.md` |
+| [Held-out e5 EI checkpoint on measured HR-EI spectra](#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra) | 2026-10-19 | Held-out `e5`, 10 ppm, natural isotopes: HREI-MSDB 0.850, Exposome 0.706, Metabolome 0.573 | `hr_ei_e5_holdout_eval_2026_10_18.md` |
 
 ## MASSter EI performance audit
 
@@ -155,8 +157,8 @@ they do not certify experimental mass accuracy or chemical identity.
 
 ## Frozen MASSter EI checkpoint on measured HR-EI spectra
 
-> **Status:** FINDING · **Updated:** 2026-10-17
-> Exact monoisotopic outputs already agree closely with HREI-MSDB; agreement is weaker and source-dependent on RECETOX. No fine-tuning or training-overlap exclusions.
+> **Status:** SUPERSEDED · **Updated:** 2026-10-19
+> Not a valid comparison for HR-EI (user decision 2026-10-19). `e1` trained on the NIST23 spectra of 531 of these 962 records' molecules (raw-audit flag), and possibly on native parents of others, so its scores are not a held-out HR-EI measurement. Replaced by [held-out e5](#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra). Kept as the record of the scorer and exact-isotope implementation checks; do not cite these numbers as model performance or compare them with `e5`.
 
 ### Question and setup
 
@@ -298,8 +300,8 @@ shifts to exact masses.
 
 ## Held-out e5 EI checkpoint on measured HR-EI spectra
 
-> **Status:** FINDING · **Updated:** 2026-10-18
-> e5 (trained without the HR-EI identities) scores below contaminated e1 only where e1 had trained on the molecule; on records e1 never saw, HREI-MSDB and Exposome are unchanged. Metabolome drops on both strata.
+> **Status:** FINDING · **Updated:** 2026-10-19
+> e5 (trained without the HR-EI identities) is the HR-EI result: at 10 ppm with natural isotopes, mean cosine HREI-MSDB 0.850, Exposome 0.706, Metabolome 0.573. `e1` is not a valid comparison and was removed 2026-10-19.
 
 ### Setup
 
@@ -310,41 +312,29 @@ from scratch on `data/split/nist23_ei_inchikey_hr_ei_excluded_2026_10_17`
 `saved_ckpts/e5_hr_ei_holdout_nominal_eugy8s9n.ckpt`, SHA-256
 `307f89467f60e708f344b38804604e395987665f3a31954dd3ceba79a66eb4cd`.
 
-Evaluation is identical to the [frozen e1 evaluation](#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra):
-the same 962 mapping-consistent records, the same scorer, the same seed, and the same mass windows,
-at Git `731fe493`. It was run on the local RTX 2070 SUPER (CUDA candidates), whereas the e1 run used CPU.
+Evaluation uses the record set, scorer, seed, and mass windows described in the
+[frozen e1 evaluation](#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra): 962 mapping-consistent records,
+at Git `731fe493`, on the local RTX 2070 SUPER (CUDA candidates).
 Exact mass mode, with natural fine-structure isotopes and also monoisotopic output.
-
-`nominal_train_overlap` is the raw audit's flag for e1's original split. All 962 records
-are absent from e5's training, validation, and internal test partitions.
+All 962 records are absent from e5's training, validation, and internal test partitions.
 
 ### Results
 
 Headline tolerance is 10 ppm with a 1 mDa floor (user decision 2026-10-18). Isotopes are natural exact-mass
 fine structure (`masster_isotope_envelope: natural`, order 4, minimum ratio 0.001) unless stated.
 
-| Reference | Spectra | e1 (contaminated) | e5 (held out) | e5 median | e5 monoisotopic | e5 5 ppm |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| HREI-MSDB | 329 | 0.8618 | 0.8497 | 0.8712 | 0.8272 | 0.8495 |
-| RECETOX Exposome | 383 | 0.7549 | 0.7062 | 0.7772 | 0.6127 | 0.6315 |
-| RECETOX Metabolome | 250 | 0.5973 | 0.5726 | 0.5743 | 0.5764 | 0.5724 |
+| Reference | Spectra | e5 mean | e5 median | e5 monoisotopic | e5 5 ppm |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HREI-MSDB | 329 | 0.8497 | 0.8712 | 0.8272 | 0.8495 |
+| RECETOX Exposome | 383 | 0.7062 | 0.7772 | 0.6127 | 0.6315 |
+| RECETOX Metabolome | 250 | 0.5726 | 0.5743 | 0.5764 | 0.5724 |
 
 Isotopes on minus off for e5 at 10 ppm, paired: HREI-MSDB +0.0225 [+0.0151, +0.0310], Exposome
 +0.0935 [+0.0759, +0.1104], Metabolome −0.0038 [−0.0057, −0.0021]. Mean measured intensity with a
 predicted match (10 ppm, isotopes on) is 0.973, 0.844 and 0.768.
 
-Paired e5 − e1 at 10 ppm with isotopes on, split by e1 training overlap (bootstrap 95% CI from 2,000 resamples):
-
-| Reference | e1 overlap | n | e1 | e5 | Δ | 95% CI |
-| --- | --- | ---: | ---: | ---: | ---: | --- |
-| HREI-MSDB | no | 132 | 0.8501 | 0.8466 | −0.0036 | [−0.0137, +0.0067] |
-| HREI-MSDB | yes | 197 | 0.8697 | 0.8518 | −0.0179 | [−0.0298, −0.0070] |
-| Exposome | no | 163 | 0.7152 | 0.7119 | −0.0034 | [−0.0269, +0.0214] |
-| Exposome | yes | 220 | 0.7844 | 0.7019 | −0.0824 | [−0.1028, −0.0622] |
-| Metabolome | no | 136 | 0.5702 | 0.5467 | −0.0234 | [−0.0405, −0.0057] |
-| Metabolome | yes | 114 | 0.6296 | 0.6034 | −0.0262 | [−0.0481, −0.0029] |
-
-The 5 ppm and monoisotopic comparisons show the same overlap pattern, within 0.01.
+A paired e5 − e1 comparison split by `e1` training overlap was removed 2026-10-19 (user
+decision: `e1` is not a valid HR-EI comparison); it is in git history at `d57d4224`.
 
 #### By molecular-ion m/z (e5, 10 ppm, isotopes on)
 
@@ -528,21 +518,15 @@ collisions between different connectivities (likely positional isomers; not insp
 
 ### Interpretation
 
-- The e1-to-e5 drop on HREI-MSDB and Exposome is confined to molecules e1 trained on, so it is
-  memorization. On molecules neither model saw, the two models agree within noise.
-- The e5 numbers are the first held-out HR-EI result: at 10 ppm with natural isotopes, HREI-MSDB 0.850,
-  Exposome 0.706, and Metabolome 0.573.
-- Metabolome drops on non-overlap records too. Untested explanation: the e1 overlap flag uses
-  the measured (derivatized) structures. The e5 exclusion also removed native parent structures
-  from the RECETOX SDFs, so e1 may have trained on parents of "non-overlap" derivatives. One seed per model;
-  run-to-run variance at this n is unmeasured.
-- Exposome loses 0.075 from 10 to 5 ppm in e5 too, which is why 10 ppm is the headline. It is a property of
+- The e5 numbers are the held-out HR-EI result: at 10 ppm with natural isotopes, HREI-MSDB 0.850,
+  Exposome 0.706, and Metabolome 0.573. One seed; run-to-run variance at this n is unmeasured.
+- Exposome loses 0.075 from 10 to 5 ppm, which is why 10 ppm is the headline. It is a property of
   the reference masses or matching floor, not of the checkpoint.
 
 ### Outputs and reproduction
 
 `output/hr_ei_e5_eugy8s9n_eval_2026_10_18/{natural_exact,monoisotopic}/`, with the same file
-layout as the e1 evaluation (`scores.csv`, `metric_summary.csv`, `provenance.json`, plots,
+layout as the frozen e1 evaluation (`scores.csv`, `metric_summary.csv`, `provenance.json`, plots,
 `cache/exact_predictions.npz`). Runtime on GPU: 57 s natural, 22 s monoisotopic.
 
 ```bash
@@ -557,5 +541,4 @@ file name from `provenance.json`; e1 figures generated earlier keep the old titl
 
 ### Next
 
-Test the Metabolome explanation by recomputing overlap against native parents. Add an e5 seed before
-treating the Metabolome non-overlap drop as real. Castro still needs structure mapping before it can be scored.
+Add an e5 seed to measure run-to-run variance. Castro still needs structure mapping before it can be scored.

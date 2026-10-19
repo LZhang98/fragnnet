@@ -97,7 +97,7 @@ Every measured result is tabulated per benchmark in [results/](README.md#results
 
 - **Figure:** EI architecture shows nominal and HR-EI-MS output branches on draw.io page 3, with SVG/PNG exports ([hub](workstreams/nist23_ei.md#where-it-stands)).
 
-- **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e1's HR-EI advantage is memorization. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
+- **Held-out HR-EI:** [e5 `eugy8s9n` finding](findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): 10 ppm natural-isotope cosine 0.850/0.706/0.573 (HREI-MSDB/Exposome/Metabolome); e1 is not a valid HR-EI comparison. e5 matches NIST23 better than two of the three HR libraries do, so most of the HR gap is between libraries. Next: reference-cleaning decision, e5 seed.
 - **Best:** e1 `jeljdikj`@37, test 1 Da cosine 0.869984, Stein 0.886845. Isotopes are +0.0079
   over e0 (one seed). The gap is intensity allocation (support oracle 0.996).
 - **EI SMARTS: CLOSED NULL** ([gate](plans/masster/masster_ei_smarts_plan.md#nist23-gate-2026-10-18)): no rule
