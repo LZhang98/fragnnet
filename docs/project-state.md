@@ -28,6 +28,7 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Open problem is the floor:** 330 spectra / 119 molecules below 0.05 at instrument tolerance
   (train sample: 4); no tested arm moves it.
 - **Prepared, not submitted:** [rewire rules in training](plans/masster/masster_rewire_rules_training_plan.md) — after-selection stage built and tested (uncommitted); G0 reach 27.7% vs null 7.3%, G0b 1.14x forward at cap 0.5; arms `a0`/`a0d1`/`a0null`, Fir stage `rewire` ([finding](findings/masster/masster_rearrangement_mining_2026_10_14.md)).
+- **Prepared, not submitted:** `md05` = `i4` + `mol_dropout` 0.5, control `i4`, Fir stage `md05`. This extrapolates the MSGYM sweep trend; values above 0.3 have never run ([hub](workstreams/masster_generalization.md)).
 - **Prepared, not submitted:** `so1` (templates-on sulfonamide O transfer), `fc1`/`fc1p`
   (local screen not positive).
 - **Next:** computed-energetics information gate. First fix a bounded state/calculation policy

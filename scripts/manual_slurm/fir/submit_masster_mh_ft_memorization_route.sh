@@ -58,6 +58,8 @@
 #   a0      i1 + 17 admitted rewire rules on the kept pool, depth 0, extras capped at 0.5 x kept fragments  (control: i1, i50ig7rf)
 #   a0d1    a0 + depth-1 continuation, top-4 bond cuts per product (masster_rewire_continuation_cuts: 4)    (control: i1; read vs a0)
 #   a0null  a0 with random same-shape edits (masster_rewire_null: true)                                     (control: i1; read vs a0)
+# Added 2026-10-18: GNN encoder dropout 0.5 on i4, extrapolating the MSGYM sweep (tiwhun9q) trend:
+#   md05  i4 + mol_dropout 0.5                                       (control: i4, rd9rsdqx)
 # Plan: docs/plans/masster/masster_memorization_route_plan.md
 # nl finding: 731fe493:docs/findings/masster/masster_memorization_energy_vs_parts_2026_09_26.md, removed 2026-10-18
 #
@@ -71,8 +73,9 @@
 #   ce      ce1 and ce2 (i1 has run).
 #   smarts  so1 (i1 has run).
 #   rewire  a0, a0d1 and a0null (i1 has run; needs a checkout with masster_rewire_rules, 2026-10-15).
+#   md05    md05 (i4 has run).
 #   i3 | i4 | fa1 | mz1 | i5 | mznl1 | nlpe1 | mw30 | mw10 | mlp1 | cg1 | r2_ob | r1_ob | r0_ob
-#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2 | so1 | a0 | a0d1 | a0null  one job.
+#   | nl1_ob | nl2_ob | sd1_ob | fa1_s2 | ce1 | ce2 | so1 | a0 | a0d1 | a0null | md05  one job.
 #
 # CONTROLS: i1_inst_ob_obf (i50ig7rf, tail 0.7607 over epochs 54-63) and fa1_full_attention_ob_obf
 # (0vn8m2gr, tail 0.7651) have run; each arm's header names its control. READ: the tail mean of
@@ -123,6 +126,7 @@ declare -A JOB_BY_ARM=(
     [a0]=msh_mhft_a0_rewire_after_selection_ob_obf
     [a0d1]=msh_mhft_a0d1_rewire_after_selection_d1_ob_obf
     [a0null]=msh_mhft_a0null_rewire_after_selection_null_ob_obf
+    [md05]=msh_mhft_md05_mol_dropout05_ob_obf
 )
 declare -A CONFIG_BY_ARM=(
     [i3]=i3_k1_ema_ob_obf.yml
@@ -149,6 +153,7 @@ declare -A CONFIG_BY_ARM=(
     [a0]=a0_rewire_after_selection_ob_obf.yml
     [a0d1]=a0d1_rewire_after_selection_d1_ob_obf.yml
     [a0null]=a0null_rewire_after_selection_null_ob_obf.yml
+    [md05]=md05_mol_dropout05_ob_obf.yml
 )
 # The rewire arms live in their own config directory; every other arm uses CONFIG_DIR.
 REWIRE_CONFIG_DIR="config/masster/mh_rewire_after_selection_2026_10_15"
@@ -169,9 +174,10 @@ case "${STAGE}" in
     ce)   ARMS=(ce1 ce2) ;;
     smarts) ARMS=(so1) ;;
     rewire) ARMS=(a0 a0d1 a0null) ;;
+    md05) ARMS=(md05) ;;
     i[345]|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|so1|a0|a0d1|a0null) ARMS=("${STAGE}") ;;
     *)
-        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|smarts|so1|rewire|a0|a0d1|a0null]" >&2
+        echo "Usage: $0 [stack|attn|pos|window|graph|rerun|ce|i3|i4|i5|fa1|mz1|mznl1|nlpe1|mw30|mw10|mlp1|cg1|r2_ob|r1_ob|r0_ob|nl1_ob|nl2_ob|sd1_ob|fa1_s2|ce1|ce2|smarts|so1|rewire|a0|a0d1|a0null|md05]" >&2
         exit 1
         ;;
 esac
@@ -284,3 +290,5 @@ echo "rewire (a0, a0d1, a0null): their control i1 (i50ig7rf) has run; read a0d1 
 echo "  They need the relabelled spec_df.pkl and a checkout with masster_rewire_rules (the 17-rule"
 echo "  REWIRE_RULES list, src/fragnnet/models/masster/rewire_expansion.py). Time 6:00:00. Watch peak GPU"
 echo "  on the 3g.40gb slice: i1 peaks near 26.8 GiB and these add up to +26% nodes per matching spectrum."
+echo "md05: its control i4 (rd9rsdqx) has run. It needs the relabelled spec_df.pkl; mol_dropout is a"
+echo "  long-standing key. Read a negative tail against i4's epoch-63 slope before rejecting."
