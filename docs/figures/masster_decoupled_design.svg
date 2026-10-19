@@ -4,8 +4,8 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="32" font-weight="700" text-anchor="start" x="40" y="57.0" fill="#233647">MASSter | Separate proposal and intensity objectives</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="400" text-anchor="start" x="40" y="101.0" fill="#617487">Shared molecular representations; distinct probabilities, losses and parameter updates.</text>
   <rect stroke-width="1.4" x="60" y="165" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#396DA7" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="210.0" y="191.0" fill="#396DA7">Encode molecule</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="210.0" y="211.0" fill="#617487">Shared molecular / context encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="210.0" y="191.0" fill="#396DA7">Shared encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="210.0" y="211.0" fill="#617487">Molecular GNN + context encoder</text>
   <path d="M 360 194 L 430 194" fill="none" stroke="#396DA7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="430,194 422.0,190.5 422.0,197.5" fill="#396DA7" />
   <rect stroke-width="1.4" x="430" y="165" width="260" height="58" rx="7" fill="#FFFFFF" stroke="#B87532" />
@@ -14,7 +14,7 @@
   <path d="M 690 194 L 750 194" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="750,194 742.0,190.5 742.0,197.5" fill="#B87532" />
   <rect stroke-width="1.4" x="750" y="165" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#B87532" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="191.0" fill="#B87532">Propose candidates</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="191.0" fill="#B87532">Proposal model</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="900.0" y="211.0" fill="#617487">Bond-cut and charge-affinity heads</text>
   <path d="M 1050 194 L 1120 194" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="1120,194 1112.0,190.5 1112.0,197.5" fill="#B87532" />
@@ -23,8 +23,8 @@
   <path d="M 210 223 L 210.0 274.0 Q 210 286 222.0 286.0 L 750 286" fill="none" stroke="#396DA7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="750,286 742.0,282.5 742.0,289.5" fill="#396DA7" />
   <rect stroke-width="1.4" x="750" y="257" width="300" height="58" rx="7" fill="#FFFFFF" stroke="#247D89" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="283.0" fill="#247D89">Predict intensities</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="900.0" y="303.0" fill="#617487">Candidate transformer + ion heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="900.0" y="283.0" fill="#247D89">Intensity model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="900.0" y="303.0" fill="#617487">Transformer + output heads</text>
   <path d="M 1050 286 L 1120 286" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="1120,286 1112.0,282.5 1112.0,289.5" fill="#247D89" />
   <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1130" y="285.0" fill="#247D89">Assembled spectrum</text>
@@ -55,8 +55,8 @@
   <path d="M 265 547 L 265.0 586.0 Q 265 596 275.0 596.0 L 285 596" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="285,596 277.0,592.5 277.0,599.5" fill="#617487" />
   <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="605.0" fill="#617487">+</text>
-  <path d="M 775 596 L 845 596" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="845,596 837.0,592.5 837.0,599.5" fill="#247D89" />
+  <path d="M 775 596 L 845 596" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,596 837.0,592.5 837.0,599.5" fill="#8060A6" />
   <path d="M 1165 596 L 1240 596" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
   <polygon points="1240,596 1232.0,592.5 1232.0,599.5" fill="#247D89" />
   <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="462.0" fill="#B87532">Proposal weights + reachable masses</text>
@@ -64,18 +64,22 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="510.0" fill="#617487">Each fragment counted once per observed peak</text>
   <rect stroke-width="1.4" x="845" y="455" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
   <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="481.0" fill="#B87532">Compute proposal loss</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="468.0" fill="#B87532">Update proposal heads</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="1250" y="495.0" fill="#233647">Bond-cut and charge-affinity heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="468.0" fill="#B87532">Update proposal model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="1250" y="495.0" fill="#B87532">Bond-cut and charge-affinity heads</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="519.0" fill="#617487">Shared encoder inputs are stop-gradient</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="576.0" fill="#247D89">Assembled predicted spectrum</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="576.0" fill="#8060A6">Assembled predicted spectrum</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="320" y="603.0" fill="#233647">Learned fragment and ion-channel intensities</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="625.0" fill="#617487">Contributions summed at matching m/z</text>
-  <rect stroke-width="1.4" x="845" y="569" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#247D89" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="595.0" fill="#247D89">Compute spectrum loss</text>
+  <rect stroke-width="1.4" x="845" y="569" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#8060A6" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="595.0" fill="#8060A6">Compute spectrum loss</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="middle" x="1005.0" y="629.0" fill="#617487">Configured spectrum objective</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="582.0" fill="#247D89">Update encoder + intensity model</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="1250" y="609.0" fill="#233647">Shared encoders, candidate transformer, ion heads</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="633.0" fill="#617487">No spectrum gradient into proposal heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="582.0" fill="#233647">Update</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1340" y="582.0" fill="#396DA7">shared encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1560" y="582.0" fill="#233647">+</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1590" y="582.0" fill="#247D89">intensity model</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="607.0" fill="#396DA7">Molecular / context encoders</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="start" x="1575" y="605.0" fill="#247D89">Transformer + fragment-intensity / ion-channel heads</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="633.0" fill="#617487">No spectrum gradient into proposal model</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="45" y="679.0" fill="#617487">Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="start" x="45" y="700.0" fill="#617487">Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.</text>
 </svg>

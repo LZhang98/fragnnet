@@ -22,6 +22,15 @@ candidate selection; the intensity model estimates the contributions of the sele
 candidates. These distributions have distinct roles and need not assign the same
 relative weights to fragments.
 
+In the figures, **shared encoders** comprise the molecular GNN and enabled context
+encoder. The **proposal model** groups proposal scoring and candidate construction;
+its learned predictors include the bond-cut and charge-affinity heads. The
+**intensity model** comprises the candidate transformer and its fragment-intensity
+and ion-channel output heads. A **head** predicts a specific output within a model.
+Spectrum assembly converts those outputs into peaks. These are conceptual figure
+labels; the implementation packages the intensity component in
+`CandidateIntensityTransformerHead`.
+
 The description below concerns the core bond-cut proposal and its unique-fragment,
 normalized-output formulation. Optional mechanisms and configuration-dependent
 variants are distinguished explicitly. It describes model operations rather than

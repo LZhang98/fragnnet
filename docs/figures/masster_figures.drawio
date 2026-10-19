@@ -10,7 +10,7 @@
                 <mxCell id="v2" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=21;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular structure → candidate fragments → intensities → spectrum">
                     <mxGeometry as="geometry" x="40" y="78.0" width="1800" height="26.25"/>
                 </mxCell>
-                <mxCell id="v3" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular structures, set members, probabilities and spectra are schematic; ⋯ / ⋮ indicate omitted members.">
+                <mxCell id="v3" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Schematic examples · ⋯ / ⋮ indicate omitted set members · A model groups related operations; a head predicts a specific output.">
                     <mxGeometry as="geometry" x="40" y="122.0" width="1900" height="17.5"/>
                 </mxCell>
                 <mxCell id="v4" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#F7F9FC;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -28,7 +28,7 @@
                 <mxCell id="v8" parent="1" style="html=0;rounded=0;absoluteArcSize=1;arcSize=0;fillColor=#B87532;strokeColor=none;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="335" y="184" width="600" height="3"/>
                 </mxCell>
-                <mxCell id="v9" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="2   Propose fragments">
+                <mxCell id="v9" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="2   Proposal model">
                     <mxGeometry as="geometry" x="350" y="203.0" width="570" height="28.75"/>
                 </mxCell>
                 <mxCell id="v10" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#F7FBFB;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -37,7 +37,7 @@
                 <mxCell id="v11" parent="1" style="html=0;rounded=0;absoluteArcSize=1;arcSize=0;fillColor=#247D89;strokeColor=none;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="960" y="184" width="500" height="3"/>
                 </mxCell>
-                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="3   Predict intensities">
+                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="3   Intensity model">
                     <mxGeometry as="geometry" x="975" y="203.0" width="470" height="28.75"/>
                 </mxCell>
                 <mxCell id="v13" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#FBF9FD;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -160,7 +160,7 @@
                 <mxCell id="v43" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#396DA7;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="65" y="440" width="220" height="58"/>
                 </mxCell>
-                <mxCell id="v44" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Encode molecule">
+                <mxCell id="v44" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular encoder">
                     <mxGeometry as="geometry" x="72" y="448.0" width="206" height="22.5"/>
                 </mxCell>
                 <mxCell id="v45" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular GNN">
@@ -317,7 +317,7 @@
                 <mxCell id="v92" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Score bonds">
                     <mxGeometry as="geometry" x="362" y="293.0" width="166" height="22.5"/>
                 </mxCell>
-                <mxCell id="v93" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Proposal heads">
+                <mxCell id="v93" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut head">
                     <mxGeometry as="geometry" x="361" y="318.0" width="168" height="16.25"/>
                 </mxCell>
                 <mxCell id="v94" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#B87532;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -1017,7 +1017,7 @@
                 <mxCell id="v275" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Predict intensities">
                     <mxGeometry as="geometry" x="1172" y="451.0" width="261" height="22.5"/>
                 </mxCell>
-                <mxCell id="v276" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Candidate-set transformer">
+                <mxCell id="v276" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + output heads">
                     <mxGeometry as="geometry" x="1171" y="476.0" width="263" height="16.25"/>
                 </mxCell>
                 <mxCell id="v277" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -1264,7 +1264,7 @@
                 <mxCell id="v327" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=26;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="+">
                     <mxGeometry as="geometry" x="285" y="974.0" width="30" height="32.5"/>
                 </mxCell>
-                <mxCell id="v328" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
+                <mxCell id="v328" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#8060A6;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
                     <mxGeometry as="geometry" relative="1">
                         <mxPoint as="sourcePoint" x="775" y="991"/>
                         <mxPoint as="targetPoint" x="845" y="991"/>
@@ -1291,16 +1291,16 @@
                 <mxCell id="v334" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute proposal loss">
                     <mxGeometry as="geometry" x="852" y="858.0" width="306" height="22.5"/>
                 </mxCell>
-                <mxCell id="v335" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal heads">
+                <mxCell id="v335" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal model">
                     <mxGeometry as="geometry" x="1250" y="843.0" width="650" height="25.0"/>
                 </mxCell>
-                <mxCell id="v336" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
+                <mxCell id="v336" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#B87532;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
                     <mxGeometry as="geometry" x="1250" y="873.0" width="650" height="21.25"/>
                 </mxCell>
                 <mxCell id="v337" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoder inputs are stop-gradient">
                     <mxGeometry as="geometry" x="1250" y="899.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v338" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled predicted spectrum">
+                <mxCell id="v338" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#8060A6;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled predicted spectrum">
                     <mxGeometry as="geometry" x="320" y="952.0" width="440" height="23.75"/>
                 </mxCell>
                 <mxCell id="v339" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=16;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Learned fragment and ion-channel intensities">
@@ -1309,29 +1309,52 @@
                 <mxCell id="v340" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Contributions summed at matching m/z">
                     <mxGeometry as="geometry" x="320" y="1006.0" width="450" height="17.5"/>
                 </mxCell>
-                <mxCell id="v341" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#247D89;strokeWidth=1.4;" vertex="1">
+                <mxCell id="v341" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#8060A6;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="845" y="964" width="320" height="38"/>
                 </mxCell>
-                <mxCell id="v342" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
+                <mxCell id="v342" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#8060A6;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
                     <mxGeometry as="geometry" x="852" y="972.0" width="306" height="22.5"/>
                 </mxCell>
                 <mxCell id="v343" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Configured spectrum objective">
                     <mxGeometry as="geometry" x="850" y="1010.0" width="310" height="17.5"/>
                 </mxCell>
-                <mxCell id="v344" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update encoder + intensity model">
-                    <mxGeometry as="geometry" x="1250" y="957.0" width="650" height="25.0"/>
+                <mxCell id="v344" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update">
+                    <mxGeometry as="geometry" x="1250" y="957.0" width="90" height="25.0"/>
                 </mxCell>
-                <mxCell id="v345" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoders, candidate transformer, ion heads">
-                    <mxGeometry as="geometry" x="1250" y="987.0" width="650" height="21.25"/>
+                <mxCell id="v345" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#396DA7;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="shared encoders">
+                    <mxGeometry as="geometry" x="1340" y="957.0" width="225" height="25.0"/>
                 </mxCell>
-                <mxCell id="v346" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal heads">
+                <mxCell id="v346" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="+">
+                    <mxGeometry as="geometry" x="1560" y="957.0" width="25" height="25.0"/>
+                </mxCell>
+                <mxCell id="v347" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="intensity model">
+                    <mxGeometry as="geometry" x="1590" y="957.0" width="340" height="25.0"/>
+                </mxCell>
+                <mxCell id="v348" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#396DA7;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular / context encoders">
+                    <mxGeometry as="geometry" x="1250" y="987.0" width="315" height="18.75"/>
+                </mxCell>
+                <mxCell id="v349" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#247D89;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + fragment-intensity / ion-channel heads">
+                    <mxGeometry as="geometry" x="1575" y="987.0" width="380" height="16.25"/>
+                </mxCell>
+                <mxCell id="v350" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal model">
                     <mxGeometry as="geometry" x="1250" y="1013.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v347" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
+                <mxCell id="v351" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
                     <mxGeometry as="geometry" x="45" y="1060.0" width="1910" height="17.5"/>
                 </mxCell>
-                <mxCell id="v348" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
+                <mxCell id="v352" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
                     <mxGeometry as="geometry" x="45" y="1082.0" width="1910" height="16.25"/>
+                </mxCell>
+                <mxCell id="v353" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#8060A6;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
+                    <mxGeometry as="geometry" relative="1">
+                        <mxPoint as="sourcePoint" x="1722" y="720"/>
+                        <mxPoint as="targetPoint" x="1005" y="964"/>
+                        <Array as="points">
+                            <mxPoint x="1975" y="720"/>
+                            <mxPoint x="1975" y="944"/>
+                            <mxPoint x="1005" y="944"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
             </root>
         </mxGraphModel>
@@ -1350,10 +1373,10 @@
                 <mxCell id="v3" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#396DA7;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="60" y="165" width="300" height="58"/>
                 </mxCell>
-                <mxCell id="v4" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Encode molecule">
+                <mxCell id="v4" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoders">
                     <mxGeometry as="geometry" x="67" y="173.0" width="286" height="22.5"/>
                 </mxCell>
-                <mxCell id="v5" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Shared molecular / context encoders">
+                <mxCell id="v5" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular GNN + context encoder">
                     <mxGeometry as="geometry" x="66" y="198.0" width="288" height="16.25"/>
                 </mxCell>
                 <mxCell id="v6" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#396DA7;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -1380,7 +1403,7 @@
                 <mxCell id="v11" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#B87532;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="750" y="165" width="300" height="58"/>
                 </mxCell>
-                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Propose candidates">
+                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Proposal model">
                     <mxGeometry as="geometry" x="757" y="173.0" width="286" height="22.5"/>
                 </mxCell>
                 <mxCell id="v13" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
@@ -1410,10 +1433,10 @@
                 <mxCell id="v18" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#247D89;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="750" y="257" width="300" height="58"/>
                 </mxCell>
-                <mxCell id="v19" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Predict intensities">
+                <mxCell id="v19" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Intensity model">
                     <mxGeometry as="geometry" x="757" y="265.0" width="286" height="22.5"/>
                 </mxCell>
-                <mxCell id="v20" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Candidate transformer + ion heads">
+                <mxCell id="v20" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + output heads">
                     <mxGeometry as="geometry" x="756" y="290.0" width="288" height="16.25"/>
                 </mxCell>
                 <mxCell id="v21" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -1547,7 +1570,7 @@
                 <mxCell id="v44" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=26;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="+">
                     <mxGeometry as="geometry" x="285" y="579.0" width="30" height="32.5"/>
                 </mxCell>
-                <mxCell id="v45" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
+                <mxCell id="v45" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#8060A6;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
                     <mxGeometry as="geometry" relative="1">
                         <mxPoint as="sourcePoint" x="775" y="596"/>
                         <mxPoint as="targetPoint" x="845" y="596"/>
@@ -1574,16 +1597,16 @@
                 <mxCell id="v51" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute proposal loss">
                     <mxGeometry as="geometry" x="852" y="463.0" width="306" height="22.5"/>
                 </mxCell>
-                <mxCell id="v52" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal heads">
+                <mxCell id="v52" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal model">
                     <mxGeometry as="geometry" x="1250" y="448.0" width="650" height="25.0"/>
                 </mxCell>
-                <mxCell id="v53" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
+                <mxCell id="v53" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#B87532;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
                     <mxGeometry as="geometry" x="1250" y="478.0" width="650" height="21.25"/>
                 </mxCell>
                 <mxCell id="v54" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoder inputs are stop-gradient">
                     <mxGeometry as="geometry" x="1250" y="504.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v55" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled predicted spectrum">
+                <mxCell id="v55" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#8060A6;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled predicted spectrum">
                     <mxGeometry as="geometry" x="320" y="557.0" width="440" height="23.75"/>
                 </mxCell>
                 <mxCell id="v56" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=16;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Learned fragment and ion-channel intensities">
@@ -1592,28 +1615,40 @@
                 <mxCell id="v57" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Contributions summed at matching m/z">
                     <mxGeometry as="geometry" x="320" y="611.0" width="450" height="17.5"/>
                 </mxCell>
-                <mxCell id="v58" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#247D89;strokeWidth=1.4;" vertex="1">
+                <mxCell id="v58" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#8060A6;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="845" y="569" width="320" height="38"/>
                 </mxCell>
-                <mxCell id="v59" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
+                <mxCell id="v59" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#8060A6;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
                     <mxGeometry as="geometry" x="852" y="577.0" width="306" height="22.5"/>
                 </mxCell>
                 <mxCell id="v60" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Configured spectrum objective">
                     <mxGeometry as="geometry" x="850" y="615.0" width="310" height="17.5"/>
                 </mxCell>
-                <mxCell id="v61" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update encoder + intensity model">
-                    <mxGeometry as="geometry" x="1250" y="562.0" width="650" height="25.0"/>
+                <mxCell id="v61" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update">
+                    <mxGeometry as="geometry" x="1250" y="562.0" width="90" height="25.0"/>
                 </mxCell>
-                <mxCell id="v62" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoders, candidate transformer, ion heads">
-                    <mxGeometry as="geometry" x="1250" y="592.0" width="650" height="21.25"/>
+                <mxCell id="v62" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#396DA7;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="shared encoders">
+                    <mxGeometry as="geometry" x="1340" y="562.0" width="225" height="25.0"/>
                 </mxCell>
-                <mxCell id="v63" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal heads">
+                <mxCell id="v63" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="+">
+                    <mxGeometry as="geometry" x="1560" y="562.0" width="25" height="25.0"/>
+                </mxCell>
+                <mxCell id="v64" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="intensity model">
+                    <mxGeometry as="geometry" x="1590" y="562.0" width="340" height="25.0"/>
+                </mxCell>
+                <mxCell id="v65" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#396DA7;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular / context encoders">
+                    <mxGeometry as="geometry" x="1250" y="592.0" width="315" height="18.75"/>
+                </mxCell>
+                <mxCell id="v66" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#247D89;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + fragment-intensity / ion-channel heads">
+                    <mxGeometry as="geometry" x="1575" y="592.0" width="380" height="16.25"/>
+                </mxCell>
+                <mxCell id="v67" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal model">
                     <mxGeometry as="geometry" x="1250" y="618.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v64" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
+                <mxCell id="v68" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
                     <mxGeometry as="geometry" x="45" y="665.0" width="1910" height="17.5"/>
                 </mxCell>
-                <mxCell id="v65" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
+                <mxCell id="v69" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
                     <mxGeometry as="geometry" x="45" y="687.0" width="1910" height="16.25"/>
                 </mxCell>
             </root>
@@ -1630,7 +1665,7 @@
                 <mxCell id="v2" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=21;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular structure → candidate fragments → intensities → spectrum">
                     <mxGeometry as="geometry" x="40" y="78.0" width="1800" height="26.25"/>
                 </mxCell>
-                <mxCell id="v3" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular structures, set members, probabilities and spectra are schematic; ⋯ / ⋮ indicate omitted members.">
+                <mxCell id="v3" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Schematic examples · ⋯ / ⋮ indicate omitted set members · A model groups related operations; a head predicts a specific output.">
                     <mxGeometry as="geometry" x="40" y="122.0" width="1900" height="17.5"/>
                 </mxCell>
                 <mxCell id="v4" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#F7F9FC;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -1648,7 +1683,7 @@
                 <mxCell id="v8" parent="1" style="html=0;rounded=0;absoluteArcSize=1;arcSize=0;fillColor=#B87532;strokeColor=none;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="335" y="184" width="600" height="3"/>
                 </mxCell>
-                <mxCell id="v9" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="2   Propose fragments">
+                <mxCell id="v9" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="2   Proposal model">
                     <mxGeometry as="geometry" x="350" y="203.0" width="570" height="28.75"/>
                 </mxCell>
                 <mxCell id="v10" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#F7FBFB;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -1657,7 +1692,7 @@
                 <mxCell id="v11" parent="1" style="html=0;rounded=0;absoluteArcSize=1;arcSize=0;fillColor=#247D89;strokeColor=none;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="960" y="184" width="500" height="3"/>
                 </mxCell>
-                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="3   Predict intensities">
+                <mxCell id="v12" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=23;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="3   Intensity model">
                     <mxGeometry as="geometry" x="975" y="203.0" width="470" height="28.75"/>
                 </mxCell>
                 <mxCell id="v13" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=8;fillColor=#FBF9FD;strokeColor=none;strokeWidth=1.4;" vertex="1">
@@ -1780,7 +1815,7 @@
                 <mxCell id="v43" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#396DA7;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="65" y="440" width="220" height="58"/>
                 </mxCell>
-                <mxCell id="v44" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Encode molecule">
+                <mxCell id="v44" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#396DA7;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular encoder">
                     <mxGeometry as="geometry" x="72" y="448.0" width="206" height="22.5"/>
                 </mxCell>
                 <mxCell id="v45" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular GNN">
@@ -1937,7 +1972,7 @@
                 <mxCell id="v92" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Score bonds">
                     <mxGeometry as="geometry" x="362" y="293.0" width="166" height="22.5"/>
                 </mxCell>
-                <mxCell id="v93" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Proposal heads">
+                <mxCell id="v93" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut head">
                     <mxGeometry as="geometry" x="361" y="318.0" width="168" height="16.25"/>
                 </mxCell>
                 <mxCell id="v94" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#B87532;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -2637,7 +2672,7 @@
                 <mxCell id="v275" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Predict intensities">
                     <mxGeometry as="geometry" x="1172" y="451.0" width="261" height="22.5"/>
                 </mxCell>
-                <mxCell id="v276" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Candidate-set transformer">
+                <mxCell id="v276" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + output heads">
                     <mxGeometry as="geometry" x="1171" y="476.0" width="263" height="16.25"/>
                 </mxCell>
                 <mxCell id="v277" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
@@ -2951,7 +2986,7 @@
                     <mxGeometry as="geometry" x="1730" y="679.0" width="215" height="18.75"/>
                 </mxCell>
                 <mxCell id="v340" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Same learned weights · two output mass modes">
-                    <mxGeometry as="geometry" x="1510" y="706.0" width="425" height="16.25"/>
+                    <mxGeometry as="geometry" x="1510" y="248.0" width="425" height="16.25"/>
                 </mxCell>
                 <mxCell id="v341" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#D6DEE4;strokeWidth=1;endArrow=none;endFill=1;endSize=6;dashed=0;" edge="1">
                     <mxGeometry as="geometry" relative="1">
@@ -3055,7 +3090,7 @@
                 <mxCell id="v358" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=26;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="+">
                     <mxGeometry as="geometry" x="285" y="974.0" width="30" height="32.5"/>
                 </mxCell>
-                <mxCell id="v359" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#247D89;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
+                <mxCell id="v359" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#8060A6;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
                     <mxGeometry as="geometry" relative="1">
                         <mxPoint as="sourcePoint" x="775" y="991"/>
                         <mxPoint as="targetPoint" x="845" y="991"/>
@@ -3082,16 +3117,16 @@
                 <mxCell id="v365" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#B87532;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute proposal loss">
                     <mxGeometry as="geometry" x="852" y="858.0" width="306" height="22.5"/>
                 </mxCell>
-                <mxCell id="v366" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal heads">
+                <mxCell id="v366" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#B87532;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update proposal model">
                     <mxGeometry as="geometry" x="1250" y="843.0" width="650" height="25.0"/>
                 </mxCell>
-                <mxCell id="v367" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
+                <mxCell id="v367" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#B87532;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Bond-cut and charge-affinity heads">
                     <mxGeometry as="geometry" x="1250" y="873.0" width="650" height="21.25"/>
                 </mxCell>
                 <mxCell id="v368" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoder inputs are stop-gradient">
                     <mxGeometry as="geometry" x="1250" y="899.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v369" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled nominal EI spectrum">
+                <mxCell id="v369" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=19;fontColor=#8060A6;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Assembled nominal EI spectrum">
                     <mxGeometry as="geometry" x="320" y="952.0" width="440" height="23.75"/>
                 </mxCell>
                 <mxCell id="v370" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=16;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Learned fragment and ion-channel intensities">
@@ -3100,29 +3135,52 @@
                 <mxCell id="v371" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Includes natural-isotope contributions">
                     <mxGeometry as="geometry" x="320" y="1006.0" width="450" height="17.5"/>
                 </mxCell>
-                <mxCell id="v372" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#247D89;strokeWidth=1.4;" vertex="1">
+                <mxCell id="v372" parent="1" style="html=0;rounded=1;absoluteArcSize=1;arcSize=14;fillColor=#FFFFFF;strokeColor=#8060A6;strokeWidth=1.4;" vertex="1">
                     <mxGeometry as="geometry" x="845" y="964" width="320" height="38"/>
                 </mxCell>
-                <mxCell id="v373" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#247D89;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
+                <mxCell id="v373" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=18;fontColor=#8060A6;fontStyle=1;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Compute spectrum loss">
                     <mxGeometry as="geometry" x="852" y="972.0" width="306" height="22.5"/>
                 </mxCell>
                 <mxCell id="v374" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=center;verticalAlign=middle;spacing=0;" vertex="1" value="Sparse cross-entropy">
                     <mxGeometry as="geometry" x="850" y="1010.0" width="310" height="17.5"/>
                 </mxCell>
-                <mxCell id="v375" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update encoder + intensity model">
-                    <mxGeometry as="geometry" x="1250" y="957.0" width="650" height="25.0"/>
+                <mxCell id="v375" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Update">
+                    <mxGeometry as="geometry" x="1250" y="957.0" width="90" height="25.0"/>
                 </mxCell>
-                <mxCell id="v376" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=17;fontColor=#233647;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Shared encoders, candidate transformer, ion heads">
-                    <mxGeometry as="geometry" x="1250" y="987.0" width="650" height="21.25"/>
+                <mxCell id="v376" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#396DA7;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="shared encoders">
+                    <mxGeometry as="geometry" x="1340" y="957.0" width="225" height="25.0"/>
                 </mxCell>
-                <mxCell id="v377" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal heads">
+                <mxCell id="v377" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#233647;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="+">
+                    <mxGeometry as="geometry" x="1560" y="957.0" width="25" height="25.0"/>
+                </mxCell>
+                <mxCell id="v378" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=20;fontColor=#247D89;fontStyle=1;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="intensity model">
+                    <mxGeometry as="geometry" x="1590" y="957.0" width="340" height="25.0"/>
+                </mxCell>
+                <mxCell id="v379" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#396DA7;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Molecular / context encoders">
+                    <mxGeometry as="geometry" x="1250" y="987.0" width="315" height="18.75"/>
+                </mxCell>
+                <mxCell id="v380" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#247D89;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Transformer + fragment-intensity / ion-channel heads">
+                    <mxGeometry as="geometry" x="1575" y="987.0" width="380" height="16.25"/>
+                </mxCell>
+                <mxCell id="v381" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=15;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="No spectrum gradient into proposal model">
                     <mxGeometry as="geometry" x="1250" y="1013.0" width="650" height="18.75"/>
                 </mxCell>
-                <mxCell id="v378" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
+                <mxCell id="v382" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=14;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Standard joint training, shared encoder, proposal-selection-only mode · discrete candidate selection · dashed arrows indicate parameter updates">
                     <mxGeometry as="geometry" x="45" y="1060.0" width="1910" height="17.5"/>
                 </mxCell>
-                <mxCell id="v379" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
+                <mxCell id="v383" parent="1" style="text;html=0;whiteSpace=wrap;fillColor=none;strokeColor=none;fontFamily=DejaVu Sans;fontSize=13;fontColor=#617487;fontStyle=0;align=left;verticalAlign=middle;spacing=0;" vertex="1" value="Support loss uses retained, matched candidates only; unmatched peaks contribute zero. Proposal-only warm-up and separate encoders change encoder routing.">
                     <mxGeometry as="geometry" x="45" y="1082.0" width="1910" height="16.25"/>
+                </mxCell>
+                <mxCell id="v384" parent="1" style="edgeStyle=none;rounded=1;arcSize=24;html=0;strokeColor=#8060A6;strokeWidth=1.8;endArrow=block;endFill=1;endSize=6;dashed=0;" edge="1">
+                    <mxGeometry as="geometry" relative="1">
+                        <mxPoint as="sourcePoint" x="1610" y="720"/>
+                        <mxPoint as="targetPoint" x="1005" y="964"/>
+                        <Array as="points">
+                            <mxPoint x="1975" y="720"/>
+                            <mxPoint x="1975" y="944"/>
+                            <mxPoint x="1005" y="944"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
             </root>
         </mxGraphModel>
