@@ -1,6 +1,6 @@
 # MASSter method
 
-> **Status:** REFERENCE · **Updated:** 2026-10-18
+> **Status:** REFERENCE · **Updated:** 2026-10-19
 > Chemically constrained probabilistic spectrum prediction: core cut-mask method, EI-MS extension, unique-fragment formulation, and comparison with FraGNNet.
 
 ## Overview
@@ -39,6 +39,53 @@ The [editable SVG](../figures/masster_architecture_editable.svg) is available fo
 figure revisions; the [draw.io source](../figures/masster_figures.drawio) holds this
 figure (page 1) and the decoupled-design figure (page 2) with connected arrows and
 grouped drawings, so it is easier to edit.
+
+## Prediction task and data flow
+
+The input is a known molecular structure together with the acquisition metadata
+enabled by the resolved configuration. The target is a spectrum: a set of
+mass-to-charge values and their relative intensities. Prediction must therefore
+address two related questions: which fragment-ion masses are reachable within the
+candidate construction, and how much intensity to assign to those candidates.
+Candidate support limits what the intensity model can explain. A candidate whose
+mass matches an observed peak can still receive an incorrect intensity, while a
+peak outside the generated support cannot be recovered by intensity scoring alone.
+
+The core prediction proceeds through the following representations:
+
+1. **Precursor graph:** encode atoms and bonds of the intact molecule.
+2. **Cut masks:** score complete sets of removed bonds and enumerate a bounded
+   collection of high-probability configurations.
+3. **Fragment atom sets:** extract connected components from each selected mask;
+   in unique-fragment mode, combine occurrences with the same precursor atom set.
+4. **Ion channels:** assign valid charge and hydrogen-transfer alternatives to
+   each fragment. An atom set alone does not specify a unique ion mass.
+5. **Spectrum:** score candidates in the context of the candidate set, allocate
+   intensity to valid channels, and aggregate contributions at matching masses.
+
+These representations have different identities. A mask can produce several
+fragments; several masks can produce the same fragment; and several fragments or
+channels can contribute to the same mass. Atom-set deduplication combines latent
+pathways to one structural candidate, whereas mass aggregation combines their
+observable spectral contributions. Neither operation establishes a unique
+structural assignment for an observed peak.
+
+### Schematic example
+
+Consider a three-atom chain $A-B-C$ with bonds $AB$ and $BC$. Removing only $AB$
+produces components $\{A\}$ and $\{B,C\}$; removing both bonds produces
+$\{A\}$, $\{B\}$, and $\{C\}$. The fragment $\{A\}$ therefore occurs under two
+different masks. In unique-fragment mode it becomes one candidate, with its
+proposal weight summed over the retained pathways after charge allocation.
+Its final spectral intensity is estimated by the intensity model and need not
+equal that proposal weight. Valid ion-channel choices then determine the masses
+to which its intensity contributes.
+
+The example describes graph operations, not an ordered chemical reaction. In
+particular, the two-cut mask does not state whether $AB$ or $BC$ breaks first.
+The core method ranks possible bond-deletion configurations without simulating
+intermediate structures or reaction kinetics. This distinction also explains why
+new heavy-atom bonds require an additional mechanism beyond cut masks.
 
 ## Molecular encoding and bond-cut proposals
 
