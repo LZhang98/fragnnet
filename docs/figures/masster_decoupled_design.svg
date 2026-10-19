@@ -36,30 +36,26 @@
   <path d="M 40 365 L 1960 365" fill="none" stroke="#D6DEE4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
   <text font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="700" text-anchor="start" x="45" y="407.0" fill="#233647">Training: two objectives from the same observed spectrum</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" text-anchor="middle" x="1640.0" y="410.0" fill="#233647">L = Lspec + λprop Lprop</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="60" y="452.0" fill="#233647">Observed spectrum</text>
-  <path d="M 70 465 L 70.0 495.0 Q 70 507 82.0 507.0 L 225 507" fill="none" stroke="#617487" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 90.15 507 L 90.15 495.24" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 110.30000000000001 507 L 110.30000000000001 482.64" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 130.45 507 L 130.45 497.76" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 149.05 507 L 149.05 468.36" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 173.85000000000002 507 L 173.85000000000002 485.58" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 200.2 507 L 200.2 476.76" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="524.0" fill="#617487">m/z</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="275.0" y="498.0" fill="#617487">+</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="60" y="509.0" fill="#233647">Observed spectrum</text>
+  <path d="M 70 523 L 70 571 L 225 571" fill="none" stroke="#617487" stroke-width="1.2" stroke-linecap="butt" stroke-linejoin="miter" />
+  <path d="M 90.15 571 L 90.15 557.56" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 110.30000000000001 571 L 110.30000000000001 543.16" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 130.45 571 L 130.45 560.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 149.05 571 L 149.05 526.84" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 173.85000000000002 571 L 173.85000000000002 546.52" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 200.2 571 L 200.2 536.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="588.0" fill="#617487">m/z</text>
+  <path d="M 230 547 L 265 547" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 265 547 L 265.0 492.0 Q 265 482 275.0 482.0 L 285 482" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,482 277.0,478.5 277.0,485.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="491.0" fill="#617487">+</text>
   <path d="M 775 482 L 845 482" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="845,482 837.0,478.5 837.0,485.5" fill="#B87532" />
   <path d="M 1165 482 L 1240 482" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
   <polygon points="1240,482 1232.0,478.5 1232.0,485.5" fill="#B87532" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="60" y="566.0" fill="#233647">Observed spectrum</text>
-  <path d="M 70 579 L 70.0 609.0 Q 70 621 82.0 621.0 L 225 621" fill="none" stroke="#617487" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 90.15 621 L 90.15 609.24" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 110.30000000000001 621 L 110.30000000000001 596.64" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 130.45 621 L 130.45 611.76" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 149.05 621 L 149.05 582.36" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 173.85000000000002 621 L 173.85000000000002 599.58" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 200.2 621 L 200.2 590.76" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="638.0" fill="#617487">m/z</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="275.0" y="612.0" fill="#617487">+</text>
+  <path d="M 265 547 L 265.0 586.0 Q 265 596 275.0 596.0 L 285 596" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,596 277.0,592.5 277.0,599.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="605.0" fill="#617487">+</text>
   <path d="M 775 596 L 845 596" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="845,596 837.0,592.5 837.0,599.5" fill="#247D89" />
   <path d="M 1165 596 L 1240 596" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
