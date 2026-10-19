@@ -6,16 +6,16 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="40" y="136.0" fill="#617487">Schematic examples · ⋯ / ⋮ indicate omitted set members · A model groups related operations; a head predicts a specific output.</text>
   <rect stroke-width="1.4" x="40" y="184" width="270" height="546" rx="4" fill="#F7F9FC" stroke="none" />
   <rect stroke-width="1.4" x="40" y="184" width="270" height="3" rx="0" fill="#396DA7" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" text-anchor="start" x="55" y="224.0" fill="#396DA7">1. Encode molecule</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="700" text-anchor="start" x="55" y="225.0" fill="#396DA7">1. Encode molecule</text>
   <rect stroke-width="1.4" x="335" y="184" width="600" height="546" rx="4" fill="#FDFBF7" stroke="none" />
   <rect stroke-width="1.4" x="335" y="184" width="600" height="3" rx="0" fill="#B87532" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="350" y="226.0" fill="#B87532">2. Propose Fragments</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="700" text-anchor="start" x="350" y="225.0" fill="#B87532">2. Propose Fragments</text>
   <rect stroke-width="1.4" x="960" y="184" width="500" height="546" rx="4" fill="#F7FBFB" stroke="none" />
   <rect stroke-width="1.4" x="960" y="184" width="500" height="3" rx="0" fill="#247D89" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="975" y="226.0" fill="#247D89">3. Predict Intensities</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="700" text-anchor="start" x="975" y="225.0" fill="#247D89">3. Predict Intensities</text>
   <rect stroke-width="1.4" x="1485" y="184" width="475" height="546" rx="4" fill="#FBF9FD" stroke="none" />
   <rect stroke-width="1.4" x="1485" y="184" width="475" height="3" rx="0" fill="#8060A6" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="700" text-anchor="start" x="1500" y="226.0" fill="#8060A6">4. Assemble spectra</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="700" text-anchor="start" x="1500" y="225.0" fill="#8060A6">4. Assemble spectra</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="355" y="265.0" fill="#617487">Inputs: atom / bond features</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="175.0" y="278.0" fill="#233647">Input molecular graph</text>
   <path d="M 78.0 355.5 L 103.0 318.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
@@ -118,106 +118,106 @@
   <rect stroke-width="1.4" x="355" y="411" width="205" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
   <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="457.5" y="437.0" fill="#B87532">Rank cut sets</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="middle" x="462.5" y="477.0" fill="#617487">Cut-mask examples</text>
-  <path d="M 378.0 518.8 L 395.2 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 395.2 493.0 L 425.3 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 425.3 493.0 L 442.5 518.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 442.5 518.8 L 425.3 544.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 425.3 544.6 L 395.2 544.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 395.2 544.6 L 378.0 518.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 442.5 518.8 L 462.28 493.0" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <path d="M 462.28 493.0 L 489.8 503.32" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="371.12" y="511.05999999999995" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="378.0" y="522.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="388.32" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="395.2" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="418.42" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="425.3" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="435.62" y="511.05999999999995" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="442.5" y="522.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="418.42" y="536.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="425.3" y="548.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="388.32" y="536.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="395.2" y="548.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="455.4" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="462.28" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="482.92" y="495.58" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="489.8" y="506.76" fill="#AE4F59">O</text>
-  <path d="M 505 520 L 577 520" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="577,520 569.0,516.5 569.0,523.5" fill="#B87532" />
-  <path d="M 378.0 598.8 L 395.2 573.0" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <path d="M 395.2 573.0 L 425.3 573.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 425.3 573.0 L 442.5 598.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 442.5 598.8 L 425.3 624.6" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <path d="M 425.3 624.6 L 395.2 624.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 395.2 624.6 L 378.0 598.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 442.5 598.8 L 462.28 573.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 462.28 573.0 L 489.8 583.32" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="371.12" y="591.06" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="378.0" y="602.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="388.32" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="395.2" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="418.42" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="425.3" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="435.62" y="591.06" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="442.5" y="602.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="418.42" y="616.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="425.3" y="628.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="388.32" y="616.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="395.2" y="628.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="455.4" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="462.28" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="482.92" y="575.58" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="489.8" y="586.76" fill="#AE4F59">O</text>
-  <path d="M 505 600 L 577 600" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="577,600 569.0,596.5 569.0,603.5" fill="#B87532" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="457.0" y="564.0" fill="#B87532">⋮</text>
+  <path d="M 378.0 516.4 L 393.6 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 393.6 493.0 L 420.9 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 420.9 493.0 L 436.5 516.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 436.5 516.4 L 420.9 539.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 420.9 539.8 L 393.6 539.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 393.6 539.8 L 378.0 516.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 436.5 516.4 L 454.44 493.0" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <path d="M 454.44 493.0 L 479.4 502.36" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="371.76" y="509.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="378.0" y="519.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="387.36" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="393.6" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="414.65999999999997" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="420.9" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="430.26" y="509.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="436.5" y="519.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="414.65999999999997" y="532.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="420.9" y="542.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="387.36" y="532.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="393.6" y="542.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="448.2" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="454.44" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="473.15999999999997" y="495.34000000000003" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="479.4" y="505.48" fill="#AE4F59">O</text>
+  <path d="M 495 516.4 L 577 516.4" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="577,516.4 569.0,512.9 569.0,519.9" fill="#B87532" />
+  <path d="M 378.0 621.4 L 393.6 598.0" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <path d="M 393.6 598.0 L 420.9 598.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 420.9 598.0 L 436.5 621.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 436.5 621.4 L 420.9 644.8" fill="none" stroke="#B87532" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <path d="M 420.9 644.8 L 393.6 644.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 393.6 644.8 L 378.0 621.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 436.5 621.4 L 454.44 598.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 454.44 598.0 L 479.4 607.36" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="371.76" y="614.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="378.0" y="624.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="387.36" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="393.6" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="414.65999999999997" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="420.9" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="430.26" y="614.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="436.5" y="624.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="414.65999999999997" y="637.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="420.9" y="647.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="387.36" y="637.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="393.6" y="647.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="448.2" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="454.44" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="473.15999999999997" y="600.34" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="479.4" y="610.48" fill="#AE4F59">O</text>
+  <path d="M 495 621.4 L 577 621.4" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="577,621.4 569.0,617.9 569.0,624.9" fill="#B87532" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="430.0" y="575.0" fill="#B87532">⋮</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="590" y="478.0" fill="#B87532">Extract connected fragments</text>
-  <path d="M 615.0 518.8 L 632.2 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 632.2 493.0 L 662.3 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 662.3 493.0 L 679.5 518.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 679.5 518.8 L 662.3 544.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 662.3 544.6 L 632.2 544.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 632.2 544.6 L 615.0 518.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="608.12" y="511.05999999999995" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="615.0" y="522.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="625.32" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="632.2" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="655.42" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="662.3" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="672.62" y="511.05999999999995" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="679.5" y="522.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="655.42" y="536.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="662.3" y="548.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="625.32" y="536.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="632.2" y="548.04" fill="#617487">C</text>
-  <path d="M 789.28 493.0 L 816.8 503.32" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="782.4" y="485.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="789.28" y="496.44" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="809.92" y="495.58" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="816.8" y="506.76" fill="#AE4F59">O</text>
-  <path d="M 632.2 573.0 L 662.3 573.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 662.3 573.0 L 679.5 598.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 679.5 598.8 L 699.28 573.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 699.28 573.0 L 726.8 583.32" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="625.32" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="632.2" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="655.42" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="662.3" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="672.62" y="591.06" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="679.5" y="602.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="692.4" y="565.26" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="699.28" y="576.4399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="719.92" y="575.58" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="726.8" y="586.76" fill="#AE4F59">O</text>
-  <path d="M 812.3 624.6 L 782.2 624.6" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 782.2 624.6 L 765.0 598.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-  <rect stroke-width="1.4" x="758.12" y="591.06" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="765.0" y="602.2399999999999" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="805.42" y="616.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="812.3" y="628.04" fill="#617487">C</text>
-  <rect stroke-width="1.4" x="775.32" y="616.86" width="13.76" height="15.48" rx="0" fill="#FFFFFF" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="12.04" font-weight="700" text-anchor="middle" x="782.2" y="628.04" fill="#617487">C</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="755.0" y="564.0" fill="#B87532">⋮</text>
+  <path d="M 615.0 516.4 L 630.6 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 630.6 493.0 L 657.9 493.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 657.9 493.0 L 673.5 516.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 673.5 516.4 L 657.9 539.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 657.9 539.8 L 630.6 539.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 630.6 539.8 L 615.0 516.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="608.76" y="509.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="615.0" y="519.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="624.36" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="630.6" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="651.66" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="657.9" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="667.26" y="509.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="673.5" y="519.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="651.66" y="532.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="657.9" y="542.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="624.36" y="532.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="630.6" y="542.92" fill="#617487">C</text>
+  <path d="M 781.44 493.0 L 806.4 502.36" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="775.2" y="485.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="781.44" y="496.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="800.16" y="495.34000000000003" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="806.4" y="505.48" fill="#AE4F59">O</text>
+  <path d="M 630.6 598.0 L 657.9 598.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 657.9 598.0 L 673.5 621.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 673.5 621.4 L 691.44 598.0" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 691.44 598.0 L 716.4 607.36" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="624.36" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="630.6" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="651.66" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="657.9" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="667.26" y="614.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="673.5" y="624.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="685.2" y="590.98" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="691.44" y="601.12" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="710.16" y="600.34" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="716.4" y="610.48" fill="#AE4F59">O</text>
+  <path d="M 807.9 644.8 L 780.6 644.8" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 780.6 644.8 L 765.0 621.4" fill="none" stroke="#617487" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  <rect stroke-width="1.4" x="758.76" y="614.38" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="765.0" y="624.52" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="801.66" y="637.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="807.9" y="647.92" fill="#617487">C</text>
+  <rect stroke-width="1.4" x="774.36" y="637.78" width="12.48" height="14.040000000000001" rx="0" fill="#FFFFFF" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="10.92" font-weight="700" text-anchor="middle" x="780.6" y="647.92" fill="#617487">C</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="400" text-anchor="middle" x="715.0" y="575.0" fill="#B87532">⋮</text>
   <path d="M 857 547 L 900.0 547.0 Q 912 547 912.0 559.0 L 912.0 656.0 Q 912 668 900.0 668.0 L 459.0 668.0 Q 455 668 455.0 672.0 L 455 676" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="455,676 458.5,668.0 451.5,668.0" fill="#B87532" />
   <rect stroke-width="1.4" x="355" y="676" width="200" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
@@ -370,20 +370,20 @@
   <path d="M 200.2 966 L 200.2 931.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
   <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="983.0" fill="#617487">m/z</text>
   <path d="M 230 942 L 265 942" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 265 942 L 265.0 887.0 Q 265 877 275.0 877.0 L 285 877" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="285,877 277.0,873.5 277.0,880.5" fill="#617487" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="886.0" fill="#617487">+</text>
-  <path d="M 775 877 L 845 877" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="845,877 837.0,873.5 837.0,880.5" fill="#B87532" />
-  <path d="M 1165 877 L 1240 877" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <polygon points="1240,877 1232.0,873.5 1232.0,880.5" fill="#B87532" />
-  <path d="M 265 942 L 265.0 981.0 Q 265 991 275.0 991.0 L 285 991" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="285,991 277.0,987.5 277.0,994.5" fill="#617487" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="1000.0" fill="#617487">+</text>
-  <path d="M 775 991 L 845 991" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="845,991 837.0,987.5 837.0,994.5" fill="#8060A6" />
-  <path d="M 1165 991 L 1240 991" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <polygon points="1240,991 1232.0,987.5 1232.0,994.5" fill="#247D89" />
+  <path d="M 265 942 L 265.0 879.0 Q 265 869 275.0 869.0 L 285 869" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,869 277.0,865.5 277.0,872.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="878.0" fill="#617487">+</text>
+  <path d="M 775 869 L 845 869" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,869 837.0,865.5 837.0,872.5" fill="#B87532" />
+  <path d="M 1165 869 L 1240 869" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,869 1232.0,865.5 1232.0,872.5" fill="#B87532" />
+  <path d="M 265 942 L 265.0 973.0 Q 265 983 275.0 983.0 L 285 983" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,983 277.0,979.5 277.0,986.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="992.0" fill="#617487">+</text>
+  <path d="M 775 983 L 845 983" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,983 837.0,979.5 837.0,986.5" fill="#8060A6" />
+  <path d="M 1165 983 L 1240 983" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,983 1232.0,979.5 1232.0,986.5" fill="#247D89" />
   <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="857.0" fill="#B87532">Proposal weights + reachable masses</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="320" y="883.0" fill="#233647">Normalize marginal weights; match valid channels</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="905.0" fill="#617487">Before isotope expansion</text>

@@ -45,20 +45,20 @@
   <path d="M 200.2 571 L 200.2 536.44" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
   <text font-family="DejaVu Sans, sans-serif" font-size="12" font-weight="400" text-anchor="start" x="190" y="588.0" fill="#617487">m/z</text>
   <path d="M 230 547 L 265 547" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <path d="M 265 547 L 265.0 492.0 Q 265 482 275.0 482.0 L 285 482" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="285,482 277.0,478.5 277.0,485.5" fill="#617487" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="491.0" fill="#617487">+</text>
-  <path d="M 775 482 L 845 482" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="845,482 837.0,478.5 837.0,485.5" fill="#B87532" />
-  <path d="M 1165 482 L 1240 482" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <polygon points="1240,482 1232.0,478.5 1232.0,485.5" fill="#B87532" />
-  <path d="M 265 547 L 265.0 586.0 Q 265 596 275.0 596.0 L 285 596" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="285,596 277.0,592.5 277.0,599.5" fill="#617487" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="605.0" fill="#617487">+</text>
-  <path d="M 775 596 L 845 596" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-  <polygon points="845,596 837.0,592.5 837.0,599.5" fill="#8060A6" />
-  <path d="M 1165 596 L 1240 596" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
-  <polygon points="1240,596 1232.0,592.5 1232.0,599.5" fill="#247D89" />
+  <path d="M 265 547 L 265.0 484.0 Q 265 474 275.0 474.0 L 285 474" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,474 277.0,470.5 277.0,477.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="483.0" fill="#617487">+</text>
+  <path d="M 775 474 L 845 474" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,474 837.0,470.5 837.0,477.5" fill="#B87532" />
+  <path d="M 1165 474 L 1240 474" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,474 1232.0,470.5 1232.0,477.5" fill="#B87532" />
+  <path d="M 265 547 L 265.0 578.0 Q 265 588 275.0 588.0 L 285 588" fill="none" stroke="#617487" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="285,588 277.0,584.5 277.0,591.5" fill="#617487" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="26" font-weight="400" text-anchor="middle" x="300.0" y="597.0" fill="#617487">+</text>
+  <path d="M 775 588 L 845 588" fill="none" stroke="#8060A6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+  <polygon points="845,588 837.0,584.5 837.0,591.5" fill="#8060A6" />
+  <path d="M 1165 588 L 1240 588" fill="none" stroke="#247D89" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="5 5" />
+  <polygon points="1240,588 1232.0,584.5 1232.0,591.5" fill="#247D89" />
   <text font-family="DejaVu Sans, sans-serif" font-size="19" font-weight="700" text-anchor="start" x="320" y="462.0" fill="#B87532">Proposal weights + reachable masses</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="320" y="488.0" fill="#233647">Normalize marginal weights; match valid channels</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="510.0" fill="#617487">Each fragment counted once per observed peak</text>
