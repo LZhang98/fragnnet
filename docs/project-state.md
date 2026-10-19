@@ -40,7 +40,7 @@ Every measured result is tabulated per benchmark in [results/](README.md#results
 
 - **Method description:** [disjoint training objectives](reference/masster_method.md#training) documented and checked against the implementation, including support limits and staged encoder routing.
 
-- **Figures:** both MASSter diagram pages restyled; SVG/PNG exports refreshed and visually checked ([hub](workstreams/masster_core.md#where-it-stands)).
+- **Figures:** all three MASSter pages redrawn with concrete objects/actions and corrected proposal-support versus spectrum-loss inputs and gradient targets; matching plain SVG/PNG exports visually checked ([hub](workstreams/masster_core.md#where-it-stands)).
 
 - **Speed:** [host-sync removal](findings/masster/masster_code_audits.md#host-sync-removal-in-the-ei-train-step-2026-10-18-uncommitted) (uncommitted): EI H100 runs are host-bound (one core, 30-40% power); train-step syncs 145.7 → 58.7 per batch, outputs bit-identical, local step −4.5%. **Next:** Fir H100 before/after timing; then bucket layout in `_contextualize_by_molecule`.
 

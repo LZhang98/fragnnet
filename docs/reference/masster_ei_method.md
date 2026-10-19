@@ -38,7 +38,7 @@ isotope contributions at integer m/z; exact mode retains isotope fine structure.
 The output mass mode changes without adding learned parameters; the lower panel
 shows training on nominal EI spectra. Its drawing source is page 3 of the
 [MASSter diagrams](../figures/masster_figures.drawio). Molecular graphs, probability
-bars, isotope shares, and spectra are illustrative. The fixed-setup card describes
+bars, isotope shares, and spectra are illustrative. The fixed-setup annotation describes
 the data configuration; it does not imply electron-energy or instrument conditioning.
 
 The EI-MS formulation uses the same molecular encoder, ranked bond-cut proposals,
