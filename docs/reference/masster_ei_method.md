@@ -35,8 +35,9 @@ model with nominal EI and exact-mass HR-EI-MS output branches. The highlighted
 natural-isotope expansion step distributes each channel's intensity using fixed
 natural-abundance weights computed from its ion formula. Nominal mode sums
 isotope contributions at integer m/z; exact mode retains isotope fine structure.
-The output mass mode changes without adding learned parameters; the lower panel
-shows training on nominal EI spectra. Its drawing source is page 3 of the
+The output mass mode changes without adding learned parameters. The lower panel
+shows training on nominal EI spectra with separate proposal-support and spectrum
+objectives, described in the [training section](#ei-training-and-scope). Its drawing source is page 3 of the
 [MASSter diagrams](../figures/masster_figures.drawio). Molecular graphs, probability
 bars, isotope shares, and spectra are illustrative. The fixed-setup annotation describes
 the data configuration; it does not imply electron-energy or instrument conditioning.

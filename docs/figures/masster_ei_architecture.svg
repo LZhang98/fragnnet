@@ -100,15 +100,17 @@
   <path d="M 535 314 L 565 314" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
   <polygon points="565,314 557.0,310.5 557.0,317.5" fill="#B87532" />
   <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="700" text-anchor="start" x="573" y="297.0" fill="#B87532">Bond-cut probabilities p(b)</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="327.0" fill="#617487">b₁</text>
-  <rect stroke-width="1.4" x="617" y="318" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
-  <rect stroke-width="1.4" x="617" y="318" width="66.3" height="9" rx="0" fill="#B87532" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="351.0" fill="#617487">b₂</text>
-  <rect stroke-width="1.4" x="617" y="342" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
-  <rect stroke-width="1.4" x="617" y="342" width="30.599999999999998" height="9" rx="0" fill="#B87532" stroke="none" />
-  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="375.0" fill="#617487">bB</text>
-  <rect stroke-width="1.4" x="617" y="366" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
-  <rect stroke-width="1.4" x="617" y="366" width="46.75000000000001" height="9" rx="0" fill="#B87532" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="319.0" fill="#617487">b₁</text>
+  <rect stroke-width="1.4" x="617" y="310" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
+  <rect stroke-width="1.4" x="617" y="310" width="66.3" height="9" rx="0" fill="#B87532" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="341.0" fill="#617487">b₂</text>
+  <rect stroke-width="1.4" x="617" y="332" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
+  <rect stroke-width="1.4" x="617" y="332" width="30.599999999999998" height="9" rx="0" fill="#B87532" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="575" y="381.0" fill="#617487">b</text>
+  <text font-family="DejaVu Sans, sans-serif" font-size="10" font-weight="400" text-anchor="start" x="584" y="383.0" fill="#617487">B</text>
+  <rect stroke-width="1.4" x="617" y="372" width="85" height="9" rx="0" fill="#F0E5D8" stroke="none" />
+  <rect stroke-width="1.4" x="617" y="372" width="46.75000000000001" height="9" rx="0" fill="#B87532" stroke="none" />
+  <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="573" y="360.0" fill="#617487">⋮</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="727" y="328.0" fill="#617487">Sigmoid of</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="727" y="346.48" fill="#617487">bond logits</text>
   <path d="M 635 385 L 635.0 391.0 Q 635 397 629.0 397.0 L 464.0 397.0 Q 457 397 457.0 404.0 L 457 411" fill="none" stroke="#B87532" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />

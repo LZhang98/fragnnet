@@ -32,8 +32,8 @@ claiming that a particular configuration has been experimentally validated.
 *Figure 1. MASSter encodes the precursor molecular graph, proposes fragments from
 ranked bond-cut configurations, and estimates their contributions using a
 candidate-set transformer. Chemically valid ion channels provide the masses used
-to assemble the predicted spectrum. The lower panel distinguishes spectral
-supervision of the intensity model from coverage supervision of the proposal model.
+to assemble the predicted spectrum. The separate [training-objectives figure](../figures/masster_decoupled_design.svg)
+distinguishes spectral supervision from proposal-support supervision.
 Molecular structures and spectra are schematic.*
 The [SVG](../figures/masster_architecture.svg) is available for
 figure revisions; the [draw.io source](../figures/masster_figures.drawio) holds this
