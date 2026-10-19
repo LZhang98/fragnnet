@@ -1,0 +1,240 @@
+# Spectraverse v1.0.3, arm `reg_e20` (fold cv0), 2026-10-19. reg at 20 epochs (MSGYM: 32 epochs tied 128 on val and retrieval).
+# Read against: reg (wall clock first: half the steps). Plan: docs/plans/masster/spectraverse_1_0_3_msgym_arms_plan.md
+#
+# Data: v1.0.3 (464,228 spectra) at the on-disk paths data/proc/spectraverse_1_0_3 and
+# data/split/spectraverse_benchmark_1_0_3 (docs and preproc defaults still say
+# spectraverse_1_0_3_benchmark). The stored spec_df labels the 20,688 ion-trap spectra `Other`,
+# so inst_types stays ORB/QTOF/Other/NA; if spec_df is rebuilt with the fixed parser they
+# become `IT` and must be added here with a tolerance.
+# Schedule: 20 epochs x ceil(367,561 / 256) = 20 x 1436 = 28720 steps,
+# warmup 1000 (the v1.0.2 control's ~3.5% fraction).
+#
+# MSGYM regularization (config/masster/massspecgym/msgym_sweep_leader_720jwmai.yml, sweep tiwhun9q leader): mol_dropout 0.2 (0.1),
+# masster_head_dropout 0.3 (0.1), boundary-encoder and intensity-input dropout 0.2 (0),
+# weight_decay 0.1 (0.01), lr 1.55e-3 (1e-3), train batch 256 (512). Encoder dropout and LR
+# were the sweep's strongest signals (it tested 0-0.3); nothing higher, since md05 (0.5) loses
+# ~0.01 on NIST20 i4. Depths stay at the SPV values (2/3/2): the sweep resolved no depth winner.
+#
+# Unchanged from the v1.0.2 control (see its header for the reasoning): CMF on, unmerged, dual
+# CE with missing-CE token, fourier CE table, EMA 0.999, U256/E4096, no fragment floor (MSGYM:
+# U128 and floor 0.01 cost formula-test retrieval), loss_batch_size 4 for the peak tail, and
+# checkpoint on val_cos_hun_inst_tol so every arm is selected the same way.
+wandb_name: spectraverse103_masster_reg_e20_cv0
+wandb_group: spectraverse103_masster_msgym_20261019
+wandb_tags:
+- spv_1_0_3
+- reg_e20
+- masster
+- spectraverse
+- cv0
+- unmerged
+- cmf
+- dual_ce
+- missing_ce_token
+- ema
+- ema_0.999
+- cuda_candidates
+- loss_batch_4
+- unique_fragments_256
+- max_enumerated_masks_4096
+- pathway_marginalization
+- instrument_tolerance
+- gine_gsa384
+- bond_centric
+- atom_layers_2
+- bond_layers_3
+- intensity_transformer
+- full_context
+- full_metadata
+- ce_embed
+- ce_fourier
+- adduct_embed
+- inst_type_embed
+- frag_mode_embed
+- m+h
+- m-h
+- m+na
+- m+nh4
+- m+hcooh-h
+- m+k
+- m+ch3cooh-h
+- m+cl
+- m+
+- prenorm
+- lr_decay
+- cosine_schedule
+- warmup
+- proposal_selection_only
+- proposal_loss_0.1
+- candidate_conditional
+- charge_logsumexp
+- reduced_monitoring
+- microbatch_256
+- effective_batch_256
+- msgym_regularization
+seed: 397623
+spec_fp: data/proc/spectraverse_1_0_3/spec_df.pkl
+mol_fp: data/proc/spectraverse_1_0_3/mol_df.pkl
+split_dp: data/split/spectraverse_benchmark_1_0_3/cv0
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  - '[M-H]-'
+  - '[M+Na]+'
+  - '[M+NH4]+'
+  - '[M+HCOOH-H]-'
+  - '[M+K]+'
+  - '[M+CH3COOH-H]-'
+  - '[M+Cl]-'
+  - '[M]+'
+  inst_type: true
+  inst_types:
+  - ORB
+  - QTOF
+  - Other
+  - NA
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.2
+ce_insert_type: embed
+int_embedder: fourier  # header 7
+ce_insert_size: 32
+nce_max: 300
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: true
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.3
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+loss_batch_size: 4  # see header 6: chunk padding to the peak tail OOMs at 64
+primary_loss_weight: 1.0
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+  Other:
+    rel: 2.0e-05
+    min_mz: 500.0
+  NA:
+    rel: 2.0e-05
+    min_mz: 500.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 256
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.0015548897423024086
+weight_decay: 0.1
+lr_schedule: true
+lr_schedule_type: cosine
+lr_total_steps: 28720
+lr_min_ratio: 0.01
+lr_warmup_steps: 1000
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 20
+max_epochs: 20
+debug_overfit: false
+compile: false
+pl_enable_progress_bar: true
+upload_checkpoints: true
+checkpoint_metric: val_cos_hun_inst_tol_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- cos_hun_inst_tol
+- recall
+- precision
+- wrecall
+- wprecision
+eval_mz_bin_res:
+- 0.01
+compute_train_auxiliary_metrics: false
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+masster_intensity_norm_placement: pre
+
+# Weight EMA (see header). Template default null.
+ema_decay: 0.999
+
+# MSGYM regularization (see header). Template defaults 0.0.
+masster_boundary_encoder_dropout: 0.2
+masster_intensity_input_dropout: 0.2

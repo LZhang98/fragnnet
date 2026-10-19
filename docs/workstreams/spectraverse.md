@@ -1,6 +1,6 @@
 # Spectraverse (SPV) workstream
 
-> **Status:** HUB · **Updated:** 2026-10-18
+> **Status:** HUB · **Updated:** 2026-10-19
 > MASSter on Spectraverse v1.0.2 (488,797 spectra, ten MCES folds): pipeline, data audits, filter screens, and the prepared training arms. v1.0.3 (464,228 spectra) is preprocessed through the benchmark folds; nothing trained on it.
 
 ## Where it stands
@@ -11,6 +11,7 @@
 - **Data causes** ([source audit](../findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape)): MS-DIAL (20% of spectra) is 46% of the unexplainable block; 33% of spectra have a cosine > 0.99 copy; replicates agree at 0.70-0.76 vs the model's 0.46.
 - **Prepared, nothing submitted (all cv0/cv1, Fir `fir:h100-3g.40gb`, 12 h):** `masster_c0rerun` (fresh control) and `masster_dedup`; the split dir `data/split/spectraverse_benchmark_dedup` is local-only and must be copied to Fir. The `short18`/`subceil05`, `merged_nomsdial` and `abs005` plans were retired 2026-10-18 (configs and split dirs remain; see Settled).
 - **Pipeline** (2026-10-06, committed in `c5bf610a`): `01_prepare_df.py` reads v1.0.2 and `build_benchmark_split.py` rebuilds all 30 fold files.
+- **v1.0.3 arms prepared 2026-10-19** ([plan](../plans/masster/spectraverse_1_0_3_msgym_arms_plan.md)): `c0` (v1.0.2 control on v1.0.3), `reg` (MSGYM sweep dropouts/LR/weight decay/batch 256), `reg_pow075`, `reg_e20`; cv0/cv1, `config/masster/spectraverse_1_0_3/`. On-disk paths are `data/split/spectraverse_benchmark_1_0_{2,3}` and `data/proc/spectraverse_1_0_{2,3}`. The names above and in the preproc defaults are stale, and the v1.0.2 configs no longer resolve locally.
 - **Next action:** copy the three split dirs to Fir and launch the five arms next to the control; read each against `masster_c0rerun` (best-epoch `val_cos_sim_0.01_epoch/mean`, last-5 tail; seed spread 0.0042; both folds positive).
 
 ## Open threads
@@ -19,7 +20,7 @@
 | --- | --- | --- |
 | [Dedup train](../plans/masster/spectraverse_dedup_plan.md) | PREPARED | Copy `spectraverse_benchmark_dedup/`, check md5s, launch; if it wins, build merged on the dedup split |
 | Recall window calibration | OPEN | Calibrate on trusted fragment assignments plus shifted-mass controls before changing any loss window ([recall finding](../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-recall-at-instrument-tolerance)) |
-| v1.0.3 training | OPEN | Point a config at `data/proc/spectraverse_1_0_3` and `data/split/spectraverse_1_0_3_benchmark`; decide which train-side variants to rebuild |
+| [v1.0.3 control + MSGYM-recipe arms](../plans/masster/spectraverse_1_0_3_msgym_arms_plan.md) | PREPARED 2026-10-19 | Copy `data/proc/spectraverse_1_0_3` and `data/split/spectraverse_benchmark_1_0_3/cv{0,1}` to Fir (md5s in the plan); launch `c0` and `reg` first |
 | Ion trap `inst_type` | OPEN, parser fixed 2026-10-18 | `parse_inst_info` now maps MGF `INSTRUMENT_TYPE=iontrap` to `IT` (was `Other`: 20,688 v1.0.3 spectra). Stored v1.0.2 and v1.0.3 `spec_df.pkl` still say `Other`; rerun step 2 before the v1.0.3 DAGs, and list `IT` in any v1.0.3 config `inst_types` |
 | v1.0.2 `ion_mode` labels | OPEN, harmless so far | Stored `data/proc/spectraverse/spec_df.pkl` labels 30,550 `[M+Cl]-`/`[M+HCOOH-H]-`/`[M+CH3COOH-H]-` spectra `P` (reader fixed 2026-10-18); only the `--ion_modes` split filter reads it. Rebuild or patch before filtering v1.0.2 by ion mode |
 | Quaternary-ammonium candidate gap (m/z 60.0808) | OPEN, small (0.26% of spectra) | Decide on a `valence` bound change ([`[M]+` finding](../findings/masster/spectraverse_masster_findings.md#masster-m-handling-on-spectraverse)) |
@@ -50,6 +51,7 @@
 
 | Doc | Status (updated) | One-line content |
 | --- | --- | --- |
+| [v1.0.3 MSGYM-recipe arms](../plans/masster/spectraverse_1_0_3_msgym_arms_plan.md) | PREPARED (2026-10-19) | First v1.0.3 control plus regularization, pow075 and 20-epoch arms, cv0/cv1 |
 | [Dedup plan](../plans/masster/spectraverse_dedup_plan.md) | PREPARED (2026-10-06) | Drops 106,019 spectra (21.7%); cv0 train 387,399 to 306,087 |
 | [Spectraverse MASSter findings](../findings/masster/spectraverse_masster_findings.md) | FINDING (2026-10-18, merged) | Five parts: recall at instrument tolerance; `[M]+` pre-charged cations only; oracle ceiling (where the cosine gap sits); sources/MS-DIAL/duplicates/folds and reproducible pipeline; why Na/K spectra are unexplained |
 | [v1.0.3 leak audit](../findings/datasets/spectraverse_1_0_3_split_leak_audit_2026_10_18.md) | FINDING (2026-10-18) | No identity leak across splits; cross-fold lipid analogs per cv |
