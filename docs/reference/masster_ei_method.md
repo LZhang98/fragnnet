@@ -1,6 +1,6 @@
 # MASSter EI-MS method
 
-> **Status:** REFERENCE · **Updated:** 2026-10-17
+> **Status:** REFERENCE · **Updated:** 2026-10-19
 > Chemically constrained probabilistic EI prediction with nominal or exact-mass natural isotope output.
 
 ## Overview
@@ -27,6 +27,14 @@ The description concerns the configured nominal-mass EI formulation rather than
 all optional MASSter mechanisms.
 
 ## EI configuration
+
+![EI-MASSter architecture: learned fragment proposals, candidate intensity prediction, valid EI ion channels, natural isotope envelopes, and nominal-mass spectrum assembly.](../figures/masster_ei_architecture.png)
+
+The [SVG figure](../figures/masster_ei_architecture.svg) shows the configured
+nominal-mass EI path. Its drawing source is page 3 of the
+[MASSter diagrams](../figures/masster_figures.drawio). Molecular graphs, probability
+bars, isotope shares, and spectra are illustrative. The fixed-setup card describes
+the data configuration; it does not imply electron-energy or instrument conditioning.
 
 The EI-MS formulation uses the same molecular encoder, ranked bond-cut proposals,
 unique-fragment marginalization, and candidate-set intensity model. The NIST23 EI

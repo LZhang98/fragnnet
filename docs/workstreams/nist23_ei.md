@@ -1,9 +1,11 @@
 # MASSter on NIST23 EI (nominal mass)
 
-> **Status:** HUB · **Updated:** 2026-10-18
+> **Status:** HUB · **Updated:** 2026-10-19
 > MASSter on the NIST23 electron-ionization library (`[M]+`, 70 eV, unit resolution, natural isotope envelopes): plan, performance audit, screens.
 
 ## Where it stands
+
+- **EI architecture figure:** [SVG](../figures/masster_ei_architecture.svg) and PNG added to the [method reference](../reference/masster_ei_method.md#ei-configuration); source is page 3 of the [draw.io file](../figures/masster_figures.drawio). Shows the fixed 70 eV setup, valid EI channels, natural isotope expansion, and nominal-mass aggregation. Checked against the method, e1 config, and isotope/aggregation implementation; native exports visually reviewed.
 
 - **Held-out HR-EI result (e5):** [finding](../findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e5 `eugy8s9n`@45, trained on the [HR-EI-excluded split](../plans/masster/hr_ei_isotopes_holdout_plan.md). It is lower than e1 only on molecules e1 trained on (memorization); HREI-MSDB and Exposome are unchanged on unseen molecules. Same molecules: e5 matches NIST23 better than the HR libraries do on HREI-MSDB/Metabolome (0.934/0.882 vs 0.904/0.759), so most of the HR gap is the difference between libraries, a systematic m/z intensity bias. Exposome is real model error. Metabolome also has an instrument-specific 149.045 ion, merged or missing isotope peaks, and Si2 ions outside the candidate space. Next: reference-handling decision; e5 seed.
 - **Frozen checkpoint HR-EI evaluation:** [finding](../findings/masster/masster_ei_evaluation.md#frozen-masster-ei-checkpoint-on-measured-hr-ei-spectra): all mapping-consistent records included regardless of training overlap; exact monoisotopic outputs evaluated. Exact isotope output is now implemented; see the preparation plan above.
@@ -46,7 +48,7 @@
 | --- | --- | --- |
 | [EI evaluation](../findings/masster/masster_ei_evaluation.md) | FINDING (2026-10-18, merged) | Four parts: NIST23 `e1` performance audit (Stein vs RASSP, support oracle); HR-EI raw audit; frozen `e1` on HR-EI; held-out `e5` on 962 HR-EI spectra split by `e1` training overlap (headline) |
 | [Exact isotopes and HR-EI exclusion](../plans/masster/hr_ei_isotopes_holdout_plan.md) | PREPARED (2026-10-17) | Natural exact-mass output, conservative excluded split, and fresh e5 recipe |
-| [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-16) | Probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
+| [MASSter EI-MS method](../reference/masster_ei_method.md) | REFERENCE (2026-10-19) | Architecture figure, probabilistic EI formulation, nominal channels, natural isotope assembly, and interpretation limits |
 | [Plan: EI SMARTS rules, TMS first](../plans/masster/masster_ei_smarts_plan.md) | CLOSED NULL (2026-10-18) | Literature, census, reachability and NIST23 gate: no rule admitted (T1 borderline), Fir arms declined; T1 code and e6 configs kept, never run |
 | [Plan: MASSter on NIST23 EI](../plans/masster/masster_ei_nominal_plan.md) | ACTIVE (2026-10-06) | Stage 0-1, W&B completion, audits, H-shift and SMARTS screens, size tables, e2-e4 configs |
 

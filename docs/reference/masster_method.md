@@ -37,8 +37,9 @@ supervision of the intensity model from coverage supervision of the proposal mod
 Molecular structures and spectra are schematic.*
 The [SVG](../figures/masster_architecture.svg) is available for
 figure revisions; the [draw.io source](../figures/masster_figures.drawio) holds this
-figure (page 1) and the decoupled-design figure (page 2) with connected arrows and
-grouped drawings, so it is easier to edit.
+figure (page 1), the decoupled-design figure (page 2), and the
+[EI architecture](masster_ei_method.md#ei-configuration) (page 3), with connected
+arrows and grouped drawings.
 
 ## Prediction task and data flow
 
