@@ -5,6 +5,8 @@
 
 ## Where it stands
 
+- **Figure styling (2026-10-19):** both pages of the [editable MASSter diagrams](../figures/masster_figures.drawio) now use distinct blue / amber / teal / purple step colors, stage panels, aligned blocks, a compact acquisition-conditions card with three unboxed fields, and plain-language candidate-feature labels. Unique candidates now feed candidate features before the transformer. Both pages exported through the draw.io renderer and visually checked; [architecture SVG](../figures/masster_architecture.svg), [decoupled-design SVG](../figures/masster_decoupled_design.svg), and PNG companions are current. Figure filenames no longer include `editable`.
+
 - **Current speed audit:** [opportunities and limits](../findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16): `i1`/`i4` already use the main speed switches. First candidates are rewire host round-trips and repeated product-pool reductions; base attention packing and loss padding need GPU profiling. 49 focused CPU tests pass; no current GPU speedup measured.
 
 - **Current code-path audit:** [2026-10-16 findings](../findings/masster/masster_code_audits.md#masster-current-code-path-audit): retired-config test inventories repaired; all 177 MASSter PL tests pass. Package lint has four violations. Rewire output-row sorting regression passes. Added 14 batch/padding cases; focused suite: 168 passed, 3 skipped. GPU and real-checkpoint inference unverified.
