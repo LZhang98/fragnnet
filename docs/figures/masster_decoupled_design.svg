@@ -35,7 +35,6 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="400" text-anchor="start" x="1660" y="277.12" fill="#617487">and structural features</text>
   <path d="M 40 365 L 1960 365" fill="none" stroke="#D6DEE4" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
   <text font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="700" text-anchor="start" x="45" y="407.0" fill="#233647">Training: two objectives from the same observed spectrum</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="21" font-weight="700" text-anchor="middle" x="1640.0" y="410.0" fill="#233647">L = Lspec + λprop Lprop</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="16" font-weight="700" text-anchor="start" x="60" y="509.0" fill="#233647">Observed spectrum</text>
   <path d="M 70 523 L 70 571 L 225 571" fill="none" stroke="#617487" stroke-width="1.2" stroke-linecap="butt" stroke-linejoin="miter" />
   <path d="M 90.15 571 L 90.15 557.56" fill="none" stroke="#617487" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
@@ -65,7 +64,6 @@
   <text font-family="DejaVu Sans, sans-serif" font-size="14" font-weight="400" text-anchor="start" x="320" y="510.0" fill="#617487">Each fragment counted once per observed peak</text>
   <rect stroke-width="1.4" x="845" y="455" width="320" height="38" rx="7" fill="#FFFFFF" stroke="#B87532" />
   <text font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="700" text-anchor="middle" x="1005.0" y="481.0" fill="#B87532">Compute proposal loss</text>
-  <text font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="400" text-anchor="middle" x="1005.0" y="514.0" fill="#617487">Target-weighted −log(support probability)</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="20" font-weight="700" text-anchor="start" x="1250" y="468.0" fill="#B87532">Update proposal heads</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" text-anchor="start" x="1250" y="495.0" fill="#233647">Bond-cut and charge-affinity heads</text>
   <text font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="400" text-anchor="start" x="1250" y="519.0" fill="#617487">Shared encoder inputs are stop-gradient</text>
