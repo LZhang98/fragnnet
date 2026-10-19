@@ -5,7 +5,7 @@
 
 ## Where it stands
 
-- **v1.0.3 preprocessed 2026-10-18** (commands, counts and md5s in the [preproc README](../../preproc_scripts/README.md#spectraverse-v103)): `data/df_spectraverse_1_0_3/`, `data/proc/spectraverse_1_0_3/`, `data/split/spectraverse_1_0_3_benchmark/cv0-cv9` (built from the MGF, md5 in each `stats.json`). v1.0.3 `TITLE` numbers are sparse, so the split and source scripts now key MGF records on `TITLE` number, and all `preproc_scripts/spectraverse/` defaults point at v1.0.3 (v1.0.2 rebuilds need explicit paths). No config points at it yet. Per-adduct NEIMS splits for all nine adducts are in `data/split/spectraverse_1_0_3_benchmark_neims_adduct/<adduct>/cv0-cv9` (no InChIKey shared across splits); no dedup or other train-side variant has been built. [Leak audit](../findings/spectraverse_1_0_3_split_leak_audit_2026_10_18.md): no molecule shared between splits under five identity keys; lipid analogs (ECFP6 Tanimoto 1.0) cross folds, 3.9%/3.5% of cv0/cv1 test spectra.
+- **v1.0.3 preprocessed 2026-10-18** (commands, counts and md5s in the [preproc README](../../preproc_scripts/README.md#spectraverse-v103)): `data/df_spectraverse_1_0_3/`, `data/proc/spectraverse_1_0_3/`, `data/split/spectraverse_1_0_3_benchmark/cv0-cv9` (built from the MGF, md5 in each `stats.json`). v1.0.3 `TITLE` numbers are sparse, so the split and source scripts now key MGF records on `TITLE` number, and all `preproc_scripts/spectraverse/` defaults point at v1.0.3 (v1.0.2 rebuilds need explicit paths). No config points at it yet. Per-adduct NEIMS splits for all nine adducts are in `data/split/spectraverse_1_0_3_benchmark_neims_adduct/<adduct>/cv0-cv9` (no InChIKey shared across splits); no dedup or other train-side variant has been built. [Leak audit](../findings/datasets/spectraverse_1_0_3_split_leak_audit_2026_10_18.md): no molecule shared between splits under five identity keys; lipid analogs (ECFP6 Tanimoto 1.0) cross folds, 3.9%/3.5% of cv0/cv1 test spectra.
 - **No new SPV result since the oracle read.** Historical controls (`config/masster/spectraverse/cv0-cv9`, cv0 `ggifzj9m`, cv1 `u46v0k0g`) reach `cos_sim_0.01` 0.458 on 2,048 sampled val spectra; val peaks at epoch 15 and declines to epoch 39.
 - **Why it is stuck** ([oracle ceiling](../findings/masster/spectraverse_masster_findings.md#spectraverse-masster-oracle-cosine-ceiling)): the model reaches 62% of its own emitted-bin ceiling (0.734), so intensity allocation is the largest gap (0.276); 14% of spectra have a subformula ceiling <= 0.5 and score 0.04. Train cosine is 0.590, so the gap is mostly generalization.
 - **Data causes** ([source audit](../findings/masster/spectraverse_masster_findings.md#spectraverse-sources-replicates-and-merge-shape)): MS-DIAL (20% of spectra) is 46% of the unexplainable block; 33% of spectra have a cosine > 0.99 copy; replicates agree at 0.70-0.76 vs the model's 0.46.
@@ -27,7 +27,7 @@
 ## Settled — read before re-proposing
 
 - **Folds and data**
-  - [v1.0.3 leak audit](../findings/spectraverse_1_0_3_split_leak_audit_2026_10_18.md) — no identity leak in any cv (mol_id, 2D InChIKey, MGF InChIKey, standardized parent); 2.3% of spectra have a cross-fold ECFP6 Tanimoto-1.0 analog, 86% lipids/long chains, concentrated in folds 2-3.
+  - [v1.0.3 leak audit](../findings/datasets/spectraverse_1_0_3_split_leak_audit_2026_10_18.md) — no identity leak in any cv (mol_id, 2D InChIKey, MGF InChIKey, standardized parent); 2.3% of spectra have a cross-fold ECFP6 Tanimoto-1.0 analog, 86% lipids/long chains, concentrated in folds 2-3.
   - **User decision (2026-10-18):** the leak criterion is InChIKey identity; v1.0.3 passes, so the release folds are used unchanged and cross-fold analogs are neither removed nor reported separately.
   - [Folds are the MGF `FOLD` field](../findings/masster/spectraverse_masster_findings.md#data-version-and-folds) — MCES split, v1.0.2 md5-verified; old `data/df` fold CSVs are v1.0.0; `mol_id`/`group_id` columns are stale, join on `spec_id`.
   - [Curation paper note](../notes/spectraverse_curation_paper.md) — the paper's cosine > 0.99 near-duplicate rule does not hold in released v1.0.2.
@@ -52,7 +52,7 @@
 | --- | --- | --- |
 | [Dedup plan](../plans/masster/spectraverse_dedup_plan.md) | PREPARED (2026-10-06) | Drops 106,019 spectra (21.7%); cv0 train 387,399 to 306,087 |
 | [Spectraverse MASSter findings](../findings/masster/spectraverse_masster_findings.md) | FINDING (2026-10-18, merged) | Five parts: recall at instrument tolerance; `[M]+` pre-charged cations only; oracle ceiling (where the cosine gap sits); sources/MS-DIAL/duplicates/folds and reproducible pipeline; why Na/K spectra are unexplained |
-| [v1.0.3 leak audit](../findings/spectraverse_1_0_3_split_leak_audit_2026_10_18.md) | FINDING (2026-10-18) | No identity leak across splits; cross-fold lipid analogs per cv |
+| [v1.0.3 leak audit](../findings/datasets/spectraverse_1_0_3_split_leak_audit_2026_10_18.md) | FINDING (2026-10-18) | No identity leak across splits; cross-fold lipid analogs per cv |
 | [Curation paper note](../notes/spectraverse_curation_paper.md) | NOTE | Release comparison v1.0.0-1.0.2, paper filters |
 | [Spurious evaluations note](../notes/spurious_evaluations_spectraverse.md) | NOTE | Benchmark pitfalls, MCES folds |
 | [Preproc README](../../preproc_scripts/README.md) | REFERENCE | Commands for the reproducible SPV pipeline |
@@ -63,4 +63,5 @@
 - Dedup train md5: cv0 `cc7ec07b...`, cv1 `74e513f1...`; short/clean: cv0 `43749a16...`, cv1 `cb46ac1c...`.
 - Configs: `config/spectraverse/{masster,masster_c0rerun,masster_short18,masster_subceil05,masster_merged_nomsdial,masster_dedup,masster_abs005}/`.
 - Scripts: `preproc_scripts/spectraverse/{build_benchmark_split,clean_train_split,dedup_train_split,source_filter_split}.py`; `scripts/debug/spectraverse/{spectraverse_leak_check,spectraverse_oracle_ceiling,spectraverse_data_check,analyze_spectraverse_recall}.py`; tests `tests/test_spectraverse_{mgf_reader,benchmark_split,dedup}.py`.
+- Data notebook: `notebooks/data_notebooks/spectraverse_proc.ipynb` (rebuilt for v1.0.3 2026-10-18): metadata, adducts, ACE coverage, v1.0.2 vs v1.0.3, fold composition, entropy, NIST20/23 HR overlap.
 - Neighbours: [MASSter core](masster_core.md), [MASSter generalization (`i1`, ORB instrument findings)](masster_generalization.md), [MSGYM](msgym.md), [FraGNNet](fragnnet.md).
