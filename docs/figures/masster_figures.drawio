@@ -165,13 +165,64 @@
                 <mxCell id="c148" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=16;fontStyle=0;fontColor=#172B3A;" value="Atom&lt;br&gt;embeddings" vertex="1">
                     <mxGeometry height="39.8" width="94" x="285" y="464" as="geometry"/>
                 </mxCell>
-                <mxCell id="c28" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D9AE85;strokeWidth=1.5;fontFamily=Arial;fontSize=19;fontStyle=1;fontColor=#172B3A;" value="Bond-cut&lt;br&gt;probabilities" vertex="1">
-                    <mxGeometry height="72" width="165" x="420" y="309.5" as="geometry"/>
+                <mxCell id="c28" parent="1" style="rounded=1;absoluteArcSize=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D9AE85;strokeWidth=1.5;fontFamily=Arial;fontSize=19;fontStyle=1;fontColor=#172B3A;container=1;collapsible=0;recursiveResize=0;" value="" vertex="1">
+                    <mxGeometry height="280" width="165" x="420" y="300" as="geometry"/>
                 </mxCell>
-                <mxCell id="c149" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=12;html=1;strokeColor=#C27638;strokeWidth=2;endArrow=block;endFill=1;endSize=7;startArrow=none;entryX=0;entryY=0.5;entryDx=0;entryDy=0;entryPerimeter=0;" target="c28">
+                <mxCell id="proposal_title" parent="c28" vertex="1" value="Bond-cut&lt;br&gt;probabilities" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=17;fontStyle=1;fontColor=#172B3A;">
+                    <mxGeometry as="geometry" x="5" y="10" width="155" height="42"/>
+                </mxCell>
+                <mxCell id="proposal_inputs" parent="c28" vertex="1" value="Atom + bond features&lt;br&gt;+ acquisition context" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=12;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="7" y="60" width="151" height="34"/>
+                </mxCell>
+                <mxCell id="proposal_scoring" parent="c28" vertex="1" value="Bond-scoring&lt;br&gt;head" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=10;fillColor=#F6E4D3;strokeColor=#D9AE85;fontSize=15;fontColor=#172B3A;">
+                    <mxGeometry as="geometry" x="25" y="110" width="115" height="42"/>
+                </mxCell>
+                <mxCell id="proposal_probability_label" parent="c28" vertex="1" value="p(b) = sigmoid(logit)" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=12;fontColor=#9B5927;">
+                    <mxGeometry as="geometry" x="5" y="174" width="155" height="22"/>
+                </mxCell>
+                <mxCell id="proposal_bond_1" parent="c28" vertex="1" value="b1" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=13;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="12" y="200" width="30" height="18"/>
+                </mxCell>
+                <mxCell id="proposal_track_1" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#F8EEE4;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="203" width="97" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_bar_1" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#C27638;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="203" width="62" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_bond_2" parent="c28" vertex="1" value="b2" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=13;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="12" y="222" width="30" height="18"/>
+                </mxCell>
+                <mxCell id="proposal_track_2" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#F8EEE4;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="225" width="97" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_bar_2" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#C27638;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="225" width="25" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_bond_3" parent="c28" vertex="1" value="b3" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;text;fontSize=13;fontColor=#607486;">
+                    <mxGeometry as="geometry" x="12" y="244" width="30" height="18"/>
+                </mxCell>
+                <mxCell id="proposal_track_3" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#F8EEE4;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="247" width="97" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_bar_3" parent="c28" vertex="1" value="" style="html=1;whiteSpace=wrap;fontFamily=Arial;align=center;verticalAlign=middle;rounded=1;absoluteArcSize=1;arcSize=4;fillColor=#C27638;strokeColor=none;">
+                    <mxGeometry as="geometry" x="49" y="247" width="48" height="12"/>
+                </mxCell>
+                <mxCell id="proposal_input_arrow" parent="c28" edge="1" style="edgeStyle=none;html=1;strokeColor=#C27638;strokeWidth=1.5;endArrow=block;endFill=1;endSize=5;">
+                    <mxGeometry as="geometry" relative="1">
+                        <mxPoint as="sourcePoint" x="82.5" y="96"/>
+                        <mxPoint as="targetPoint" x="82.5" y="108"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="proposal_sigmoid_arrow" parent="c28" edge="1" style="edgeStyle=none;html=1;strokeColor=#C27638;strokeWidth=1.5;endArrow=block;endFill=1;endSize=5;">
+                    <mxGeometry as="geometry" relative="1">
+                        <mxPoint as="sourcePoint" x="82.5" y="154"/>
+                        <mxPoint as="targetPoint" x="82.5" y="171"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="c149" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=12;html=1;strokeColor=#C27638;strokeWidth=2;endArrow=block;endFill=1;endSize=7;startArrow=none;entryX=0;entryY=0.275;entryDx=0;entryDy=0;entryPerimeter=0;" target="c28">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
-                            <mxPoint x="332" y="345.5"/>
+                            <mxPoint x="332" y="377"/>
                         </Array>
                         <mxPoint x="332" y="386" as="sourcePoint"/>
                     </mxGeometry>
@@ -179,9 +230,13 @@
                 <mxCell id="c150" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=16;fontStyle=1;fontColor=#172B3A;" value="Ranked cut sets" vertex="1">
                     <mxGeometry height="24.7" width="160" x="590" y="271" as="geometry"/>
                 </mxCell>
-                <mxCell id="c151" edge="1" parent="1" source="c28" style="edgeStyle=none;html=1;strokeColor=#C27638;strokeWidth=2;endArrow=block;endFill=1;endSize=7;startArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;">
+                <mxCell id="c151" edge="1" parent="1" source="c28" style="edgeStyle=orthogonalEdgeStyle;rounded=1;arcSize=8;html=1;strokeColor=#C27638;strokeWidth=2;endArrow=block;endFill=1;endSize=7;startArrow=none;exitX=1;exitY=0.825;exitDx=0;exitDy=0;exitPerimeter=0;">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="604" y="345.5" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="594" y="531"/>
+                            <mxPoint x="594" y="345.5"/>
+                        </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="c152" parent="1" style="text;html=1;align=center;verticalAlign=middle;whiteSpace=nowrap;spacing=0;fontFamily=Arial;fontSize=16;fontStyle=1;fontColor=#172B3A;" value="Connected components" vertex="1">
