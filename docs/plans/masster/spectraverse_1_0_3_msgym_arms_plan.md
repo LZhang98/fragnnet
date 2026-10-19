@@ -1,7 +1,7 @@
 # Spectraverse v1.0.3: first control and MSGYM-recipe arms
 
 > **Status:** PREPARED · **Updated:** 2026-10-19
-> Four arms × cv0/cv1 (8 runs) on v1.0.3, each one change from its parent; configs resolve and validate; nothing submitted.
+> Four arms × cv0/cv1 on v1.0.3. First launch 2026-10-19 OOMed in validation (eval batch 512); eval batch now 64, ready to resubmit.
 
 ## Objective and acceptance
 
@@ -78,6 +78,30 @@ If it wins, attributing the gain needs follow-up arms.
    are estimates, not measurements.
 3. Record job IDs and W&B runs here.
 
+### First launch, 2026-10-19: all eight OOM in validation
+
+W&B `9y72cfb5`/`7j5v14j3` (`c0` cv0/cv1), `3yrcxg5z`/`lnbynag0` (`reg`), `ucaxgah0`/`xu5fqvct`
+(`reg_pow075`), `pmjr01pw`/`ya5vewfe` (`reg_e20`); Slurm jobs include 65928173, 65928329,
+65928027, 65928026. All ran on `3g.40gb` and failed at 0.19–0.22 h.
+
+- **Training fits.** Epoch 0 completed on the 40 GB slice: `c0` (batch 512) 718 steps in 7:54,
+  `reg_e20` (batch 256) 1,435 steps in 9:49.
+- **Validation does not.** At `eval_batch_size` 512, `calculate_match_mzs`
+  (`spec_similarity.py:242`, called from `calculate_all_auxiliary_metrics`) builds a dense
+  `[batch, max_true, max_pred]` difference tensor padded to the widest spectra in the batch.
+  It asked for 26.4–38.9 GiB in the first 3–19 val batches. The v1.0.2 controls ran the same eval
+  batch on full 80 GB H100s and peaked at 47 / 41 GiB, so the earlier "fits on 3g.40gb" note
+  was never measured.
+- **Fix:** `eval_batch_size` 512 → 64 in all eight configs (train batch unchanged). The
+  tensor is linear in batch, so the worst request drops to about 4.9 GiB. Validation metrics are
+  per spectrum, and every arm changed together. Logs: `output/spv103_fail_logs/<run>/output.log`.
+- **Resubmit fresh, not as a resume.** The failed jobs left `job_id/spv103_<arm>_cv<k>.id` on Fir.
+  With them present, the runner resumes the old W&B run and `merge_wandb_config` copies its saved
+  `eval_batch_size: 512` back over the config. Remove those eight files (or use new job names)
+  before resubmitting.
+- **Updated time estimate** from the measured epoch-0 rates (before validation): `c0` about 5.3 h,
+  `reg`/`reg_pow075` about 6.5 h, `reg_e20` about 3.3 h, plus validation.
+
 ## How to read it
 
 - Wall clock first, then best-epoch `val_cos_sim_0.01_epoch/mean` and its epoch, then the
@@ -98,8 +122,8 @@ If it wins, attributing the gain needs follow-up arms.
   This was the only arm smoked; the others differ from it only in scalar keys checked by the diff.
 - Assumed: no train spectra are filtered out, so steps per epoch = ceil(split size / batch). Every
   adduct, instrument label and fragmentation mode in v1.0.3 is in the config vocabularies.
-- Not done: GPU memory at batch 256 on `3g.40gb`. Batch 256 halves the per-step peak relative to
-  the batch-512 control, which ran on the same profile.
+- Training memory on `3g.40gb` measured in the first launch (fits at batch 512 and 256).
+  Validation at eval batch 64 is not yet measured.
 
 ## Next
 
