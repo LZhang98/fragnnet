@@ -69,6 +69,7 @@ Shared data quality (NIST20 diagnostics, subformula filter, isotope detection) i
 
 ## Key artifacts
 
+- Results ledger: [results/casmi_enveda.md](../results/casmi_enveda.md), every measured result as one row linking its source.
 - CASMI: `data/raw/casmi2026/{train,test}.parquet`; `output/casmi26_train_check_2026_10_05/`, `output/casmi26_mol_distribution_2026_10_06/`, `output/msnlib_nist_coverage_2026_10_06/`; scripts `scripts/debug/casmi_enveda/{casmi26_train_stats,casmi26_train_duplicates,casmi26_mol_distribution,msnlib_nist_coverage}.py`; notebook `notebooks/data_notebooks/casmi26_train.ipynb`. pyarrow 25.0.1 is in `FRAGNNET-GPU` (user approved).
 - Enveda-180: `data/raw/enveda-180/`, `data/df/enveda_180_df.csv`, `data/proc/enveda_180/` (1,158,293 spectra / 183,476 molecules), split `data/split/enveda_180_inchikey_811` (143,568 / 17,946 / 17,946 molecules; 640,475 / 79,881 / 80,152 spectra); config `config/masster/enveda/`. Step 2 peaks at 23.3 GB RSS plus swap locally.
 - Combined split: `data/split/pcdl_nist23_enveda_180_inchikey_811/manifest.json` (241,917 molecules: 193,529 / 24,192 / 24,191); builder `preproc_scripts/dataset_migration/build_combined_split_manifest.py`.

@@ -36,6 +36,20 @@ Each hub has "Where it stands", "Open threads", "Settled — read before re-prop
 | [casmi_enveda.md](workstreams/casmi_enveda.md) | CASMI 2026 data, Enveda-180, combined PCDL/NIST23/Enveda split, shared NIST data quality and isotope/subformula detection |
 | [fragnnet.md](workstreams/fragnnet.md) | FraGNNet and the DAG: recall, oracle ceilings, intensity ranking, FluxMPNN, conditioning refactor, curated missing-peak logs |
 
+## results/ — one ledger per benchmark
+
+Every measured result as a table row (run@epoch, split, setup, metrics, comparator) linking the
+finding or plan that stays canonical. Each ledger opens with "Current best" and "Comparability".
+Append a row at handoff ([rule](rules/documentation.md#where-each-kind-of-fact-goes)).
+
+| Ledger | Covers |
+| --- | --- |
+| [msgym.md](results/msgym.md) | MassSpecGym 1.5: test spectrum prediction vs GLACIER, val screens and sweep, formula- and mass-track retrieval, pilot, swap tests |
+| [nist20.md](results/nist20.md) | NIST20 MS/MS: MASSter `i`-line tails and checkpoint reads, merged 128-epoch screen, FraGNNet, DAG ceilings, GLACIER Table 15, seed spreads |
+| [spectraverse.md](results/spectraverse.md) | Spectraverse v1.0.2 cv0/cv1 controls, oracle ceilings, recall rescoring, source/adduct strata |
+| [nist23_ei.md](results/nist23_ei.md) | Nominal NIST23 EI (e0/e1/e5), support oracles, EI SMARTS gate, held-out HR-EI by library and tolerance |
+| [casmi_enveda.md](results/casmi_enveda.md) | RT/CCS debug runs and Enveda-180 isotope ceilings; no trained CASMI/Enveda/EAD result yet |
+
 ## guides/ — how to run things
 
 | Doc | What it covers |

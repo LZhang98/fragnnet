@@ -72,6 +72,7 @@
 Neighbours: [MASSter core](masster_core.md) · [MASSter generalization](masster_generalization.md) · [Spectraverse](spectraverse.md) · [NIST23 EI](nist23_ei.md) · [CASMI / Enveda](casmi_enveda.md) · [FraGNNet](fragnnet.md).
 
 ## Key artifacts
+- Results ledger: [results/msgym.md](../results/msgym.md), every measured result as one row linking its source.
 - Configs: `config/masster/massspecgym/` (control `…_cuda_k1_ema999_fourier.yml`; arms `…_<arm>.yml`; `msgym_u256_e1024_*.yml`; `msgym_val_loss_sweep_40gb.yml`).
 - Sweep: `sweep/masster/msgym_val_loss_48_40gb.yml`, W&B [tiwhun9q](https://wandb.ai/frag-gnn/frag-gnn/sweeps/tiwhun9q); launcher `scripts/manual_slurm/fir/prepare_msgym_val_loss_sweep.sh`.
 - Runs: `ll04i00m` (checkpoint uploaded), `1imawkx1` (no checkpoint), ChemBERTa E1 `tm9qwq78`, T2 `ku742mhq`.

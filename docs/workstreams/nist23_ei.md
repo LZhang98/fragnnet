@@ -5,6 +5,8 @@
 
 ## Where it stands
 
+- **Object/action figure update (2026-10-19):** ESI and EI source pages now distinguish shaded data objects from outlined, verb-led operations, with a separate unique-candidate-set object. Connector routes now use consistent rounded elbows, fewer bends, and straight EI output branches. XML and connector checks pass. SVG/PNG refresh and visual review of this revision are pending: local browser export was rejected because automatic approval review was unavailable (review model at capacity).
+
 - **EI architecture figure:** [SVG](../figures/masster_ei_architecture.svg) and PNG added to the [method reference](../reference/masster_ei_method.md#ei-configuration); source is page 3 of the [draw.io file](../figures/masster_figures.drawio). Shows the fixed 70 eV setup and shared learned model, with separate nominal-EI and exact-mass HR-EI-MS output branches; a highlighted natural-isotope expansion block distributes channel intensity using fixed abundance weights before integer-mass aggregation or exact fine-structure output. Checked against the method, e1 config, and isotope/aggregation implementation; native exports visually reviewed. Steps 2–3 mark omitted set members with ellipses and separate objects from ranking, extraction, feature-building, and scoring actions.
 
 - **Held-out HR-EI result (e5):** [finding](../findings/masster/masster_ei_evaluation.md#held-out-e5-ei-checkpoint-on-measured-hr-ei-spectra): e5 `eugy8s9n`@45, trained on the [HR-EI-excluded split](../plans/masster/hr_ei_isotopes_holdout_plan.md). It is lower than e1 only on molecules e1 trained on (memorization); HREI-MSDB and Exposome are unchanged on unseen molecules. Same molecules: e5 matches NIST23 better than the HR libraries do on HREI-MSDB/Metabolome (0.934/0.882 vs 0.904/0.759), so most of the HR gap is the difference between libraries, a systematic m/z intensity bias. Exposome is real model error. Metabolome also has an instrument-specific 149.045 ion, merged or missing isotope peaks, and Si2 ions outside the candidate space. Next: reference-handling decision; e5 seed.
@@ -83,6 +85,7 @@ libraries and against NIST23 nominal-EI training before defining held-out evalua
 
 ## Key artifacts
 
+- Results ledger: [results/nist23_ei.md](../results/nist23_ei.md), every measured result as one row linking its source.
 - W&B: e1 `jeljdikj` (best ep 37), e0 `he3j5y3o` (best 0.861611 at ep 57), e5 `eugy8s9n` (best ep 45, val 0.86896; `saved_ckpts/e5_hr_ei_holdout_nominal_eugy8s9n.ckpt`).
 - Configs: `config/masster/ei/{e0_nominal_no_isotopes,e1_nominal_natural_isotopes,e2_nominal_control,e3_nominal_full_attention,e4_nominal_ema999}.yml`.
 - Data: `data/proc/nist23_ei/`, `data/split/nist23_ei_inchikey` (154,981 / 51,700 / 51,685), raw `data/df/nist23_ei_df.csv`.

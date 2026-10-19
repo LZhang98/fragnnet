@@ -88,6 +88,7 @@
 Neighbouring hubs: [MASSter core](masster_core.md), [MASSter generalization](masster_generalization.md), [MSGYM/GLACIER](msgym.md), [Spectraverse](spectraverse.md), [NIST23 EI](nist23_ei.md), [CASMI/Enveda](casmi_enveda.md).
 
 ## Key artifacts
+- Results ledger: [results/nist20.md](../results/nist20.md), every measured result as one row linking its source.
 - **DAG data:** `data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar` (Stage A needs it on Fir), `nist20_ma_mi_d4_h4_isoFalse_smpFalse.tar`, `nist23_ma_mi_d3_h4_isoFalse.tar`.
 - **Baseline config:** `config/fragnnet/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc_all.yml`; latest control run `jnokddr9` (2026-09-14, Vulcan L40S, 100 epochs, best val `cos_sim_0.01` 0.7093). `pqx7ywc9` and `alvhehe2` are the NIST20 test inference references; `9t63zils` is the NodeMLP behind the ranking findings.
 - **Stage A:** retired; historical configs are available in Git history.

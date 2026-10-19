@@ -5,6 +5,10 @@
 
 ## Where it stands
 
+- **Object/action figure update (2026-10-19):** ESI and EI source pages now distinguish shaded data objects from outlined, verb-led operations, with a separate unique-candidate-set object. Connector routes now use consistent rounded elbows, fewer bends, and straight EI output branches. XML and connector checks pass. SVG/PNG refresh and visual review of this revision are pending: local browser export was rejected because automatic approval review was unavailable (review model at capacity).
+
+- **Method description (2026-10-19):** the [training section](../reference/masster_method.md#training) defines the disjoint proposal and spectrum objectives, the support-loss equation, and encoder gradient routing, including the staged-training exception. Checked against the current implementation; documentation only.
+
 - **Figure styling (2026-10-19):** both pages of the [editable MASSter diagrams](../figures/masster_figures.drawio) now use distinct blue / amber / teal / purple step colors, stage panels, aligned blocks, a compact acquisition-conditions card with three unboxed fields, and plain-language candidate-feature labels. Unique candidates now feed candidate features before the transformer. The bond-cut block shows input features, the bond-scoring head, sigmoid conversion, and illustrative per-bond probability bars (checked against the proposal-head implementation). Box widths, row baselines, and section margins aligned across both pages. ESI and EI overview pages now mark illustrative subsets with ellipses and distinguish ranking, fragment extraction, deduplication, feature construction, and candidate scoring. Both pages exported through the draw.io renderer and visually checked; [architecture SVG](../figures/masster_architecture.svg), [decoupled-design SVG](../figures/masster_decoupled_design.svg), and PNG companions are current. Figure filenames no longer include `editable`.
 
 - **Current speed audit:** [opportunities and limits](../findings/masster/masster_code_audits.md#speed-audit-of-the-current-path-2026-10-16): `i1`/`i4` already use the main speed switches. First candidates are rewire host round-trips and repeated product-pool reductions; base attention packing and loss padding need GPU profiling. 49 focused CPU tests pass; no current GPU speedup measured.
@@ -117,6 +121,7 @@
 | [masster_generalization_methods_2026_09_27](../notes/masster_generalization_methods_2026_09_27.md) | NOTE (2026-09-28) | Literature on practical generalization methods for MASSter |
 
 ## Key artifacts
+- Results ledger: [results/nist20.md](../results/nist20.md), every measured result as one row linking its source.
 - Control and arm configs: `config/masster/ma_mi_merged/` (`..._c4a_base_s1.yml`, `_s2`, `_c4a_base_s1_trainaux.yml`, `_c4d_wd10.yml`; subfolders `attention_2026_09_21`, `candidate_token_2026_09_22`, `encoder_simplify_2026_09_23`, `fragment_selection_2026_09_23`, `intensity_escape_2026_09_22`, `loss_objective_2026_09_21`, `lr_decay_2026_09_22`).
 - W&B runs cited as current: control tail `0.7270` (`c4a_base_s1`/`s2`), `a1_prenorm` `q4t4udee`, `d3` `rcfzf67p`, horizon probe `tkkesus9` (630 epochs), duplicate `a2` pair `xyessyn1`/`cgomm8v4` (reproducibility floor), `g1` `xb9ic2pp`, `p1` `s5i5qqlz`, `p3` `w1dj2ahw`, `h1_hellinger_closest` `oykkffls`, `wd10` (2026-09-19) `kalc4mzo`.
 - Cluster generators: `scripts/manual_slurm/fir/submit_masster_{attention,candidate_token,encoder_simplify,feature_arms,fragment_selection,intensity_escape,loss_objective,proposal_early_stop,regularization}.sh`.

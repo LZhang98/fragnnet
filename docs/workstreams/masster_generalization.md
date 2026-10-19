@@ -124,6 +124,7 @@
 
 ## Key artifacts
 
+- Results ledger: [results/nist20.md](../results/nist20.md), every measured result as one row linking its source.
 - **Checkpoints (local `saved_ckpts/`):** `i1_inst_ob_obf_i50ig7rf/ckpt/` (best epoch 59, last 63), `i3_k1_ema_ob_obf_xypkkfti`, `fa1_full_attention_ob_obf_0vn8m2gr`. `i4` (`rd9rsdqx`) and `ce1`/`ce2` are not local. `FT`/`OB`-era checkpoints need `scripts/debug/masster_memorization/patch_inst_embedding.py` or `patch_ft_to_ob_ckpt.py` before use.
 - **W&B (project `frag-gnn/frag-gnn`):** `i1` `i50ig7rf`; `i2` `jshvk4gv`; `i3` `xypkkfti`; `i4` `rd9rsdqx`; `fa1` `0vn8m2gr`, `fa1_s2` `2v2e1yod`; `mz1` `tck857p7`; `mznl1` `yp3wj9fa`; `nlpe1` `pqqfyvwo`; `cg1` `c8k6e244`; `sd1` `f3fu90zn`; `ce1` `u7ew4zpg`, `ce2` `u9auh1b9`; JEPA `j1a` `q047zga5`, `j1b` `xodee5pv`, `j2` `gzywzk39`.
 - **Configs:** `config/masster/mh_ft_memorization_route_2026_09_24/` (all `*_ob_obf.yml` arms plus `fc1`, `fc1p`, `so1`); `config/masster/mh_smarts_pathway_2026_09_29/`; submitter `scripts/manual_slurm/fir/submit_masster_mh_ft_memorization_route.sh` (stages `rerun`, `graph`, `smarts`).

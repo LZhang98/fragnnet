@@ -59,6 +59,7 @@
 
 ## Key artifacts
 
+- Results ledger: [results/spectraverse.md](../results/spectraverse.md), every measured result as one row linking its source.
 - Data: `data/raw/spectraverse/` (v1.0.2 MGF md5 `50803b37...ef6895`; as of 2026-10-18 only `spectraverse-1.0.3/` is on the workstation, md5 `52ed27db...a004aa`), `data/proc/spectraverse/` (`spec_source.csv`, `subformula_ceiling.csv`), `data/split/spectraverse_benchmark{,_dedup,_nomsdial,_subceil05}/`. v1.0.3: `data/{df_spectraverse_1_0_3,proc/spectraverse_1_0_3,split/spectraverse_1_0_3_benchmark}/`. Do not join `data/df/spectraverse_df.csv` (different build).
 - Dedup train md5: cv0 `cc7ec07b...`, cv1 `74e513f1...`; short/clean: cv0 `43749a16...`, cv1 `cb46ac1c...`.
 - Configs: `config/spectraverse/{masster,masster_c0rerun,masster_short18,masster_subceil05,masster_merged_nomsdial,masster_dedup,masster_abs005}/`.

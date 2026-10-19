@@ -304,21 +304,106 @@ and probabilistic interpretation. It uses the shared core formulation defined he
 
 ## Training
 
-In the proposal-selection-only formulation, training separates candidate support
-from intensity allocation. An intensity-weighted support objective encourages the
-proposal distribution to assign weight to fragments whose chemically valid channels
-match observed peaks within the configured mass tolerance. Each fragment is counted
-at most once per observed peak, even if several of its channels match. This prevents
-the proposal objective from rewarding duplicate matches within one fragment.
+### Disjoint proposal and intensity objectives
 
-A spectrum-level objective trains the predicted intensity distribution against the
-observed spectrum. Spectrum-loss gradients are excluded from the proposal
-probabilities in this formulation. Mask identities are selected discretely from
-detached logits, after which their probabilities are recomputed from live logits
-for proposal supervision. Gradients therefore update selected configurations'
-probabilities without differentiating through the enumeration operation. Exact
-spectrum objectives, auxiliary losses, and encoder gradient routing depend on the
-resolved experiment configuration.
+Candidate selection and intensity allocation address different aspects of spectrum
+prediction. The proposal model must retain fragments that can explain observed
+peaks, whereas the intensity model must estimate their relative contributions.
+In the proposal-selection-only formulation, MASSter trains these components with
+separate objectives and gradient paths. The same observed spectrum supervises both
+objectives; disjoint training refers to the separation of their parameter updates,
+rather than a partition of the training data.
+
+For each spectrum, the core training objective combines a spectrum loss with a
+weighted proposal loss,
+
+$$
+\mathcal L=\mathcal L_{\mathrm{spec}}
++\lambda_{\mathrm{prop}}\mathcal L_{\mathrm{prop}},
+\qquad \lambda_{\mathrm{prop}}>0.
+$$
+
+The coefficient $\lambda_{\mathrm{prop}}$ controls the contribution of proposal
+supervision. This expression describes the two core objectives during joint
+training; enabled auxiliary objectives add their own weighted terms.
+
+### Proposal support loss
+
+The proposal objective assigns probability to fragments according to whether their
+valid ion channels can explain observed peaks. Let $y_j$ denote the normalized
+target weight of observed peak $j$, after the configured proposal-target intensity
+transformation. Let $A_{jF}$ equal one when at least one chemically valid channel of
+fragment $F$ matches that peak within the configured mass tolerance, and zero
+otherwise. Normalizing the marginal proposal weights defined above gives
+
+$$
+\bar w_F=\frac{w_F}{\sum_{F'\in\mathcal F}w_{F'}},
+\qquad
+u_j=\sum_{F\in\mathcal F}A_{jF}\bar w_F.
+$$
+
+Here, $u_j$ is the proposal probability assigned to fragments capable of explaining
+peak $j$. Each fragment contributes at most once to a given peak, even when several
+of its ion channels match. The support loss is
+
+$$
+\mathcal L_{\mathrm{prop}}
+=-\sum_{j:u_j>0}y_j\log u_j.
+$$
+
+This objective increases the combined probability of fragments that support observed
+peaks without requiring a unique structural assignment for each peak. It does not
+use the learned ion-mode or hydrogen-transfer probabilities, so the proposal model
+is supervised by reachable masses independently of the intensity assigned to those
+channels. A fragment may support more than one observed peak; consequently, the
+values $u_j$ need not form a normalized distribution over peaks. An optional binary
+peak-presence target replaces the intensity weights with equal weights over the
+observed peaks.
+
+Only peaks supported by the current candidate set contribute to this loss. An
+unmatched peak contributes zero, and the remaining target weights are not
+renormalized over matched peaks. Thus, the objective redistributes proposal
+probability within the retained support but provides no direct gradient toward an
+unselected fragment. Candidate coverage remains constrained by enumeration and
+the configured candidate budget.
+
+### Spectrum loss and gradient separation
+
+The spectrum objective compares the assembled prediction with the observed spectrum
+to train fragment intensities and conditional ion-channel probabilities. In the
+proposal-selection-only formulation, final fragment probabilities are obtained by
+normalizing the intensity scores alone. Proposal probabilities are neither added to
+these scores nor supplied as candidate features. Consequently, the spectrum loss
+does not backpropagate into the bond-cut or charge-affinity proposal heads.
+
+The exact spectrum objective depends on the resolved configuration. For sparse
+cross-entropy, observed peaks represented by the predicted support contribute to
+the loss. The conditional cross-entropy variant additionally divides this loss by
+the represented target intensity, so its scale does not depend on the fraction of
+target intensity covered. A spectrum with no represented target intensity contributes
+zero to the conditional objective. Other supported spectrum distances retain the
+same separation between proposal supervision and intensity supervision.
+
+During standard joint training with a shared molecular encoder, the proposal heads
+receive atom and acquisition-context representations through a stop-gradient
+operation. The proposal loss therefore updates the bond-cut and charge-affinity
+heads, while the spectrum loss updates the shared encoders, candidate transformer,
+and intensity heads. The proposal model still uses the evolving shared
+representations in its forward pass. With a separate proposal encoder, proposal
+supervision also updates that encoder; the acquisition-context representation
+remains detached on the proposal path under this routing. The optional staged
+training schedule enables proposal gradients into shared representations during
+proposal-only warm-up and retains that routing during subsequent joint training
+when the molecular encoder is shared. That configuration therefore does not have
+fully disjoint encoder updates.
+
+Mask selection itself is discrete. MASSter selects mask identities from detached
+logits and then recomputes their probabilities from differentiable logits for
+proposal supervision. Gradients update the probabilities of retained configurations
+without differentiating through enumeration or fragment membership. Candidate sets
+can change on subsequent forward passes as proposal parameters change. At inference,
+both components operate from the molecular structure and acquisition context;
+observed peaks are required only to construct the training objectives.
 
 ## Comparison with FraGNNet
 

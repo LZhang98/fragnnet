@@ -8,6 +8,7 @@
 Keep this file under about 200 lines. To hand off, update the hub's "Where it stands" and
 "Open threads", then replace that workstream's block below
 ([documentation rules](rules/documentation.md#where-each-kind-of-fact-goes)).
+Every measured result is tabulated per benchmark in [results/](README.md#results--one-ledger-per-benchmark).
 
 ## Workstreams
 
@@ -36,6 +37,8 @@ Keep this file under about 200 lines. To hand off, update the hub's "Where it st
 - **Prepared:** [rare-element route 1](plans/masster/rare_chemistry_augmentation_plan.md#rare-element-handling-revised-2026-10-14) A0/E0/E1/E2/E3 on `i1` (`a_periodic`, hidden-Br test; E3 drops `a_onehot`); the A1/A3 sampling arms were removed 2026-10-14 without running.
 
 ## MASSter core
+
+- **Method description:** [disjoint training objectives](reference/masster_method.md#training) documented and checked against the implementation, including support limits and staged encoder routing.
 
 - **Figures:** both MASSter diagram pages restyled; SVG/PNG exports refreshed and visually checked ([hub](workstreams/masster_core.md#where-it-stands)).
 
