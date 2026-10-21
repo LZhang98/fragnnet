@@ -385,7 +385,8 @@ def finalize_checkpoints(config_d: dict, ckpt_dp: str, wandb_run: Any | None) ->
 
     ``wandb.finish()`` uploads every file under the run directory, so checkpoints that are not
     meant for upload wait outside it until the run has finished. Without W&B nothing is
-    uploaded and the checkpoints stay where they are.
+    uploaded and the checkpoints stay where they are. Checkpoints in ``checkpoint_dp`` lie outside
+    the run directory, so they are never uploaded or held.
 
     Args:
         config_d: Final run config.
@@ -393,7 +394,11 @@ def finalize_checkpoints(config_d: dict, ckpt_dp: str, wandb_run: Any | None) ->
         wandb_run: The active W&B run, or None when W&B is disabled.
     """
     held_ckpt_dp = None
-    if wandb_run is not None and not config_d["disable_checkpoints"]:
+    if (
+        wandb_run is not None
+        and not config_d["disable_checkpoints"]
+        and config_d["checkpoint_dp"] is None
+    ):
         if config_d["upload_checkpoints"]:
             for ckpt_fp in glob.glob(os.path.join(ckpt_dp, "*.ckpt")):
                 wandb_run.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
@@ -466,6 +471,9 @@ def run_training(
     # 5. Checkpoint directory (with an earlier attempt's checkpoints), callbacks, profiler.
     # Names the on-disk checkpoint and profile directories when wandb is disabled.
     run_name = job_id if job_id else config_d.get("wandb_name", "run")
+    external_ckpt_dp = config_d["checkpoint_dp"] is not None
+    if external_ckpt_dp and config_d["upload_checkpoints"]:
+        raise ValueError("upload_checkpoints cannot be used with checkpoint_dp")
     if wandb_state.run is not None:
         ckpt_dp = os.path.realpath(os.path.join(wandb_state.run.dir, "ckpt"))
         profile_dp = os.path.join(wandb_state.run.dir, "profile")
@@ -477,8 +485,10 @@ def run_training(
         )
         ckpt_dp = os.path.join("ckpts", run_name)
         profile_dp = os.path.join("tmp_profile", run_name)
+    if external_ckpt_dp:
+        ckpt_dp = os.path.join(config_d["checkpoint_dp"], run_name)
     os.makedirs(ckpt_dp, exist_ok=True)
-    if wandb_state.is_resume and wandb_state.old_wandb_dp is not None:
+    if wandb_state.is_resume and wandb_state.old_wandb_dp is not None and not external_ckpt_dp:
         migrate_resume_checkpoints(wandb_state.old_wandb_dp, wandb_state.run.dir, ckpt_dp)
     callbacks = build_callbacks(config_d, ckpt_dp)
     logger.info("setup profiler")
