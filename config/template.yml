@@ -507,6 +507,7 @@ checkpoint_metric: epoch
 checkpoint_metric_mode: max
 checkpoint_save_last: True  # Keep the final checkpoint for resume/debugging.
 checkpoint_every_n_epochs: 1  # Save a checkpoint every n epochs.
+checkpoint_dp:  # Parent directory for checkpoints, saved to <checkpoint_dp>/<job_id or wandb_name>/. Unset: ckpts/<name>/ without W&B, the W&B run dir with it. Incompatible with upload_checkpoints.
 checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
 # Modes:
 # - online: set upload_checkpoints=True to upload checkpoints to W&B artifacts.
