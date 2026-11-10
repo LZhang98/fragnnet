@@ -1,0 +1,187 @@
+# MASSter on NIST20, scaffold split, seed 0, 50 epochs.
+# Generated from config/masster/massspecgym/msgym_luke_baseline.yml; only data paths (data_v2/), split, wandb names,
+# epochs and lr_total_steps differ. lr_total_steps 12200 = 244 steps/epoch x 50.
+# No frag_dp: MASSter reads no DAG files. Pipeline: scripts/bash/full_preproc.sh.
+
+# ############################################################################
+# VARIES BETWEEN RUNS: keys that differ across the 7 masster configs in this directory
+# ############################################################################
+
+wandb_name: masster_nist20_scaffold_s0
+wandb_group: masster_nist20
+wandb_tags:
+- masster
+- nist20
+- scaffold
+- unmerged
+- luke_exp
+- m+h
+- nce_ace
+spec_fp: data_v2/proc/nist20/spec_df.pkl
+mol_fp: data_v2/proc/nist20/mol_df.pkl
+
+split_dp: data_v2/split/nist20_scaffold  # 8:1:1 random split on Murcko scaffold
+spec_params:
+  merge: false
+  merge_keep_ces: false
+  nce: true
+  ace: true
+  prec_type: true
+  prec_types:
+  - '[M+H]+'
+  inst_type: true
+  inst_types:
+  - ORB
+  - QTOF
+  frag_mode: true
+  frag_modes:
+  - HCD
+  - CID
+  preprocess: true
+nce_max: 300
+loss_batch_size: 16
+inst_type_loss_tol:
+  ORB:
+    rel: 1.0e-05
+    min_mz: 200.0
+  QTOF:
+    rel: 2.0e-05
+    min_mz: 750.0
+lr_total_steps: 12200
+
+# i3's three keys (see header).
+masster_boundary_encoder_dropout: 0.2
+masster_intensity_input_dropout: 0.2
+
+ema_decay: 0.999
+
+# ############################################################################
+# CONSTANT ACROSS RUNS: keys identical in all 7 masster configs in this directory
+# ############################################################################
+
+seed: 397623
+mol_params:
+  preprocess: true
+  pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_ring_size
+  - a_num_hs
+  - a_mass
+  - a_chiral
+  - a_charge
+  pyg_edge_feats:
+  - b_degree
+  - b_ring
+  - b_conj
+model_type: masster
+mol_gnn_type: GINE_GSA
+mol_hidden_size: 384
+mol_num_layers: 2
+mol_normalization: batch
+mol_dropout: 0.1
+ce_insert_type: embed
+ce_insert_size: 32
+
+# Sin + cos table instead of the template abs-sines; no NCE pair aliases (see header).
+int_embedder: fourier
+ace_max: 300
+masster_unique_fragment_target: 256
+masster_unique_fragment_mode: true
+masster_ranked_mask_budget: 4096
+masster_include_single_bond_cuts: true
+masster_max_h_transfer: 4
+masster_h_transfer_bound: valence
+masster_include_cmf: false
+masster_charge_pooling: logsumexp
+masster_context_dim: 128
+masster_metadata_embedding_dim: 32
+masster_head_hidden_dim: 512
+masster_head_dropout: 0.1
+masster_bond_num_layers: 3
+masster_intensity_transformer_dim: 256
+masster_intensity_transformer_num_layers: 2
+masster_intensity_transformer_num_heads: 8
+masster_intensity_transformer_feedforward_dim: 512
+masster_intensity_transformer_num_inducing_points: 64
+masster_intensity_transformer_dropout: 0.1
+masster_use_mask_residuals: true
+masster_proposal_anchored: true
+masster_log_base_ce: false
+masster_base_ce_weight: 0.0
+masster_detach_base_ion_h: true
+masster_proposal_selection_only: true
+masster_proposal_loss_weight: 0.1
+masster_channel_diagnostics: false
+loss_type: cross_entropy
+predict_oos: false
+oos_loss: false
+gaussian_renormalize: true
+sparse_cosine_similarity: true
+loss_vectorized: true
+primary_loss_weight: 1.0
+dynamic_batch_sampler: false
+group_sampler: false
+simple_group_sampler: false
+train_sample_weight: none
+eval_sample_weight: none
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+automatic_optimization: true
+gradient_clip_val: 5.0
+lr: 0.001
+weight_decay: 0.01
+lr_schedule: true
+lr_schedule_type: cosine
+lr_min_ratio: 0.01
+lr_warmup_steps: 1000
+accelerator: gpu
+devices: 1
+num_workers: 6
+precision: 32
+use_tensor_float32: true
+min_epochs: 50
+max_epochs: 50
+debug_overfit: false
+compile: false
+
+pl_enable_progress_bar: true
+
+# checkpoint saving and eval
+upload_checkpoints: false
+checkpoint_dp: /mnt/data/masster_checkpoints
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+- recall
+- precision
+- wrecall
+- wprecision
+- cos_hun
+- jss
+- jss_hun
+eval_mz_bin_res:
+- 0.01
+
+compute_train_auxiliary_metrics: true
+
+# Explicit opt-in; unsupported modes/devices fail instead of falling back.
+masster_candidate_backend: cuda
+masster_boundary_bond_encoder: true
+masster_candidate_features:
+- c_cut_count
+- c_size
+- c_mass
+- c_charge
+
+masster_intensity_norm_placement: pre
+
+# Logging: evaluate the best checkpoint on the test split and log metric std
+eval_test_split: true
+report_metric_std: true
