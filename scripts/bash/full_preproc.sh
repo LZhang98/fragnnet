@@ -32,7 +32,7 @@ for SPLIT_KEY in inchikey_s scaffold; do
     --ion_modes P \
     --proc_dp $D/proc/nist20 \
     --frag_dp $D/frag/nist20_d3 \
-    --split_dp $D/split/nist20_d3_${SPLIT_NAME}
+    --split_dp $D/split/nist20_${SPLIT_NAME}
 done
 
 # Enveda-180. starts with raw/enveda-180/enveda-180-filtered.jsonl.gz
@@ -78,7 +78,7 @@ for SPLIT_KEY in inchikey_s scaffold; do
     --ce_types stepped single \
     --proc_dp $D/proc/enveda_180 \
     --frag_dp $D/frag/enveda_180_d3 \
-    --split_dp $D/split/enveda_180_d3_${SPLIT_NAME}_811
+    --split_dp $D/split/enveda_180_${SPLIT_NAME}
 done
 
 # MSGym: starts with raw/massspecgym/MassSpecGym1.5.tsv.
@@ -121,7 +121,7 @@ for fold in ["train", "val", "test"]:
 EOF
 
 uv run python preproc_scripts/04_prepare_split.py \
-  --split_dp $D/split/ms_gym_frag_predefined \
+  --split_dp $D/split/ms_gym_predefined \
   --split_type predefined \
   --predefined_id_type dset_spec_id \
   --predefined_train_id_fp $D/df/ms_gym/ms_gym_train_ids.csv \
@@ -149,5 +149,5 @@ for SPLIT_KEY in inchikey_s scaffold; do
     --ion_modes P \
     --proc_dp $D/proc/ms_gym \
     --frag_dp $D/frag/ms_gym_d3 \
-    --split_dp $D/split/ms_gym_frag_${SPLIT_NAME}
+    --split_dp $D/split/ms_gym_${SPLIT_NAME}
 done

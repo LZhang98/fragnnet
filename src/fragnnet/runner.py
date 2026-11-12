@@ -10,7 +10,7 @@ import lightning as L
 import torch as th
 from lightning import seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import CSVLogger, WandbLogger
 from lightning.pytorch.profilers import Profiler
 from pandarallel import pandarallel
 from torch.utils.data import DataLoader
@@ -490,6 +490,8 @@ def run_training(
     os.makedirs(ckpt_dp, exist_ok=True)
     if wandb_state.is_resume and wandb_state.old_wandb_dp is not None and not external_ckpt_dp:
         migrate_resume_checkpoints(wandb_state.old_wandb_dp, wandb_state.run.dir, ckpt_dp)
+    # Writes metrics.csv (and hparams.yaml) beside the checkpoints.
+    loggers.append(CSVLogger(save_dir=ckpt_dp, name="", version=""))
     callbacks = build_callbacks(config_d, ckpt_dp)
     logger.info("setup profiler")
     os.makedirs(profile_dp, exist_ok=True)

@@ -188,7 +188,7 @@ frag_pool_type: max  # sweep: top 3 runs all use max
 upload_checkpoints: false          # required false when checkpoint_dp is set
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 checkpoint_metric_mode: max
-checkpoint_dp: /mnt/data/luke_fragnnet_checkpoints  # ported: saved to <checkpoint_dp>/<job_id or wandb_name>/
+checkpoint_dp: /mnt/data/masster_luke_exp_checkpoints  # ported: saved to <checkpoint_dp>/<job_id or wandb_name>/
 auxiliary_scores:
   - cos_sim
   - recall
@@ -232,7 +232,7 @@ simple_group_sampler_type: group
 # Miscellaneous
 # ============================================================================
 
-pl_enable_progress_bar: False
+pl_enable_progress_bar: True
 pandarallel_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
